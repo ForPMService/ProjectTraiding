@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
@@ -15,28 +16,36 @@ public sealed class InfrastructureHealthChecker
     private readonly NpgsqlDataSource _dataSource;
     private readonly RedisHealthConnectionProvider _redisProvider;
     private readonly InfrastructureHealthOptions _infraOptions;
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ClickHouseOptions _clickHouseOptions;
+    private readonly ObjectStorageOptions _objectStorageOptions;
 
     public InfrastructureHealthChecker(
         NpgsqlDataSource dataSource,
         RedisHealthConnectionProvider redisProvider,
-        IOptions<InfrastructureHealthOptions> infraOptions)
+        IHttpClientFactory httpClientFactory,
+        IOptions<InfrastructureHealthOptions> infraOptions,
+        IOptions<ClickHouseOptions> clickHouseOptions,
+        IOptions<ObjectStorageOptions> objectStorageOptions)
     {
         _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
         _redisProvider = redisProvider ?? throw new ArgumentNullException(nameof(redisProvider));
+        _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _infraOptions = infraOptions?.Value ?? new InfrastructureHealthOptions();
+        _clickHouseOptions = clickHouseOptions?.Value ?? new ClickHouseOptions();
+        _objectStorageOptions = objectStorageOptions?.Value ?? new ObjectStorageOptions();
     }
 
     public async Task<IReadOnlyList<ServiceHealthItem>> CheckAsync(CancellationToken cancellationToken)
     {
         var pgTask = CheckPostgresAsync(cancellationToken);
         var redisTask = CheckRedisAsync(cancellationToken);
+        var clickhouseTask = CheckClickHouseAsync(cancellationToken);
+        var objectStorageTask = CheckObjectStorageAsync(cancellationToken);
 
-        await Task.WhenAll(pgTask, redisTask).ConfigureAwait(false);
+        var results = await Task.WhenAll(pgTask, redisTask, clickhouseTask, objectStorageTask).ConfigureAwait(false);
 
-        var pgResult = await pgTask.ConfigureAwait(false);
-        var redisResult = await redisTask.ConfigureAwait(false);
-
-        return new List<ServiceHealthItem> { pgResult, redisResult };
+        return results;
     }
 
     private async Task<ServiceHealthItem> CheckPostgresAsync(CancellationToken cancellationToken)
@@ -109,5 +118,90 @@ public sealed class InfrastructureHealthChecker
             sw.Stop();
             return new ServiceHealthItem("redis", "unhealthy", "connection failed", sw.ElapsedMilliseconds, "connection_failed");
         }
+    }
+
+    private async Task<ServiceHealthItem> CheckClickHouseAsync(CancellationToken cancellationToken)
+    {
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            var client = _httpClientFactory.CreateClient("clickhouse-health");
+            var host = _clickHouseOptions.Host ?? string.Empty;
+            var port = _clickHouseOptions.HttpPort;
+            var url = $"http://{host}:{port}/ping";
+
+            var resp = await client.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            sw.Stop();
+
+            if (resp.IsSuccessStatusCode)
+            {
+                return new ServiceHealthItem("clickhouse", "ok", null, sw.ElapsedMilliseconds, null);
+            }
+
+            return new ServiceHealthItem("clickhouse", "unhealthy", "http error", sw.ElapsedMilliseconds, "http_error");
+        }
+        catch (OperationCanceledException)
+        {
+            sw.Stop();
+            return new ServiceHealthItem("clickhouse", "unhealthy", "timeout", sw.ElapsedMilliseconds, "timeout");
+        }
+        catch (HttpRequestException)
+        {
+            sw.Stop();
+            return new ServiceHealthItem("clickhouse", "unhealthy", "connection failed", sw.ElapsedMilliseconds, "connection_failed");
+        }
+        catch
+        {
+            sw.Stop();
+            return new ServiceHealthItem("clickhouse", "unhealthy", "connection failed", sw.ElapsedMilliseconds, "connection_failed");
+        }
+    }
+
+    private async Task<ServiceHealthItem> CheckObjectStorageAsync(CancellationToken cancellationToken)
+    {
+        // Local provider: do not contact MinIO
+        if (string.Equals(_objectStorageOptions.Provider, "local", StringComparison.OrdinalIgnoreCase))
+        {
+            return new ServiceHealthItem("object-storage", "ok", "local provider", null, null);
+        }
+
+        if (string.Equals(_objectStorageOptions.Provider, "minio", StringComparison.OrdinalIgnoreCase))
+        {
+            var sw = Stopwatch.StartNew();
+            try
+            {
+                var client = _httpClientFactory.CreateClient("minio-health");
+                var endpoint = (_objectStorageOptions.Endpoint ?? string.Empty).TrimEnd('/');
+                var url = $"{endpoint}/minio/health/live";
+
+                var resp = await client.GetAsync(url, cancellationToken).ConfigureAwait(false);
+                sw.Stop();
+
+                if (resp.IsSuccessStatusCode)
+                {
+                    return new ServiceHealthItem("minio", "ok", null, sw.ElapsedMilliseconds, null);
+                }
+
+                return new ServiceHealthItem("minio", "unhealthy", "http error", sw.ElapsedMilliseconds, "http_error");
+            }
+            catch (OperationCanceledException)
+            {
+                sw.Stop();
+                return new ServiceHealthItem("minio", "unhealthy", "timeout", sw.ElapsedMilliseconds, "timeout");
+            }
+            catch (HttpRequestException)
+            {
+                sw.Stop();
+                return new ServiceHealthItem("minio", "unhealthy", "connection failed", sw.ElapsedMilliseconds, "connection_failed");
+            }
+            catch
+            {
+                sw.Stop();
+                return new ServiceHealthItem("minio", "unhealthy", "connection failed", sw.ElapsedMilliseconds, "connection_failed");
+            }
+        }
+
+        // Unknown provider
+        return new ServiceHealthItem("object-storage", "unhealthy", "unknown provider", null, "unknown_provider");
     }
 }

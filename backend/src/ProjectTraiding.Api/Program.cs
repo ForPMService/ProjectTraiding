@@ -1,3 +1,4 @@
+using System;
 using ProjectTraiding.Api.Configuration;
 using ProjectTraiding.Api.Health;
 using Microsoft.Extensions.Options;
@@ -8,6 +9,21 @@ using Npgsql;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddProjectTraidingOptions(builder.Configuration);
+
+// Named HttpClients for infrastructure health checks
+builder.Services.AddHttpClient("clickhouse-health").ConfigureHttpClient((sp, client) =>
+{
+	var infra = sp.GetRequiredService<IOptions<InfrastructureHealthOptions>>().Value;
+	var timeoutMs = infra is not null && infra.TimeoutMs > 0 ? infra.TimeoutMs : 2000;
+	client.Timeout = TimeSpan.FromMilliseconds(timeoutMs);
+});
+
+builder.Services.AddHttpClient("minio-health").ConfigureHttpClient((sp, client) =>
+{
+	var infra = sp.GetRequiredService<IOptions<InfrastructureHealthOptions>>().Value;
+	var timeoutMs = infra is not null && infra.TimeoutMs > 0 ? infra.TimeoutMs : 2000;
+	client.Timeout = TimeSpan.FromMilliseconds(timeoutMs);
+});
 
 // Register NpgsqlDataSource as a singleton (created from PostgresOptions)
 builder.Services.AddSingleton(sp =>
