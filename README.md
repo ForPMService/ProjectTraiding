@@ -25,6 +25,7 @@ docker compose config
 docker compose up -d
 docker compose ps
 ```
+`.env.example` — это шаблон для переопределения дефолтных значений Docker Compose. Для обычного локального запуска копировать его в `.env` необязательно, потому что в `docker-compose.yml` заданы безопасные локальные значения по умолчанию.
 
 3. Для сборки и запуска backend (пример команд):
 
