@@ -4,9 +4,9 @@ services:
     container_name: projecttraiding-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: projecttraiding
-      POSTGRES_PASSWORD: projecttraiding
-      POSTGRES_DB: projecttraiding
+      POSTGRES_USER: ${POSTGRES_USER:-projecttraiding}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-projecttraiding}
+      POSTGRES_DB: ${POSTGRES_DB:-projecttraiding}
     ports:
       - "5432:5432"
     volumes:

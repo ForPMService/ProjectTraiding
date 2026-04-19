@@ -1,5 +1,5 @@
 # Frontend (Angular)
 
-This folder is reserved for the future Angular-based UI for ProjectTraiding.
+Эта папка предназначена для будущего Angular-интерфейса проекта ProjectTraiding.
 
-At this stage the frontend is a placeholder; no application is implemented yet.
+На текущем этапе приложение не реализовано. Реализовывать frontend сейчас не нужно.
