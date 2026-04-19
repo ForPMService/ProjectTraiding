@@ -11,17 +11,20 @@ public sealed class ConfigurationHealthChecker
     private readonly ClickHouseOptions _ch;
     private readonly RedisOptions _redis;
     private readonly ObjectStorageOptions _obj;
+    private readonly InfrastructureHealthOptions _infra;
 
     public ConfigurationHealthChecker(
         IOptions<PostgresOptions> pgOptions,
         IOptions<ClickHouseOptions> chOptions,
         IOptions<RedisOptions> redisOptions,
-        IOptions<ObjectStorageOptions> objOptions)
+        IOptions<ObjectStorageOptions> objOptions,
+        IOptions<InfrastructureHealthOptions> infraOptions)
     {
         _pg = pgOptions.Value;
         _ch = chOptions.Value;
         _redis = redisOptions.Value;
         _obj = objOptions.Value;
+        _infra = infraOptions?.Value ?? new InfrastructureHealthOptions();
     }
 
     public HealthStatusResponse Check()
@@ -33,9 +36,17 @@ public sealed class ConfigurationHealthChecker
 
         var overallOk = true;
 
-        if (string.IsNullOrWhiteSpace(_pg.Host) || _pg.Port <= 0 || string.IsNullOrWhiteSpace(_pg.Database) || string.IsNullOrWhiteSpace(_pg.User))
+        // Postgres
+        (string? message, string? code)? pgIssue = null;
+        if (string.IsNullOrWhiteSpace(_pg.Host)) pgIssue = ("host is missing", "missing_configuration");
+        else if (_pg.Port <= 0) pgIssue = ("port is invalid", "invalid_configuration");
+        else if (string.IsNullOrWhiteSpace(_pg.Database)) pgIssue = ("required value is missing", "missing_configuration");
+        else if (string.IsNullOrWhiteSpace(_pg.User)) pgIssue = ("required value is missing", "missing_configuration");
+        else if (string.IsNullOrWhiteSpace(_pg.Password)) pgIssue = ("required value is missing", "missing_configuration");
+
+        if (pgIssue != null)
         {
-            services.Add(new ServiceHealthItem("postgres-config", "degraded", "missing required Postgres configuration"));
+            services.Add(new ServiceHealthItem("postgres-config", "degraded", pgIssue.Value.message, ErrorCode: pgIssue.Value.code));
             overallOk = false;
         }
         else
@@ -43,9 +54,18 @@ public sealed class ConfigurationHealthChecker
             services.Add(new ServiceHealthItem("postgres-config", "ok"));
         }
 
-        if (string.IsNullOrWhiteSpace(_ch.Host) || _ch.HttpPort <= 0 || _ch.NativePort <= 0 || string.IsNullOrWhiteSpace(_ch.Database) || string.IsNullOrWhiteSpace(_ch.User))
+        // ClickHouse
+        (string? message, string? code)? chIssue = null;
+        if (string.IsNullOrWhiteSpace(_ch.Host)) chIssue = ("host is missing", "missing_configuration");
+        else if (_ch.HttpPort <= 0) chIssue = ("port is invalid", "invalid_configuration");
+        else if (_ch.NativePort <= 0) chIssue = ("port is invalid", "invalid_configuration");
+        else if (string.IsNullOrWhiteSpace(_ch.Database)) chIssue = ("required value is missing", "missing_configuration");
+        else if (string.IsNullOrWhiteSpace(_ch.User)) chIssue = ("required value is missing", "missing_configuration");
+        else if (string.IsNullOrWhiteSpace(_ch.Password)) chIssue = ("required value is missing", "missing_configuration");
+
+        if (chIssue != null)
         {
-            services.Add(new ServiceHealthItem("clickhouse-config", "degraded", "missing required ClickHouse configuration"));
+            services.Add(new ServiceHealthItem("clickhouse-config", "degraded", chIssue.Value.message, ErrorCode: chIssue.Value.code));
             overallOk = false;
         }
         else
@@ -53,9 +73,14 @@ public sealed class ConfigurationHealthChecker
             services.Add(new ServiceHealthItem("clickhouse-config", "ok"));
         }
 
-        if (string.IsNullOrWhiteSpace(_redis.Host) || _redis.Port <= 0)
+        // Redis
+        (string? message, string? code)? redisIssue = null;
+        if (string.IsNullOrWhiteSpace(_redis.Host)) redisIssue = ("host is missing", "missing_configuration");
+        else if (_redis.Port <= 0) redisIssue = ("port is invalid", "invalid_configuration");
+
+        if (redisIssue != null)
         {
-            services.Add(new ServiceHealthItem("redis-config", "degraded", "missing required Redis configuration"));
+            services.Add(new ServiceHealthItem("redis-config", "degraded", redisIssue.Value.message, ErrorCode: redisIssue.Value.code));
             overallOk = false;
         }
         else
@@ -63,15 +88,48 @@ public sealed class ConfigurationHealthChecker
             services.Add(new ServiceHealthItem("redis-config", "ok"));
         }
 
-        if (string.IsNullOrWhiteSpace(_obj.Provider) || string.IsNullOrWhiteSpace(_obj.Endpoint) || string.IsNullOrWhiteSpace(_obj.BucketRaw) || string.IsNullOrWhiteSpace(_obj.BucketExports))
+        // Object storage
+        (string? message, string? code)? objIssue = null;
+        if (string.IsNullOrWhiteSpace(_obj.Provider))
         {
-            services.Add(new ServiceHealthItem("object-storage-config", "degraded", "missing required object storage configuration"));
+            objIssue = ("required value is missing", "missing_configuration");
+        }
+        else
+        {
+            var provider = _obj.Provider.Trim().ToLowerInvariant();
+            if (provider != "local" && provider != "minio")
+            {
+                objIssue = ("provider is invalid", "invalid_configuration");
+            }
+            else if (provider == "local")
+            {
+                if (string.IsNullOrWhiteSpace(_obj.BucketRaw) || string.IsNullOrWhiteSpace(_obj.BucketExports))
+                {
+                    objIssue = ("required value is missing", "missing_configuration");
+                }
+            }
+            else if (provider == "minio")
+            {
+                if (string.IsNullOrWhiteSpace(_obj.Endpoint)) objIssue = ("required value is missing", "missing_configuration");
+                else if (string.IsNullOrWhiteSpace(_obj.AccessKey)) objIssue = ("required value is missing", "missing_configuration");
+                else if (string.IsNullOrWhiteSpace(_obj.SecretKey)) objIssue = ("required value is missing", "missing_configuration");
+                else if (string.IsNullOrWhiteSpace(_obj.BucketRaw) || string.IsNullOrWhiteSpace(_obj.BucketExports)) objIssue = ("required value is missing", "missing_configuration");
+            }
+        }
+
+        if (objIssue != null)
+        {
+            services.Add(new ServiceHealthItem("object-storage-config", "degraded", objIssue.Value.message, ErrorCode: objIssue.Value.code));
             overallOk = false;
         }
         else
         {
             services.Add(new ServiceHealthItem("object-storage-config", "ok"));
         }
+
+        // Infrastructure health: ensure timeout has sane default
+        var infraTimeout = _infra.TimeoutMs > 0 ? _infra.TimeoutMs : 2000;
+        services.Add(new ServiceHealthItem("infrastructure-health-config", "ok", null, DurationMs: infraTimeout));
 
         var status = overallOk ? "ready" : "degraded";
         return new HealthStatusResponse(status, services);
