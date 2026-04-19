@@ -5,4 +5,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ProjectTraiding.Contracts\ProjectTraiding.Contracts.csproj" />
+    <ProjectReference Include="..\ProjectTraiding.Shared\ProjectTraiding.Shared.csproj" />
+  </ItemGroup>
 </Project>

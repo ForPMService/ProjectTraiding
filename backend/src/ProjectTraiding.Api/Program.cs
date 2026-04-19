@@ -1,13 +1,18 @@
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using ProjectTraiding.Api.Configuration;
+using ProjectTraiding.Api.Endpoints;
+using ProjectTraiding.Api.Health;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddHealthChecks();
+builder.Services.AddProjectTraidingOptions(builder.Configuration);
+builder.Services.AddSingleton<ConfigurationHealthChecker>();
 
 var app = builder.Build();
 
-app.MapGet("/health/live", () => Results.Ok(new { status = "alive" }));
-app.MapGet("/health/ready", () => Results.Ok(new { status = "ready" }));
+app.MapHealthEndpoints();
 
 app.Run();
