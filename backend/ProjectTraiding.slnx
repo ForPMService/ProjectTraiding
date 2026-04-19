@@ -1,0 +1,12 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/src/">
+    <Project Path="src/ProjectTraiding.Api/ProjectTraiding.Api.csproj" />
+    <Project Path="src/ProjectTraiding.Contracts/ProjectTraiding.Contracts.csproj" />
+    <Project Path="src/ProjectTraiding.Worker/ProjectTraiding.Worker.csproj" />
+  </Folder>
+</Solution>
