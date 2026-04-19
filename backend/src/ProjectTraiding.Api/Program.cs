@@ -1,14 +1,15 @@
 using ProjectTraiding.Api.Configuration;
-using ProjectTraiding.Api.Endpoints;
 using ProjectTraiding.Api.Health;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddProjectTraidingOptions(builder.Configuration);
 builder.Services.AddSingleton<ConfigurationHealthChecker>();
+builder.Services.AddControllers();
 
 var app = builder.Build();
 
-app.MapHealthEndpoints();
+app.UseRouting();
+app.MapControllers();
 
 app.Run();
