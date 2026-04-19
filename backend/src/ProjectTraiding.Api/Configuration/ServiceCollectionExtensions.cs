@@ -12,6 +12,7 @@ public static class ServiceCollectionExtensions
         services.Configure<ClickHouseOptions>(configuration.GetSection("ClickHouse"));
         services.Configure<RedisOptions>(configuration.GetSection("Redis"));
         services.Configure<ObjectStorageOptions>(configuration.GetSection("ObjectStorage"));
+        services.Configure<InfrastructureHealthOptions>(configuration.GetSection("InfrastructureHealth"));
 
         return services;
     }

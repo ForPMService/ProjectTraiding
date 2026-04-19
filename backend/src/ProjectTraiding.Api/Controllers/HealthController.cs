@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
 using ProjectTraiding.Api.Health;
-using ProjectTraiding.Contracts.Health;
 
 namespace ProjectTraiding.Api.Controllers;
 
