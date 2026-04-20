@@ -11,20 +11,17 @@ public sealed class ConfigurationHealthChecker
     private readonly ClickHouseOptions _ch;
     private readonly RedisOptions _redis;
     private readonly ObjectStorageOptions _obj;
-    private readonly InfrastructureHealthOptions _infra;
 
     public ConfigurationHealthChecker(
         IOptions<PostgresOptions> pgOptions,
         IOptions<ClickHouseOptions> chOptions,
         IOptions<RedisOptions> redisOptions,
-        IOptions<ObjectStorageOptions> objOptions,
-        IOptions<InfrastructureHealthOptions> infraOptions)
+        IOptions<ObjectStorageOptions> objOptions)
     {
         _pg = pgOptions.Value;
         _ch = chOptions.Value;
         _redis = redisOptions.Value;
         _obj = objOptions.Value;
-        _infra = infraOptions?.Value ?? new InfrastructureHealthOptions();
     }
 
     public HealthStatusResponse Check()
