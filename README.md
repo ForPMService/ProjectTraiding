@@ -68,14 +68,70 @@ curl http://localhost:9002/minio/health/live
 - Добавлен проект `ProjectTraiding.Shared` с классами опций (`PostgresOptions`, `ClickHouseOptions`, `RedisOptions`, `ObjectStorageOptions`).
 - В `ProjectTraiding.Contracts` добавлены базовые DTO для health и общих ответов (`HealthStatusResponse`, `ServiceHealthItem`, `ErrorResponse`, `JobIdResponse`).
 - `appsettings.Development.json` в `ProjectTraiding.Api` содержит локальные dev-настройки для запуска с `docker compose` (Postgres, ClickHouse, Redis, MinIO). Этот файл коммитится намеренно и содержит только локальные значения.
-- Endpoint `/health/ready` в текущем шаге проверяет только корректность конфигурации (binding через `IOptions<T>`). Реальные подключения к PostgreSQL, ClickHouse, Redis и MinIO добавляются на следующих шагах.
+ - Endpoint `/health/ready` реализует двухфазную проверку readiness: сначала проверяется корректность конфигурации (binding через `IOptions<T>`), и только при успешной конфигурации выполняется проверка инфраструктуры (PostgreSQL, Redis, ClickHouse и MinIO при `OBJECT_STORAGE_PROVIDER=minio`). Подробно — в разделе "Health endpoints" ниже.
 - Архитектурные решения (на будущее):
 	- PostgreSQL будет использоваться через прямые, параметризованные SQL-запросы (Npgsql) — без EF Core, без Dapper и без других ORM.
 	- Миграции PostgreSQL будут в виде версионированных SQL-файлов и отдельного runner'а, не через EF Core migrations.
 	- ClickHouse будет использоваться через прямой SQL (HTTP-интерфейс или native клиент).
 
 - Примечание по MinIO: MinIO API доступен на `http://localhost:9002` (порт 9000 занят ClickHouse Native Protocol в текущей конфигурации).
+
 - Порт API определяется в выводе `dotnet run` (строка вида `Now listening on: http://localhost:52576`) или через `launchSettings.json` — не предполагается фиксированный порт `5000`.
+
+## Health endpoints
+
+Ниже приведено поведение health endpoints и примеры использования.
+
+- Примеры (замените `<PORT>` на порт из вывода `dotnet run`):
+
+```bash
+curl -i http://localhost:<PORT>/health/live
+curl -i http://localhost:<PORT>/health/ready
+```
+
+- `/health/live`:
+	- Проверяет только живость процесса API.
+	- Не делает подключений к PostgreSQL, Redis, ClickHouse и MinIO.
+	- Возвращает HTTP 200 при живом процессе.
+
+- `/health/ready` (двухфазная проверка):
+	1. Сначала выполняется проверка конфигурации (binding через `IOptions<T>`). Если конфигурация содержит ошибки — возвращается HTTP 503 и проверка инфраструктуры не выполняется.
+	2. Если конфигурация корректна — выполняются проверки инфраструктуры в следующем порядке: PostgreSQL, Redis, ClickHouse, MinIO (MinIO только при `OBJECT_STORAGE_PROVIDER=minio`).
+	- Итоговый статус формируется так (сравнение регистронезависимо):
+		- если все сервисы `ok` → `ready`;
+		- если есть хотя бы один `unhealthy` → `unhealthy`;
+		- если есть `degraded` и нет `unhealthy` → `degraded`.
+	- `/health/ready` возвращает HTTP 200 только при итоговом статусе `ready`; иначе HTTP 503.
+
+	- При возникновении исключения во время проверки инфраструктуры сервис логирует ошибку и возвращает HTTP 503. Тело ответа содержит все элементы из проверки конфигурации и дополнительный элемент:
+
+```json
+{
+	"name": "infrastructure",
+	"status": "unhealthy",
+	"message": "health check failed",
+	"errorCode": "internal_error"
+}
+```
+
+	Ответы не содержат стек-трейсов, сообщений исключений, строк подключения или секретов.
+
+- Примеры настроек хостов/эндпоинтов:
+	- Для локального запуска через `dotnet run` на Windows (пример):
+
+		- `POSTGRES_HOST=localhost`
+		- `REDIS_HOST=localhost`
+		- `CLICKHOUSE_HOST=localhost`
+		- `MINIO_ENDPOINT=http://localhost:9000`
+
+	- Для запуска с `docker compose` (имена сервисов из `docker-compose.yml`):
+
+		- `POSTGRES_HOST=postgres`
+		- `REDIS_HOST=redis`
+		- `CLICKHOUSE_HOST=clickhouse`
+		- `MINIO_ENDPOINT=http://minio:9000`
+
+	MinIO проверяется только при `OBJECT_STORAGE_PROVIDER=minio`; при `local` MinIO не требуется.
 
 Примеры команд проверки (Windows PowerShell — используйте `curl.exe` для корректного поведения):
 
