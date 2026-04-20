@@ -12,7 +12,7 @@ public sealed class RedisHealthConnectionProvider : IDisposable
     private readonly RedisOptions _redisOptions;
     private readonly InfrastructureHealthOptions _infraOptions;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
-    private volatile IConnectionMultiplexer? _multiplexer;
+    private IConnectionMultiplexer? _multiplexer;
 
     public RedisHealthConnectionProvider(IOptions<RedisOptions> redisOptions, IOptions<InfrastructureHealthOptions> infraOptions)
     {
