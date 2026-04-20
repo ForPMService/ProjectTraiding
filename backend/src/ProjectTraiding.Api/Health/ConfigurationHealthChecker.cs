@@ -127,10 +127,6 @@ public sealed class ConfigurationHealthChecker
             services.Add(new ServiceHealthItem("object-storage-config", "ok"));
         }
 
-        // Infrastructure health: ensure timeout has sane default
-        var infraTimeout = _infra.TimeoutMs > 0 ? _infra.TimeoutMs : 2000;
-        services.Add(new ServiceHealthItem("infrastructure-health-config", "ok", null, DurationMs: infraTimeout));
-
         var status = overallOk ? "ready" : "degraded";
         return new HealthStatusResponse(status, services);
     }

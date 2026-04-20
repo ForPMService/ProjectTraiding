@@ -4,7 +4,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ProjectTraiding.Api.Health;
 using ProjectTraiding.Contracts.Health;
@@ -15,17 +14,17 @@ namespace ProjectTraiding.Api.Controllers;
 public sealed class HealthController : ControllerBase
 {
     private readonly ConfigurationHealthChecker _configurationHealthChecker;
+    private readonly InfrastructureHealthChecker _infrastructureHealthChecker;
     private readonly ILogger<HealthController> _logger;
-    private readonly IServiceProvider _serviceProvider;
 
     public HealthController(
         ConfigurationHealthChecker configurationHealthChecker,
-        ILogger<HealthController> logger,
-        IServiceProvider serviceProvider)
+        InfrastructureHealthChecker infrastructureHealthChecker,
+        ILogger<HealthController> logger)
     {
         _configurationHealthChecker = configurationHealthChecker;
+        _infrastructureHealthChecker = infrastructureHealthChecker;
         _logger = logger;
-        _serviceProvider = serviceProvider;
     }
 
     [HttpGet("/health/live")]
@@ -46,8 +45,7 @@ public sealed class HealthController : ControllerBase
 
         try
         {
-            var infrastructureHealthChecker = _serviceProvider.GetRequiredService<InfrastructureHealthChecker>();
-            var infraServices = await infrastructureHealthChecker.CheckAsync(cancellationToken).ConfigureAwait(false);
+            var infraServices = await _infrastructureHealthChecker.CheckAsync(cancellationToken).ConfigureAwait(false);
 
             var combinedList = configResponse.Services.Concat(infraServices).ToList();
 

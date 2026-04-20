@@ -88,15 +88,18 @@ public sealed class InfrastructureHealthChecker
                 sqlState = pgEx.SqlState;
             }
 
+            var passwordLength = _postgresOptions.Password == null ? 0 : _postgresOptions.Password.Length;
+
             _logger.LogWarning(
-                "PostgreSQL health check failed. ExceptionType={ExceptionType} SqlState={SqlState} Host={Host} Port={Port} Database={Database} User={User} PasswordSet={PasswordSet}",
+                "PostgreSQL health check failed. ExceptionType={ExceptionType} SqlState={SqlState} Host={Host} Port={Port} Database={Database} User={User} PasswordSet={PasswordSet} PasswordLength={PasswordLength}",
                 exceptionType,
                 sqlState ?? string.Empty,
                 _postgresOptions.Host ?? string.Empty,
                 _postgresOptions.Port,
                 _postgresOptions.Database ?? string.Empty,
                 _postgresOptions.User ?? string.Empty,
-                !string.IsNullOrWhiteSpace(_postgresOptions.Password));
+                !string.IsNullOrWhiteSpace(_postgresOptions.Password),
+                passwordLength);
 
             return new ServiceHealthItem(
                 "postgres",
@@ -209,25 +212,25 @@ public sealed class InfrastructureHealthChecker
 
                 if (resp.IsSuccessStatusCode)
                 {
-                    return new ServiceHealthItem("minio", "ok", null, sw.ElapsedMilliseconds, null);
+                    return new ServiceHealthItem("object-storage", "ok", "minio", sw.ElapsedMilliseconds, null);
                 }
 
-                return new ServiceHealthItem("minio", "unhealthy", "http error", sw.ElapsedMilliseconds, "http_error");
+                return new ServiceHealthItem("object-storage", "unhealthy", "http error", sw.ElapsedMilliseconds, "http_error");
             }
             catch (OperationCanceledException)
             {
                 sw.Stop();
-                return new ServiceHealthItem("minio", "unhealthy", "timeout", sw.ElapsedMilliseconds, "timeout");
+                return new ServiceHealthItem("object-storage", "unhealthy", "timeout", sw.ElapsedMilliseconds, "timeout");
             }
             catch (HttpRequestException)
             {
                 sw.Stop();
-                return new ServiceHealthItem("minio", "unhealthy", "connection failed", sw.ElapsedMilliseconds, "connection_failed");
+                return new ServiceHealthItem("object-storage", "unhealthy", "connection failed", sw.ElapsedMilliseconds, "connection_failed");
             }
             catch
             {
                 sw.Stop();
-                return new ServiceHealthItem("minio", "unhealthy", "connection failed", sw.ElapsedMilliseconds, "connection_failed");
+                return new ServiceHealthItem("object-storage", "unhealthy", "connection failed", sw.ElapsedMilliseconds, "connection_failed");
             }
         }
 
