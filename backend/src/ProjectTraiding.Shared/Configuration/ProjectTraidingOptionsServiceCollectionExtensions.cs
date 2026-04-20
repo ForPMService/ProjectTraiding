@@ -1,11 +1,10 @@
 using System;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using ProjectTraiding.Shared.Configuration;
 
-namespace ProjectTraiding.Worker.Configuration;
+namespace ProjectTraiding.Shared.Configuration;
 
-public static class ServiceCollectionExtensions
+public static class ProjectTraidingOptionsServiceCollectionExtensions
 {
     public static IServiceCollection AddProjectTraidingOptions(this IServiceCollection services, IConfiguration configuration)
     {
@@ -13,6 +12,7 @@ public static class ServiceCollectionExtensions
         services.Configure<ClickHouseOptions>(configuration.GetSection("ClickHouse"));
         services.Configure<RedisOptions>(configuration.GetSection("Redis"));
         services.Configure<ObjectStorageOptions>(configuration.GetSection("ObjectStorage"));
+        services.Configure<InfrastructureHealthOptions>(configuration.GetSection("InfrastructureHealth"));
 
         services.PostConfigure<PostgresOptions>(options =>
         {
@@ -66,6 +66,12 @@ public static class ServiceCollectionExtensions
             if (!string.IsNullOrWhiteSpace(v)) options.BucketRaw = v;
             v = Environment.GetEnvironmentVariable("MINIO_BUCKET_EXPORTS");
             if (!string.IsNullOrWhiteSpace(v)) options.BucketExports = v;
+        });
+
+        services.PostConfigure<InfrastructureHealthOptions>(options =>
+        {
+            var v = Environment.GetEnvironmentVariable("INFRASTRUCTURE_HEALTH_TIMEOUT_MS");
+            if (!string.IsNullOrWhiteSpace(v) && int.TryParse(v, out var t) && t > 0) options.TimeoutMs = t;
         });
 
         return services;

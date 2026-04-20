@@ -1,6 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using ProjectTraiding.Worker.Configuration;
+using ProjectTraiding.Shared.Configuration;
 using ProjectTraiding.Worker;
 
 IHost host = Host.CreateDefaultBuilder(args)
