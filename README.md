@@ -122,7 +122,7 @@ curl -i http://localhost:<PORT>/health/ready
 		- `POSTGRES_HOST=localhost`
 		- `REDIS_HOST=localhost`
 		- `CLICKHOUSE_HOST=localhost`
-		- `MINIO_ENDPOINT=http://localhost:9000`
+		- `MINIO_ENDPOINT=http://localhost:9002`
 
 	- Для запуска с `docker compose` (имена сервисов из `docker-compose.yml`):
 
@@ -145,4 +145,4 @@ curl.exe http://localhost:<PORT>/health/ready
 Invoke-RestMethod http://localhost:<PORT>/health/ready | ConvertTo-Json -Depth 5
 ```
 
-Коротко: в этом шаге добавлен только конфигурационный каркас (Shared, Options, DTOs, endpoints). Реальной бизнес-логики, подключения к БД/кешу/хранилищу и миграций на этом шаге НЕ добавлено.
+Коротко: backend-каркас и health endpoints уже включают двухфазную readiness-проверку: сначала проверяется конфигурация, затем доступность PostgreSQL, Redis, ClickHouse и ObjectStorage/MinIO. Бизнес-логика загрузки данных, схемы витрины, миграции и торговые компоненты в этом шаге не реализуются.
