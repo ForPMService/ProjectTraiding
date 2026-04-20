@@ -7,7 +7,7 @@ using ProjectTraiding.Shared.Configuration;
 
 namespace ProjectTraiding.Api.Health;
 
-public sealed class RedisHealthConnectionProvider
+public sealed class RedisHealthConnectionProvider : IDisposable
 {
     private readonly RedisOptions _redisOptions;
     private readonly InfrastructureHealthOptions _infraOptions;
@@ -23,13 +23,13 @@ public sealed class RedisHealthConnectionProvider
     public async Task<IConnectionMultiplexer?> GetConnectionAsync(CancellationToken cancellationToken)
     {
         var existing = _multiplexer;
-        if (existing is not null && existing.IsConnected) return existing;
+        if (existing is not null) return existing;
 
         await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             existing = _multiplexer;
-            if (existing is not null && existing.IsConnected) return existing;
+            if (existing is not null) return existing;
 
             var config = new ConfigurationOptions
             {
@@ -39,22 +39,48 @@ public sealed class RedisHealthConnectionProvider
             };
             config.EndPoints.Add(_redisOptions.Host, _redisOptions.Port);
 
-            IConnectionMultiplexer mux = await ConnectionMultiplexer.ConnectAsync(config).ConfigureAwait(false);
-
-            if (mux.IsConnected)
+            IConnectionMultiplexer mux;
+            try
             {
-                _multiplexer = mux;
+                mux = await ConnectionMultiplexer.ConnectAsync(config).ConfigureAwait(false);
+            }
+            catch
+            {
+                return null;
             }
 
-            return _multiplexer ?? mux;
-        }
-        catch
-        {
-            return null;
+            _multiplexer = mux;
+
+            return mux;
         }
         finally
         {
             _semaphore.Release();
         }
+    }
+
+    public void Dispose()
+    {
+        var mux = Interlocked.Exchange(ref _multiplexer, null);
+        if (mux is not null)
+        {
+            try
+            {
+                mux.Close();
+            }
+            catch { }
+
+            try
+            {
+                mux.Dispose();
+            }
+            catch { }
+        }
+
+        try
+        {
+            _semaphore.Dispose();
+        }
+        catch { }
     }
 }
