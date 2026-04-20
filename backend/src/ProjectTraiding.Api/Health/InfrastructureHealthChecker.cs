@@ -82,7 +82,7 @@ public sealed class InfrastructureHealthChecker
             sw.Stop();
 
             var exceptionType = ex.GetType().FullName ?? string.Empty;
-            string sqlState = null;
+            string? sqlState = null;
             if (ex is PostgresException pgEx)
             {
                 sqlState = pgEx.SqlState;
