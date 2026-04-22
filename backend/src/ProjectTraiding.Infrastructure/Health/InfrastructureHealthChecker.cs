@@ -88,18 +88,15 @@ public sealed class InfrastructureHealthChecker
                 sqlState = pgEx.SqlState;
             }
 
-            var passwordLength = _postgresOptions.Password == null ? 0 : _postgresOptions.Password.Length;
-
             _logger.LogWarning(
-                "PostgreSQL health check failed. ExceptionType={ExceptionType} SqlState={SqlState} Host={Host} Port={Port} Database={Database} User={User} PasswordSet={PasswordSet} PasswordLength={PasswordLength}",
+                "PostgreSQL health check failed. ExceptionType={ExceptionType} SqlState={SqlState} Host={Host} Port={Port} Database={Database} User={User} PasswordSet={PasswordSet}",
                 exceptionType,
                 sqlState ?? string.Empty,
                 _postgresOptions.Host ?? string.Empty,
                 _postgresOptions.Port,
                 _postgresOptions.Database ?? string.Empty,
                 _postgresOptions.User ?? string.Empty,
-                !string.IsNullOrWhiteSpace(_postgresOptions.Password),
-                passwordLength);
+                !string.IsNullOrWhiteSpace(_postgresOptions.Password));
 
             return new ServiceHealthItem(
                 "postgres",
