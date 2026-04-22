@@ -10,8 +10,4 @@
     <ProjectReference Include="..\ProjectTraiding.Shared\ProjectTraiding.Shared.csproj" />
     <ProjectReference Include="..\ProjectTraiding.Infrastructure\ProjectTraiding.Infrastructure.csproj" />
   </ItemGroup>
-  <ItemGroup>
-    <PackageReference Include="Npgsql" Version="10.0.2" />
-    <PackageReference Include="StackExchange.Redis" Version="2.12.14" />
-  </ItemGroup>
 </Project>
