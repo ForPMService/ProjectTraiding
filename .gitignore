@@ -47,5 +47,11 @@ Thumbs.db
 tmp/
 temp/
 
+# Local runtime storage
+storage/
+storage/raw/
+storage/logs/
+*.jsonl
+
 # VS Code
 .vscode/
