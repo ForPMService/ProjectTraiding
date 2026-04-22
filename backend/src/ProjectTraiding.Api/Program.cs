@@ -1,5 +1,5 @@
-using ProjectTraiding.Api.Configuration;
-using ProjectTraiding.Api.Health;
+using ProjectTraiding.Infrastructure.Configuration;
+using ProjectTraiding.Infrastructure.Health;
 using ProjectTraiding.Shared.Configuration;
 
 var builder = WebApplication.CreateBuilder(args);

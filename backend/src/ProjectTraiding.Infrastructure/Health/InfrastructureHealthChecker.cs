@@ -10,7 +10,7 @@ using Npgsql;
 using ProjectTraiding.Contracts.Health;
 using ProjectTraiding.Shared.Configuration;
 
-namespace ProjectTraiding.Api.Health;
+namespace ProjectTraiding.Infrastructure.Health;
 
 public sealed class InfrastructureHealthChecker
 {

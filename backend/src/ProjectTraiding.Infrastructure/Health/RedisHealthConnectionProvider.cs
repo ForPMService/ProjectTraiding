@@ -5,7 +5,7 @@ using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using ProjectTraiding.Shared.Configuration;
 
-namespace ProjectTraiding.Api.Health;
+namespace ProjectTraiding.Infrastructure.Health;
 
 public sealed class RedisHealthConnectionProvider : IDisposable
 {

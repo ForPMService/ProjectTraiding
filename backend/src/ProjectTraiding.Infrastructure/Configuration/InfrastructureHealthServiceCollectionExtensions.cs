@@ -2,10 +2,10 @@ using System;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Npgsql;
-using ProjectTraiding.Api.Health;
+using ProjectTraiding.Infrastructure.Health;
 using ProjectTraiding.Shared.Configuration;
 
-namespace ProjectTraiding.Api.Configuration;
+namespace ProjectTraiding.Infrastructure.Configuration;
 
 public static class InfrastructureHealthServiceCollectionExtensions
 {

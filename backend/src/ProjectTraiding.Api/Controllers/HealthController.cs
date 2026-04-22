@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
-using ProjectTraiding.Api.Health;
+using ProjectTraiding.Infrastructure.Health;
 using ProjectTraiding.Contracts.Health;
 
 namespace ProjectTraiding.Api.Controllers;
