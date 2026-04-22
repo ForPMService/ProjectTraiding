@@ -8,6 +8,7 @@
     <Project Path="src/ProjectTraiding.Api/ProjectTraiding.Api.csproj" />
     <Project Path="src/ProjectTraiding.Contracts/ProjectTraiding.Contracts.csproj" />
     <Project Path="src/ProjectTraiding.Shared/ProjectTraiding.Shared.csproj" />
+    <Project Path="src/ProjectTraiding.Infrastructure/ProjectTraiding.Infrastructure.csproj" />
     <Project Path="src/ProjectTraiding.Worker/ProjectTraiding.Worker.csproj" />
   </Folder>
 </Solution>
