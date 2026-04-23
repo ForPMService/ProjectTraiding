@@ -181,7 +181,15 @@ public sealed class SafeHttpLoggingHandler : DelegatingHandler
 
             builder.Query = string.Join("&", kept);
 
-            return BuildWithoutUserInfo(builder) + (builder.Query.Length > 0 ? "?" + builder.Query : string.Empty);
+            // Ensure we never produce a double question mark. UriBuilder.Query getter
+            // may include a leading '?'. Normalize by removing it before concatenation.
+            var q = builder.Query ?? string.Empty;
+            if (q.Length > 0 && q.StartsWith("?", StringComparison.Ordinal))
+            {
+                q = q.Substring(1);
+            }
+
+            return BuildWithoutUserInfo(builder) + (q.Length > 0 ? "?" + q : string.Empty);
         }
         catch
         {
