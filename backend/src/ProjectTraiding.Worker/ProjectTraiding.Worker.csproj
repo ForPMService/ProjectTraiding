@@ -15,4 +15,8 @@
 		<ProjectReference Include="..\ProjectTraiding.Shared\ProjectTraiding.Shared.csproj" />
 	</ItemGroup>
 
+	<ItemGroup>
+		<ProjectReference Include="..\ProjectTraiding.Infrastructure\ProjectTraiding.Infrastructure.csproj" />
+	</ItemGroup>
+
 </Project>
