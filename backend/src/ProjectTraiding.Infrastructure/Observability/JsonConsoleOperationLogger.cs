@@ -52,8 +52,10 @@ public sealed class JsonConsoleOperationLogger : IOperationLogger
             var dict = new Dictionary<string, string>(operationEvent.Details.Count);
             foreach (var kvp in operationEvent.Details)
             {
-                var red = _secretRedactor.RedactByKey(kvp.Key, kvp.Value);
-                dict[kvp.Key] = red ?? kvp.Value ?? string.Empty;
+                var byKey = _secretRedactor.RedactByKey(kvp.Key, kvp.Value);
+                var intermediate = byKey ?? kvp.Value;
+                var final = _secretRedactor.Redact(intermediate);
+                dict[kvp.Key] = final ?? intermediate ?? string.Empty;
             }
 
             details = dict;
