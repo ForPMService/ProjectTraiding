@@ -8,6 +8,7 @@ public static class ObservabilityServiceCollectionExtensions
 {
     public static IServiceCollection AddProjectTraidingObservability(this IServiceCollection services)
     {
+        services.AddSingleton<ISecretRedactor, DefaultSecretRedactor>();
         services.AddSingleton<IOperationLogger, JsonConsoleOperationLogger>();
 
         return services;
