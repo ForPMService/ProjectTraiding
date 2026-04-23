@@ -21,6 +21,9 @@ var app = builder.Build();
 // Correlation id middleware: ensures X-Correlation-Id is present and available via HttpContext.Items
 app.UseMiddleware<CorrelationIdMiddleware>();
 
+// Request logging middleware: minimal request started/finished/failure events
+app.UseMiddleware<RequestLoggingMiddleware>();
+
 app.MapControllers();
 
 app.Run();
