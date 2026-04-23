@@ -13,12 +13,12 @@ public sealed class JsonConsoleOperationLogger : IOperationLogger
 {
     private readonly ILogger<JsonConsoleOperationLogger> _logger;
     private readonly JsonSerializerOptions _options;
-    private readonly ISecretRedactor _secretRedactor;
+    private readonly OperationEventRedactor _redactor;
 
-    public JsonConsoleOperationLogger(ILogger<JsonConsoleOperationLogger> logger, ISecretRedactor secretRedactor)
+    internal JsonConsoleOperationLogger(ILogger<JsonConsoleOperationLogger> logger, OperationEventRedactor redactor)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _secretRedactor = secretRedactor ?? throw new ArgumentNullException(nameof(secretRedactor));
+        _redactor = redactor ?? throw new ArgumentNullException(nameof(redactor));
         _options = new JsonSerializerOptions
         {
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
@@ -34,7 +34,7 @@ public sealed class JsonConsoleOperationLogger : IOperationLogger
             return ValueTask.CompletedTask;
         }
 
-        var redacted = RedactOperationEvent(operationEvent);
+        var redacted = _redactor.Redact(operationEvent);
 
         var json = JsonSerializer.Serialize(redacted, _options);
         _logger.LogInformation("{Json}", json);
@@ -42,25 +42,5 @@ public sealed class JsonConsoleOperationLogger : IOperationLogger
         return ValueTask.CompletedTask;
     }
 
-    private OperationEvent RedactOperationEvent(OperationEvent operationEvent)
-    {
-        var message = _secretRedactor.Redact(operationEvent.Message) ?? string.Empty;
-
-        IReadOnlyDictionary<string, string>? details = null;
-        if (operationEvent.Details != null)
-        {
-            var dict = new Dictionary<string, string>(operationEvent.Details.Count);
-            foreach (var kvp in operationEvent.Details)
-            {
-                var byKey = _secretRedactor.RedactByKey(kvp.Key, kvp.Value);
-                var intermediate = byKey ?? kvp.Value;
-                var final = _secretRedactor.Redact(intermediate);
-                dict[kvp.Key] = final ?? intermediate ?? string.Empty;
-            }
-
-            details = dict;
-        }
-
-        return operationEvent with { Message = message, Details = details };
-    }
+    
 }

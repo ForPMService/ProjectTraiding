@@ -11,17 +11,18 @@ using ProjectTraiding.Shared.Observability;
 
 namespace ProjectTraiding.Infrastructure.Observability;
 
-public sealed class JsonlFileOperationSink
+public sealed class JsonlFileOperationSink : IDisposable
 {
     private readonly ILogger<JsonlFileOperationSink> _logger;
-    private readonly ISecretRedactor _secretRedactor;
+    private readonly OperationEventRedactor _redactor;
     private readonly JsonlFileSinkOptions _options;
     private readonly JsonSerializerOptions _serializerOptions;
+    private readonly System.Threading.SemaphoreSlim _writeLock = new(1, 1);
 
-    public JsonlFileOperationSink(IOptions<JsonlFileSinkOptions> options, ISecretRedactor secretRedactor, ILogger<JsonlFileOperationSink> logger)
+    internal JsonlFileOperationSink(IOptions<JsonlFileSinkOptions> options, OperationEventRedactor redactor, ILogger<JsonlFileOperationSink> logger)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _secretRedactor = secretRedactor ?? throw new ArgumentNullException(nameof(secretRedactor));
+        _redactor = redactor ?? throw new ArgumentNullException(nameof(redactor));
         _options = options?.Value ?? new JsonlFileSinkOptions();
         _serializerOptions = new JsonSerializerOptions
         {
@@ -37,7 +38,7 @@ public sealed class JsonlFileOperationSink
         if (!_options.Enabled)
             return;
 
-        var redacted = RedactOperationEvent(operationEvent);
+        var redacted = _redactor.Redact(operationEvent);
 
         string json;
         try
@@ -60,35 +61,25 @@ public sealed class JsonlFileOperationSink
                 Directory.CreateDirectory(dir);
             }
 
-            // Append a single-line JSON record
-            await File.AppendAllTextAsync(filePath, json + Environment.NewLine, cancellationToken);
+            // Append a single-line JSON record (synchronized within process)
+            await _writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await File.AppendAllTextAsync(filePath, json + Environment.NewLine, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _writeLock.Release();
+            }
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to append operation event to JSONL file '{FilePath}'", filePath);
         }
     }
-
-    private OperationEvent RedactOperationEvent(OperationEvent operationEvent)
+    public void Dispose()
     {
-        var message = _secretRedactor.Redact(operationEvent.Message) ?? string.Empty;
-
-        IReadOnlyDictionary<string, string>? details = null;
-        if (operationEvent.Details != null)
-        {
-            var dict = new Dictionary<string, string>(operationEvent.Details.Count);
-            foreach (var kvp in operationEvent.Details)
-            {
-                var byKey = _secretRedactor.RedactByKey(kvp.Key, kvp.Value);
-                var intermediate = byKey ?? kvp.Value;
-                var final = _secretRedactor.Redact(intermediate);
-                dict[kvp.Key] = final ?? intermediate ?? string.Empty;
-            }
-
-            details = dict;
-        }
-
-        return operationEvent with { Message = message, Details = details };
+        _writeLock.Dispose();
     }
 
     private string ResolveFilePath(string? path)

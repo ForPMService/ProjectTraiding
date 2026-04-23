@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
@@ -47,7 +48,7 @@ public sealed class RequestLoggingMiddleware
         );
 
         // Log start without blocking request processing
-        await _operationLogger.LogAsync(started, context.RequestAborted).ConfigureAwait(false);
+        await _operationLogger.LogAsync(started, CancellationToken.None).ConfigureAwait(false);
 
         var sw = Stopwatch.StartNew();
         try
@@ -74,7 +75,7 @@ public sealed class RequestLoggingMiddleware
                 Details: finishedDetails
             );
 
-            await _operationLogger.LogAsync(finished, context.RequestAborted).ConfigureAwait(false);
+            await _operationLogger.LogAsync(finished, CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -100,7 +101,7 @@ public sealed class RequestLoggingMiddleware
             );
 
             // Log the failure and rethrow
-            await _operationLogger.LogAsync(failed, context.RequestAborted).ConfigureAwait(false);
+            await _operationLogger.LogAsync(failed, CancellationToken.None).ConfigureAwait(false);
             throw;
         }
     }

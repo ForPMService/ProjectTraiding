@@ -12,7 +12,8 @@ public static class ObservabilityServiceCollectionExtensions
     {
         // Backward-compatible: no JSONL sink configured.
         services.AddSingleton<ISecretRedactor, DefaultSecretRedactor>();
-        services.AddSingleton<JsonConsoleOperationLogger>();
+        services.AddSingleton<OperationEventRedactor>();
+        services.AddSingleton<JsonConsoleOperationLogger>(sp => new JsonConsoleOperationLogger(sp.GetRequiredService<ILogger<JsonConsoleOperationLogger>>(), sp.GetRequiredService<OperationEventRedactor>()));
         services.AddSingleton<IOperationLogger>(sp => sp.GetRequiredService<JsonConsoleOperationLogger>());
 
         return services;
@@ -20,14 +21,16 @@ public static class ObservabilityServiceCollectionExtensions
 
     public static IServiceCollection AddProjectTraidingObservability(this IServiceCollection services, IConfiguration configuration)
     {
+
         services.AddSingleton<ISecretRedactor, DefaultSecretRedactor>();
+        services.AddSingleton<OperationEventRedactor>();
 
         // Register the console logger as concrete implementation so it can be composed.
-        services.AddSingleton<JsonConsoleOperationLogger>();
+        services.AddSingleton<JsonConsoleOperationLogger>(sp => new JsonConsoleOperationLogger(sp.GetRequiredService<ILogger<JsonConsoleOperationLogger>>(), sp.GetRequiredService<OperationEventRedactor>()));
 
         // Bind JSONL sink options from configuration (optional)
         services.Configure<JsonlFileSinkOptions>(configuration.GetSection("Observability:Jsonl"));
-        services.AddSingleton<JsonlFileOperationSink>();
+        services.AddSingleton<JsonlFileOperationSink>(sp => new JsonlFileOperationSink(sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<JsonlFileSinkOptions>>(), sp.GetRequiredService<OperationEventRedactor>(), sp.GetRequiredService<ILogger<JsonlFileOperationSink>>()));
 
         // Composite logger: keeps console behavior and adds optional JSONL sink.
         services.AddSingleton<IOperationLogger>(sp =>

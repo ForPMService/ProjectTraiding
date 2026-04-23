@@ -19,13 +19,17 @@ public sealed class SafeHttpLoggingHandler : DelegatingHandler
 {
     private readonly IOperationLogger _operationLogger;
     private readonly ISecretRedactor _secretRedactor;
+    private readonly string _serviceName;
+    private readonly string _environment;
 
     public const string CorrelationHeader = "X-Correlation-Id";
 
-    public SafeHttpLoggingHandler(IOperationLogger operationLogger, ISecretRedactor secretRedactor)
+    public SafeHttpLoggingHandler(IOperationLogger operationLogger, ISecretRedactor secretRedactor, string serviceName, string environment)
     {
         _operationLogger = operationLogger ?? throw new ArgumentNullException(nameof(operationLogger));
         _secretRedactor = secretRedactor ?? throw new ArgumentNullException(nameof(secretRedactor));
+        _serviceName = serviceName ?? string.Empty;
+        _environment = environment ?? string.Empty;
     }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -55,8 +59,8 @@ public sealed class SafeHttpLoggingHandler : DelegatingHandler
         var started = new OperationEvent(
             Timestamp: startedAt,
             Level: "Information",
-            ServiceName: string.Empty,
-            Environment: string.Empty,
+            ServiceName: _serviceName,
+            Environment: _environment,
             OperationName: operationName,
             Message: "Outgoing request started",
             CorrelationId: correlationId,
@@ -86,8 +90,8 @@ public sealed class SafeHttpLoggingHandler : DelegatingHandler
             var finished = new OperationEvent(
                 Timestamp: DateTimeOffset.UtcNow,
                 Level: "Information",
-                ServiceName: string.Empty,
-                Environment: string.Empty,
+                ServiceName: _serviceName,
+                Environment: _environment,
                 OperationName: operationName,
                 Message: "Outgoing request finished",
                 CorrelationId: correlationId,
@@ -116,8 +120,8 @@ public sealed class SafeHttpLoggingHandler : DelegatingHandler
             var failed = new OperationEvent(
                 Timestamp: DateTimeOffset.UtcNow,
                 Level: "Error",
-                ServiceName: string.Empty,
-                Environment: string.Empty,
+                ServiceName: _serviceName,
+                Environment: _environment,
                 OperationName: operationName,
                 Message: "Outgoing request failed",
                 CorrelationId: correlationId,
