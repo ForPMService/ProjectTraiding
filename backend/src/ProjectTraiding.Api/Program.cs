@@ -7,7 +7,7 @@ using ProjectTraiding.Api.Observability;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddProjectTraidingOptions(builder.Configuration);
-builder.Services.AddProjectTraidingObservability();
+builder.Services.AddProjectTraidingObservability(builder.Configuration);
 builder.Services.AddInfrastructureHealth();
 builder.Services.AddSingleton<ConfigurationHealthChecker>();
 builder.Services.AddControllers();
