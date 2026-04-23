@@ -24,6 +24,8 @@ public sealed class JsonConsoleOperationLogger : IOperationLogger
 
     public ValueTask LogAsync(OperationEvent operationEvent, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (operationEvent is null)
         {
             return ValueTask.CompletedTask;
