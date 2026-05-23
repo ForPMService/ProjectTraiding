@@ -56,15 +56,17 @@ public static class ProjectTraidingOptionsServiceCollectionExtensions
         {
             var v = Environment.GetEnvironmentVariable("OBJECT_STORAGE_PROVIDER");
             if (!string.IsNullOrWhiteSpace(v)) options.Provider = v;
-            v = Environment.GetEnvironmentVariable("MINIO_ENDPOINT");
+            v = Environment.GetEnvironmentVariable("S3_ENDPOINT");
             if (!string.IsNullOrWhiteSpace(v)) options.Endpoint = v;
-            v = Environment.GetEnvironmentVariable("MINIO_ACCESS_KEY");
+            v = Environment.GetEnvironmentVariable("S3_ACCESS_KEY");
             if (!string.IsNullOrWhiteSpace(v)) options.AccessKey = v;
-            v = Environment.GetEnvironmentVariable("MINIO_SECRET_KEY");
+            v = Environment.GetEnvironmentVariable("S3_SECRET_KEY");
             if (!string.IsNullOrWhiteSpace(v)) options.SecretKey = v;
-            v = Environment.GetEnvironmentVariable("MINIO_BUCKET_RAW");
+            v = Environment.GetEnvironmentVariable("S3_REGION");
+            if (!string.IsNullOrWhiteSpace(v)) options.Region = v;
+            v = Environment.GetEnvironmentVariable("S3_BUCKET_RAW");
             if (!string.IsNullOrWhiteSpace(v)) options.BucketRaw = v;
-            v = Environment.GetEnvironmentVariable("MINIO_BUCKET_EXPORTS");
+            v = Environment.GetEnvironmentVariable("S3_BUCKET_EXPORTS");
             if (!string.IsNullOrWhiteSpace(v)) options.BucketExports = v;
         });
 
