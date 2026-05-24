@@ -58,3 +58,4 @@ storage/logs/
 
 *.txt
 !README.txt
+.ps1

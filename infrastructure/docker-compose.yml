@@ -17,53 +17,5 @@ services:
       timeout: 5s
       retries: 5
 
-  clickhouse:
-    image: clickhouse/clickhouse-server:26.4.3
-    container_name: projecttraiding-clickhouse
-    restart: unless-stopped
-    environment:
-      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-projecttraiding}
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-projecttraiding}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-projecttraiding}
-    ports:
-      - "8123:8123"
-      - "9000:9000"
-    volumes:
-      - clickhousedata:/var/lib/clickhouse
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:8.6.3
-    container_name: projecttraiding-redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    volumes:
-      - redisdata:/data
-    command: ["redis-server", "--appendonly", "yes"]
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  seaweedfs:
-    image: chrislusf/seaweedfs:4.27
-    container_name: projecttraiding-seaweedfs
-    restart: unless-stopped
-    command: server -s3 -s3.port=8333 -filer -master.volumeSizeLimitMB=100
-    ports:
-      - "8333:8333"
-    volumes:
-      - seaweedfsdata:/data
-    
-
 volumes:
   pgdata:
-  clickhousedata:
-  redisdata:
-  seaweedfsdata:
