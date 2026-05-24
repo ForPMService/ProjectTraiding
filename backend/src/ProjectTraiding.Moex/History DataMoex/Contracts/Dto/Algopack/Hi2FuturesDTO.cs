@@ -1,0 +1,77 @@
+namespace History_DataMoex.Contracts.Dto.Algopack
+{
+    public record Hi2FuturesDTO
+    {
+        /// <summary>
+        /// Торговая дата.
+        ///
+        /// MOEX столбец: tradedate
+        /// </summary>
+        public string? TradeDate { get; init; }
+
+        /// <summary>
+        /// Торговое время.
+        ///
+        /// MOEX столбец: tradetime
+        /// </summary>
+        public string? TradeTime { get; init; }
+
+        /// <summary>
+        /// Код срочного инструмента.
+        ///
+        /// MOEX столбец: secid
+        ///
+        /// Пример:
+        /// SiM6.
+        /// </summary>
+        public string? SecId { get; init; }
+
+        /// <summary>
+        /// Код базового актива.
+        ///
+        /// MOEX столбец: asset_code
+        ///
+        /// Пример:
+        /// Si.
+        /// </summary>
+        public string? AssetCode { get; init; }
+
+        /// <summary>
+        /// Название метрики HI2.
+        ///
+        /// MOEX столбец: metric
+        ///
+        /// Примеры:
+        /// hhi_agressive,
+        /// hhi_agressive_buy,
+        /// hhi_agressive_sell,
+        /// hhi_buy,
+        /// hhi_sell,
+        /// hhi_volume.
+        /// </summary>
+        public string? Metric { get; init; }
+
+        /// <summary>
+        /// Значение метрики.
+        ///
+        /// MOEX столбец: value
+        /// </summary>
+        public double? Value { get; init; }
+
+        /// <summary>
+        /// Справочная информация по метрике.
+        ///
+        /// MOEX столбец: reference
+        ///
+        /// В примере приходит пустая строка.
+        /// </summary>
+        public string? Reference { get; init; }
+
+        /// <summary>
+        /// Системное время формирования записи.
+        ///
+        /// MOEX столбец: SYSTIME
+        /// </summary>
+        public DateTime? SysTime { get; init; }
+    }
+}
