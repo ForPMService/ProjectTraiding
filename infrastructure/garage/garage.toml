@@ -1,0 +1,25 @@
+# Garage v2.3.0 — локальный single-node для raw-capture MOEX.
+# Не для production. Перед боевым использованием:
+#   - сгенерировать rpc_secret: openssl rand -hex 32
+#   - сгенерировать admin_token: openssl rand -base64 32
+#   - проверить лицензию AGPL v3
+
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+db_engine = "sqlite"
+replication_factor = 1
+
+rpc_bind_addr = "[::]:3901"
+rpc_public_addr = "127.0.0.1:3901"
+
+# DEV ONLY — заменить на openssl rand -hex 32
+rpc_secret = "0000000000000000000000000000000000000000000000000000000000000001"
+
+[s3_api]
+s3_region = "garage"
+api_bind_addr = "[::]:3900"
+
+[admin]
+api_bind_addr = "[::]:3903"
+# DEV ONLY — заменить на openssl rand -base64 32
+admin_token = "DevOnlyAdminToken000000000000000000000000000="

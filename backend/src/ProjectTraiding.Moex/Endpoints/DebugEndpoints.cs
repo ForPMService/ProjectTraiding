@@ -1,4 +1,7 @@
+using Amazon.S3;
+using Microsoft.Extensions.Options;
 using ProjectTraiding.Moex.Clients;
+using ProjectTraiding.Moex.Options;
 using System.Text.Json;
 
 namespace ProjectTraiding.Moex.Endpoints
@@ -364,7 +367,48 @@ namespace ProjectTraiding.Moex.Endpoints
                 string raw = await client.GetRawSectionAsync(url, queryParams, ct);
                 return Results.Text(raw, "application/json");
             });
+            routes.MapGet("/debug/s3/health", async (
+    IAmazonS3 s3Client,
+    IOptions<RawCaptureOptions> captureOptions,
+    CancellationToken ct) =>
+            {
+                RawCaptureOptions options = captureOptions.Value;
 
+                using MemoryStream stream = new MemoryStream();
+                using (Utf8JsonWriter writer = new Utf8JsonWriter(stream))
+                {
+                    writer.WriteStartObject();
+
+                    if (options.Mode == CaptureMode.Off)
+                    {
+                        writer.WriteString("status", "disabled");
+                        writer.WriteString("bucket", options.Bucket);
+                        writer.WriteString("mode", "Off");
+                    }
+                    else
+                    {
+                        try
+                        {
+                            await s3Client.GetBucketLocationAsync(options.Bucket, ct);
+                            writer.WriteString("status", "ok");
+                            writer.WriteString("bucket", options.Bucket);
+                            writer.WriteString("mode", options.Mode.ToString());
+                        }
+                        catch (Exception ex)
+                        {
+                            writer.WriteString("status", "error");
+                            writer.WriteString("bucket", options.Bucket);
+                            writer.WriteString("mode", options.Mode.ToString());
+                            writer.WriteString("errorType", ex.GetType().Name);
+                            writer.WriteString("message", ex.Message);
+                        }
+                    }
+
+                    writer.WriteEndObject();
+                }
+
+                return Results.Bytes(stream.ToArray(), "application/json");
+            });
             return routes;
         }
 

@@ -4,6 +4,7 @@ using ProjectTraiding.Moex.Infrastructure.DependencyInjection;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddMoexClients(builder.Configuration);
+builder.Services.AddRawCapture(builder.Configuration);
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default);
