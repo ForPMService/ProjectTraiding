@@ -5,5 +5,6 @@
   <Folder Name="/src/">
     <Project Path="src/ProjectTraiding.Api/ProjectTraiding.Api.csproj" />
     <Project Path="src/ProjectTraiding.Moex/ProjectTraiding.Moex.csproj" />
+    <Project Path="src/ProjectTraiding.Moex.Tests/ProjectTraiding.Moex.Tests.csproj" />
   </Folder>
 </Solution>
