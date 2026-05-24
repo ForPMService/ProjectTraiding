@@ -1,0 +1,34 @@
+databaseType = "PostgreSql"
+id = "4d192d42-5ada-44c1-8d76-e25e2bdda256"
+name = "ProjectTraiding"
+
+[flyway]
+callbackLocations = [ "filesystem:callbacks" ]
+locations = [ "filesystem:migrations" ]
+mixed = true
+outOfOrder = true
+schemaModelLocation = "schema-model"
+validateMigrationNaming = true
+
+[flywayDesktop]
+enableMigrations = true
+showDeploymentDecision = true
+developmentEnvironment = "development"
+shadowEnvironment = "shadow"
+
+  [flywayDesktop.generate]
+  undoScripts = false
+
+[redgateCompare]
+filterFile = "filter.rgf"
+
+[redgateCompare.postgresql.options.behavior]
+detectRenames = "identical-only"
+
+[redgateCompare.postgresql.options.ignores]
+ignoreNewlinesInTextObjects = "off"
+
+[environments.ProjectTraiding]
+url = "jdbc:postgresql://localhost:5432/projecttraiding"
+schemas = [ "public" ]
+displayName = "Projecttraiding"
