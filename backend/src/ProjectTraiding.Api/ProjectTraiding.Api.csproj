@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
@@ -6,6 +6,7 @@
     <RootNamespace>ProjectTraiding.Api</RootNamespace>
     <PublishAot>true</PublishAot>
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+    <UserSecretsId>017b40f1-32cc-4972-a253-fbfaee10e4b5</UserSecretsId>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\ProjectTraiding.Moex\ProjectTraiding.Moex.csproj" />
