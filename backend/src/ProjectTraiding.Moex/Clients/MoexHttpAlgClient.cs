@@ -603,7 +603,7 @@ namespace ProjectTraiding.Moex.Clients
             try
             {
                 var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-                HttpClientHelpers.EnsureSuccessOrThrow(response, method);
+                await HttpClientHelpers.EnsureSuccessOrThrowAsync(response, method, cancellationToken);
                 return response;
             }
             catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)

@@ -14,7 +14,23 @@ public static class HttpClientHelpers
     /// </summary>
     /// <param name="response">HTTP-ответ сервера.</param>
     /// <param name="endpoint">Адрес эндпоинта (только путь/метод, без Bearer-токена).</param>
-    public static void EnsureSuccessOrThrow(HttpResponseMessage response, string endpoint)
+    /// <summary>
+    /// Максимальный размер тела ошибочного ответа, сохраняемого для диагностики.
+    /// </summary>
+    private const int MaxErrorBodyBytes = 65_536;
+
+    /// <summary>
+    /// Проверяет статус ответа и при ошибке бросает типизированное исключение.
+    /// Перед dispose читает первые 64 KB тела ответа для диагностики (raw-capture).
+    /// При успехе ответ не dispose-ится — ответственность вызывающего кода.
+    /// </summary>
+    /// <param name="response">HTTP-ответ сервера.</param>
+    /// <param name="endpoint">Адрес эндпоинта (только путь/метод, без Bearer-токена).</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    public static async Task EnsureSuccessOrThrowAsync(
+        HttpResponseMessage response,
+        string endpoint,
+        CancellationToken cancellationToken = default)
     {
         if (response.IsSuccessStatusCode)
         {
@@ -23,17 +39,35 @@ public static class HttpClientHelpers
 
         TimeSpan? retryAfter = TryParseRetryAfter(response);
         int status = (int)response.StatusCode;
+
+        byte[]? errorBody = null;
+        try
+        {
+            Stream bodyStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            byte[] buffer = new byte[MaxErrorBodyBytes];
+            int bytesRead = await bodyStream.ReadAsync(buffer, 0, MaxErrorBodyBytes, cancellationToken);
+            if (bytesRead > 0)
+            {
+                errorBody = new byte[bytesRead];
+                Array.Copy(buffer, errorBody, bytesRead);
+            }
+        }
+        catch
+        {
+            // Чтение тела не удалось — продолжаем без него.
+        }
+
         response.Dispose();
 
         throw status switch
         {
-            429        => new MoexRateLimitException(endpoint, retryAfter),
-            401 or 403 => new MoexAuthException(endpoint, status),
-            400        => new MoexBadRequestException(endpoint),
-            404        => new MoexNotFoundException(endpoint),
-            >= 500     => new MoexServerException(endpoint, status),
-            >= 400     => new MoexClientException(endpoint, status),
-            _          => new MoexUnexpectedStatusException(endpoint, status)
+            429 => new MoexRateLimitException(endpoint, retryAfter) { ErrorBody = errorBody },
+            401 or 403 => new MoexAuthException(endpoint, status) { ErrorBody = errorBody },
+            400 => new MoexBadRequestException(endpoint) { ErrorBody = errorBody },
+            404 => new MoexNotFoundException(endpoint) { ErrorBody = errorBody },
+            >= 500 => new MoexServerException(endpoint, status) { ErrorBody = errorBody },
+            >= 400 => new MoexClientException(endpoint, status) { ErrorBody = errorBody },
+            _ => new MoexUnexpectedStatusException(endpoint, status) { ErrorBody = errorBody }
         };
     }
 
@@ -76,7 +110,6 @@ public static class HttpClientHelpers
         if (raw is null)
             return null;
 
-        // HTTP-date в прошлом: TryParseRetryAfter вернёт Zero → подставляем 1 секунду
         if (raw.Value <= TimeSpan.Zero)
             raw = TimeSpan.FromSeconds(1);
 
