@@ -1,6 +1,7 @@
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using ProjectTraiding.Moex.Contracts.Dto.Calendar;
 using ProjectTraiding.Moex.Contracts.Dto.Iss;
+using ProjectTraiding.Moex.Contracts.Dto.MarketStatistics;
 using ProjectTraiding.Moex.Contracts.Dto.Realtime;
 using ProjectTraiding.Moex.Endpoints;
 using System.Text.Json;
@@ -115,6 +116,8 @@ namespace ProjectTraiding.Moex.Contracts.Serialization
     [JsonSerializable(typeof(RealtimeDiagnosticEndpoints.CandlesPollReport))]
     [JsonSerializable(typeof(RealtimeDiagnosticEndpoints.CandlesSnapshot))]
 
+    [JsonSerializable(typeof(MarketStatisticsStockSecuritiesDTO))]
+    [JsonSerializable(typeof(MarketStatisticsFuturesSecuritiesDTO))]
     public partial class AppJsonContext : JsonSerializerContext
     {
     }
