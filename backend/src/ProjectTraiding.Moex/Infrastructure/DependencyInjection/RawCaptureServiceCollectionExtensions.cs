@@ -2,6 +2,7 @@ using Amazon.Runtime;
 using Amazon.S3;
 using Microsoft.Extensions.Options;
 using ProjectTraiding.Moex.Options;
+using ProjectTraiding.Moex.Infrastructure.RawCapture;
 
 namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection;
 
@@ -33,7 +34,7 @@ public static class RawCaptureServiceCollectionExtensions
 
             return new AmazonS3Client(credentials, config);
         });
-
+        services.AddSingleton<MoexRawCaptureWriter>();
         return services;
     }
 }
