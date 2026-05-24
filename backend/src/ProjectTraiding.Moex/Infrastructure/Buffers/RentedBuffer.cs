@@ -1,6 +1,6 @@
-﻿using System.Buffers;
+using System.Buffers;
 
-namespace History_DataMoex.Infrastructure.Buffers
+namespace ProjectTraiding.Moex.Infrastructure.Buffers
 {
     public readonly struct RentedBuffer: IDisposable
     {

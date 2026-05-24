@@ -1,6 +1,6 @@
-using History_DataMoex.Contracts.Dto;
+using ProjectTraiding.Moex.Contracts.Dto;
 
-namespace History_DataMoex.Contracts.Pagination;
+namespace ProjectTraiding.Moex.Contracts.Pagination;
 
 /// <summary>
 /// Единый helper решения для cursor-пагинации MOEX ALGOPACK / Calendar.

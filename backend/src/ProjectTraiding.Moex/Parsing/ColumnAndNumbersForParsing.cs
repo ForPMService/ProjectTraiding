@@ -1,4 +1,4 @@
-﻿namespace History_DataMoex.Parsing
+namespace ProjectTraiding.Moex.Parsing
 {
     public class ColumnAndNumbersForParsing
     {

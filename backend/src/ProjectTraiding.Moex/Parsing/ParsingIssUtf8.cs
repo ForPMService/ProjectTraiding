@@ -1,8 +1,8 @@
-using History_DataMoex.Contracts.Dto.Iss;
+using ProjectTraiding.Moex.Contracts.Dto.Iss;
 using System.Globalization;
 using System.Text.Json;
 
-namespace History_DataMoex.Parsing
+namespace ProjectTraiding.Moex.Parsing
 {
     public static class ParsingIssUtf8
     {

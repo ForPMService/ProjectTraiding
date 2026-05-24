@@ -1,4 +1,4 @@
-﻿namespace History_DataMoex.Clients.Errors
+namespace ProjectTraiding.Moex.Clients.Errors
 {
     /// <summary>
     /// Локальный rate limiter не выдал permit — запрос НЕ отправлен в MOEX.

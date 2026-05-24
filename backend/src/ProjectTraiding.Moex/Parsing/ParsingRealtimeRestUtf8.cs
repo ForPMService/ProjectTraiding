@@ -1,7 +1,7 @@
-using History_DataMoex.Contracts.Dto.Realtime;
+using ProjectTraiding.Moex.Contracts.Dto.Realtime;
 using System.Text.Json;
 
-namespace History_DataMoex.Parsing
+namespace ProjectTraiding.Moex.Parsing
 {
     /// <summary>
     /// Парсер real-time REST-ответов MOEX (orderbook, trades, dataversion, trades_yields).

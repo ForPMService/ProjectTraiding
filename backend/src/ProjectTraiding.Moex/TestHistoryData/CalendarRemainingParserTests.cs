@@ -1,6 +1,6 @@
-using History_DataMoex.Contracts.Dto.Calendar;
-using History_DataMoex.Parsing;
-using History_DataMoex.Parsing.Errors;
+using ProjectTraiding.Moex.Contracts.Dto.Calendar;
+using ProjectTraiding.Moex.Parsing;
+using ProjectTraiding.Moex.Parsing.Errors;
 using System.Text;
 
 namespace TestHistoryData

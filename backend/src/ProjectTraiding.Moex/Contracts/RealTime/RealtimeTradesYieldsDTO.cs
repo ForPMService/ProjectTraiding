@@ -1,4 +1,4 @@
-namespace History_DataMoex.Contracts.Dto.Realtime
+namespace ProjectTraiding.Moex.Contracts.Dto.Realtime
 {
     /// <summary>
     /// Строка блока доходности сделок MOEX real-time.

@@ -1,7 +1,7 @@
-using History_DataMoex.Contracts.Dto;
-using History_DataMoex.Contracts.Dto.Algopack;
-using History_DataMoex.Contracts.Pagination;
-using History_DataMoex.Parsing;
+using ProjectTraiding.Moex.Contracts.Dto;
+using ProjectTraiding.Moex.Contracts.Dto.Algopack;
+using ProjectTraiding.Moex.Contracts.Pagination;
+using ProjectTraiding.Moex.Parsing;
 using System.Text;
 
 namespace TestHistoryData

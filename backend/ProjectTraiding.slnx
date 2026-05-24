@@ -1,14 +1,9 @@
 <Solution>
   <Configurations>
     <Platform Name="Any CPU" />
-    <Platform Name="x64" />
-    <Platform Name="x86" />
   </Configurations>
   <Folder Name="/src/">
     <Project Path="src/ProjectTraiding.Api/ProjectTraiding.Api.csproj" />
-    <Project Path="src/ProjectTraiding.Contracts/ProjectTraiding.Contracts.csproj" />
-    <Project Path="src/ProjectTraiding.Shared/ProjectTraiding.Shared.csproj" />
-    <Project Path="src/ProjectTraiding.Infrastructure/ProjectTraiding.Infrastructure.csproj" />
-    <Project Path="src/ProjectTraiding.Worker/ProjectTraiding.Worker.csproj" />
+    <Project Path="src/ProjectTraiding.Moex/ProjectTraiding.Moex.csproj" />
   </Folder>
 </Solution>

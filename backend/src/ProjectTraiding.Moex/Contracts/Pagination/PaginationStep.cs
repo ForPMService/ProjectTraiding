@@ -1,4 +1,4 @@
-namespace History_DataMoex.Contracts.Pagination;
+namespace ProjectTraiding.Moex.Contracts.Pagination;
 
 /// <summary>
 /// Результат решения о пагинации: продолжать или остановиться.

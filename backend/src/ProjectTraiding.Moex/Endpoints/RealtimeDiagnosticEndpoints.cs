@@ -1,8 +1,8 @@
-using History_DataMoex.Clients;
-using History_DataMoex.Contracts.Dto.Algopack;
-using History_DataMoex.Contracts.Dto.Realtime;
+using ProjectTraiding.Moex.Clients;
+using ProjectTraiding.Moex.Contracts.Dto.Algopack;
+using ProjectTraiding.Moex.Contracts.Dto.Realtime;
 
-namespace History_DataMoex.Endpoints
+namespace ProjectTraiding.Moex.Endpoints
 {
     /// <summary>
     /// Диагностические endpoint-ы ручной проверки real-time REST MOEX (Шаг 9).

@@ -1,5 +1,5 @@
 using System.Buffers;
-using History_DataMoex.Infrastructure.Buffers;
+using ProjectTraiding.Moex.Infrastructure.Buffers;
 
 namespace TestHistoryData;
 

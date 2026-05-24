@@ -1,4 +1,4 @@
-namespace History_DataMoex.Clients.Errors;
+namespace ProjectTraiding.Moex.Clients.Errors;
 
 /// <summary>
 /// Неожиданный non-2xx статус от MOEX ISS API (3xx и прочие не-4xx/5xx).

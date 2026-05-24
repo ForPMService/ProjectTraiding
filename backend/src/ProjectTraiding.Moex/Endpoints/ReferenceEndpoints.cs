@@ -1,8 +1,8 @@
-using History_DataMoex.Clients;
-using History_DataMoex.Contracts.Dto.Iss;
-using History_DataMoex.Contracts.Serialization;
+using ProjectTraiding.Moex.Clients;
+using ProjectTraiding.Moex.Contracts.Dto.Iss;
+using ProjectTraiding.Moex.Contracts.Serialization;
 
-namespace History_DataMoex.Endpoints
+namespace ProjectTraiding.Moex.Endpoints
 {
     /// <summary>
     /// Source endpoint-ы MOEX: в момент запроса идут в MOEX,

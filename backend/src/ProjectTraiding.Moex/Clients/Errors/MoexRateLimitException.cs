@@ -1,4 +1,4 @@
-namespace History_DataMoex.Clients.Errors;
+namespace ProjectTraiding.Moex.Clients.Errors;
 
 /// <summary>
 /// Превышен лимит запросов к MOEX ISS API (HTTP 429 Too Many Requests).

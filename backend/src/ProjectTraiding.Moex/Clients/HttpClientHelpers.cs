@@ -1,6 +1,6 @@
-using History_DataMoex.Clients.Errors;
+using ProjectTraiding.Moex.Clients.Errors;
 
-namespace History_DataMoex.Clients;
+namespace ProjectTraiding.Moex.Clients;
 
 /// <summary>
 /// Вспомогательные методы обработки HTTP-ответов для MOEX-клиентов.

@@ -1,6 +1,6 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using System.Net;
-namespace History_DataMoex.Clients
+namespace ProjectTraiding.Moex.Clients
 {
     public static partial class MoexLogMessages
     {

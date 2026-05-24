@@ -1,13 +1,13 @@
-﻿
-using History_DataMoex.Contracts.Dto;
-using History_DataMoex.Parsing.Errors;
+
+using ProjectTraiding.Moex.Contracts.Dto;
+using ProjectTraiding.Moex.Parsing.Errors;
 using System.Buffers.Text;
 using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text.Json;
 
-namespace History_DataMoex.Parsing
+namespace ProjectTraiding.Moex.Parsing
 {
     public class ParseHelpersUtf8
     {

@@ -1,4 +1,4 @@
-namespace History_DataMoex.Clients.Errors;
+namespace ProjectTraiding.Moex.Clients.Errors;
 
 /// <summary>
 /// Некорректный запрос к MOEX ISS API (HTTP 400 Bad Request).

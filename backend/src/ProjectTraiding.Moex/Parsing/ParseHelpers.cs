@@ -1,7 +1,7 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text.Json;
 
-namespace History_DataMoex.Parsing
+namespace ProjectTraiding.Moex.Parsing
 {
     internal static class ParseHelpers
     {

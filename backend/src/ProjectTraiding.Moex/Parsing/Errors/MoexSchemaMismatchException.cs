@@ -1,6 +1,6 @@
 using System.Collections.ObjectModel;
 
-namespace History_DataMoex.Parsing.Errors
+namespace ProjectTraiding.Moex.Parsing.Errors
 {
     /// <summary>
     /// Ошибка несовпадения ожидаемой схемы MOEX с фактическим ответом источника.

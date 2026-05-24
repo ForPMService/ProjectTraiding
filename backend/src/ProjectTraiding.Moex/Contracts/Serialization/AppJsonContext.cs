@@ -1,12 +1,12 @@
-using History_DataMoex.Contracts.Dto.Algopack;
-using History_DataMoex.Contracts.Dto.Calendar;
-using History_DataMoex.Contracts.Dto.Iss;
-using History_DataMoex.Contracts.Dto.Realtime;
-using History_DataMoex.Endpoints;
+using ProjectTraiding.Moex.Contracts.Dto.Algopack;
+using ProjectTraiding.Moex.Contracts.Dto.Calendar;
+using ProjectTraiding.Moex.Contracts.Dto.Iss;
+using ProjectTraiding.Moex.Contracts.Dto.Realtime;
+using ProjectTraiding.Moex.Endpoints;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace History_DataMoex.Contracts.Serialization
+namespace ProjectTraiding.Moex.Contracts.Serialization
 {
     // ── Списки DTO — для endpoint'ов, которые возвращают Results.Json(list, AppJsonContext.Default.List...) ──
     // Используются текущими endpoint'ами, которые копят все страницы в List<T> и отдают целиком.

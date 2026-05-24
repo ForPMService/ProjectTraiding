@@ -1,16 +1,16 @@
-﻿using History_DataMoex.Clients.Errors;
-using History_DataMoex.Contracts.Dto.Algopack;
-using History_DataMoex.Contracts.Dto.Realtime;
-using History_DataMoex.Infrastructure.Buffers;
-using History_DataMoex.Options;
-using History_DataMoex.Parsing;
-using History_DataMoex.Parsing.Errors;
+using ProjectTraiding.Moex.Clients.Errors;
+using ProjectTraiding.Moex.Contracts.Dto.Algopack;
+using ProjectTraiding.Moex.Contracts.Dto.Realtime;
+using ProjectTraiding.Moex.Infrastructure.Buffers;
+using ProjectTraiding.Moex.Options;
+using ProjectTraiding.Moex.Parsing;
+using ProjectTraiding.Moex.Parsing.Errors;
 using Microsoft.Extensions.Options;
 using Polly.Timeout;
 using System.Diagnostics;
 using System.Net;
 
-namespace History_DataMoex.Clients
+namespace ProjectTraiding.Moex.Clients
 {
     /// <summary>
     /// HTTP-клиент для real-time REST-данных MOEX (стакан, сделки, свечи текущего дня).

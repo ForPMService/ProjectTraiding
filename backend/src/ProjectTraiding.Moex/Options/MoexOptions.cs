@@ -1,4 +1,4 @@
-﻿namespace History_DataMoex.Options
+namespace ProjectTraiding.Moex.Options
 {
     /// <summary>
     /// Все настройки MOEX-источника в одном месте.

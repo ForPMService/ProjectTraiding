@@ -1,9 +1,9 @@
-﻿using History_DataMoex.Clients.Errors;
-using History_DataMoex.Options;
+using ProjectTraiding.Moex.Clients.Errors;
+using ProjectTraiding.Moex.Options;
 using System.Diagnostics;
 using System.Threading.RateLimiting;
 
-namespace History_DataMoex.Clients
+namespace ProjectTraiding.Moex.Clients
 {
     /// <summary>
     /// DelegatingHandler, который запрашивает permit у rate limiter

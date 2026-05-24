@@ -1,8 +1,8 @@
-using History_DataMoex.Contracts.Dto;
-using History_DataMoex.Contracts.Dto.Calendar;
+using ProjectTraiding.Moex.Contracts.Dto;
+using ProjectTraiding.Moex.Contracts.Dto.Calendar;
 using System.Text.Json;
 
-namespace History_DataMoex.Parsing
+namespace ProjectTraiding.Moex.Parsing
 {
     public static class ParsingCalendarUtf8
     {

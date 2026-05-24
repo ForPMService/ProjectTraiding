@@ -1,4 +1,4 @@
-namespace History_DataMoex.Clients.Errors;
+namespace ProjectTraiding.Moex.Clients.Errors;
 
 /// <summary>
 /// Базовый абстрактный класс для всех HTTP-ошибок взаимодействия с MOEX ISS API.

@@ -1,9 +1,9 @@
-using History_DataMoex.Clients;
-using History_DataMoex.Contracts.Dto.Algopack;
+using ProjectTraiding.Moex.Clients;
+using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using System.Runtime.CompilerServices;
 
 
-namespace History_DataMoex.Endpoints
+namespace ProjectTraiding.Moex.Endpoints
 {
     /// <summary>
     /// Source endpoint-ы MOEX: в момент запроса идут в MOEX,

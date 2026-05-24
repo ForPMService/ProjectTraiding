@@ -1,4 +1,4 @@
-namespace History_DataMoex.Contracts.Dto.Iss
+namespace ProjectTraiding.Moex.Contracts.Dto.Iss
 {
     /// <summary>
     /// Информация о ценной бумаге.

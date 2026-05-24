@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
-using History_DataMoex.Clients;
-using History_DataMoex.Clients.Errors;
+using ProjectTraiding.Moex.Clients;
+using ProjectTraiding.Moex.Clients.Errors;
 
 namespace TestHistoryData;
 

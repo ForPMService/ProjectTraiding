@@ -1,5 +1,5 @@
-using History_DataMoex.Contracts.Dto;
-using History_DataMoex.Contracts.Pagination;
+using ProjectTraiding.Moex.Contracts.Dto;
+using ProjectTraiding.Moex.Contracts.Pagination;
 
 namespace TestHistoryData
 {

@@ -1,4 +1,4 @@
-namespace History_DataMoex.Contracts.Dto.Realtime
+namespace ProjectTraiding.Moex.Contracts.Dto.Realtime
 {
     /// <summary>
     /// Версия данных MOEX — служебный блок, вложенный в ответы orderbook и trades.

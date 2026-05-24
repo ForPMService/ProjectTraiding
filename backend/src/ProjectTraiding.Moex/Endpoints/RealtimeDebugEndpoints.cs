@@ -1,6 +1,6 @@
-using History_DataMoex.Clients;
+using ProjectTraiding.Moex.Clients;
 
-namespace History_DataMoex.Endpoints
+namespace ProjectTraiding.Moex.Endpoints
 {
     /// <summary>
     /// Диагностические endpoint-ы для real-time REST MOEX.

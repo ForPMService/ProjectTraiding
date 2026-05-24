@@ -1,11 +1,11 @@
-﻿using History_DataMoex.Clients.Errors;
-using History_DataMoex.Contracts.Dto;
-using History_DataMoex.Contracts.Dto.Calendar;
-using History_DataMoex.Contracts.Pagination;
-using History_DataMoex.Infrastructure.Buffers;
-using History_DataMoex.Options;
-using History_DataMoex.Parsing;
-using History_DataMoex.Parsing.Errors;
+using ProjectTraiding.Moex.Clients.Errors;
+using ProjectTraiding.Moex.Contracts.Dto;
+using ProjectTraiding.Moex.Contracts.Dto.Calendar;
+using ProjectTraiding.Moex.Contracts.Pagination;
+using ProjectTraiding.Moex.Infrastructure.Buffers;
+using ProjectTraiding.Moex.Options;
+using ProjectTraiding.Moex.Parsing;
+using ProjectTraiding.Moex.Parsing.Errors;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Polly.Timeout;
@@ -13,7 +13,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Runtime.CompilerServices;
 
-namespace History_DataMoex.Clients
+namespace ProjectTraiding.Moex.Clients
 {
     public class MoexHttpCalendarClient
     {

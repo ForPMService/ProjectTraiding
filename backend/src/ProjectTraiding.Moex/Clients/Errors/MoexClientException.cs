@@ -1,4 +1,4 @@
-namespace History_DataMoex.Clients.Errors;
+namespace ProjectTraiding.Moex.Clients.Errors;
 
 /// <summary>
 /// Клиентская ошибка MOEX ISS API (HTTP 4xx, кроме 400, 401, 403, 404, 429).

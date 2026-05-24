@@ -1,4 +1,4 @@
-namespace History_DataMoex.Clients.Errors;
+namespace ProjectTraiding.Moex.Clients.Errors;
 
 /// <summary>
 /// Ошибка аутентификации или авторизации в MOEX ISS API (HTTP 401 или 403).

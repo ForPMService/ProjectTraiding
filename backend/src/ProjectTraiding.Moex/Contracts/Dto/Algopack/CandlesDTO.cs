@@ -1,4 +1,4 @@
-namespace History_DataMoex.Contracts.Dto.Algopack
+namespace ProjectTraiding.Moex.Contracts.Dto.Algopack
 {
     /// <summary>
     /// Одна свеча MOEX ISS.

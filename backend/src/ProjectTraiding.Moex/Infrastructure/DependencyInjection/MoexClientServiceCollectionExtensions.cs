@@ -1,11 +1,11 @@
-using History_DataMoex.Clients;
-using History_DataMoex.Options;
+using ProjectTraiding.Moex.Clients;
+using ProjectTraiding.Moex.Options;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Options;
 using Polly.Timeout;
 using System.Net;
 using System.Threading.RateLimiting;
-namespace History_DataMoex.Infrastructure.DependencyInjection;
+namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection;
 
 public static class MoexClientServiceCollectionExtensions
 {

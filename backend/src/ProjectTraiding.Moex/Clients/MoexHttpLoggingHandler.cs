@@ -1,6 +1,6 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 
-namespace History_DataMoex.Clients
+namespace ProjectTraiding.Moex.Clients
 {
     public class MoexHttpLoggingHandler: DelegatingHandler
     {

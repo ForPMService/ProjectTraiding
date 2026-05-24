@@ -1,4 +1,4 @@
-namespace History_DataMoex.Contracts.Dto.Calendar
+namespace ProjectTraiding.Moex.Contracts.Dto.Calendar
 {
     /// <summary>
     /// Неторговый/особый день для одного рынка (ФР или СР).

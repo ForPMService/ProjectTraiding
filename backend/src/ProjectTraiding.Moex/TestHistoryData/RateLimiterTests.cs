@@ -1,6 +1,6 @@
-﻿using History_DataMoex.Clients;
-using History_DataMoex.Clients.Errors;
-using History_DataMoex.Options;
+using ProjectTraiding.Moex.Clients;
+using ProjectTraiding.Moex.Clients.Errors;
+using ProjectTraiding.Moex.Options;
 using Microsoft.Extensions.Logging.Abstractions;
 using System;
 using System.Collections.Generic;

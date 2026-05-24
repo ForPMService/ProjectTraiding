@@ -1,7 +1,7 @@
-using History_DataMoex.Clients;
+using ProjectTraiding.Moex.Clients;
 using System.Text.Json;
 
-namespace History_DataMoex.Endpoints
+namespace ProjectTraiding.Moex.Endpoints
 {
     /// <summary>
     /// Debug endpoint для сбора columns[] со всех MOEX endpoint'ов.

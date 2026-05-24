@@ -1,4 +1,4 @@
-namespace History_DataMoex.Contracts.Dto
+namespace ProjectTraiding.Moex.Contracts.Dto
 {
     /// <summary>
     /// Диапазон дат, который возвращает MOEX в служебном блоке dates.

@@ -1,4 +1,4 @@
-namespace History_DataMoex.Clients.Errors;
+namespace ProjectTraiding.Moex.Clients.Errors;
 
 /// <summary>
 /// Запрошенный ресурс не найден в MOEX ISS API (HTTP 404 Not Found).

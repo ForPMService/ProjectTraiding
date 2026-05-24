@@ -1,4 +1,4 @@
-namespace History_DataMoex.Contracts.Dto
+namespace ProjectTraiding.Moex.Contracts.Dto
 {
     /// <summary>
     /// Cursor-формат пагинации MOEX.

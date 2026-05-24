@@ -1,4 +1,4 @@
-namespace History_DataMoex.Contracts.Dto.Realtime
+namespace ProjectTraiding.Moex.Contracts.Dto.Realtime
 {
     /// <summary>
     /// Результат парсинга ответа orderbook endpoint-а MOEX real-time REST.
