@@ -798,6 +798,50 @@ namespace ProjectTraiding.Moex.Parsing
             });
 
         // ═══════════════════════════════════════════════════════════
+        // MarketStatistics — Securities (акции, TQBR)
+        // Источник: /engines/stock/.../securities/{ticker}.json?iss.only=securities
+        // rootKey: "securities", columnCount: 27, используем: 10 из 27
+        // SourceIndex с пропусками: 0,1,6,8,14,18,19,23,25,26
+        // ═══════════════════════════════════════════════════════════
+
+        public static readonly ExpectedSchema MarketStatisticsStockSecuritiesSchema = new(
+            TotalColumns: 27,
+            RootKey: "securities",
+            Columns: new ExpectedColumn[]
+            {
+                new(0,  "SECID"u8.ToArray()),
+                new(1,  "BOARDID"u8.ToArray()),
+                new(6,  "STATUS"u8.ToArray()),
+                new(8,  "DECIMALS"u8.ToArray()),
+                new(14, "MINSTEP"u8.ToArray()),
+                new(18, "ISSUESIZE"u8.ToArray()),
+                new(19, "ISIN"u8.ToArray()),
+                new(23, "CURRENCYID"u8.ToArray()),
+                new(25, "LISTLEVEL"u8.ToArray()),
+                new(26, "SETTLEDATE"u8.ToArray()),
+            });
+
+        // ═══════════════════════════════════════════════════════════
+        // MarketStatistics — Securities (фьючерсы, RFUD)
+        // Источник: /engines/futures/.../securities/{ticker}.json?iss.only=securities
+        // rootKey: "securities", columnCount: 26, используем: 7 из 26
+        // SourceIndex с пропусками: 0,1,18,20,21,22,25
+        // ═══════════════════════════════════════════════════════════
+
+        public static readonly ExpectedSchema MarketStatisticsFuturesSecuritiesSchema = new(
+            TotalColumns: 26,
+            RootKey: "securities",
+            Columns: new ExpectedColumn[]
+            {
+                new(0,  "SECID"u8.ToArray()),
+                new(1,  "BOARDID"u8.ToArray()),
+                new(18, "LASTSETTLEPRICE"u8.ToArray()),
+                new(20, "IMTIME"u8.ToArray()),
+                new(21, "BUYSELLFEE"u8.ToArray()),
+                new(22, "SCALPERFEE"u8.ToArray()),
+                new(25, "SETTLEPRICE_CLR"u8.ToArray()),
+            });
+        // ═══════════════════════════════════════════════════════════
         // Обратная совместимость
         // ═══════════════════════════════════════════════════════════
         // HISTORICAL: backward-compat aliases for old JsonDocument parsers.

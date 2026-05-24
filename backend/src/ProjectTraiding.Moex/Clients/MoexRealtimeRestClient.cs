@@ -1,12 +1,13 @@
+using Microsoft.Extensions.Options;
+using Polly.Timeout;
 using ProjectTraiding.Moex.Clients.Errors;
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
+using ProjectTraiding.Moex.Contracts.Dto.MarketStatistics;
 using ProjectTraiding.Moex.Contracts.Dto.Realtime;
 using ProjectTraiding.Moex.Infrastructure.Buffers;
 using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Parsing;
 using ProjectTraiding.Moex.Parsing.Errors;
-using Microsoft.Extensions.Options;
-using Polly.Timeout;
 using System.Diagnostics;
 using System.Net;
 
@@ -221,6 +222,66 @@ namespace ProjectTraiding.Moex.Clients
             {
                 var result = ParsingAlgUtf8.ParseAlgCandles(rentedArr.Span);
                 MoexLogMessages.SinglePageReceived(_logger, endpoint, result.Count, Stopwatch.GetElapsedTime(startTimestamp));
+                return result;
+            }
+            catch (MoexSchemaMismatchException ex)
+            {
+                MoexLogMessages.ParseFailed(_logger, ex, endpoint, "schema_mismatch", ex.Message);
+                throw;
+            }
+        }
+
+        public async Task<MarketStatisticsStockSecuritiesDTO?> GetMarketStatisticsStockSecuritiesAsync(
+           string ticker,
+           CancellationToken cancellationToken = default)
+        {
+            string endpoint = $"/engines/stock/markets/shares/boards/TQBR/securities/{ticker}.json";
+            var queryParams = new Dictionary<string, string>
+            {
+                ["iss.only"] = "securities",
+                ["iss.meta"] = "off",
+            };
+            long startTimestamp = Stopwatch.GetTimestamp();
+            using var response = await SendRequestAsync(endpoint, queryParams, cancellationToken);
+            int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
+            using var rentedArr = await RentedBuffer.RentFromStreamAsync(
+                await response.Content.ReadAsStreamAsync(cancellationToken),
+                contentLength,
+                cancellationToken);
+            try
+            {
+                var result = ParsingMarketStatisticsUtf8.ParseStockSecurities(rentedArr.Span);
+                MoexLogMessages.SinglePageReceived(_logger, endpoint, result != null ? 1 : 0, Stopwatch.GetElapsedTime(startTimestamp));
+                return result;
+            }
+            catch (MoexSchemaMismatchException ex)
+            {
+                MoexLogMessages.ParseFailed(_logger, ex, endpoint, "schema_mismatch", ex.Message);
+                throw;
+            }
+        }
+
+        public async Task<MarketStatisticsFuturesSecuritiesDTO?> GetMarketStatisticsFuturesSecuritiesAsync(
+            string ticker,
+            CancellationToken cancellationToken = default)
+        {
+            string endpoint = $"/engines/futures/markets/forts/boards/RFUD/securities/{ticker}.json";
+            var queryParams = new Dictionary<string, string>
+            {
+                ["iss.only"] = "securities",
+                ["iss.meta"] = "off",
+            };
+            long startTimestamp = Stopwatch.GetTimestamp();
+            using var response = await SendRequestAsync(endpoint, queryParams, cancellationToken);
+            int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
+            using var rentedArr = await RentedBuffer.RentFromStreamAsync(
+                await response.Content.ReadAsStreamAsync(cancellationToken),
+                contentLength,
+                cancellationToken);
+            try
+            {
+                var result = ParsingMarketStatisticsUtf8.ParseFuturesSecurities(rentedArr.Span);
+                MoexLogMessages.SinglePageReceived(_logger, endpoint, result != null ? 1 : 0, Stopwatch.GetElapsedTime(startTimestamp));
                 return result;
             }
             catch (MoexSchemaMismatchException ex)

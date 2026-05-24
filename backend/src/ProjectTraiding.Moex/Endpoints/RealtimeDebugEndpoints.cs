@@ -122,7 +122,57 @@ namespace ProjectTraiding.Moex.Endpoints
                 string raw = await client.GetRawSectionAsync(url, cancellationToken: ct);
                 return Results.Text(raw, "application/json");
             });
+            // ── MarketStatistics: Parsed ──
 
+            group.MapGet("/market-statistics-securities-stock/{ticker}", async (
+                string ticker,
+                MoexRealtimeRestClient client,
+                CancellationToken ct) =>
+            {
+                var result = await client.GetMarketStatisticsStockSecuritiesAsync(ticker, ct);
+                return Results.Ok(result);
+            });
+
+            group.MapGet("/market-statistics-securities-futures/{ticker}", async (
+                string ticker,
+                MoexRealtimeRestClient client,
+                CancellationToken ct) =>
+            {
+                var result = await client.GetMarketStatisticsFuturesSecuritiesAsync(ticker, ct);
+                return Results.Ok(result);
+            });
+
+            // ── MarketStatistics: Raw ──
+
+            group.MapGet("/raw/market-statistics-securities-stock/{ticker}", async (
+                string ticker,
+                MoexRealtimeRestClient client,
+                CancellationToken ct) =>
+            {
+                string url = $"/engines/stock/markets/shares/boards/TQBR/securities/{ticker}.json";
+                var queryParams = new Dictionary<string, string>
+                {
+                    ["iss.only"] = "securities",
+                    ["iss.meta"] = "off",
+                };
+                string raw = await client.GetRawSectionAsync(url, queryParams, ct);
+                return Results.Text(raw, "application/json");
+            });
+
+            group.MapGet("/raw/market-statistics-securities-futures/{ticker}", async (
+                string ticker,
+                MoexRealtimeRestClient client,
+                CancellationToken ct) =>
+            {
+                string url = $"/engines/futures/markets/forts/boards/RFUD/securities/{ticker}.json";
+                var queryParams = new Dictionary<string, string>
+                {
+                    ["iss.only"] = "securities",
+                    ["iss.meta"] = "off",
+                };
+                string raw = await client.GetRawSectionAsync(url, queryParams, ct);
+                return Results.Text(raw, "application/json");
+            });
             return routes;
         }
     }

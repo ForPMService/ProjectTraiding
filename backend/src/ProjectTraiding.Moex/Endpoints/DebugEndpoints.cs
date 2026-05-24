@@ -295,6 +295,75 @@ namespace ProjectTraiding.Moex.Endpoints
                     cancellationToken: ct);
                 return Results.Text(raw, "application/json");
             });
+            // ═══════════════════════════════════════════════════════════
+            // Добавить в RealtimeDebugEndpoints.cs
+            // внутри MapRealtimeDebugEndpoints, в секцию "Raw endpoints",
+            // перед return routes;
+            // ═══════════════════════════════════════════════════════════
+
+            // ── MarketStatistics: Securities (справочные поля инструмента) ──
+
+            routes.MapGet("/raw/market-statistics-securities-stock/{ticker}", async (
+                string ticker,
+                MoexRealtimeRestClient client,
+                CancellationToken ct) =>
+            {
+                string url = $"/engines/stock/markets/shares/boards/TQBR/securities/{ticker}.json";
+                var queryParams = new Dictionary<string, string>
+                {
+                    ["iss.only"] = "securities",
+                    ["iss.meta"] = "off",
+                };
+                string raw = await client.GetRawSectionAsync(url, queryParams, ct);
+                return Results.Text(raw, "application/json");
+            });
+
+            routes.MapGet("/raw/market-statistics-securities-futures/{ticker}", async (
+                string ticker,
+                MoexRealtimeRestClient client,
+                CancellationToken ct) =>
+            {
+                string url = $"/engines/futures/markets/forts/boards/RFUD/securities/{ticker}.json";
+                var queryParams = new Dictionary<string, string>
+                {
+                    ["iss.only"] = "securities",
+                    ["iss.meta"] = "off",
+                };
+                string raw = await client.GetRawSectionAsync(url, queryParams, ct);
+                return Results.Text(raw, "application/json");
+            });
+
+            // ── MarketStatistics: Marketdata (текущие рыночные данные) ──
+
+            routes.MapGet("/raw/market-statistics-marketdata-stock/{ticker}", async (
+                string ticker,
+                MoexRealtimeRestClient client,
+                CancellationToken ct) =>
+            {
+                string url = $"/engines/stock/markets/shares/boards/TQBR/securities/{ticker}.json";
+                var queryParams = new Dictionary<string, string>
+                {
+                    ["iss.only"] = "marketdata",
+                    ["iss.meta"] = "off",
+                };
+                string raw = await client.GetRawSectionAsync(url, queryParams, ct);
+                return Results.Text(raw, "application/json");
+            });
+
+            routes.MapGet("/raw/market-statistics-marketdata-futures/{ticker}", async (
+                string ticker,
+                MoexRealtimeRestClient client,
+                CancellationToken ct) =>
+            {
+                string url = $"/engines/futures/markets/forts/boards/RFUD/securities/{ticker}.json";
+                var queryParams = new Dictionary<string, string>
+                {
+                    ["iss.only"] = "marketdata",
+                    ["iss.meta"] = "off",
+                };
+                string raw = await client.GetRawSectionAsync(url, queryParams, ct);
+                return Results.Text(raw, "application/json");
+            });
 
             return routes;
         }
