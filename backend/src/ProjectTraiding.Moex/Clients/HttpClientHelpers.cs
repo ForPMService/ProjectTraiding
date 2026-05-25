@@ -15,13 +15,14 @@ public static class HttpClientHelpers
     /// <param name="response">HTTP-ответ сервера.</param>
     /// <param name="endpoint">Адрес эндпоинта (только путь/метод, без Bearer-токена).</param>
     /// <summary>
+    /// <summary>
     /// Максимальный размер тела ошибочного ответа, сохраняемого для диагностики.
     /// </summary>
     private const int MaxErrorBodyBytes = 65_536;
 
     /// <summary>
     /// Проверяет статус ответа и при ошибке бросает типизированное исключение.
-    /// Перед dispose читает первые 64 KB тела ответа для диагностики (raw-capture).
+    /// Перед dispose пытается прочитать до 64 KB тела ответа для диагностики (raw-capture).
     /// При успехе ответ не dispose-ится — ответственность вызывающего кода.
     /// </summary>
     /// <param name="response">HTTP-ответ сервера.</param>

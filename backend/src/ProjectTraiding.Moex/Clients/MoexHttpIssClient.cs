@@ -1,12 +1,13 @@
-using ProjectTraiding.Moex.Clients.Errors;
-using ProjectTraiding.Moex.Contracts.Dto.Iss;
-using ProjectTraiding.Moex.Infrastructure.Buffers;
-using ProjectTraiding.Moex.Options;
-using ProjectTraiding.Moex.Parsing;
-using ProjectTraiding.Moex.Parsing.Errors;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Polly.Timeout;
+using ProjectTraiding.Moex.Clients.Errors;
+using ProjectTraiding.Moex.Contracts.Dto.Iss;
+using ProjectTraiding.Moex.Infrastructure.Buffers;
+using ProjectTraiding.Moex.Infrastructure.RawCapture;
+using ProjectTraiding.Moex.Options;
+using ProjectTraiding.Moex.Parsing;
+using ProjectTraiding.Moex.Parsing.Errors;
 using System.Diagnostics;
 using System.Net;
 
@@ -18,16 +19,20 @@ namespace ProjectTraiding.Moex.Clients
         private readonly MoexOptions _options;
         private readonly HttpClient _httpClient;
         private readonly ILogger<MoexHttpIssClient> _logger;
+        private readonly MoexRawCaptureWriter _captureWriter;
 
         public MoexHttpIssClient(
             IOptions<MoexOptions> options,
             HttpClient httpClient,
-            ILogger<MoexHttpIssClient> logger)
+            ILogger<MoexHttpIssClient> logger,
+            MoexRawCaptureWriter captureWriter)
         {
             _options = options.Value;
             _httpClient = httpClient;
             _logger = logger;
+            _captureWriter = captureWriter;
         }
+
         /// <summary>
         /// Diagnostic only. Does not use typed error handling (no MoexHttpException hierarchy,
         /// no EnsureSuccessOrThrow, no structured logging).
@@ -49,48 +54,122 @@ namespace ProjectTraiding.Moex.Clients
 
         public async Task<List<StockSecurityDTO>> GetInfoTradedStockAssets(
             string method,
+            string? runId = null,
             CancellationToken cancellationToken = default)
         {
-            long startTimestamp = Stopwatch.GetTimestamp();
-            using var response = await SendRequestAsync(method, cancellationToken);
-            int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-            using var rentedArr = await RentedBuffer.RentFromStreamAsync(
-                await response.Content.ReadAsStreamAsync(cancellationToken),
-                contentLength,
-                cancellationToken);
+            string effectiveRunId = runId
+                ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
+                + "-" + Guid.NewGuid().ToString("N");
             try
             {
-                List<StockSecurityDTO> result = ParsingIssUtf8.ParseIssSecurityStock(rentedArr.Span);
-                MoexLogMessages.SinglePageReceived(_logger, method, result.Count, Stopwatch.GetElapsedTime(startTimestamp));
-                return result;
+                long startTimestamp = Stopwatch.GetTimestamp();
+                using var response = await SendRequestAsync(method, cancellationToken);
+                int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
+                using var rentedArr = await RentedBuffer.RentFromStreamAsync(
+                    await response.Content.ReadAsStreamAsync(cancellationToken),
+                    contentLength,
+                    cancellationToken);
+                try
+                {
+                    List<StockSecurityDTO> result = ParsingIssUtf8.ParseIssSecurityStock(rentedArr.Span);
+                    MoexLogMessages.SinglePageReceived(_logger, method, result.Count, Stopwatch.GetElapsedTime(startTimestamp));
+                    return result;
+                }
+                catch (MoexSchemaMismatchException ex)
+                {
+                    MoexLogMessages.ParseFailed(_logger, ex, method, "schema_mismatch", ex.Message);
+                    if (_captureWriter.IsEnabled)
+                    {
+                        string key = RawCaptureKeyBuilder.BuildErrorKey(
+                            RawCaptureErrorTypes.SchemaMismatch,
+                            RawCaptureClients.Iss,
+                            RawCaptureDataTypes.Securities,
+                            RawCaptureMarkets.Stock,
+                            null,
+                            DateOnly.FromDateTime(DateTime.UtcNow),
+                            effectiveRunId,
+                            RawCaptureKeyBuilder.ResponseFileName());
+                        await _captureWriter.TryCaptureAsync(key, rentedArr.Memory, cancellationToken);
+                    }
+                    throw;
+                }
             }
-            catch (MoexSchemaMismatchException ex)
+            catch (MoexHttpException ex)
             {
-                MoexLogMessages.ParseFailed(_logger, ex, method, "schema_mismatch", ex.Message);
+                if (_captureWriter.IsEnabled && ex.ErrorBody is not null)
+                {
+                    string key = RawCaptureKeyBuilder.BuildErrorKey(
+                        RawCaptureErrorTypes.HttpError,
+                        RawCaptureClients.Iss,
+                        RawCaptureDataTypes.Securities,
+                        RawCaptureMarkets.Stock,
+                        null,
+                        DateOnly.FromDateTime(DateTime.UtcNow),
+                        effectiveRunId,
+                        RawCaptureKeyBuilder.ResponseFileName());
+                    await _captureWriter.TryCaptureAsync(key, ex.ErrorBody, cancellationToken);
+                }
                 throw;
             }
         }
 
         public async Task<List<FuturesSecurityDTO>> GetInfoTradedFuturesAssets(
             string method,
+            string? runId = null,
             CancellationToken cancellationToken = default)
         {
-            long startTimestamp = Stopwatch.GetTimestamp();
-            using var response = await SendRequestAsync(method, cancellationToken);
-            int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-            using var rentedArr = await RentedBuffer.RentFromStreamAsync(
-                await response.Content.ReadAsStreamAsync(cancellationToken),
-                contentLength,
-                cancellationToken);
+            string effectiveRunId = runId
+                ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
+                + "-" + Guid.NewGuid().ToString("N");
             try
             {
-                List<FuturesSecurityDTO> result = ParsingIssUtf8.ParseIssSecurityFutures(rentedArr.Span);
-                MoexLogMessages.SinglePageReceived(_logger, method, result.Count, Stopwatch.GetElapsedTime(startTimestamp));
-                return result;
+                long startTimestamp = Stopwatch.GetTimestamp();
+                using var response = await SendRequestAsync(method, cancellationToken);
+                int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
+                using var rentedArr = await RentedBuffer.RentFromStreamAsync(
+                    await response.Content.ReadAsStreamAsync(cancellationToken),
+                    contentLength,
+                    cancellationToken);
+                try
+                {
+                    List<FuturesSecurityDTO> result = ParsingIssUtf8.ParseIssSecurityFutures(rentedArr.Span);
+                    MoexLogMessages.SinglePageReceived(_logger, method, result.Count, Stopwatch.GetElapsedTime(startTimestamp));
+                    return result;
+                }
+                catch (MoexSchemaMismatchException ex)
+                {
+                    MoexLogMessages.ParseFailed(_logger, ex, method, "schema_mismatch", ex.Message);
+                    if (_captureWriter.IsEnabled)
+                    {
+                        string key = RawCaptureKeyBuilder.BuildErrorKey(
+                            RawCaptureErrorTypes.SchemaMismatch,
+                            RawCaptureClients.Iss,
+                            RawCaptureDataTypes.Securities,
+                            RawCaptureMarkets.Futures,
+                            null,
+                            DateOnly.FromDateTime(DateTime.UtcNow),
+                            effectiveRunId,
+                            RawCaptureKeyBuilder.ResponseFileName());
+                        await _captureWriter.TryCaptureAsync(key, rentedArr.Memory, cancellationToken);
+                    }
+                    throw;
+                }
             }
-            catch (MoexSchemaMismatchException ex)
+            catch (MoexHttpException ex)
             {
-                MoexLogMessages.ParseFailed(_logger, ex, method, "schema_mismatch", ex.Message);
+                if (_captureWriter.IsEnabled && ex.ErrorBody is not null)
+                {
+                    string key = RawCaptureKeyBuilder.BuildErrorKey(
+                        RawCaptureErrorTypes.HttpError,
+                        RawCaptureClients.Iss,
+                        RawCaptureDataTypes.Securities,
+                        RawCaptureMarkets.Futures,
+                        null,
+                        DateOnly.FromDateTime(DateTime.UtcNow),
+                        effectiveRunId,
+                        RawCaptureKeyBuilder.ResponseFileName());
+                    await _captureWriter.TryCaptureAsync(key, ex.ErrorBody, cancellationToken);
+                }
                 throw;
             }
         }
