@@ -23,7 +23,9 @@ namespace ProjectTraiding.Moex.Endpoints
             {
                 var logger = loggerFactory.CreateLogger("CalendarEndpoints");
                 MoexLogMessages.LoadStarted(logger, "GetOffDaysAll", MoexLogSources.Calendar, "/calendars.json", string.Empty);
-                return Results.Json(await c.GetOffDaysAll(ct), AppJsonContext.Default.ListCalendarOffDaysAllDTO);
+                return Results.Json(
+                    await c.GetOffDaysAll(cancellationToken: ct),
+                    AppJsonContext.Default.ListCalendarOffDaysAllDTO);
             });
 
             routes.MapGet("/calendar/stock-offdays", async (
@@ -33,7 +35,9 @@ namespace ProjectTraiding.Moex.Endpoints
             {
                 var logger = loggerFactory.CreateLogger("CalendarEndpoints");
                 MoexLogMessages.LoadStarted(logger, "GetStockOffDays", MoexLogSources.Calendar, "/calendars/stock.json", string.Empty);
-                return Results.Json(await c.GetStockOffDays(ct), AppJsonContext.Default.ListCalendarOffDaysMarketDTO);
+                return Results.Json(
+                    await c.GetStockOffDays(cancellationToken: ct),
+                    AppJsonContext.Default.ListCalendarOffDaysMarketDTO);
             });
 
             routes.MapGet("/calendar/futures-offdays", async (
@@ -43,7 +47,9 @@ namespace ProjectTraiding.Moex.Endpoints
             {
                 var logger = loggerFactory.CreateLogger("CalendarEndpoints");
                 MoexLogMessages.LoadStarted(logger, "GetFuturesOffDays", MoexLogSources.Calendar, "/calendars/futures.json", string.Empty);
-                return Results.Json(await c.GetFuturesOffDays(ct), AppJsonContext.Default.ListCalendarOffDaysMarketDTO);
+                return Results.Json(
+                    await c.GetFuturesOffDays(cancellationToken: ct),
+                    AppJsonContext.Default.ListCalendarOffDaysMarketDTO);
             });
 
             routes.MapGet("/calendar/stock-session", async (
@@ -52,8 +58,8 @@ namespace ProjectTraiding.Moex.Endpoints
                 CancellationToken ct) =>
             {
                 var logger = loggerFactory.CreateLogger("CalendarEndpoints");
-                MoexLogMessages.LoadStarted(logger, "GetStockSession", MoexLogSources.Calendar, "/calendars/stock/session.json", string.Empty);
-                var (sessions, _) = await c.GetStockSessionWithTypes(ct);
+                MoexLogMessages.LoadStarted(logger, "GetStockSessionWithTypes", MoexLogSources.Calendar, "/calendars/stock/session.json", string.Empty);
+                var (sessions, _) = await c.GetStockSessionWithTypes(cancellationToken: ct);
                 return Results.Json(sessions, AppJsonContext.Default.ListCalendarStockSessionDTO);
             });
 
@@ -64,7 +70,7 @@ namespace ProjectTraiding.Moex.Endpoints
             {
                 var logger = loggerFactory.CreateLogger("CalendarEndpoints");
                 MoexLogMessages.LoadStarted(logger, "GetStockSessionTypes", MoexLogSources.Calendar, "/calendars/stock/session.json", string.Empty);
-                var (_, types) = await c.GetStockSessionWithTypes(ct);
+                var (_, types) = await c.GetStockSessionWithTypes(cancellationToken: ct);
                 return Results.Json(types, AppJsonContext.Default.ListCalendarSessionTypeDTO);
             });
 
@@ -74,8 +80,8 @@ namespace ProjectTraiding.Moex.Endpoints
                 CancellationToken ct) =>
             {
                 var logger = loggerFactory.CreateLogger("CalendarEndpoints");
-                MoexLogMessages.LoadStarted(logger, "GetFuturesSession", MoexLogSources.Calendar, "/calendars/futures/session.json", string.Empty);
-                var (sessions, _) = await c.GetFuturesSessionWithTypes(ct);
+                MoexLogMessages.LoadStarted(logger, "GetFuturesSessionWithTypes", MoexLogSources.Calendar, "/calendars/futures/session.json", string.Empty);
+                var (sessions, _) = await c.GetFuturesSessionWithTypes(cancellationToken: ct);
                 return Results.Json(sessions, AppJsonContext.Default.ListCalendarFuturesSessionDTO);
             });
 
@@ -86,7 +92,7 @@ namespace ProjectTraiding.Moex.Endpoints
             {
                 var logger = loggerFactory.CreateLogger("CalendarEndpoints");
                 MoexLogMessages.LoadStarted(logger, "GetFuturesSessionTypes", MoexLogSources.Calendar, "/calendars/futures/session.json", string.Empty);
-                var (_, types) = await c.GetFuturesSessionWithTypes(ct);
+                var (_, types) = await c.GetFuturesSessionWithTypes(cancellationToken: ct);
                 return Results.Json(types, AppJsonContext.Default.ListCalendarSessionTypeDTO);
             });
 
@@ -97,7 +103,7 @@ namespace ProjectTraiding.Moex.Endpoints
             {
                 var logger = loggerFactory.CreateLogger("CalendarEndpoints");
                 MoexLogMessages.LoadStarted(logger, "GetFortsContracts", MoexLogSources.Calendar, "/calendars/futures/securities.json", string.Empty);
-                var (forts, _) = await c.GetFuturesSecuritiesAll(ct);
+                var (forts, _) = await c.GetFuturesSecuritiesAll(cancellationToken: ct);
                 return Results.Json(forts, AppJsonContext.Default.ListCalendarFortsContractDTO);
             });
 
@@ -108,7 +114,7 @@ namespace ProjectTraiding.Moex.Endpoints
             {
                 var logger = loggerFactory.CreateLogger("CalendarEndpoints");
                 MoexLogMessages.LoadStarted(logger, "GetOptionsSeries", MoexLogSources.Calendar, "/calendars/futures/securities.json", string.Empty);
-                var (_, options) = await c.GetFuturesSecuritiesAll(ct);
+                var (_, options) = await c.GetFuturesSecuritiesAll(cancellationToken: ct);
                 return Results.Json(options, AppJsonContext.Default.ListCalendarOptionsSeriesDTO);
             });
 
@@ -119,7 +125,7 @@ namespace ProjectTraiding.Moex.Endpoints
             {
                 var logger = loggerFactory.CreateLogger("CalendarEndpoints");
                 MoexLogMessages.LoadStarted(logger, "GetSuspendedReasons", MoexLogSources.Calendar, "/calendars/stock/securities/suspended/details.json", string.Empty);
-                return Results.Json(await c.GetSuspendedReasons(ct), AppJsonContext.Default.ListCalendarSuspendedReasonDTO);
+                return Results.Json(await c.GetSuspendedReasons(cancellationToken: ct), AppJsonContext.Default.ListCalendarSuspendedReasonDTO);
             });
 
             routes.MapGet("/calendar/suspended", (
@@ -139,7 +145,7 @@ namespace ProjectTraiding.Moex.Endpoints
             {
                 var logger = loggerFactory.CreateLogger("CalendarEndpoints");
                 MoexLogMessages.LoadStarted(logger, "GetSecurityAttributes", MoexLogSources.Calendar, "/calendars/stock/securities/changes.json", string.Empty);
-                return Results.Json(await c.GetSecurityAttributes(ct), AppJsonContext.Default.ListCalendarSecurityAttributeDTO);
+                return Results.Json(await c.GetSecurityAttributes(cancellationToken: ct), AppJsonContext.Default.ListCalendarSecurityAttributeDTO);
             });
 
             routes.MapGet("/calendar/security-changes", (
@@ -159,7 +165,7 @@ namespace ProjectTraiding.Moex.Endpoints
             MoexHttpCalendarClient client,
             [EnumeratorCancellation] CancellationToken ct)
         {
-            await foreach (List<CalendarSuspendedDTO> batch in client.GetSuspended(ct))
+            await foreach (List<CalendarSuspendedDTO> batch in client.GetSuspended(cancellationToken: ct))
             {
                 foreach (var item in batch)
                 {
@@ -172,7 +178,7 @@ namespace ProjectTraiding.Moex.Endpoints
             MoexHttpCalendarClient client,
             [EnumeratorCancellation] CancellationToken ct)
         {
-            await foreach (List<CalendarSecurityChangeDTO> batch in client.GetSecurityChanges(ct))
+            await foreach (List<CalendarSecurityChangeDTO> batch in client.GetSecurityChanges(cancellationToken: ct))
             {
                 foreach (var item in batch)
                 {
