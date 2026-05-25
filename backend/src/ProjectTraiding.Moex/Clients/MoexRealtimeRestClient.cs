@@ -5,6 +5,7 @@ using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using ProjectTraiding.Moex.Contracts.Dto.MarketStatistics;
 using ProjectTraiding.Moex.Contracts.Dto.Realtime;
 using ProjectTraiding.Moex.Infrastructure.Buffers;
+using ProjectTraiding.Moex.Infrastructure.RawCapture;
 using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Parsing;
 using ProjectTraiding.Moex.Parsing.Errors;
@@ -36,15 +37,18 @@ namespace ProjectTraiding.Moex.Clients
         private readonly MoexOptions _options;
         private readonly HttpClient _httpClient;
         private readonly ILogger<MoexRealtimeRestClient> _logger;
+        private readonly MoexRawCaptureWriter _captureWriter;
 
         public MoexRealtimeRestClient(
             IOptions<MoexOptions> options,
             HttpClient httpClient,
-            ILogger<MoexRealtimeRestClient> logger)
+            ILogger<MoexRealtimeRestClient> logger,
+            MoexRawCaptureWriter captureWriter)
         {
             _options = options.Value;
             _httpClient = httpClient;
             _logger = logger;
+            _captureWriter = captureWriter;
         }
 
         // ═══════════════════════════════════════════════════════════
@@ -134,7 +138,7 @@ namespace ProjectTraiding.Moex.Clients
             CancellationToken cancellationToken = default)
         {
             string endpoint = $"/engines/stock/markets/shares/boards/TQBR/securities/{ticker}/candles.json";
-            var queryParams = new Dictionary<string, string>
+            Dictionary<string, string> queryParams = new Dictionary<string, string>
             {
                 ["interval"] = interval.ToString(),
                 ["from"] = tradeDate.ToString("yyyy-MM-dd"),
@@ -150,7 +154,7 @@ namespace ProjectTraiding.Moex.Clients
             CancellationToken cancellationToken = default)
         {
             string endpoint = $"/engines/futures/markets/forts/boards/RFUD/securities/{ticker}/candles.json";
-            var queryParams = new Dictionary<string, string>
+            Dictionary<string, string> queryParams = new Dictionary<string, string>
             {
                 ["interval"] = interval.ToString(),
                 ["from"] = tradeDate.ToString("yyyy-MM-dd"),
@@ -160,11 +164,148 @@ namespace ProjectTraiding.Moex.Clients
         }
 
         // ═══════════════════════════════════════════════════════════
-        // GetRawSectionAsync — диагностический метод
+        // MarketStatistics (capture-enabled)
+        // ═══════════════════════════════════════════════════════════
+
+        public async Task<MarketStatisticsStockSecuritiesDTO?> GetMarketStatisticsStockSecuritiesAsync(
+           string ticker,
+           string? runId = null,
+           CancellationToken cancellationToken = default)
+        {
+            string endpoint = $"/engines/stock/markets/shares/boards/TQBR/securities/{ticker}.json";
+            Dictionary<string, string> queryParams = new Dictionary<string, string>
+            {
+                ["iss.only"] = "securities",
+                ["iss.meta"] = "off",
+            };
+            string effectiveRunId = runId
+                ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
+                + "-" + Guid.NewGuid().ToString("N");
+            try
+            {
+                long startTimestamp = Stopwatch.GetTimestamp();
+                using var response = await SendRequestAsync(endpoint, queryParams, cancellationToken);
+                int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
+                using var rentedArr = await RentedBuffer.RentFromStreamAsync(
+                    await response.Content.ReadAsStreamAsync(cancellationToken),
+                    contentLength,
+                    cancellationToken);
+                try
+                {
+                    MarketStatisticsStockSecuritiesDTO? result = ParsingMarketStatisticsUtf8.ParseStockSecurities(rentedArr.Span);
+                    MoexLogMessages.SinglePageReceived(_logger, endpoint, result != null ? 1 : 0, Stopwatch.GetElapsedTime(startTimestamp));
+                    return result;
+                }
+                catch (MoexSchemaMismatchException ex)
+                {
+                    MoexLogMessages.ParseFailed(_logger, ex, endpoint, "schema_mismatch", ex.Message);
+                    if (_captureWriter.IsEnabled)
+                    {
+                        string key = RawCaptureKeyBuilder.BuildErrorKey(
+                            RawCaptureErrorTypes.SchemaMismatch,
+                            RawCaptureClients.Realtime,
+                            RawCaptureDataTypes.MarketStats,
+                            RawCaptureMarkets.Stock,
+                            ticker,
+                            DateOnly.FromDateTime(DateTime.UtcNow),
+                            effectiveRunId,
+                            RawCaptureKeyBuilder.ResponseFileName());
+                        await _captureWriter.TryCaptureAsync(key, rentedArr.Memory, cancellationToken);
+                    }
+                    throw;
+                }
+            }
+            catch (MoexHttpException ex)
+            {
+                if (_captureWriter.IsEnabled && ex.ErrorBody is not null)
+                {
+                    string key = RawCaptureKeyBuilder.BuildErrorKey(
+                        RawCaptureErrorTypes.HttpError,
+                        RawCaptureClients.Realtime,
+                        RawCaptureDataTypes.MarketStats,
+                        RawCaptureMarkets.Stock,
+                        ticker,
+                        DateOnly.FromDateTime(DateTime.UtcNow),
+                        effectiveRunId,
+                        RawCaptureKeyBuilder.ResponseFileName());
+                    await _captureWriter.TryCaptureAsync(key, ex.ErrorBody, cancellationToken);
+                }
+                throw;
+            }
+        }
+
+        public async Task<MarketStatisticsFuturesSecuritiesDTO?> GetMarketStatisticsFuturesSecuritiesAsync(
+            string ticker,
+            string? runId = null,
+            CancellationToken cancellationToken = default)
+        {
+            string endpoint = $"/engines/futures/markets/forts/boards/RFUD/securities/{ticker}.json";
+            Dictionary<string, string> queryParams = new Dictionary<string, string>
+            {
+                ["iss.only"] = "securities",
+                ["iss.meta"] = "off",
+            };
+            string effectiveRunId = runId
+                ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
+                + "-" + Guid.NewGuid().ToString("N");
+            try
+            {
+                long startTimestamp = Stopwatch.GetTimestamp();
+                using var response = await SendRequestAsync(endpoint, queryParams, cancellationToken);
+                int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
+                using var rentedArr = await RentedBuffer.RentFromStreamAsync(
+                    await response.Content.ReadAsStreamAsync(cancellationToken),
+                    contentLength,
+                    cancellationToken);
+                try
+                {
+                    MarketStatisticsFuturesSecuritiesDTO? result = ParsingMarketStatisticsUtf8.ParseFuturesSecurities(rentedArr.Span);
+                    MoexLogMessages.SinglePageReceived(_logger, endpoint, result != null ? 1 : 0, Stopwatch.GetElapsedTime(startTimestamp));
+                    return result;
+                }
+                catch (MoexSchemaMismatchException ex)
+                {
+                    MoexLogMessages.ParseFailed(_logger, ex, endpoint, "schema_mismatch", ex.Message);
+                    if (_captureWriter.IsEnabled)
+                    {
+                        string key = RawCaptureKeyBuilder.BuildErrorKey(
+                            RawCaptureErrorTypes.SchemaMismatch,
+                            RawCaptureClients.Realtime,
+                            RawCaptureDataTypes.MarketStats,
+                            RawCaptureMarkets.Futures,
+                            ticker,
+                            DateOnly.FromDateTime(DateTime.UtcNow),
+                            effectiveRunId,
+                            RawCaptureKeyBuilder.ResponseFileName());
+                        await _captureWriter.TryCaptureAsync(key, rentedArr.Memory, cancellationToken);
+                    }
+                    throw;
+                }
+            }
+            catch (MoexHttpException ex)
+            {
+                if (_captureWriter.IsEnabled && ex.ErrorBody is not null)
+                {
+                    string key = RawCaptureKeyBuilder.BuildErrorKey(
+                        RawCaptureErrorTypes.HttpError,
+                        RawCaptureClients.Realtime,
+                        RawCaptureDataTypes.MarketStats,
+                        RawCaptureMarkets.Futures,
+                        ticker,
+                        DateOnly.FromDateTime(DateTime.UtcNow),
+                        effectiveRunId,
+                        RawCaptureKeyBuilder.ResponseFileName());
+                    await _captureWriter.TryCaptureAsync(key, ex.ErrorBody, cancellationToken);
+                }
+                throw;
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // Raw section (без capture — диагностический метод)
         // ═══════════════════════════════════════════════════════════
 
         /// <summary>
-        /// Технический метод: возвращает сырой JSON ответа MOEX.
         /// Идёт через общий SendRequestAsync (EnsureSuccessOrThrow, typed errors, timeout).
         /// Raw = «не парсим JSON», а не «обходим ошибки и lifecycle ответа».
         /// Для debug endpoints и диагностики source contract.
@@ -222,66 +363,6 @@ namespace ProjectTraiding.Moex.Clients
             {
                 var result = ParsingAlgUtf8.ParseAlgCandles(rentedArr.Span);
                 MoexLogMessages.SinglePageReceived(_logger, endpoint, result.Count, Stopwatch.GetElapsedTime(startTimestamp));
-                return result;
-            }
-            catch (MoexSchemaMismatchException ex)
-            {
-                MoexLogMessages.ParseFailed(_logger, ex, endpoint, "schema_mismatch", ex.Message);
-                throw;
-            }
-        }
-
-        public async Task<MarketStatisticsStockSecuritiesDTO?> GetMarketStatisticsStockSecuritiesAsync(
-           string ticker,
-           CancellationToken cancellationToken = default)
-        {
-            string endpoint = $"/engines/stock/markets/shares/boards/TQBR/securities/{ticker}.json";
-            var queryParams = new Dictionary<string, string>
-            {
-                ["iss.only"] = "securities",
-                ["iss.meta"] = "off",
-            };
-            long startTimestamp = Stopwatch.GetTimestamp();
-            using var response = await SendRequestAsync(endpoint, queryParams, cancellationToken);
-            int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-            using var rentedArr = await RentedBuffer.RentFromStreamAsync(
-                await response.Content.ReadAsStreamAsync(cancellationToken),
-                contentLength,
-                cancellationToken);
-            try
-            {
-                var result = ParsingMarketStatisticsUtf8.ParseStockSecurities(rentedArr.Span);
-                MoexLogMessages.SinglePageReceived(_logger, endpoint, result != null ? 1 : 0, Stopwatch.GetElapsedTime(startTimestamp));
-                return result;
-            }
-            catch (MoexSchemaMismatchException ex)
-            {
-                MoexLogMessages.ParseFailed(_logger, ex, endpoint, "schema_mismatch", ex.Message);
-                throw;
-            }
-        }
-
-        public async Task<MarketStatisticsFuturesSecuritiesDTO?> GetMarketStatisticsFuturesSecuritiesAsync(
-            string ticker,
-            CancellationToken cancellationToken = default)
-        {
-            string endpoint = $"/engines/futures/markets/forts/boards/RFUD/securities/{ticker}.json";
-            var queryParams = new Dictionary<string, string>
-            {
-                ["iss.only"] = "securities",
-                ["iss.meta"] = "off",
-            };
-            long startTimestamp = Stopwatch.GetTimestamp();
-            using var response = await SendRequestAsync(endpoint, queryParams, cancellationToken);
-            int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-            using var rentedArr = await RentedBuffer.RentFromStreamAsync(
-                await response.Content.ReadAsStreamAsync(cancellationToken),
-                contentLength,
-                cancellationToken);
-            try
-            {
-                var result = ParsingMarketStatisticsUtf8.ParseFuturesSecurities(rentedArr.Span);
-                MoexLogMessages.SinglePageReceived(_logger, endpoint, result != null ? 1 : 0, Stopwatch.GetElapsedTime(startTimestamp));
                 return result;
             }
             catch (MoexSchemaMismatchException ex)

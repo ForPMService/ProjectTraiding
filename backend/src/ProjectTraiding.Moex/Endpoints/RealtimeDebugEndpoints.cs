@@ -57,14 +57,19 @@ namespace ProjectTraiding.Moex.Endpoints
                 return Results.Ok(result);
             });
 
+            // ── Candles Today ──
+
             group.MapGet("/candles-today-stock/{ticker}", async (
                 string ticker,
                 MoexRealtimeRestClient client,
                 CancellationToken ct) =>
             {
-                var tradeDate = DateOnly.FromDateTime(DateTime.Today);
+                DateOnly tradeDate = DateOnly.FromDateTime(DateTime.Today);
                 var result = await client.GetCandlesTodayStockAsync(
-                    ticker, tradeDate, interval: 1, cancellationToken: ct);
+                    ticker,
+                    tradeDate,
+                    interval: 1,
+                    cancellationToken: ct);
                 return Results.Ok(result);
             });
 
@@ -73,15 +78,16 @@ namespace ProjectTraiding.Moex.Endpoints
                 MoexRealtimeRestClient client,
                 CancellationToken ct) =>
             {
-                var tradeDate = DateOnly.FromDateTime(DateTime.Today);
+                DateOnly tradeDate = DateOnly.FromDateTime(DateTime.Today);
                 var result = await client.GetCandlesTodayFuturesAsync(
-                    ticker, tradeDate, interval: 1, cancellationToken: ct);
+                    ticker,
+                    tradeDate,
+                    interval: 1,
+                    cancellationToken: ct);
                 return Results.Ok(result);
             });
 
-            // ═══════════════════════════════════════════════════════════
-            // Raw endpoints
-            // ═══════════════════════════════════════════════════════════
+            // ── Raw endpoints ──
 
             group.MapGet("/raw/orderbook-stock/{ticker}", async (
                 string ticker,
@@ -122,6 +128,7 @@ namespace ProjectTraiding.Moex.Endpoints
                 string raw = await client.GetRawSectionAsync(url, cancellationToken: ct);
                 return Results.Text(raw, "application/json");
             });
+
             // ── MarketStatistics: Parsed ──
 
             group.MapGet("/market-statistics-securities-stock/{ticker}", async (
@@ -129,7 +136,9 @@ namespace ProjectTraiding.Moex.Endpoints
                 MoexRealtimeRestClient client,
                 CancellationToken ct) =>
             {
-                var result = await client.GetMarketStatisticsStockSecuritiesAsync(ticker, ct);
+                var result = await client.GetMarketStatisticsStockSecuritiesAsync(
+                    ticker,
+                    cancellationToken: ct);
                 return Results.Ok(result);
             });
 
@@ -138,7 +147,9 @@ namespace ProjectTraiding.Moex.Endpoints
                 MoexRealtimeRestClient client,
                 CancellationToken ct) =>
             {
-                var result = await client.GetMarketStatisticsFuturesSecuritiesAsync(ticker, ct);
+                var result = await client.GetMarketStatisticsFuturesSecuritiesAsync(
+                    ticker,
+                    cancellationToken: ct);
                 return Results.Ok(result);
             });
 
