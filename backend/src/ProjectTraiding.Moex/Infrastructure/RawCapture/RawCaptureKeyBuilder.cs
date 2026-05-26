@@ -56,6 +56,14 @@ public static class RawCaptureKeyBuilder
     }
 
     /// <summary>
+    /// Имя файла для многостраничного ответа (NDJSON: одна JSON-строка на страницу/день).
+    /// </summary>
+    public static string ResponseNdjsonFileName()
+    {
+        return "response.ndjson";
+    }
+
+    /// <summary>
     /// Имя файла для одностраничного ответа.
     /// </summary>
     public static string ResponseFileName()

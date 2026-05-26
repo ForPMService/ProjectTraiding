@@ -28,6 +28,13 @@ public sealed class MoexRawCaptureWriter
     }
 
     /// <summary>
+    /// Режим capture включает сохранение успешных ответов (Sample или All).
+    /// Для error-path используй IsEnabled, для success-path — ShouldCaptureRaw.
+    /// </summary>
+    public bool ShouldCaptureRaw =>
+        _options.Mode is CaptureMode.Sample or CaptureMode.All;
+
+    /// <summary>
     /// Режим capture выключен — ничего не делаем.
     /// </summary>
     public bool IsEnabled => _options.Mode != CaptureMode.Off;
@@ -67,6 +74,47 @@ public sealed class MoexRawCaptureWriter
         catch (Exception ex)
         {
             RawCaptureLogMessages.CaptureFailed(_logger, ex, objectKey, rawBody.Length, ex.GetType().Name, ex.Message);
+        }
+    }
+    /// <summary>
+    /// Сохраняет Stream в S3. Для многостраничных ответов (NDJSON-аккумулятор).
+    /// Stream.Position должен быть 0 перед вызовом.
+    /// </summary>
+    public async Task TryCaptureAsync(
+        string objectKey,
+        Stream rawBodyStream,
+        long rawBodyLength,
+        string contentType,
+        CancellationToken ct)
+    {
+        if (_options.Mode == CaptureMode.Off)
+        {
+            return;
+        }
+
+        try
+        {
+            PutObjectRequest request = new PutObjectRequest
+            {
+                BucketName = _options.Bucket,
+                Key = objectKey,
+                InputStream = rawBodyStream,
+                ContentType = contentType
+            };
+
+            await _s3Client.PutObjectAsync(request, ct);
+
+            int loggedLength = rawBodyLength > int.MaxValue
+                ? int.MaxValue : (int)rawBodyLength;
+            RawCaptureLogMessages.CaptureSucceeded(_logger, objectKey, loggedLength);
+        }
+        catch (Exception ex)
+        {
+            int loggedLength = rawBodyLength > int.MaxValue
+                ? int.MaxValue : (int)rawBodyLength;
+            RawCaptureLogMessages.CaptureFailed(
+                _logger, ex, objectKey, loggedLength,
+                ex.GetType().Name, ex.Message);
         }
     }
 }
