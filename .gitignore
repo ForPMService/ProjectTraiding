@@ -24,8 +24,7 @@ yarn-error.log*
 
 # Docker
 **/pgdata/
-**/clickhousedata/
-**/miniodata/
+**/garagedata/
 .env
 .env.local
 .env.*
