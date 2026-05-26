@@ -1,6 +1,7 @@
 using Amazon.S3;
 using Microsoft.Extensions.Options;
 using ProjectTraiding.Moex.Clients;
+using ProjectTraiding.Moex.Infrastructure.RawCapture;
 using ProjectTraiding.Moex.Options;
 using System.Text.Json;
 
@@ -409,6 +410,89 @@ namespace ProjectTraiding.Moex.Endpoints
 
                 return Results.Bytes(stream.ToArray(), "application/json");
             });
+            routes.MapGet("/debug/s3/write-test", async (
+                MoexRawCaptureWriter captureWriter,
+                IAmazonS3 s3Client,
+                IOptions<RawCaptureOptions> captureOptions,
+                CancellationToken ct) =>
+            {
+                RawCaptureOptions options = captureOptions.Value;
+
+                using MemoryStream jsonStream = new MemoryStream();
+                using (Utf8JsonWriter writer = new Utf8JsonWriter(jsonStream))
+                {
+                    writer.WriteStartObject();
+
+                    if (options.Mode == CaptureMode.Off)
+                    {
+                        writer.WriteString("status", "disabled");
+                        writer.WriteString("detail", "RawCapture:Mode is Off — writer skips all writes. Set Mode to FailedOnly or higher to test.");
+                        writer.WriteEndObject();
+                        return Results.Bytes(jsonStream.ToArray(), "application/json");
+                    }
+
+                    string testKey = "test/write-test-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + ".json";
+                    byte[] testPayload = System.Text.Encoding.UTF8.GetBytes(
+                        "{\"test\":true,\"timestamp\":\"" + DateTime.UtcNow.ToString("o") + "\"}");
+
+                    // Шаг 1: запись через MoexRawCaptureWriter (DI → Writer → S3)
+                    await captureWriter.TryCaptureAsync(testKey, testPayload, ct);
+
+                    // Шаг 2: чтение обратно через IAmazonS3
+                    try
+                    {
+                        GetObjectResponse readBack = await s3Client.GetObjectAsync(
+                            options.Bucket, testKey, ct);
+
+                        using MemoryStream readStream = new MemoryStream();
+                        await readBack.ResponseStream.CopyToAsync(readStream, ct);
+                        int bytesRead = (int)readStream.Length;
+
+                        // Шаг 3: удаление тестового объекта
+                        try
+                        {
+                            await s3Client.DeleteObjectAsync(options.Bucket, testKey, ct);
+                        }
+                        catch
+                        {
+                            // Не критично — тестовый объект останется в бакете
+                        }
+
+                        if (bytesRead == testPayload.Length)
+                        {
+                            writer.WriteString("status", "ok");
+                            writer.WriteString("key", testKey);
+                            writer.WriteNumber("bytesWritten", testPayload.Length);
+                            writer.WriteNumber("bytesReadBack", bytesRead);
+                            writer.WriteString("mode", options.Mode.ToString());
+                            writer.WriteString("bucket", options.Bucket);
+                        }
+                        else
+                        {
+                            writer.WriteString("status", "size_mismatch");
+                            writer.WriteString("key", testKey);
+                            writer.WriteNumber("bytesWritten", testPayload.Length);
+                            writer.WriteNumber("bytesReadBack", bytesRead);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        writer.WriteString("status", "read_back_failed");
+                        writer.WriteString("key", testKey);
+                        writer.WriteNumber("bytesWritten", testPayload.Length);
+                        writer.WriteString("errorType", ex.GetType().Name);
+                        writer.WriteString("message", ex.Message);
+                        writer.WriteString("detail",
+                            "TryCaptureAsync completed without exception but object not found on read-back. " +
+                            "Check RawCaptureLogMessages for capture errors.");
+                    }
+
+                    writer.WriteEndObject();
+                }
+
+                return Results.Bytes(jsonStream.ToArray(), "application/json");
+            });
+
             return routes;
         }
 
