@@ -15,9 +15,8 @@ using System.Net;
 namespace ProjectTraiding.Moex.Clients
 {
     /// <summary>
-    /// HTTP-клиент для real-time REST-данных MOEX (стакан, сделки, свечи текущего дня).
-    /// 
-    /// Использует ISS base URL (публичный, без API-ключа).
+    /// HTTP-клиент для текущих REST-данных MOEX через платный APIM-доступ.
+    /// Использует Moex:ApimBaseUrl и Authorization: Bearer {Moex:AlgKey}.
     /// Подключается к тому же HTTP pipeline: rate limiter, logging handler, Polly resilience.
     /// 
     /// Endpoint-ы:

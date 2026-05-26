@@ -14,8 +14,7 @@ public static class HttpClientHelpers
     /// </summary>
     /// <param name="response">HTTP-ответ сервера.</param>
     /// <param name="endpoint">Адрес эндпоинта (только путь/метод, без Bearer-токена).</param>
-    /// <summary>
-    /// <summary>
+   /// <summary>
     /// Максимальный размер тела ошибочного ответа, сохраняемого для диагностики.
     /// </summary>
     private const int MaxErrorBodyBytes = 65_536;
