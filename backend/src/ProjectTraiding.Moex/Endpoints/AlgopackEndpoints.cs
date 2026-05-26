@@ -31,7 +31,7 @@ namespace ProjectTraiding.Moex.Endpoints
 
                 var logger = loggerFactory.CreateLogger("AlgopackEndpoints");
                 MoexLogMessages.LoadStarted(logger, "GetSuperCandlesFuturesTradeStats", MoexLogSources.Algopack, url, "from=2026-01-28&till=2026-05-05");
-                return StreamFuturesTradeStats(moexHttpAlgClient, url, queryParams, ct);
+                return StreamFuturesTradeStats(moexHttpAlgClient, url, queryParams, "SiM6", ct);
             });
 
             routes.MapGet("/GetSuperCandlesFuturesOrderBookStat", (
@@ -49,7 +49,7 @@ namespace ProjectTraiding.Moex.Endpoints
 
                 var logger = loggerFactory.CreateLogger("AlgopackEndpoints");
                 MoexLogMessages.LoadStarted(logger, "GetSuperCandlesFuturesOrderBookStat", MoexLogSources.Algopack, url, "from=2026-01-28&till=2026-04-30");
-                return StreamFuturesOrderBookStats(moexHttpAlgClient, url, queryParams, ct);
+                return StreamFuturesOrderBookStats(moexHttpAlgClient, url, queryParams, "SiM6", ct);
             });
 
 
@@ -69,7 +69,7 @@ namespace ProjectTraiding.Moex.Endpoints
 
                 var logger = loggerFactory.CreateLogger("AlgopackEndpoints");
                 MoexLogMessages.LoadStarted(logger, "GetFutoi", MoexLogSources.Algopack, url, "from=2026-04-29&till=2026-05-05");
-                return StreamFutoiItems(moexHttpAlgClient, url, queryParams, ct);
+                return StreamFutoiItems(moexHttpAlgClient, url, queryParams, "Si", ct);
             });
 
             // === HI2 ===
@@ -88,7 +88,7 @@ namespace ProjectTraiding.Moex.Endpoints
 
                 var logger = loggerFactory.CreateLogger("AlgopackEndpoints");
                 MoexLogMessages.LoadStarted(logger, "GetHi2Asset", MoexLogSources.Algopack, url, "from=2026-01-03&till=2026-05-03");
-                return StreamHi2Asset(moexHttpAlgClient, url, queryParams, ct);
+                return StreamHi2Asset(moexHttpAlgClient, url, queryParams, "SBER", ct);
             });
 
             routes.MapGet("/GetHi2Furure", (
@@ -105,7 +105,7 @@ namespace ProjectTraiding.Moex.Endpoints
 
                 var logger = loggerFactory.CreateLogger("AlgopackEndpoints");
                 MoexLogMessages.LoadStarted(logger, "GetHi2Furure", MoexLogSources.Algopack, url, "from=2026-01-30&till=2026-05-04");
-                return StreamHi2Futures(moexHttpAlgClient, url, queryParams, ct);
+                return StreamHi2Futures(moexHttpAlgClient, url, queryParams, "SiM6", ct);
             });
 
             // === Мега-оповещения ===
@@ -124,7 +124,7 @@ namespace ProjectTraiding.Moex.Endpoints
 
                 var logger = loggerFactory.CreateLogger("AlgopackEndpoints");
                 MoexLogMessages.LoadStarted(logger, "GetMegaAlerts", MoexLogSources.Algopack, url, "from=2024-04-28&till=2026-04-30");
-                return StreamMegaAlerts(moexHttpAlgClient, url, queryParams, ct);
+                return StreamMegaAlerts(moexHttpAlgClient, url, queryParams, "SBER", ct);
             });
 
             routes.MapGet("/GetMegaAlertsFutures", (
@@ -142,7 +142,7 @@ namespace ProjectTraiding.Moex.Endpoints
 
                 var logger = loggerFactory.CreateLogger("AlgopackEndpoints");
                 MoexLogMessages.LoadStarted(logger, "GetMegaAlertsFutures", MoexLogSources.Algopack, url, "from=2026-01-28&till=2026-04-30");
-                return StreamMegaAlertsFutures(moexHttpAlgClient, url, queryParams, ct);
+                return StreamMegaAlertsFutures(moexHttpAlgClient, url, queryParams, "SiM6", ct);
             });
 
 
@@ -160,7 +160,7 @@ namespace ProjectTraiding.Moex.Endpoints
 
                 var logger = loggerFactory.CreateLogger("AlgopackEndpoints");
                 MoexLogMessages.LoadStarted(logger, "GetSuperCandlesTradeStats", MoexLogSources.Algopack, url, "from=2024-04-08&till=2026-04-17");
-                return StreamTradeStats(moexHttpAlgClient, url, queryParams, ct);
+                return StreamTradeStats(moexHttpAlgClient, url, queryParams, "SMLT", ct);
             });
             routes.MapGet("/GetSuperCandlesOrderStats", (
                 MoexHttpAlgClient moexHttpAlgClient,
@@ -176,7 +176,7 @@ namespace ProjectTraiding.Moex.Endpoints
 
                 var logger = loggerFactory.CreateLogger("AlgopackEndpoints");
                 MoexLogMessages.LoadStarted(logger, "GetSuperCandlesOrderStats", MoexLogSources.Algopack, url, "from=2024-04-08&till=2026-04-17");
-                return StreamOrderStats(moexHttpAlgClient, url, queryParams, ct);
+                return StreamOrderStats(moexHttpAlgClient, url, queryParams, "SMLT", ct);
             });
             routes.MapGet("/GetSuperCandlesOrderBookStats", (
                 MoexHttpAlgClient moexHttpAlgClient,
@@ -192,7 +192,7 @@ namespace ProjectTraiding.Moex.Endpoints
 
                 var logger = loggerFactory.CreateLogger("AlgopackEndpoints");
                 MoexLogMessages.LoadStarted(logger, "GetSuperCandlesOrderBookStats", MoexLogSources.Algopack, url, "from=2024-04-08&till=2026-04-17");
-                return StreamOrderBookStats(moexHttpAlgClient, url, queryParams, ct);
+                return StreamOrderBookStats(moexHttpAlgClient, url, queryParams, "SMLT", ct);
             });
 
             routes.MapGet("/GetCandlesAsset", (
@@ -210,7 +210,7 @@ namespace ProjectTraiding.Moex.Endpoints
 
                 var logger = loggerFactory.CreateLogger("AlgopackEndpoints");
                 MoexLogMessages.LoadStarted(logger, "GetCandlesAsset", MoexLogSources.Algopack, url, "interval=1&from=2025-01-28&till=2026-05-05");
-                return StreamCandles(moexHttpAlgClient, url, queryParams, ct);
+                return StreamCandles(moexHttpAlgClient, url, queryParams, RawCaptureMarkets.Stock, "SBER", ct);
             });
 
 
@@ -231,13 +231,18 @@ namespace ProjectTraiding.Moex.Endpoints
 
                var logger = loggerFactory.CreateLogger("AlgopackEndpoints");
                MoexLogMessages.LoadStarted(logger, "GetCandlesFutures", MoexLogSources.Algopack, url, "interval=1&from=2025-01-28&till=2026-05-05");
-               return StreamCandles(moexHttpAlgClient, url, queryParams, ct);
+               return StreamCandles(moexHttpAlgClient, url, queryParams, RawCaptureMarkets.Futures, "SiM6", ct);
            });
             return routes;
         }
-        public static async IAsyncEnumerable<CandlesDTO> StreamCandles(MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams, [EnumeratorCancellation] CancellationToken ct)
+
+        // ═══════════════════════════════════════════════════════════
+        // Stream helpers — все с cancellationToken: ct
+        // ═══════════════════════════════════════════════════════════
+
+        public static async IAsyncEnumerable<CandlesDTO> StreamCandles(MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams, string? captureMarket, string? secid, [EnumeratorCancellation] CancellationToken ct)
         {
-            await foreach (List<CandlesDTO> candlesBatch in client.GetCandles(url, queryParams, ct))
+            await foreach (List<CandlesDTO> candlesBatch in client.GetCandles(url, queryParams, captureMarket: captureMarket, secid: secid, cancellationToken: ct))
             {
                 foreach (var candle in candlesBatch)
                 {
@@ -247,10 +252,10 @@ namespace ProjectTraiding.Moex.Endpoints
         }
 
         static async IAsyncEnumerable<SuperCandlesTradeStats5mDTO> StreamTradeStats(
-            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams,
+            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams, string? secid,
             [EnumeratorCancellation] CancellationToken ct)
         {
-            await foreach (List<SuperCandlesTradeStats5mDTO> batch in client.GetSuperCandlesTradeStats5m(url, queryParams, ct))
+            await foreach (List<SuperCandlesTradeStats5mDTO> batch in client.GetSuperCandlesTradeStats5m(url, queryParams, secid: secid, cancellationToken: ct))
             {
                 foreach (var item in batch)
                 {
@@ -260,10 +265,10 @@ namespace ProjectTraiding.Moex.Endpoints
         }
 
         static async IAsyncEnumerable<SuperCandlesOrderStats5mDTO> StreamOrderStats(
-            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams,
+            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams, string? secid,
             [EnumeratorCancellation] CancellationToken ct)
         {
-            await foreach (List<SuperCandlesOrderStats5mDTO> batch in client.GetSuperCandlesOrderStats5m(url, queryParams, ct))
+            await foreach (List<SuperCandlesOrderStats5mDTO> batch in client.GetSuperCandlesOrderStats5m(url, queryParams, secid: secid, cancellationToken: ct))
             {
                 foreach (var item in batch)
                 {
@@ -273,10 +278,10 @@ namespace ProjectTraiding.Moex.Endpoints
         }
 
         static async IAsyncEnumerable<SuperCandlesOrderBookStats5mDTO> StreamOrderBookStats(
-            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams,
+            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams, string? secid,
             [EnumeratorCancellation] CancellationToken ct)
         {
-            await foreach (List<SuperCandlesOrderBookStats5mDTO> batch in client.GetSuperCandlesOrderBookStats5m(url, queryParams, ct))
+            await foreach (List<SuperCandlesOrderBookStats5mDTO> batch in client.GetSuperCandlesOrderBookStats5m(url, queryParams, secid: secid, cancellationToken: ct))
             {
                 foreach (var item in batch)
                 {
@@ -286,10 +291,10 @@ namespace ProjectTraiding.Moex.Endpoints
         }
 
         static async IAsyncEnumerable<SuperCandlesFuturesTradeStats5mDTO> StreamFuturesTradeStats(
-            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams,
+            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams, string? secid,
             [EnumeratorCancellation] CancellationToken ct)
         {
-            await foreach (List<SuperCandlesFuturesTradeStats5mDTO> batch in client.GetSuperCandlesFuturesTradeStats5m(url, queryParams, ct))
+            await foreach (List<SuperCandlesFuturesTradeStats5mDTO> batch in client.GetSuperCandlesFuturesTradeStats5m(url, queryParams, secid: secid, cancellationToken: ct))
             {
                 foreach (var item in batch)
                 {
@@ -299,10 +304,10 @@ namespace ProjectTraiding.Moex.Endpoints
         }
 
         static async IAsyncEnumerable<SuperCandlesFuturesOrderBookStats5mDTO> StreamFuturesOrderBookStats(
-            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams,
+            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams, string? secid,
             [EnumeratorCancellation] CancellationToken ct)
         {
-            await foreach (List<SuperCandlesFuturesOrderBookStats5mDTO> batch in client.GetSuperCandlesFuturesOrderBookStats5m(url, queryParams, ct))
+            await foreach (List<SuperCandlesFuturesOrderBookStats5mDTO> batch in client.GetSuperCandlesFuturesOrderBookStats5m(url, queryParams, secid: secid, cancellationToken: ct))
             {
                 foreach (var item in batch)
                 {
@@ -312,10 +317,10 @@ namespace ProjectTraiding.Moex.Endpoints
         }
 
         static async IAsyncEnumerable<FutoiDTO> StreamFutoiItems(
-            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams,
+            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams, string? secid,
             [EnumeratorCancellation] CancellationToken ct)
         {
-            await foreach (List<FutoiDTO> batch in client.StreamFutoi(url, queryParams, ct))
+            await foreach (List<FutoiDTO> batch in client.StreamFutoi(url, queryParams, secid: secid, cancellationToken: ct))
             {
                 foreach (var item in batch)
                 {
@@ -325,10 +330,10 @@ namespace ProjectTraiding.Moex.Endpoints
         }
 
         static async IAsyncEnumerable<Hi2AssetDTO> StreamHi2Asset(
-            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams,
+            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams, string? secid,
             [EnumeratorCancellation] CancellationToken ct)
         {
-            await foreach (List<Hi2AssetDTO> batch in client.GetHi2Asset5m(url, queryParams, ct))
+            await foreach (List<Hi2AssetDTO> batch in client.GetHi2Asset5m(url, queryParams, secid: secid, cancellationToken: ct))
             {
                 foreach (var item in batch)
                 {
@@ -338,10 +343,10 @@ namespace ProjectTraiding.Moex.Endpoints
         }
 
         static async IAsyncEnumerable<Hi2FuturesDTO> StreamHi2Futures(
-            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams,
+            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams, string? secid,
             [EnumeratorCancellation] CancellationToken ct)
         {
-            await foreach (List<Hi2FuturesDTO> batch in client.GetHi2Furures5m(url, queryParams, ct))
+            await foreach (List<Hi2FuturesDTO> batch in client.GetHi2Furures5m(url, queryParams, secid: secid, cancellationToken: ct))
             {
                 foreach (var item in batch)
                 {
@@ -351,10 +356,10 @@ namespace ProjectTraiding.Moex.Endpoints
         }
 
         static async IAsyncEnumerable<MegaAlertsAssetsDTO> StreamMegaAlerts(
-            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams,
+            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams, string? secid,
             [EnumeratorCancellation] CancellationToken ct)
         {
-            await foreach (List<MegaAlertsAssetsDTO> batch in client.GetMegaAlerts(url, queryParams, ct))
+            await foreach (List<MegaAlertsAssetsDTO> batch in client.GetMegaAlerts(url, queryParams, secid: secid, cancellationToken: ct))
             {
                 foreach (var item in batch)
                 {
@@ -364,10 +369,10 @@ namespace ProjectTraiding.Moex.Endpoints
         }
 
         static async IAsyncEnumerable<MegaAlertsFuturesDTO> StreamMegaAlertsFutures(
-            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams,
+            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams, string? secid,
             [EnumeratorCancellation] CancellationToken ct)
         {
-            await foreach (List<MegaAlertsFuturesDTO> batch in client.GetMegaAlertsFutures(url, queryParams, ct))
+            await foreach (List<MegaAlertsFuturesDTO> batch in client.GetMegaAlertsFutures(url, queryParams, secid: secid, cancellationToken: ct))
             {
                 foreach (var item in batch)
                 {
