@@ -12,6 +12,7 @@ using Polly.Timeout;
 using System.Diagnostics;
 using System.Net;
 using System.Runtime.CompilerServices;
+using ProjectTraiding.Moex.Infrastructure.RawCapture;
 
 namespace ProjectTraiding.Moex.Clients
 {

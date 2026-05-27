@@ -73,6 +73,15 @@ namespace ProjectTraiding.Moex.Clients
                 {
                     List<StockSecurityDTO> result = ParsingIssUtf8.ParseIssSecurityStock(rentedArr.Span);
                     MoexLogMessages.SinglePageReceived(_logger, method, result.Count, Stopwatch.GetElapsedTime(startTimestamp));
+                    await RawCaptureHelper.CaptureSingleAsync(
+                        _captureWriter,
+                        RawCaptureClients.Iss,
+                        RawCaptureDataTypes.Securities,
+                        RawCaptureMarkets.Stock,
+                        null,
+                        effectiveRunId,
+                        rentedArr.Memory,
+                        cancellationToken);
                     return result;
                 }
                 catch (MoexSchemaMismatchException ex)
@@ -134,6 +143,15 @@ namespace ProjectTraiding.Moex.Clients
                 {
                     List<FuturesSecurityDTO> result = ParsingIssUtf8.ParseIssSecurityFutures(rentedArr.Span);
                     MoexLogMessages.SinglePageReceived(_logger, method, result.Count, Stopwatch.GetElapsedTime(startTimestamp));
+                    await RawCaptureHelper.CaptureSingleAsync(
+                        _captureWriter,
+                        RawCaptureClients.Iss,
+                        RawCaptureDataTypes.Securities,
+                        RawCaptureMarkets.Futures,
+                        null,
+                        effectiveRunId,
+                        rentedArr.Memory,
+                        cancellationToken);
                     return result;
                 }
                 catch (MoexSchemaMismatchException ex)

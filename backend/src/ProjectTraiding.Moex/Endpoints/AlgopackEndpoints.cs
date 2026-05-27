@@ -1,5 +1,6 @@
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
+using ProjectTraiding.Moex.Infrastructure.RawCapture;
 using System.Runtime.CompilerServices;
 
 

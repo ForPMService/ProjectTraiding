@@ -1,4 +1,5 @@
 using Amazon.S3;
+using Amazon.S3.Model;
 using Microsoft.Extensions.Options;
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Infrastructure.RawCapture;
