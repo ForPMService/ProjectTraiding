@@ -58,6 +58,15 @@ namespace ProjectTraiding.Moex.Clients
                 {
                     List<CalendarOffDaysAllDTO> result = ParsingCalendarUtf8.ParseOffDaysAll(rentedArr.Span);
                     MoexLogMessages.SinglePageReceived(_logger, endpoint, result.Count, Stopwatch.GetElapsedTime(startTimestamp));
+                    await RawCaptureHelper.CaptureSingleAsync(
+                        _captureWriter,
+                        RawCaptureClients.Calendar,
+                        RawCaptureDataTypes.OffDaysAll,
+                        null,
+                        null,
+                        effectiveRunId,
+                        rentedArr.Memory,
+                        cancellationToken);
                     return result;
                 }
                 catch (MoexSchemaMismatchException ex)
@@ -119,6 +128,15 @@ namespace ProjectTraiding.Moex.Clients
                 {
                     List<CalendarOffDaysMarketDTO> result = ParsingCalendarUtf8.ParseOffDaysMarket(rentedArr.Span);
                     MoexLogMessages.SinglePageReceived(_logger, endpoint, result.Count, Stopwatch.GetElapsedTime(startTimestamp));
+                    await RawCaptureHelper.CaptureSingleAsync(
+                        _captureWriter,
+                        RawCaptureClients.Calendar,
+                        RawCaptureDataTypes.OffDays,
+                        RawCaptureMarkets.Stock,
+                        null,
+                        effectiveRunId,
+                        rentedArr.Memory,
+                        cancellationToken);
                     return result;
                 }
                 catch (MoexSchemaMismatchException ex)
@@ -180,6 +198,15 @@ namespace ProjectTraiding.Moex.Clients
                 {
                     List<CalendarOffDaysMarketDTO> result = ParsingCalendarUtf8.ParseOffDaysMarket(rentedArr.Span);
                     MoexLogMessages.SinglePageReceived(_logger, endpoint, result.Count, Stopwatch.GetElapsedTime(startTimestamp));
+                    await RawCaptureHelper.CaptureSingleAsync(
+                        _captureWriter,
+                        RawCaptureClients.Calendar,
+                        RawCaptureDataTypes.OffDays,
+                        RawCaptureMarkets.Futures,
+                        null,
+                        effectiveRunId,
+                        rentedArr.Memory,
+                        cancellationToken);
                     return result;
                 }
                 catch (MoexSchemaMismatchException ex)
@@ -245,6 +272,15 @@ namespace ProjectTraiding.Moex.Clients
                     (List<CalendarStockSessionDTO> Sessions, List<CalendarSessionTypeDTO> Types) result =
                         ParsingCalendarUtf8.ParseStockSession(rentedArr.Span);
                     MoexLogMessages.SinglePageReceived(_logger, endpoint, result.Sessions.Count, Stopwatch.GetElapsedTime(startTimestamp));
+                    await RawCaptureHelper.CaptureSingleAsync(
+                        _captureWriter,
+                        RawCaptureClients.Calendar,
+                        RawCaptureDataTypes.Sessions,
+                        RawCaptureMarkets.Stock,
+                        null,
+                        effectiveRunId,
+                        rentedArr.Memory,
+                        cancellationToken);
                     return result;
                 }
                 catch (MoexSchemaMismatchException ex)
@@ -308,6 +344,15 @@ namespace ProjectTraiding.Moex.Clients
                     (List<CalendarFuturesSessionDTO> Sessions, List<CalendarSessionTypeDTO> Types) result =
                         ParsingCalendarUtf8.ParseFuturesSession(rentedArr.Span);
                     MoexLogMessages.SinglePageReceived(_logger, endpoint, result.Sessions.Count, Stopwatch.GetElapsedTime(startTimestamp));
+                    await RawCaptureHelper.CaptureSingleAsync(
+                        _captureWriter,
+                        RawCaptureClients.Calendar,
+                        RawCaptureDataTypes.Sessions,
+                        RawCaptureMarkets.Futures,
+                        null,
+                        effectiveRunId,
+                        rentedArr.Memory,
+                        cancellationToken);
                     return result;
                 }
                 catch (MoexSchemaMismatchException ex)
@@ -412,6 +457,15 @@ namespace ProjectTraiding.Moex.Clients
                     (List<CalendarFortsContractDTO> Forts, List<CalendarOptionsSeriesDTO> Options) result =
                         ParsingCalendarUtf8.ParseFuturesSecurities(rentedArr.Span);
                     MoexLogMessages.SinglePageReceived(_logger, endpoint, result.Forts.Count + result.Options.Count, Stopwatch.GetElapsedTime(startTimestamp));
+                    await RawCaptureHelper.CaptureSingleAsync(
+                        _captureWriter,
+                        RawCaptureClients.Calendar,
+                        RawCaptureDataTypes.FortsContracts,
+                        RawCaptureMarkets.Futures,
+                        null,
+                        effectiveRunId,
+                        rentedArr.Memory,
+                        cancellationToken);
                     return result;
                 }
                 catch (MoexSchemaMismatchException ex)
@@ -476,6 +530,15 @@ namespace ProjectTraiding.Moex.Clients
                     (List<CalendarSuspendedDTO> _, List<CalendarSuspendedReasonDTO> reasons, PaginationCursorDTO _) =
                         ParsingCalendarUtf8.ParseSuspendedWithReasons(rentedArr.Span);
                     MoexLogMessages.SinglePageReceived(_logger, endpoint, reasons.Count, Stopwatch.GetElapsedTime(startTimestamp));
+                    await RawCaptureHelper.CaptureSingleAsync(
+                        _captureWriter,
+                        RawCaptureClients.Calendar,
+                        RawCaptureDataTypes.SuspendedReasons,
+                        RawCaptureMarkets.Stock,
+                        null,
+                        effectiveRunId,
+                        rentedArr.Memory,
+                        cancellationToken);
                     return reasons;
                 }
                 catch (MoexSchemaMismatchException ex)
@@ -632,6 +695,15 @@ namespace ProjectTraiding.Moex.Clients
                     (List<CalendarSecurityChangeDTO> _, List<CalendarSecurityAttributeDTO> attributes, PaginationCursorDTO _) =
                         ParsingCalendarUtf8.ParseSecurityChangesWithAttributes(rentedArr.Span);
                     MoexLogMessages.SinglePageReceived(_logger, endpoint, attributes.Count, Stopwatch.GetElapsedTime(startTimestamp));
+                    await RawCaptureHelper.CaptureSingleAsync(
+                        _captureWriter,
+                        RawCaptureClients.Calendar,
+                        RawCaptureDataTypes.SecurityAttributes,
+                        RawCaptureMarkets.Stock,
+                        null,
+                        effectiveRunId,
+                        rentedArr.Memory,
+                        cancellationToken);
                     return attributes;
                 }
                 catch (MoexSchemaMismatchException ex)
