@@ -1,4 +1,5 @@
 using ProjectTraiding.Moex.Clients.Errors;
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Options;
 using System.Diagnostics;
 using System.Threading.RateLimiting;
@@ -73,7 +74,6 @@ namespace ProjectTraiding.Moex.Clients
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
                 // Таймаут acquire (наш CTS сработал), а не отмена вызывающего кода.
-                double timeoutWaitMs = Stopwatch.GetElapsedTime(waitStart).TotalMilliseconds;
                 throw new MoexRateLimitRejectedException(
                     endpoint,
                     reason: "acquire_timeout",
@@ -95,16 +95,21 @@ namespace ProjectTraiding.Moex.Clients
                     waitTime: null);
             }
 
-            // ── 3. Permit получен — логируем и пропускаем ───────
+            // ── 3. Permit получен — логируем, записываем метрики и пропускаем ───────
             using (lease)
             {
                 // Всегда пишем Debug-лог.
                 MoexLogMessages.RateLimitAcquired(_logger, endpoint, waitMs);
 
-                // Если ждали дольше порога — дополнительный Information-лог.
+                // Метрики: permit получен + время ожидания.
+                MoexMetrics.RateLimitAcquired.Add(1);
+                MoexMetrics.RateLimitWaitDuration.Record(waitMs);
+
+                // Если ждали дольше порога — дополнительный Information-лог + метрика.
                 if (waitMs > QueuedThresholdMs)
                 {
                     MoexLogMessages.RateLimitQueued(_logger, endpoint, waitMs);
+                    MoexMetrics.RateLimitQueued.Add(1);
                 }
 
                 // Передаём запрос дальше по цепочке handler'ов.

@@ -32,4 +32,18 @@ public static class MoexTelemetryAttributes
 
     /// <summary>HTTP status code.</summary>
     public const string StatusCode = "status_code";
+
+    // ── Raw-capture / Activity ──
+
+    /// <summary>Ключ объекта в S3.</summary>
+    public const string ObjectKey = "object_key";
+
+    /// <summary>Размер тела ответа в байтах.</summary>
+    public const string BodySize = "body_size";
+
+    /// <summary>Режим capture: FailedOnly, Sample, All.</summary>
+    public const string CaptureMode = "capture_mode";
+
+    /// <summary>Результат операции: true/false.</summary>
+    public const string Success = "success";
 }

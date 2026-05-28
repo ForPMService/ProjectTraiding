@@ -2,6 +2,7 @@ using Amazon.S3;
 using Amazon.S3.Model;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Options;
 
 namespace ProjectTraiding.Moex.Infrastructure.RawCapture;
@@ -55,6 +56,11 @@ public sealed class MoexRawCaptureWriter
             return;
         }
 
+        using System.Diagnostics.Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.rawcapture");
+        activity?.SetTag(MoexTelemetryAttributes.ObjectKey, objectKey);
+        activity?.SetTag(MoexTelemetryAttributes.BodySize, rawBody.Length);
+        activity?.SetTag(MoexTelemetryAttributes.CaptureMode, _options.Mode.ToString());
+
         try
         {
             using MemoryStream stream = new MemoryStream(rawBody.ToArray(), writable: false);
@@ -70,12 +76,23 @@ public sealed class MoexRawCaptureWriter
             await _s3Client.PutObjectAsync(request, ct);
 
             RawCaptureLogMessages.CaptureSucceeded(_logger, objectKey, rawBody.Length);
+            MoexMetrics.RawCaptureWrites.Add(1);
+            MoexMetrics.RawCaptureBytes.Add(rawBody.Length);
+            activity?.SetTag(MoexTelemetryAttributes.Success, true);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            activity?.SetTag(MoexTelemetryAttributes.Success, false);
+            throw;
         }
         catch (Exception ex)
         {
             RawCaptureLogMessages.CaptureFailed(_logger, ex, objectKey, rawBody.Length, ex.GetType().Name, ex.Message);
+            MoexMetrics.RawCaptureErrors.Add(1);
+            activity?.SetTag(MoexTelemetryAttributes.Success, false);
         }
     }
+
     /// <summary>
     /// Сохраняет Stream в S3. Для многостраничных ответов (NDJSON-аккумулятор).
     /// Stream.Position должен быть 0 перед вызовом.
@@ -92,6 +109,11 @@ public sealed class MoexRawCaptureWriter
             return;
         }
 
+        using System.Diagnostics.Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.rawcapture");
+        activity?.SetTag(MoexTelemetryAttributes.ObjectKey, objectKey);
+        activity?.SetTag(MoexTelemetryAttributes.BodySize, rawBodyLength);
+        activity?.SetTag(MoexTelemetryAttributes.CaptureMode, _options.Mode.ToString());
+
         try
         {
             PutObjectRequest request = new PutObjectRequest
@@ -107,6 +129,14 @@ public sealed class MoexRawCaptureWriter
             int loggedLength = rawBodyLength > int.MaxValue
                 ? int.MaxValue : (int)rawBodyLength;
             RawCaptureLogMessages.CaptureSucceeded(_logger, objectKey, loggedLength);
+            MoexMetrics.RawCaptureWrites.Add(1);
+            MoexMetrics.RawCaptureBytes.Add(rawBodyLength);
+            activity?.SetTag(MoexTelemetryAttributes.Success, true);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            activity?.SetTag(MoexTelemetryAttributes.Success, false);
+            throw;
         }
         catch (Exception ex)
         {
@@ -115,6 +145,8 @@ public sealed class MoexRawCaptureWriter
             RawCaptureLogMessages.CaptureFailed(
                 _logger, ex, objectKey, loggedLength,
                 ex.GetType().Name, ex.Message);
+            MoexMetrics.RawCaptureErrors.Add(1);
+            activity?.SetTag(MoexTelemetryAttributes.Success, false);
         }
     }
 }
