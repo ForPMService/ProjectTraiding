@@ -79,6 +79,7 @@ namespace ProjectTraiding.Moex.Clients
                 ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
                 + "-" + Guid.NewGuid().ToString("N");
 
+            using var accumulator = new RawCaptureAccumulator(_captureWriter);
             int pagesElapsed = 0;
             int totalRows = 0;
 
@@ -120,6 +121,7 @@ namespace ProjectTraiding.Moex.Clients
                     try
                     {
                         candlesList = ParsingAlgUtf8.ParseAlgCandles(rentedArr.Span);
+                        accumulator.AppendPage(rentedArr.Memory);
                     }
                     catch (MoexSchemaMismatchException ex)
                     {
@@ -155,6 +157,14 @@ namespace ProjectTraiding.Moex.Clients
                     break;
                 }
             }
+
+            await accumulator.FlushNdjsonAsync(
+                RawCaptureClients.Alg,
+                RawCaptureDataTypes.Candles,
+                captureMarket,
+                secid,
+                effectiveRunId,
+                cancellationToken);
         }
 
         // ═══════════════════════════════════════════════════════════
