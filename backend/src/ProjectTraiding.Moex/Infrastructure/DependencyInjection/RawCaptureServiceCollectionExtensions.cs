@@ -25,7 +25,9 @@ public static class RawCaptureServiceCollectionExtensions
                     ? "http://localhost:3900"
                     : options.Endpoint,
                 AuthenticationRegion = options.Region,
-                ForcePathStyle = true
+                ForcePathStyle = true,
+                RequestChecksumCalculation = Amazon.Runtime.RequestChecksumCalculation.WHEN_REQUIRED
+                
             };
 
             BasicAWSCredentials credentials = new BasicAWSCredentials(
