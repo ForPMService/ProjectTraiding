@@ -1,4 +1,5 @@
 using ProjectTraiding.Moex.Clients;
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Options;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Options;
@@ -254,6 +255,11 @@ public static class MoexClientServiceCollectionExtensions
             errorType,
             args.RetryDelay,
             statusCode);
+
+        MoexMetrics.HttpRetries.Add(
+            1,
+            new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, source),
+            new KeyValuePair<string, object?>(MoexTelemetryAttributes.ErrorType, errorType));
 
         return default;
     }

@@ -6,6 +6,7 @@ using ProjectTraiding.Moex.Infrastructure.Buffers;
 using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Parsing;
 using ProjectTraiding.Moex.Parsing.Errors;
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Polly.Timeout;
@@ -67,6 +68,14 @@ namespace ProjectTraiding.Moex.Clients
             string? secid = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
+            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
+            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Candles);
+            if (!string.IsNullOrWhiteSpace(captureMarket))
+            {
+                activity?.SetTag(MoexTelemetryAttributes.Market, captureMarket);
+            }
+
             int queryStart = 0;
             queryParams ??= new Dictionary<string, string>();
 
@@ -145,6 +154,14 @@ namespace ProjectTraiding.Moex.Clients
                 pagesElapsed++;
                 totalRows += candlesList.Count;
                 MoexLogMessages.PageReceived(_logger, method, pagesElapsed, candlesList.Count, Stopwatch.GetElapsedTime(pageStart));
+                MoexMetrics.PagesTotal.Add(
+                    1,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Candles));
+                MoexMetrics.RowsTotal.Add(
+                    candlesList.Count,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Candles));
                 yield return candlesList;
                 if (candlesList.Count >= 500)
                 {
@@ -157,6 +174,9 @@ namespace ProjectTraiding.Moex.Clients
                     break;
                 }
             }
+
+            activity?.SetTag("total_pages", pagesElapsed);
+            activity?.SetTag("total_rows", totalRows);
 
             await accumulator.FlushNdjsonAsync(
                 RawCaptureClients.Alg,
@@ -178,6 +198,11 @@ namespace ProjectTraiding.Moex.Clients
             string? secid = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
+            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
+            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.TradeStats);
+            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Stock);
+
             queryParams ??= new Dictionary<string, string>();
             string effectiveRunId = runId
                 ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
@@ -249,6 +274,14 @@ namespace ProjectTraiding.Moex.Clients
                 pagesElapsed++;
                 totalRows += tradeStats.Count;
                 MoexLogMessages.PageReceived(_logger, method, pagesElapsed, tradeStats.Count, Stopwatch.GetElapsedTime(pageStart));
+                MoexMetrics.PagesTotal.Add(
+                    1,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.TradeStats));
+                MoexMetrics.RowsTotal.Add(
+                    tradeStats.Count,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.TradeStats));
                 yield return tradeStats;
                 PaginationStep step = MoexCursorPagination.Next(cursor, pagesElapsed, _options.MaxPagesPerLoad);
                 if (step.IsStop)
@@ -258,6 +291,9 @@ namespace ProjectTraiding.Moex.Clients
                 }
                 queryParams["start"] = step.NextStart.ToString();
             }
+
+            activity?.SetTag("total_pages", pagesElapsed);
+            activity?.SetTag("total_rows", totalRows);
 
             await accumulator.FlushNdjsonAsync(
                 RawCaptureClients.Alg,
@@ -275,6 +311,11 @@ namespace ProjectTraiding.Moex.Clients
             string? secid = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
+            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
+            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.TradeStats);
+            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Futures);
+
             queryParams ??= new Dictionary<string, string>();
             string effectiveRunId = runId
                 ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
@@ -324,11 +365,22 @@ namespace ProjectTraiding.Moex.Clients
                 pagesElapsed++;
                 totalRows += tradeStats.Count;
                 MoexLogMessages.PageReceived(_logger, method, pagesElapsed, tradeStats.Count, Stopwatch.GetElapsedTime(pageStart));
+                MoexMetrics.PagesTotal.Add(
+                    1,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.TradeStats));
+                MoexMetrics.RowsTotal.Add(
+                    tradeStats.Count,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.TradeStats));
                 yield return tradeStats;
                 PaginationStep step = MoexCursorPagination.Next(cursor, pagesElapsed, _options.MaxPagesPerLoad);
                 if (step.IsStop) { MoexLogMessages.PaginationStopped(_logger, method, step.StopReason!, pagesElapsed, totalRows); break; }
                 queryParams["start"] = step.NextStart.ToString();
             }
+
+            activity?.SetTag("total_pages", pagesElapsed);
+            activity?.SetTag("total_rows", totalRows);
 
             await accumulator.FlushNdjsonAsync(
                 RawCaptureClients.Alg,
@@ -344,6 +396,11 @@ namespace ProjectTraiding.Moex.Clients
             string? secid = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
+            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
+            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OBStats);
+            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Stock);
+
             queryParams ??= new Dictionary<string, string>();
             string effectiveRunId = runId ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + "-" + Guid.NewGuid().ToString("N");
             using var accumulator = new RawCaptureAccumulator(_captureWriter);
@@ -378,11 +435,22 @@ namespace ProjectTraiding.Moex.Clients
                 }
                 pagesElapsed++; totalRows += orderBookStats.Count;
                 MoexLogMessages.PageReceived(_logger, method, pagesElapsed, orderBookStats.Count, Stopwatch.GetElapsedTime(pageStart));
+                MoexMetrics.PagesTotal.Add(
+                    1,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OBStats));
+                MoexMetrics.RowsTotal.Add(
+                    orderBookStats.Count,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OBStats));
                 yield return orderBookStats;
                 PaginationStep step = MoexCursorPagination.Next(cursor, pagesElapsed, _options.MaxPagesPerLoad);
                 if (step.IsStop) { MoexLogMessages.PaginationStopped(_logger, method, step.StopReason!, pagesElapsed, totalRows); break; }
                 queryParams["start"] = step.NextStart.ToString();
             }
+
+            activity?.SetTag("total_pages", pagesElapsed);
+            activity?.SetTag("total_rows", totalRows);
 
             await accumulator.FlushNdjsonAsync(
                 RawCaptureClients.Alg,
@@ -398,6 +466,11 @@ namespace ProjectTraiding.Moex.Clients
             string? secid = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
+            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
+            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OBStats);
+            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Futures);
+
             queryParams ??= new Dictionary<string, string>();
             string effectiveRunId = runId ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + "-" + Guid.NewGuid().ToString("N");
             using var accumulator = new RawCaptureAccumulator(_captureWriter);
@@ -432,11 +505,22 @@ namespace ProjectTraiding.Moex.Clients
                 }
                 pagesElapsed++; totalRows += orderBookStats.Count;
                 MoexLogMessages.PageReceived(_logger, method, pagesElapsed, orderBookStats.Count, Stopwatch.GetElapsedTime(pageStart));
+                MoexMetrics.PagesTotal.Add(
+                    1,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OBStats));
+                MoexMetrics.RowsTotal.Add(
+                    orderBookStats.Count,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OBStats));
                 yield return orderBookStats;
                 PaginationStep step = MoexCursorPagination.Next(cursor, pagesElapsed, _options.MaxPagesPerLoad);
                 if (step.IsStop) { MoexLogMessages.PaginationStopped(_logger, method, step.StopReason!, pagesElapsed, totalRows); break; }
                 queryParams["start"] = step.NextStart.ToString();
             }
+
+            activity?.SetTag("total_pages", pagesElapsed);
+            activity?.SetTag("total_rows", totalRows);
 
             await accumulator.FlushNdjsonAsync(
                 RawCaptureClients.Alg,
@@ -452,6 +536,11 @@ namespace ProjectTraiding.Moex.Clients
             string? secid = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
+            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
+            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OrderStats);
+            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Stock);
+
             queryParams ??= new Dictionary<string, string>();
             string effectiveRunId = runId ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + "-" + Guid.NewGuid().ToString("N");
             using var accumulator = new RawCaptureAccumulator(_captureWriter);
@@ -486,11 +575,22 @@ namespace ProjectTraiding.Moex.Clients
                 }
                 pagesElapsed++; totalRows += orderStats.Count;
                 MoexLogMessages.PageReceived(_logger, method, pagesElapsed, orderStats.Count, Stopwatch.GetElapsedTime(pageStart));
+                MoexMetrics.PagesTotal.Add(
+                    1,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OrderStats));
+                MoexMetrics.RowsTotal.Add(
+                    orderStats.Count,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OrderStats));
                 yield return orderStats;
                 PaginationStep step = MoexCursorPagination.Next(cursor, pagesElapsed, _options.MaxPagesPerLoad);
                 if (step.IsStop) { MoexLogMessages.PaginationStopped(_logger, method, step.StopReason!, pagesElapsed, totalRows); break; }
                 queryParams["start"] = step.NextStart.ToString();
             }
+
+            activity?.SetTag("total_pages", pagesElapsed);
+            activity?.SetTag("total_rows", totalRows);
 
             await accumulator.FlushNdjsonAsync(
                 RawCaptureClients.Alg,
@@ -512,6 +612,11 @@ namespace ProjectTraiding.Moex.Clients
             string? secid = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
+            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
+            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Futoi);
+            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Futures);
+
             queryParams ??= new Dictionary<string, string>();
             string effectiveRunId = runId
                 ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
@@ -612,6 +717,14 @@ namespace ProjectTraiding.Moex.Clients
                 dayIndex++;
                 totalRows += page.Count;
                 MoexLogMessages.DaySplitPageReceived(_logger, method, date.ToString("yyyy-MM-dd"), page.Count, Stopwatch.GetElapsedTime(pageStart));
+                MoexMetrics.PagesTotal.Add(
+                    1,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Futoi));
+                MoexMetrics.RowsTotal.Add(
+                    page.Count,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Futoi));
 
                 if (page.Count > 0)
                 {
@@ -619,6 +732,9 @@ namespace ProjectTraiding.Moex.Clients
                 }
             }
             MoexLogMessages.DaySplitCompleted(_logger, method, fromStr, tillStr, dayIndex, totalRows);
+
+            activity?.SetTag("total_pages", dayIndex);
+            activity?.SetTag("total_rows", totalRows);
 
             await accumulator.FlushNdjsonAsync(
                 RawCaptureClients.Alg,
@@ -638,6 +754,11 @@ namespace ProjectTraiding.Moex.Clients
             string? secid = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
+            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
+            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Hi2);
+            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Stock);
+
             queryParams ??= new Dictionary<string, string>();
             string effectiveRunId = runId ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + "-" + Guid.NewGuid().ToString("N");
             using var accumulator = new RawCaptureAccumulator(_captureWriter);
@@ -672,11 +793,22 @@ namespace ProjectTraiding.Moex.Clients
                 }
                 pagesElapsed++; totalRows += hi2Assets.Count;
                 MoexLogMessages.PageReceived(_logger, method, pagesElapsed, hi2Assets.Count, Stopwatch.GetElapsedTime(pageStart));
+                MoexMetrics.PagesTotal.Add(
+                    1,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Hi2));
+                MoexMetrics.RowsTotal.Add(
+                    hi2Assets.Count,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Hi2));
                 yield return hi2Assets;
                 PaginationStep step = MoexCursorPagination.Next(cursor, pagesElapsed, _options.MaxPagesPerLoad);
                 if (step.IsStop) { MoexLogMessages.PaginationStopped(_logger, method, step.StopReason!, pagesElapsed, totalRows); break; }
                 queryParams["start"] = step.NextStart.ToString();
             }
+
+            activity?.SetTag("total_pages", pagesElapsed);
+            activity?.SetTag("total_rows", totalRows);
 
             await accumulator.FlushNdjsonAsync(
                 RawCaptureClients.Alg,
@@ -692,6 +824,11 @@ namespace ProjectTraiding.Moex.Clients
             string? secid = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
+            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
+            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Hi2);
+            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Futures);
+
             queryParams ??= new Dictionary<string, string>();
             string effectiveRunId = runId ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + "-" + Guid.NewGuid().ToString("N");
             using var accumulator = new RawCaptureAccumulator(_captureWriter);
@@ -726,11 +863,22 @@ namespace ProjectTraiding.Moex.Clients
                 }
                 pagesElapsed++; totalRows += hi2Futures.Count;
                 MoexLogMessages.PageReceived(_logger, method, pagesElapsed, hi2Futures.Count, Stopwatch.GetElapsedTime(pageStart));
+                MoexMetrics.PagesTotal.Add(
+                    1,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Hi2));
+                MoexMetrics.RowsTotal.Add(
+                    hi2Futures.Count,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Hi2));
                 yield return hi2Futures;
                 PaginationStep step = MoexCursorPagination.Next(cursor, pagesElapsed, _options.MaxPagesPerLoad);
                 if (step.IsStop) { MoexLogMessages.PaginationStopped(_logger, method, step.StopReason!, pagesElapsed, totalRows); break; }
                 queryParams["start"] = step.NextStart.ToString();
             }
+
+            activity?.SetTag("total_pages", pagesElapsed);
+            activity?.SetTag("total_rows", totalRows);
 
             await accumulator.FlushNdjsonAsync(
                 RawCaptureClients.Alg,
@@ -750,6 +898,11 @@ namespace ProjectTraiding.Moex.Clients
             string? secid = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
+            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
+            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.MegaAlerts);
+            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Stock);
+
             queryParams ??= new Dictionary<string, string>();
             string effectiveRunId = runId ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + "-" + Guid.NewGuid().ToString("N");
             using var accumulator = new RawCaptureAccumulator(_captureWriter);
@@ -784,11 +937,22 @@ namespace ProjectTraiding.Moex.Clients
                 }
                 pagesElapsed++; totalRows += megaAlerts.Count;
                 MoexLogMessages.PageReceived(_logger, method, pagesElapsed, megaAlerts.Count, Stopwatch.GetElapsedTime(pageStart));
+                MoexMetrics.PagesTotal.Add(
+                    1,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.MegaAlerts));
+                MoexMetrics.RowsTotal.Add(
+                    megaAlerts.Count,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.MegaAlerts));
                 yield return megaAlerts;
                 PaginationStep step = MoexCursorPagination.Next(cursor, pagesElapsed, _options.MaxPagesPerLoad);
                 if (step.IsStop) { MoexLogMessages.PaginationStopped(_logger, method, step.StopReason!, pagesElapsed, totalRows); break; }
                 queryParams["start"] = step.NextStart.ToString();
             }
+
+            activity?.SetTag("total_pages", pagesElapsed);
+            activity?.SetTag("total_rows", totalRows);
 
             await accumulator.FlushNdjsonAsync(
                 RawCaptureClients.Alg,
@@ -804,6 +968,11 @@ namespace ProjectTraiding.Moex.Clients
             string? secid = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
+            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
+            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.MegaAlerts);
+            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Futures);
+
             queryParams ??= new Dictionary<string, string>();
             string effectiveRunId = runId ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + "-" + Guid.NewGuid().ToString("N");
             using var accumulator = new RawCaptureAccumulator(_captureWriter);
@@ -838,11 +1007,22 @@ namespace ProjectTraiding.Moex.Clients
                 }
                 pagesElapsed++; totalRows += megaAlertsFutures.Count;
                 MoexLogMessages.PageReceived(_logger, method, pagesElapsed, megaAlertsFutures.Count, Stopwatch.GetElapsedTime(pageStart));
+                MoexMetrics.PagesTotal.Add(
+                    1,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.MegaAlerts));
+                MoexMetrics.RowsTotal.Add(
+                    megaAlertsFutures.Count,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.MegaAlerts));
                 yield return megaAlertsFutures;
                 PaginationStep step = MoexCursorPagination.Next(cursor, pagesElapsed, _options.MaxPagesPerLoad);
                 if (step.IsStop) { MoexLogMessages.PaginationStopped(_logger, method, step.StopReason!, pagesElapsed, totalRows); break; }
                 queryParams["start"] = step.NextStart.ToString();
             }
+
+            activity?.SetTag("total_pages", pagesElapsed);
+            activity?.SetTag("total_rows", totalRows);
 
             await accumulator.FlushNdjsonAsync(
                 RawCaptureClients.Alg,

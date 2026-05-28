@@ -5,6 +5,7 @@ using ProjectTraiding.Moex.Clients.Errors;
 using ProjectTraiding.Moex.Contracts.Dto.Iss;
 using ProjectTraiding.Moex.Infrastructure.Buffers;
 using ProjectTraiding.Moex.Infrastructure.RawCapture;
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Parsing;
 using ProjectTraiding.Moex.Parsing.Errors;
@@ -57,6 +58,11 @@ namespace ProjectTraiding.Moex.Clients
             string? runId = null,
             CancellationToken cancellationToken = default)
         {
+            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
+            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Iss);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, "securities");
+            activity?.SetTag(MoexTelemetryAttributes.Market, "stock");
+
             string effectiveRunId = runId
                 ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
                 + "-" + Guid.NewGuid().ToString("N");
@@ -73,6 +79,13 @@ namespace ProjectTraiding.Moex.Clients
                 {
                     List<StockSecurityDTO> result = ParsingIssUtf8.ParseIssSecurityStock(rentedArr.Span);
                     MoexLogMessages.SinglePageReceived(_logger, method, result.Count, Stopwatch.GetElapsedTime(startTimestamp));
+                    MoexMetrics.PagesTotal.Add(
+                        1,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Iss));
+                    MoexMetrics.RowsTotal.Add(
+                        result.Count,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Iss),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, "securities"));
                     await RawCaptureHelper.CaptureSingleAsync(
                         _captureWriter,
                         RawCaptureClients.Iss,
@@ -127,6 +140,11 @@ namespace ProjectTraiding.Moex.Clients
             string? runId = null,
             CancellationToken cancellationToken = default)
         {
+            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
+            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Iss);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, "securities");
+            activity?.SetTag(MoexTelemetryAttributes.Market, "futures");
+
             string effectiveRunId = runId
                 ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
                 + "-" + Guid.NewGuid().ToString("N");
@@ -143,6 +161,13 @@ namespace ProjectTraiding.Moex.Clients
                 {
                     List<FuturesSecurityDTO> result = ParsingIssUtf8.ParseIssSecurityFutures(rentedArr.Span);
                     MoexLogMessages.SinglePageReceived(_logger, method, result.Count, Stopwatch.GetElapsedTime(startTimestamp));
+                    MoexMetrics.PagesTotal.Add(
+                        1,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Iss));
+                    MoexMetrics.RowsTotal.Add(
+                        result.Count,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Iss),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, "securities"));
                     await RawCaptureHelper.CaptureSingleAsync(
                         _captureWriter,
                         RawCaptureClients.Iss,

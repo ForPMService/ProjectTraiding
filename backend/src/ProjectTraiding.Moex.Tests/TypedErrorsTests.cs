@@ -12,12 +12,12 @@ public class TypedErrorsTests
     // ═══════════════════════════════════════════════════════════
 
     [Fact]
-    public void Returns429_ThrowsMoexRateLimitException()
+    public async Task Returns429_ThrowsMoexRateLimitException()
     {
-        var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+        HttpResponseMessage response = new(HttpStatusCode.TooManyRequests);
 
-        var ex = Assert.Throws<MoexRateLimitException>(
-            () => HttpClientHelpers.EnsureSuccessOrThrow(response, "test/endpoint"));
+        MoexRateLimitException ex = await Assert.ThrowsAsync<MoexRateLimitException>(
+            () => HttpClientHelpers.EnsureSuccessOrThrowAsync(response, "test/endpoint"));
 
         Assert.True(ex.IsRetryable);
     }
@@ -27,13 +27,13 @@ public class TypedErrorsTests
     // ═══════════════════════════════════════════════════════════
 
     [Fact]
-    public void Returns429WithRetryAfterSeconds_ParsesCorrectly()
+    public async Task Returns429WithRetryAfterSeconds_ParsesCorrectly()
     {
-        var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+        HttpResponseMessage response = new(HttpStatusCode.TooManyRequests);
         response.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromSeconds(5));
 
-        var ex = Assert.Throws<MoexRateLimitException>(
-            () => HttpClientHelpers.EnsureSuccessOrThrow(response, "test/endpoint"));
+        MoexRateLimitException ex = await Assert.ThrowsAsync<MoexRateLimitException>(
+            () => HttpClientHelpers.EnsureSuccessOrThrowAsync(response, "test/endpoint"));
 
         Assert.Equal(TimeSpan.FromSeconds(5), ex.RetryAfter);
     }
@@ -43,12 +43,12 @@ public class TypedErrorsTests
     // ═══════════════════════════════════════════════════════════
 
     [Fact]
-    public void Returns429WithoutRetryAfter_RetryAfterIsNull()
+    public async Task Returns429WithoutRetryAfter_RetryAfterIsNull()
     {
-        var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+        HttpResponseMessage response = new(HttpStatusCode.TooManyRequests);
 
-        var ex = Assert.Throws<MoexRateLimitException>(
-            () => HttpClientHelpers.EnsureSuccessOrThrow(response, "test/endpoint"));
+        MoexRateLimitException ex = await Assert.ThrowsAsync<MoexRateLimitException>(
+            () => HttpClientHelpers.EnsureSuccessOrThrowAsync(response, "test/endpoint"));
 
         Assert.Null(ex.RetryAfter);
     }
@@ -58,12 +58,12 @@ public class TypedErrorsTests
     // ═══════════════════════════════════════════════════════════
 
     [Fact]
-    public void Returns401_ThrowsMoexAuthException_NotRetryable()
+    public async Task Returns401_ThrowsMoexAuthException_NotRetryable()
     {
-        var response = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        HttpResponseMessage response = new(HttpStatusCode.Unauthorized);
 
-        var ex = Assert.Throws<MoexAuthException>(
-            () => HttpClientHelpers.EnsureSuccessOrThrow(response, "test/endpoint"));
+        MoexAuthException ex = await Assert.ThrowsAsync<MoexAuthException>(
+            () => HttpClientHelpers.EnsureSuccessOrThrowAsync(response, "test/endpoint"));
 
         Assert.False(ex.IsRetryable);
     }
@@ -73,12 +73,12 @@ public class TypedErrorsTests
     // ═══════════════════════════════════════════════════════════
 
     [Fact]
-    public void Returns403_ThrowsMoexAuthException_NotRetryable()
+    public async Task Returns403_ThrowsMoexAuthException_NotRetryable()
     {
-        var response = new HttpResponseMessage(HttpStatusCode.Forbidden);
+        HttpResponseMessage response = new(HttpStatusCode.Forbidden);
 
-        var ex = Assert.Throws<MoexAuthException>(
-            () => HttpClientHelpers.EnsureSuccessOrThrow(response, "test/endpoint"));
+        MoexAuthException ex = await Assert.ThrowsAsync<MoexAuthException>(
+            () => HttpClientHelpers.EnsureSuccessOrThrowAsync(response, "test/endpoint"));
 
         Assert.False(ex.IsRetryable);
     }
@@ -88,12 +88,12 @@ public class TypedErrorsTests
     // ═══════════════════════════════════════════════════════════
 
     [Fact]
-    public void Returns400_ThrowsMoexBadRequestException()
+    public async Task Returns400_ThrowsMoexBadRequestException()
     {
-        var response = new HttpResponseMessage(HttpStatusCode.BadRequest);
+        HttpResponseMessage response = new(HttpStatusCode.BadRequest);
 
-        var ex = Assert.Throws<MoexBadRequestException>(
-            () => HttpClientHelpers.EnsureSuccessOrThrow(response, "test/endpoint"));
+        MoexBadRequestException ex = await Assert.ThrowsAsync<MoexBadRequestException>(
+            () => HttpClientHelpers.EnsureSuccessOrThrowAsync(response, "test/endpoint"));
 
         Assert.False(ex.IsRetryable);
     }
@@ -103,12 +103,12 @@ public class TypedErrorsTests
     // ═══════════════════════════════════════════════════════════
 
     [Fact]
-    public void Returns404_ThrowsMoexNotFoundException()
+    public async Task Returns404_ThrowsMoexNotFoundException()
     {
-        var response = new HttpResponseMessage(HttpStatusCode.NotFound);
+        HttpResponseMessage response = new(HttpStatusCode.NotFound);
 
-        var ex = Assert.Throws<MoexNotFoundException>(
-            () => HttpClientHelpers.EnsureSuccessOrThrow(response, "test/endpoint"));
+        MoexNotFoundException ex = await Assert.ThrowsAsync<MoexNotFoundException>(
+            () => HttpClientHelpers.EnsureSuccessOrThrowAsync(response, "test/endpoint"));
 
         Assert.False(ex.IsRetryable);
     }
@@ -118,12 +118,12 @@ public class TypedErrorsTests
     // ═══════════════════════════════════════════════════════════
 
     [Fact]
-    public void Returns500_ThrowsMoexServerException_Retryable()
+    public async Task Returns500_ThrowsMoexServerException_Retryable()
     {
-        var response = new HttpResponseMessage(HttpStatusCode.InternalServerError);
+        HttpResponseMessage response = new(HttpStatusCode.InternalServerError);
 
-        var ex = Assert.Throws<MoexServerException>(
-            () => HttpClientHelpers.EnsureSuccessOrThrow(response, "test/endpoint"));
+        MoexServerException ex = await Assert.ThrowsAsync<MoexServerException>(
+            () => HttpClientHelpers.EnsureSuccessOrThrowAsync(response, "test/endpoint"));
 
         Assert.True(ex.IsRetryable);
     }
@@ -133,14 +133,17 @@ public class TypedErrorsTests
     // ═══════════════════════════════════════════════════════════
 
     [Fact]
-    public void Returns200_DoesNotThrow()
+    public async Task Returns200_DoesNotThrow()
     {
-        var response = new HttpResponseMessage(HttpStatusCode.OK);
+        HttpResponseMessage response = new(HttpStatusCode.OK)
+        {
+            Content = new StringContent("ok")
+        };
 
-        HttpClientHelpers.EnsureSuccessOrThrow(response, "test");
+        await HttpClientHelpers.EnsureSuccessOrThrowAsync(response, "test");
 
-        // response не disposed — Content доступен без ObjectDisposedException
-        Assert.NotNull(response.Content);
+        string body = await response.Content.ReadAsStringAsync();
+        Assert.Equal("ok", body);
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -148,19 +151,19 @@ public class TypedErrorsTests
     // ═══════════════════════════════════════════════════════════
 
     [Fact]
-    public void EnsureSuccessOrThrow_DisposesResponseOnError()
+    public async Task EnsureSuccessOrThrowAsync_DisposesResponseOnError()
     {
-        var response = new HttpResponseMessage(HttpStatusCode.BadRequest)
+        HttpResponseMessage response = new(HttpStatusCode.BadRequest)
         {
             Content = new StringContent("body")
         };
 
-        Assert.Throws<MoexBadRequestException>(
-            () => HttpClientHelpers.EnsureSuccessOrThrow(response, "test"));
+        await Assert.ThrowsAsync<MoexBadRequestException>(
+            () => HttpClientHelpers.EnsureSuccessOrThrowAsync(response, "test"));
 
-        Assert.Throws<ObjectDisposedException>(() =>
+        await Assert.ThrowsAsync<ObjectDisposedException>(async () =>
         {
-            using Stream _ = response.Content.ReadAsStream();
+            using Stream _ = await response.Content.ReadAsStreamAsync();
         });
     }
 

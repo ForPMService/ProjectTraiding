@@ -7,6 +7,7 @@ using ProjectTraiding.Moex.Contracts.Dto.Calendar;
 using ProjectTraiding.Moex.Contracts.Pagination;
 using ProjectTraiding.Moex.Infrastructure.Buffers;
 using ProjectTraiding.Moex.Infrastructure.RawCapture;
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Parsing;
 using ProjectTraiding.Moex.Parsing.Errors;
@@ -41,6 +42,10 @@ namespace ProjectTraiding.Moex.Clients
             string? runId = null,
             CancellationToken cancellationToken = default)
         {
+            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
+            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Calendar);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OffDaysAll);
+
             const string endpoint = "/calendars.json";
             string effectiveRunId = runId
                 ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
@@ -58,6 +63,14 @@ namespace ProjectTraiding.Moex.Clients
                 {
                     List<CalendarOffDaysAllDTO> result = ParsingCalendarUtf8.ParseOffDaysAll(rentedArr.Span);
                     MoexLogMessages.SinglePageReceived(_logger, endpoint, result.Count, Stopwatch.GetElapsedTime(startTimestamp));
+                    MoexMetrics.PagesTotal.Add(
+                        1,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OffDaysAll));
+                    MoexMetrics.RowsTotal.Add(
+                        result.Count,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OffDaysAll));
                     await RawCaptureHelper.CaptureSingleAsync(
                         _captureWriter,
                         RawCaptureClients.Calendar,
@@ -111,6 +124,11 @@ namespace ProjectTraiding.Moex.Clients
             string? runId = null,
             CancellationToken cancellationToken = default)
         {
+            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
+            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Calendar);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OffDays);
+            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Stock);
+
             const string endpoint = "/calendars/stock.json";
             string effectiveRunId = runId
                 ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
@@ -128,6 +146,14 @@ namespace ProjectTraiding.Moex.Clients
                 {
                     List<CalendarOffDaysMarketDTO> result = ParsingCalendarUtf8.ParseOffDaysMarket(rentedArr.Span);
                     MoexLogMessages.SinglePageReceived(_logger, endpoint, result.Count, Stopwatch.GetElapsedTime(startTimestamp));
+                    MoexMetrics.PagesTotal.Add(
+                        1,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OffDays));
+                    MoexMetrics.RowsTotal.Add(
+                        result.Count,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OffDays));
                     await RawCaptureHelper.CaptureSingleAsync(
                         _captureWriter,
                         RawCaptureClients.Calendar,
@@ -181,6 +207,11 @@ namespace ProjectTraiding.Moex.Clients
             string? runId = null,
             CancellationToken cancellationToken = default)
         {
+            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
+            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Calendar);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OffDays);
+            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Futures);
+
             const string endpoint = "/calendars/futures.json";
             string effectiveRunId = runId
                 ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
@@ -198,6 +229,14 @@ namespace ProjectTraiding.Moex.Clients
                 {
                     List<CalendarOffDaysMarketDTO> result = ParsingCalendarUtf8.ParseOffDaysMarket(rentedArr.Span);
                     MoexLogMessages.SinglePageReceived(_logger, endpoint, result.Count, Stopwatch.GetElapsedTime(startTimestamp));
+                    MoexMetrics.PagesTotal.Add(
+                        1,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OffDays));
+                    MoexMetrics.RowsTotal.Add(
+                        result.Count,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OffDays));
                     await RawCaptureHelper.CaptureSingleAsync(
                         _captureWriter,
                         RawCaptureClients.Calendar,
@@ -254,6 +293,11 @@ namespace ProjectTraiding.Moex.Clients
             string? runId = null,
             CancellationToken cancellationToken = default)
         {
+            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
+            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Calendar);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Sessions);
+            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Stock);
+
             const string endpoint = "/calendars/stock/session.json";
             string effectiveRunId = runId
                 ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
@@ -272,6 +316,14 @@ namespace ProjectTraiding.Moex.Clients
                     (List<CalendarStockSessionDTO> Sessions, List<CalendarSessionTypeDTO> Types) result =
                         ParsingCalendarUtf8.ParseStockSession(rentedArr.Span);
                     MoexLogMessages.SinglePageReceived(_logger, endpoint, result.Sessions.Count, Stopwatch.GetElapsedTime(startTimestamp));
+                    MoexMetrics.PagesTotal.Add(
+                        1,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Sessions));
+                    MoexMetrics.RowsTotal.Add(
+                        result.Sessions.Count,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Sessions));
                     await RawCaptureHelper.CaptureSingleAsync(
                         _captureWriter,
                         RawCaptureClients.Calendar,
@@ -326,6 +378,11 @@ namespace ProjectTraiding.Moex.Clients
             string? runId = null,
             CancellationToken cancellationToken = default)
         {
+            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
+            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Calendar);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Sessions);
+            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Futures);
+
             const string endpoint = "/calendars/futures/session.json";
             string effectiveRunId = runId
                 ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
@@ -344,6 +401,14 @@ namespace ProjectTraiding.Moex.Clients
                     (List<CalendarFuturesSessionDTO> Sessions, List<CalendarSessionTypeDTO> Types) result =
                         ParsingCalendarUtf8.ParseFuturesSession(rentedArr.Span);
                     MoexLogMessages.SinglePageReceived(_logger, endpoint, result.Sessions.Count, Stopwatch.GetElapsedTime(startTimestamp));
+                    MoexMetrics.PagesTotal.Add(
+                        1,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Sessions));
+                    MoexMetrics.RowsTotal.Add(
+                        result.Sessions.Count,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Sessions));
                     await RawCaptureHelper.CaptureSingleAsync(
                         _captureWriter,
                         RawCaptureClients.Calendar,
@@ -439,6 +504,11 @@ namespace ProjectTraiding.Moex.Clients
             string? runId = null,
             CancellationToken cancellationToken = default)
         {
+            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
+            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Calendar);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.FortsContracts);
+            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Futures);
+
             const string endpoint = "/calendars/futures/securities.json";
             string effectiveRunId = runId
                 ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
@@ -457,6 +527,14 @@ namespace ProjectTraiding.Moex.Clients
                     (List<CalendarFortsContractDTO> Forts, List<CalendarOptionsSeriesDTO> Options) result =
                         ParsingCalendarUtf8.ParseFuturesSecurities(rentedArr.Span);
                     MoexLogMessages.SinglePageReceived(_logger, endpoint, result.Forts.Count + result.Options.Count, Stopwatch.GetElapsedTime(startTimestamp));
+                    MoexMetrics.PagesTotal.Add(
+                        1,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.FortsContracts));
+                    MoexMetrics.RowsTotal.Add(
+                        result.Forts.Count + result.Options.Count,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.FortsContracts));
                     await RawCaptureHelper.CaptureSingleAsync(
                         _captureWriter,
                         RawCaptureClients.Calendar,
@@ -512,6 +590,11 @@ namespace ProjectTraiding.Moex.Clients
             string? runId = null,
             CancellationToken cancellationToken = default)
         {
+            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
+            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Calendar);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.SuspendedReasons);
+            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Stock);
+
             const string endpoint = "/calendars/stock/securities/suspended/details.json";
             string effectiveRunId = runId
                 ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
@@ -530,6 +613,14 @@ namespace ProjectTraiding.Moex.Clients
                     (List<CalendarSuspendedDTO> _, List<CalendarSuspendedReasonDTO> reasons, PaginationCursorDTO _) =
                         ParsingCalendarUtf8.ParseSuspendedWithReasons(rentedArr.Span);
                     MoexLogMessages.SinglePageReceived(_logger, endpoint, reasons.Count, Stopwatch.GetElapsedTime(startTimestamp));
+                    MoexMetrics.PagesTotal.Add(
+                        1,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.SuspendedReasons));
+                    MoexMetrics.RowsTotal.Add(
+                        reasons.Count,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.SuspendedReasons));
                     await RawCaptureHelper.CaptureSingleAsync(
                         _captureWriter,
                         RawCaptureClients.Calendar,
@@ -583,6 +674,11 @@ namespace ProjectTraiding.Moex.Clients
             string? runId = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
+            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
+            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Calendar);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Suspended);
+            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Stock);
+
             const string endpoint = "/calendars/stock/securities/suspended/details.json";
             Dictionary<string, string> queryParams = new Dictionary<string, string>();
             string effectiveRunId = runId
@@ -662,6 +758,14 @@ namespace ProjectTraiding.Moex.Clients
                 pagesElapsed++;
                 totalRows += page.Count;
                 MoexLogMessages.PageReceived(_logger, endpoint, pagesElapsed, page.Count, Stopwatch.GetElapsedTime(pageStart));
+                MoexMetrics.PagesTotal.Add(
+                    1,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Suspended));
+                MoexMetrics.RowsTotal.Add(
+                    page.Count,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Suspended));
                 yield return page;
                 PaginationStep step = MoexCursorPagination.Next(cursor, pagesElapsed, _options.MaxPagesPerLoad);
                 if (step.IsStop)
@@ -671,6 +775,9 @@ namespace ProjectTraiding.Moex.Clients
                 }
                 queryParams["start"] = step.NextStart.ToString();
             }
+
+            activity?.SetTag("total_pages", pagesElapsed);
+            activity?.SetTag("total_rows", totalRows);
 
             await accumulator.FlushNdjsonAsync(
                 RawCaptureClients.Calendar,
@@ -687,6 +794,11 @@ namespace ProjectTraiding.Moex.Clients
             string? runId = null,
             CancellationToken cancellationToken = default)
         {
+            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
+            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Calendar);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.SecurityAttributes);
+            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Stock);
+
             const string endpoint = "/calendars/stock/securities/changes.json";
             string effectiveRunId = runId
                 ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
@@ -705,6 +817,14 @@ namespace ProjectTraiding.Moex.Clients
                     (List<CalendarSecurityChangeDTO> _, List<CalendarSecurityAttributeDTO> attributes, PaginationCursorDTO _) =
                         ParsingCalendarUtf8.ParseSecurityChangesWithAttributes(rentedArr.Span);
                     MoexLogMessages.SinglePageReceived(_logger, endpoint, attributes.Count, Stopwatch.GetElapsedTime(startTimestamp));
+                    MoexMetrics.PagesTotal.Add(
+                        1,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.SecurityAttributes));
+                    MoexMetrics.RowsTotal.Add(
+                        attributes.Count,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.SecurityAttributes));
                     await RawCaptureHelper.CaptureSingleAsync(
                         _captureWriter,
                         RawCaptureClients.Calendar,
@@ -758,6 +878,11 @@ namespace ProjectTraiding.Moex.Clients
             string? runId = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
+            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
+            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Calendar);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.SecurityChanges);
+            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Stock);
+
             const string endpoint = "/calendars/stock/securities/changes.json";
             Dictionary<string, string> queryParams = new Dictionary<string, string>();
             string effectiveRunId = runId
@@ -837,6 +962,14 @@ namespace ProjectTraiding.Moex.Clients
                 pagesElapsed++;
                 totalRows += page.Count;
                 MoexLogMessages.PageReceived(_logger, endpoint, pagesElapsed, page.Count, Stopwatch.GetElapsedTime(pageStart));
+                MoexMetrics.PagesTotal.Add(
+                    1,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.SecurityChanges));
+                MoexMetrics.RowsTotal.Add(
+                    page.Count,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.SecurityChanges));
                 yield return page;
                 PaginationStep step = MoexCursorPagination.Next(cursor, pagesElapsed, _options.MaxPagesPerLoad);
                 if (step.IsStop)
@@ -846,6 +979,9 @@ namespace ProjectTraiding.Moex.Clients
                 }
                 queryParams["start"] = step.NextStart.ToString();
             }
+
+            activity?.SetTag("total_pages", pagesElapsed);
+            activity?.SetTag("total_rows", totalRows);
 
             await accumulator.FlushNdjsonAsync(
                 RawCaptureClients.Calendar,
