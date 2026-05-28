@@ -542,6 +542,7 @@ namespace ProjectTraiding.Moex.Clients
             queryParams.Remove("start");
             queryParams.Remove("offset");
 
+            using var accumulator = new RawCaptureAccumulator(_captureWriter);
             int dayIndex = 0;
             int totalRows = 0;
 
@@ -587,6 +588,7 @@ namespace ProjectTraiding.Moex.Clients
                     try
                     {
                         page = ParsingAlgUtf8.ParseFutoi(rentedArr.Span);
+                        accumulator.AppendPage(rentedArr.Memory);
                     }
                     catch (MoexSchemaMismatchException ex)
                     {
@@ -617,6 +619,14 @@ namespace ProjectTraiding.Moex.Clients
                 }
             }
             MoexLogMessages.DaySplitCompleted(_logger, method, fromStr, tillStr, dayIndex, totalRows);
+
+            await accumulator.FlushNdjsonAsync(
+                RawCaptureClients.Alg,
+                RawCaptureDataTypes.Futoi,
+                RawCaptureMarkets.Futures,
+                secid,
+                effectiveRunId,
+                cancellationToken);
         }
 
         // ═══════════════════════════════════════════════════════════
