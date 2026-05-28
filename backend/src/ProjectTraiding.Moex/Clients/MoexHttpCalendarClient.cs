@@ -589,6 +589,7 @@ namespace ProjectTraiding.Moex.Clients
                 ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
                 + "-" + Guid.NewGuid().ToString("N");
 
+            using var accumulator = new RawCaptureAccumulator(_captureWriter);
             int pagesElapsed = 0;
             int totalRows = 0;
             while (true)
@@ -635,6 +636,7 @@ namespace ProjectTraiding.Moex.Clients
                         var parsed = ParsingCalendarUtf8.ParseSuspendedWithReasons(rentedArr.Span);
                         page = parsed.Item1;
                         cursor = parsed.Item3;
+                        accumulator.AppendPage(rentedArr.Memory);
                     }
                     catch (MoexSchemaMismatchException ex)
                     {
@@ -669,6 +671,14 @@ namespace ProjectTraiding.Moex.Clients
                 }
                 queryParams["start"] = step.NextStart.ToString();
             }
+
+            await accumulator.FlushNdjsonAsync(
+                RawCaptureClients.Calendar,
+                RawCaptureDataTypes.Suspended,
+                RawCaptureMarkets.Stock,
+                null,
+                effectiveRunId,
+                cancellationToken);
         }
 
         // ── Изменения по ценным бумагам (capture-enabled, cursor-пагинация) ──────
@@ -754,6 +764,7 @@ namespace ProjectTraiding.Moex.Clients
                 ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
                 + "-" + Guid.NewGuid().ToString("N");
 
+            using var accumulator = new RawCaptureAccumulator(_captureWriter);
             int pagesElapsed = 0;
             int totalRows = 0;
             while (true)
@@ -800,6 +811,7 @@ namespace ProjectTraiding.Moex.Clients
                         var parsed = ParsingCalendarUtf8.ParseSecurityChangesWithAttributes(rentedArr.Span);
                         page = parsed.Item1;
                         cursor = parsed.Item3;
+                        accumulator.AppendPage(rentedArr.Memory);
                     }
                     catch (MoexSchemaMismatchException ex)
                     {
@@ -834,6 +846,14 @@ namespace ProjectTraiding.Moex.Clients
                 }
                 queryParams["start"] = step.NextStart.ToString();
             }
+
+            await accumulator.FlushNdjsonAsync(
+                RawCaptureClients.Calendar,
+                RawCaptureDataTypes.SecurityChanges,
+                RawCaptureMarkets.Stock,
+                null,
+                effectiveRunId,
+                cancellationToken);
         }
 
         // ── Инфраструктура ──────────────────────────────────────
