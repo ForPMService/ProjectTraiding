@@ -1,17 +1,16 @@
 using ProjectTraiding.Moex.Contracts.Serialization;
 using ProjectTraiding.Moex.Infrastructure.DependencyInjection;
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Observability.Infrastructure.DependencyInjection;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // ══════════════════════════════════════════════
 // Наблюдаемость — до остальных модулей.
-// Строковые литералы заменятся на MoexTelemetry.ActivitySourceName / MeterName
-// после создания MoexTelemetry (задача 4).
 // ══════════════════════════════════════════════
 builder.AddProjectTraidingObservability(
-    activitySources: ["ProjectTraiding.Moex"],
-    meters: ["ProjectTraiding.Moex"]);
+    activitySources: [MoexTelemetry.ActivitySourceName],
+    meters: [MoexTelemetry.MeterName]);
 
 builder.Services.AddMoexClients(builder.Configuration);
 builder.Services.AddRawCapture(builder.Configuration);
