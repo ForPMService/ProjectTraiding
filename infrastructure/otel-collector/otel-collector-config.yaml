@@ -1,0 +1,51 @@
+# OpenTelemetry Collector — конфигурация для ProjectTraiding.
+# Шаг 2.3: экспортеры в LGTM + debug для диагностики.
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  batch:
+
+exporters:
+  # Debug — для диагностики параллельно с LGTM.
+  debug:
+    verbosity: detailed
+
+  # Loki — логи через OTLP.
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+
+  # Prometheus — Collector открывает scrape endpoint.
+  # Prometheus scrape-ит otel-collector:8889.
+  prometheus:
+    endpoint: 0.0.0.0:8889
+
+  # Tempo — трейсы через OTLP gRPC.
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/tempo, debug]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus, debug]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/loki, debug]

@@ -33,6 +33,92 @@ services:
       - ./garage/garage.toml:/etc/garage.toml:ro
       - garagedata:/var/lib/garage
 
+  # ══════════════════════════════════════════════
+  # OpenTelemetry Collector
+  # Принимает OTLP от приложения, маршрутизирует в LGTM.
+  # Образ contrib — экспортеры Loki/Prometheus.
+  # ══════════════════════════════════════════════
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.120.0
+    container_name: projecttraiding-otel-collector
+    restart: unless-stopped
+    command: ["--config=/etc/otel/config.yaml"]
+    ports:
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:13133:13133"
+    volumes:
+      - ./otel-collector/config.yaml:/etc/otel/config.yaml:ro
+    depends_on:
+      - loki
+      - tempo
+
+  # ══════════════════════════════════════════════
+  # Loki — хранилище логов
+  # ══════════════════════════════════════════════
+  loki:
+    image: grafana/loki:3.5.0
+    container_name: projecttraiding-loki
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3100:3100"
+    volumes:
+      - ./loki/config.yaml:/etc/loki/config.yaml:ro
+      - lokidata:/loki
+    command: -config.file=/etc/loki/config.yaml
+
+  # ══════════════════════════════════════════════
+  # Prometheus — хранилище метрик
+  # Scrape-ит otel-collector:8889.
+  # ══════════════════════════════════════════════
+  prometheus:
+    image: prom/prometheus:v3.3.0
+    container_name: projecttraiding-prometheus
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheusdata:/prometheus
+
+  # ══════════════════════════════════════════════
+  # Tempo — хранилище трейсов
+  # ══════════════════════════════════════════════
+  tempo:
+    image: grafana/tempo:2.7.0
+    container_name: projecttraiding-tempo
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3200:3200"
+    volumes:
+      - ./tempo/config.yaml:/etc/tempo/config.yaml:ro
+      - tempodata:/var/tempo
+    command: -config.file=/etc/tempo/config.yaml
+
+  # ══════════════════════════════════════════════
+  # Grafana — визуализация
+  # Datasources и дашборды provisioned из репозитория.
+  # ══════════════════════════════════════════════
+  grafana:
+    image: grafana/grafana:11.6.0
+    container_name: projecttraiding-grafana
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafanadata:/var/lib/grafana
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+    depends_on:
+      - loki
+      - prometheus
+      - tempo
+
 volumes:
   pgdata:
   garagedata:
+  lokidata:
+  prometheusdata:
+  tempodata:
+  grafanadata:
