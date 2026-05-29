@@ -110,6 +110,7 @@ services:
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      GF_INSTALL_PLUGINS: "grafana-lokiexplore-app,grafana-exploretraces-app"
     depends_on:
       - loki
       - prometheus

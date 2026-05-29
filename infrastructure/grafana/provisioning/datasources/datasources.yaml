@@ -1,11 +1,13 @@
 # Grafana — provisioned datasources.
 # Автоматически загружаются при старте Grafana.
+# Версия 2: явные UID + исправленный derived field для OTLP trace_id.
 
 apiVersion: 1
 
 datasources:
   - name: Prometheus
     type: prometheus
+    uid: prometheus
     access: proxy
     url: http://prometheus:9090
     isDefault: true
@@ -13,21 +15,25 @@ datasources:
 
   - name: Loki
     type: loki
+    uid: loki
     access: proxy
     url: http://loki:3100
     editable: false
     jsonData:
       derivedFields:
+        # OTLP-логи хранят trace_id в structured metadata, не в теле строки.
+        # matcherType: label — ищет по полю/метке, а не по regex в тексте.
         - datasourceUid: tempo
-          matcherRegex: '"TraceId":"(\w+)"'
-          name: TraceId
-          url: '$${__value.raw}'
+          matcherType: label
+          name: trace_id
+          matcherRegex: "(.+)"
+          url: "$${__value.raw}"
           urlDisplayLabel: View Trace
 
   - name: Tempo
     type: tempo
-    access: proxy
     uid: tempo
+    access: proxy
     url: http://tempo:3200
     editable: false
     jsonData:
@@ -36,3 +42,5 @@ datasources:
         filterByTraceID: true
       nodeGraph:
         enabled: true
+      tracesToMetrics:
+        datasourceUid: prometheus
