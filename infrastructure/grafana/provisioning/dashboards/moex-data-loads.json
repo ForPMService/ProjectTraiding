@@ -159,7 +159,7 @@
       "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
-          "expr": "{service_name=\"ProjectTraiding.Api\"} |= \"paging stopped\" or {service_name=\"ProjectTraiding.Api\"} |= \"split completed\" or {service_name=\"ProjectTraiding.Api\"} |= \"pagination stopped\"",
+          "expr": "{service_name=\"ProjectTraiding.Api\"} |~ \"paging stopped|daily load completed|single page processed\"",
           "refId": "A"
         }
       ],
