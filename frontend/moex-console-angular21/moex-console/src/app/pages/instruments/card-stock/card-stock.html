@@ -1,0 +1,188 @@
+<section class="detail">
+  <button type="button" class="detail__back" (click)="pageChange.emit('catalog-stocks')">
+    ← Назад к инструментам
+  </button>
+
+  <nav class="detail__crumb">
+    DATA OPS <span>/</span> Инструменты <span>/</span> <b>SBER</b>
+  </nav>
+
+  <header class="detail__head">
+    <div class="detail__titles">
+      <div class="detail__title-row">
+        <h1>SBER</h1>
+        <span class="status-badge status-badge--partial">частично</span>
+      </div>
+      <div class="detail__subtitle">Сбербанк · акция · TQBR</div>
+    </div>
+
+    <div class="detail__head-actions">
+      <label class="detail__track">
+        <span class="toggle is-on" aria-hidden="true"></span>
+        Отслеживание
+      </label>
+      <button type="button" class="btn-primary">Создать задание</button>
+      <button type="button" class="btn-secondary">Обогатить карточку</button>
+    </div>
+  </header>
+
+  <div class="detail__metrics">
+    @for (m of metrics; track m.label) {
+      <div class="detail__metric">
+        <span class="micro-label">{{ m.label }}</span>
+        <span class="val" [class]="m.cls ? 'val ' + m.cls : 'val'">{{ m.value }}</span>
+      </div>
+    }
+  </div>
+
+  <!-- ПАРАМЕТРЫ -->
+  <section class="detail__section">
+    <span class="detail__section-label">Параметры</span>
+    <div class="param-card">
+      <div class="param-grid">
+        @for (p of params; track p.label) {
+          <div class="param">
+            <span class="micro-label">{{ p.label }}</span>
+            <b>{{ p.value }}</b>
+          </div>
+        }
+      </div>
+    </div>
+    <div class="detail__banner">
+      <p>Карточка обогащена частично. Проверьте недостающие поля MarketStatistics.</p>
+      <button type="button" class="link-btn link-btn--warning">Обогатить карточку →</button>
+    </div>
+  </section>
+
+  <!-- ПОКРЫТИЕ ДАННЫХ -->
+  <section class="detail__section">
+    <span class="detail__section-label">
+      Покрытие данных <span class="sub">3 из 5 типов загружено</span>
+    </span>
+    <div class="table-card">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>ТИП ДАННЫХ</th>
+            <th>ИНТЕРВАЛ</th>
+            <th>ПЕРИОД</th>
+            <th class="align-right">СТРОК</th>
+            <th>ХРАНИЛИЩЕ</th>
+            <th>СТАТУС</th>
+            <th>ОБНОВЛЕНО</th>
+            <th>ДЕЙСТВИЕ</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (c of coverage; track c.data_kind) {
+            <tr [class.dim]="c.status === 'not_loaded'">
+              <td>{{ c.data_kind }}</td>
+              <td class="muted">{{ c.interval }}</td>
+              <td class="muted">{{ c.period }}</td>
+              <td class="align-right num">{{ c.rows }}</td>
+              <td class="muted">{{ c.storage }}</td>
+              <td>
+                <span class="dot" [class.dot-ok]="c.status === 'ok'" [class.dot-off]="c.status === 'not_loaded'">
+                  {{ c.status_label }}
+                </span>
+              </td>
+              <td class="muted">{{ c.updated }}</td>
+              <td>
+                <button type="button" class="link-btn">{{ c.action }}</button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ПРОПУСКИ -->
+  <section class="detail__section">
+    <span class="detail__section-label">
+      Пропуски <span class="sub">1 пропущенный день</span>
+    </span>
+    <div class="param-card">
+      <p class="bullet-warn">14.12 — торговый день, данные candles отсутствуют</p>
+      <button type="button" class="link-btn link-btn--warning" style="margin-top:12px">
+        Дозагрузить 14.12 →
+      </button>
+    </div>
+  </section>
+
+  <!-- СВЯЗИ -->
+  <section class="detail__section">
+    <span class="detail__section-label">
+      Связи <span class="sub">2 связанных инструмента</span>
+    </span>
+    <div class="table-card">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>ИНСТРУМЕНТ</th>
+            <th>ТИП СВЯЗИ</th>
+            <th>CONFIDENCE</th>
+            <th>ДЕЙСТВИЕ</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (r of relations; track r.secid) {
+            <tr>
+              <td class="num">{{ r.secid }}</td>
+              <td>{{ r.relation }}</td>
+              <td><span class="dot dot-ok">{{ r.confidence }}</span></td>
+              <td><button type="button" class="link-btn">Открыть</button></td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ОГРАНИЧЕНИЯ И ИЗМЕНЕНИЯ -->
+  <section class="detail__section">
+    <span class="detail__section-label">Ограничения и изменения</span>
+
+    <div class="sub-card">
+      <p class="sub-card__title">Приостановки</p>
+      <p class="bullet-ok">Активных приостановок нет</p>
+    </div>
+
+    <div class="sub-card">
+      <p class="sub-card__title">Изменения атрибутов (последние 3)</p>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>ДАТА</th>
+            <th>АТРИБУТ</th>
+            <th>БЫЛО</th>
+            <th>СТАЛО</th>
+            <th>ДЕЙСТВИЕ</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (ch of changes; track ch.attribute) {
+            <tr>
+              <td class="muted">{{ ch.date }}</td>
+              <td>{{ ch.attribute }}</td>
+              <td class="num">{{ ch.before }}</td>
+              <td class="num">{{ ch.after }}</td>
+              <td class="muted">{{ ch.action }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+      <button type="button" class="link-btn" style="margin-top:14px">История изменений →</button>
+    </div>
+  </section>
+
+  <!-- ПОСЛЕДНИЕ ДЕЙСТВИЯ -->
+  <section class="detail__section">
+    <span class="detail__section-label">Последние действия</span>
+    <ul class="log">
+      @for (t of log; track $index) {
+        <li><time>{{ t.time }}</time>{{ t.text }}</li>
+      }
+    </ul>
+  </section>
+</section>
