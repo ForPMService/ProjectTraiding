@@ -1,4 +1,4 @@
-using ProjectTraiding.Moex.Contracts.Dto;
+// _Old: using ProjectTraiding.Moex.Contracts.Dto;
 using ProjectTraiding.Moex.Contracts.Dto.Calendar;
 using System.Text.Json;
 
@@ -6,6 +6,7 @@ namespace ProjectTraiding.Moex.Parsing
 {
     public static class ParsingCalendarUtf8
     {
+        /* _Old: сценарии stock/futures session и futures securities перенесены в Old
         // ═══════════════════════════════════════════════════════════
         // ParseStockSession — два прохода по одним байтам
         // Endpoint: GET /iss/calendars/stock/session.json
@@ -691,11 +692,15 @@ namespace ProjectTraiding.Moex.Parsing
             }
         }
 
+        */
+
         // ═══════════════════════════════════════════════════════════
         // ParseOffDaysAll — один проход, одна таблица
         // Endpoint: GET /iss/calendars.json
         // Таблица: off_days (10 колонок)
         // ═══════════════════════════════════════════════════════════
+
+        /* _Old: сценарий off_days_all не используется, парсер перенесён
 
         public static List<CalendarOffDaysAllDTO> ParseOffDaysAll(ReadOnlySpan<byte> jsonBytes)
         {
@@ -739,6 +744,8 @@ namespace ProjectTraiding.Moex.Parsing
             ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, schema.RootKey);
             return list;
         }
+
+        */
 
         // ═══════════════════════════════════════════════════════════
         // ParseOffDaysMarket — один проход, одна таблица
@@ -788,6 +795,8 @@ namespace ProjectTraiding.Moex.Parsing
             ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, schema.RootKey);
             return list;
         }
+
+        /* _Old: сценарии suspended и security changes перенесены в Old
 
         // ═══════════════════════════════════════════════════════════
         // ParseSuspendedWithReasons — три прохода
@@ -987,9 +996,13 @@ namespace ProjectTraiding.Moex.Parsing
             return (changes, attributes, cursor);
         }
 
+        */
+
         // ═══════════════════════════════════════════════════════════
         // Чтение строк off_days (all) — 10 колонок
         // ═══════════════════════════════════════════════════════════
+
+        /* _Old: сценарий off_days_all не используется, парсер перенесён
 
         private static void ReadOffDaysAllData(
             ref Utf8JsonReader reader,
@@ -1074,6 +1087,8 @@ namespace ProjectTraiding.Moex.Parsing
             }
         }
 
+        */
+
         // ═══════════════════════════════════════════════════════════
         // Чтение строк off_days (market) — 5 колонок
         // ═══════════════════════════════════════════════════════════
@@ -1145,6 +1160,8 @@ namespace ProjectTraiding.Moex.Parsing
                 rowIndex++;
             }
         }
+
+        /* _Old: вспомогательные методы старых calendar-сценариев перенесены в Old
 
         // ═══════════════════════════════════════════════════════════
         // Чтение строк suspended — 8 колонок
@@ -1430,5 +1447,6 @@ namespace ProjectTraiding.Moex.Parsing
                 rowIndex++;
             }
         }
+        */
     }
 }

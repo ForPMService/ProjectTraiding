@@ -53,6 +53,7 @@ namespace ProjectTraiding.Moex.Clients
             return await response.Content.ReadAsStringAsync(cancellationToken);
         }
 
+        /* _Old: заменён GetStockInstrumentCards, парсер ParsingIssUtf8 перенесён
         public async Task<List<StockSecurityDTO>> GetInfoTradedStockAssets(
             string method,
             string? runId = null,
@@ -134,7 +135,9 @@ namespace ProjectTraiding.Moex.Clients
                 throw;
             }
         }
+        */
 
+        /* _Old: заменён карточками инструментов, парсер ParsingIssUtf8 перенесён
         public async Task<List<FuturesSecurityDTO>> GetInfoTradedFuturesAssets(
             string method,
             string? runId = null,
@@ -216,6 +219,7 @@ namespace ProjectTraiding.Moex.Clients
                 throw;
             }
         }
+        */
         /// <summary>
         /// Карточки всех акций TQBR — securities + marketdata одним запросом.
         ///

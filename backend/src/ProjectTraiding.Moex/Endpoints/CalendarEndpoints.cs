@@ -16,6 +16,7 @@ namespace ProjectTraiding.Moex.Endpoints
         public static IEndpointRouteBuilder MapCalendarEndpoints(this IEndpointRouteBuilder routes)
         {
             // === ISS Календарь — Обзор ===
+            /* _Old: endpoint offdays-all отключён, сценарий перенесён в Old
             routes.MapGet("/calendar/offdays-all", async (
                 MoexHttpCalendarClient c,
                 ILoggerFactory loggerFactory,
@@ -27,6 +28,7 @@ namespace ProjectTraiding.Moex.Endpoints
                     await c.GetOffDaysAll(cancellationToken: ct),
                     AppJsonContext.Default.ListCalendarOffDaysAllDTO);
             });
+            */
 
             routes.MapGet("/calendar/stock-offdays", async (
                 MoexHttpCalendarClient c,
@@ -52,6 +54,7 @@ namespace ProjectTraiding.Moex.Endpoints
                     AppJsonContext.Default.ListCalendarOffDaysMarketDTO);
             });
 
+            /* _Old: старые calendar endpoint-ы отключены после переноса сценариев в Old
             routes.MapGet("/calendar/stock-session", async (
                 MoexHttpCalendarClient c,
                 ILoggerFactory loggerFactory,
@@ -157,10 +160,12 @@ namespace ProjectTraiding.Moex.Endpoints
                 MoexLogMessages.LoadStarted(logger, "GetSecurityChanges", MoexLogSources.Calendar, "/calendars/stock/securities/changes.json", string.Empty);
                 return StreamSecurityChanges(c, ct);
             });
+            */
 
             return routes;
         }
 
+        /* _Old: streaming helper-методы для старых calendar endpoint-ов перенесены в Old
         static async IAsyncEnumerable<CalendarSuspendedDTO> StreamSuspended(
             MoexHttpCalendarClient client,
             [EnumeratorCancellation] CancellationToken ct)
@@ -186,5 +191,6 @@ namespace ProjectTraiding.Moex.Endpoints
                 }
             }
         }
+        */
     }
 }

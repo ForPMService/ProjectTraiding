@@ -11,6 +11,16 @@ namespace ProjectTraiding.Moex.Parsing
 {
     public class ParseHelpersUtf8
     {
+        private static readonly ColumnAndNumbersForParsing.ExpectedSchema CursorSchema = new(
+            TotalColumns: 3,
+            RootKey: "cursor",
+            Columns: new ColumnAndNumbersForParsing.ExpectedColumn[]
+            {
+                new(0, "INDEX"u8.ToArray()),
+                new(1, "TOTAL"u8.ToArray()),
+                new(2, "PAGESIZE"u8.ToArray()),
+            });
+
         // ═══════════════════════════════════════════════════════════
         // Structural failure helper (Phase 8-A, Lock §10)
         // ═══════════════════════════════════════════════════════════
@@ -354,7 +364,7 @@ namespace ProjectTraiding.Moex.Parsing
             ref Utf8JsonReader reader,
             string cursorKey)
         {
-            var schema = ColumnAndNumbersForParsing.CalendarCursorSchema with { RootKey = cursorKey };
+            var schema = CursorSchema with { RootKey = cursorKey };
 
             ReadAndExpect(ref reader, JsonTokenType.StartObject, cursorKey, cursorKey);
 
@@ -466,7 +476,7 @@ namespace ProjectTraiding.Moex.Parsing
         {
             // Схема колонок одинакова для всех cursor-блоков.
             // RootKey подставляем реальный, чтобы сообщения об ошибках были точными.
-            var schema = ColumnAndNumbersForParsing.CalendarCursorSchema with { RootKey = cursorKey };
+            var schema = CursorSchema with { RootKey = cursorKey };
 
             var reader = new Utf8JsonReader(jsonBytes);
             SkipToRootObject(ref reader, cursorKey);

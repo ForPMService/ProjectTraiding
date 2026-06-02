@@ -15,6 +15,11 @@
     <ProjectReference Include="..\ProjectTraiding.Moex\ProjectTraiding.Moex.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Remove="IssSecuritiesParserTests.cs" />
+    <Compile Remove="CalendarMultiTableParserTests.cs" />
+    <Compile Remove="CalendarRemainingParserTests.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
   <ItemGroup>

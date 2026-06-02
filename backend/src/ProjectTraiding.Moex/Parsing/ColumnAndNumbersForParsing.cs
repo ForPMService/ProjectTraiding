@@ -384,6 +384,7 @@ namespace ProjectTraiding.Moex.Parsing
                 new(12, "trade_session_date"u8.ToArray()),
             });
 
+        /* _Old: перенесено в Old, парсер ParsingIssUtf8 больше не используется
         // ═══════════════════════════════════════════════════════════
         // ISS — Акции (фондовый рынок)
         // Источник: columns-map.json → "Securities (stock TQBR)"
@@ -409,7 +410,9 @@ namespace ProjectTraiding.Moex.Parsing
                 new(17, "PREVDATE"u8.ToArray()),
                 new(22, "PREVLEGALCLOSEPRICE"u8.ToArray()),
             });
+        */
 
+        /* _Old: перенесено в Old, парсер ParsingIssUtf8 больше не используется
         // ═══════════════════════════════════════════════════════════
         // ISS — Фьючерсы (срочный рынок)
         // Источник: columns-map.json → "Securities (futures RFUD)"
@@ -440,7 +443,9 @@ namespace ProjectTraiding.Moex.Parsing
                 new(17, "STEPPRICE"u8.ToArray()),
                 new(19, "PREVPRICE"u8.ToArray()),
             });
+        */
 
+        /* _Old: перенесено в Old, сценарий off_days_all больше не используется
         // ═══════════════════════════════════════════════════════════
         // Календарь — Выходные дни (все рынки)
         // Источник: columns-map.json → "Calendar OffDays All"
@@ -463,6 +468,7 @@ namespace ProjectTraiding.Moex.Parsing
                 new(8, "stock_trade_session_date"u8.ToArray()),
                 new(9, "stock_reason"u8.ToArray()),
             });
+        */
 
         // ═══════════════════════════════════════════════════════════
         // Календарь — Выходные дни (один рынок: stock или futures)
@@ -482,6 +488,7 @@ namespace ProjectTraiding.Moex.Parsing
                 new(4, "updatetime"u8.ToArray()),
             });
 
+        /* _Old: перенесено в Old, сценарий stock session больше не используется
         // ═══════════════════════════════════════════════════════════
         // Календарь — Сессии фондового рынка
         // Источник: columns-map.json → "Calendar Stock Session → session_schedule"
@@ -502,7 +509,9 @@ namespace ProjectTraiding.Moex.Parsing
                 new(6, "time_till"u8.ToArray()),
                 new(7, "updatetime"u8.ToArray()),
             });
+        */
 
+        /* _Old: перенесено в Old, сценарий futures session больше не используется
         // ═══════════════════════════════════════════════════════════
         // Календарь — Сессии срочного рынка
         // Источник: columns-map.json → "Calendar Futures Session → session_schedule"
@@ -522,7 +531,9 @@ namespace ProjectTraiding.Moex.Parsing
                 new(5, "time_till"u8.ToArray()),
                 new(6, "updatetime"u8.ToArray()),
             });
+        */
 
+        /* _Old: перенесено в Old, типы сессий больше не используются
         // ═══════════════════════════════════════════════════════════
         // Календарь — Типы сессий (общий для stock и futures)
         // Источник: columns-map.json → "session_schedule.types"
@@ -537,7 +548,9 @@ namespace ProjectTraiding.Moex.Parsing
                 new(0, "type"u8.ToArray()),
                 new(1, "title"u8.ToArray()),
             });
+        */
 
+        /* _Old: перенесено в Old, сценарий futures securities больше не используется
         // ═══════════════════════════════════════════════════════════
         // Календарь — Фьючерсные контракты FORTS
         // Источник: columns-map.json → "Calendar Futures Securities → forts"
@@ -560,7 +573,9 @@ namespace ProjectTraiding.Moex.Parsing
                 new(8, "expiration_time"u8.ToArray()),
                 new(9, "weekend_session"u8.ToArray()),
             });
+        */
 
+        /* _Old: перенесено в Old, сценарий futures securities больше не используется
         // ═══════════════════════════════════════════════════════════
         // Календарь — Опционные серии
         // Источник: columns-map.json → "Calendar Futures Securities → options"
@@ -584,7 +599,9 @@ namespace ProjectTraiding.Moex.Parsing
                 new(9, "expiration_time"u8.ToArray()),
                 new(10, "weekend_session"u8.ToArray()),
             });
+        */
 
+        /* _Old: перенесено в Old, сценарий suspended больше не используется
         // ═══════════════════════════════════════════════════════════
         // Календарь — Приостановки торгов
         // Источник: columns-map.json → "Calendar Suspended → suspended"
@@ -605,7 +622,9 @@ namespace ProjectTraiding.Moex.Parsing
                 new(6, "changedate"u8.ToArray()),
                 new(7, "updatetime"u8.ToArray()),
             });
+        */
 
+        /* _Old: перенесено в Old, сценарий suspended reasons больше не используется
         // ═══════════════════════════════════════════════════════════
         // Календарь — Причины приостановок
         // Источник: columns-map.json → "Calendar Suspended → suspended.reasons"
@@ -620,7 +639,9 @@ namespace ProjectTraiding.Moex.Parsing
                 new(0, "id"u8.ToArray()),
                 new(1, "title"u8.ToArray()),
             });
+        */
 
+        /* _Old: перенесено в Old, сценарий security changes больше не используется
         // ═══════════════════════════════════════════════════════════
         // Календарь — Изменения параметров инструментов
         // Источник: columns-map.json → "Calendar Security Changes → securities"
@@ -639,7 +660,9 @@ namespace ProjectTraiding.Moex.Parsing
                 new(4, "before_value"u8.ToArray()),
                 new(5, "after_value"u8.ToArray()),
             });
+        */
 
+        /* _Old: перенесено в Old, сценарий security attributes больше не используется
         // ═══════════════════════════════════════════════════════════
         // Календарь — Справочник атрибутов инструментов
         // Источник: columns-map.json → "Calendar Security Changes → securities.attributes"
@@ -655,7 +678,9 @@ namespace ProjectTraiding.Moex.Parsing
                 new(1, "type"u8.ToArray()),
                 new(2, "title"u8.ToArray()),
             });
+        */
 
+        /* _Old: перенесено в Old, cursor для старых calendar-сценариев больше не используется
         // ═══════════════════════════════════════════════════════════
         // Календарь — Cursor пагинации
         // Источник: columns-map.json → "suspended.cursor", "securities.cursor"
@@ -672,6 +697,7 @@ namespace ProjectTraiding.Moex.Parsing
                 new(1, "TOTAL"u8.ToArray()),
                 new(2, "PAGESIZE"u8.ToArray()),
             });
+        */
 
         // ═══════════════════════════════════════════════════════════
         // Real-time — Orderbook (стакан котировок)
@@ -797,6 +823,7 @@ namespace ProjectTraiding.Moex.Parsing
                 new(1, "secid"u8.ToArray()),
             });
 
+        /* _Old: перенесено в Old, парсер ParsingMarketStatisticsUtf8 больше не используется
         // ═══════════════════════════════════════════════════════════
         // MarketStatistics — Securities (акции, TQBR)
         // Источник: /engines/stock/.../securities/{ticker}.json?iss.only=securities
@@ -820,7 +847,9 @@ namespace ProjectTraiding.Moex.Parsing
                 new(25, "LISTLEVEL"u8.ToArray()),
                 new(26, "SETTLEDATE"u8.ToArray()),
             });
+        */
 
+        /* _Old: перенесено в Old, парсер ParsingMarketStatisticsUtf8 больше не используется
         // ═══════════════════════════════════════════════════════════
         // MarketStatistics — Securities (фьючерсы, RFUD)
         // Источник: /engines/futures/.../securities/{ticker}.json?iss.only=securities
@@ -841,6 +870,7 @@ namespace ProjectTraiding.Moex.Parsing
                 new(22, "SCALPERFEE"u8.ToArray()),
                 new(25, "SETTLEPRICE_CLR"u8.ToArray()),
             });
+        */
             
         
         // ═══════════════════════════════════════════════════════════
@@ -971,20 +1001,20 @@ namespace ProjectTraiding.Moex.Parsing
         public static ExpectedColumn[] MegaAlertsAssetExpectedColumns => MegaAlertsAssetSchema.Columns;
         public static ExpectedColumn[] MegaAlertsFuturesExpectedColumns => MegaAlertsFuturesSchema.Columns;
         public static ExpectedColumn[] FutoiExpectedColumns => FutoiSchema.Columns;
-        public static ExpectedColumn[] IssStockSecurityExpectedColumns => IssStockSecuritySchema.Columns;
-        public static ExpectedColumn[] IssFuturesSecurityExpectedColumns => IssFuturesSecuritySchema.Columns;
-        public static ExpectedColumn[] CalendarOffDaysAllExpectedColumns => CalendarOffDaysAllSchema.Columns;
+        // _Old: public static ExpectedColumn[] IssStockSecurityExpectedColumns => IssStockSecuritySchema.Columns;
+        // _Old: public static ExpectedColumn[] IssFuturesSecurityExpectedColumns => IssFuturesSecuritySchema.Columns;
+        // _Old: public static ExpectedColumn[] CalendarOffDaysAllExpectedColumns => CalendarOffDaysAllSchema.Columns;
         public static ExpectedColumn[] CalendarOffDaysMarketExpectedColumns => CalendarOffDaysMarketSchema.Columns;
-        public static ExpectedColumn[] CalendarStockSessionExpectedColumns => CalendarStockSessionSchema.Columns;
-        public static ExpectedColumn[] CalendarFuturesSessionExpectedColumns => CalendarFuturesSessionSchema.Columns;
-        public static ExpectedColumn[] CalendarSessionTypesExpectedColumns => CalendarSessionTypesSchema.Columns;
-        public static ExpectedColumn[] CalendarFortsContractsExpectedColumns => CalendarFortsContractsSchema.Columns;
-        public static ExpectedColumn[] CalendarOptionsSeriesExpectedColumns => CalendarOptionsSeriesSchema.Columns;
-        public static ExpectedColumn[] CalendarSuspendedExpectedColumns => CalendarSuspendedSchema.Columns;
-        public static ExpectedColumn[] CalendarSuspendedReasonsExpectedColumns => CalendarSuspendedReasonsSchema.Columns;
-        public static ExpectedColumn[] CalendarSecurityChangesExpectedColumns => CalendarSecurityChangesSchema.Columns;
-        public static ExpectedColumn[] CalendarSecurityAttributesExpectedColumns => CalendarSecurityAttributesSchema.Columns;
-        public static ExpectedColumn[] CalendarCursorExpectedColumns => CalendarCursorSchema.Columns;
+        // _Old: public static ExpectedColumn[] CalendarStockSessionExpectedColumns => CalendarStockSessionSchema.Columns;
+        // _Old: public static ExpectedColumn[] CalendarFuturesSessionExpectedColumns => CalendarFuturesSessionSchema.Columns;
+        // _Old: public static ExpectedColumn[] CalendarSessionTypesExpectedColumns => CalendarSessionTypesSchema.Columns;
+        // _Old: public static ExpectedColumn[] CalendarFortsContractsExpectedColumns => CalendarFortsContractsSchema.Columns;
+        // _Old: public static ExpectedColumn[] CalendarOptionsSeriesExpectedColumns => CalendarOptionsSeriesSchema.Columns;
+        // _Old: public static ExpectedColumn[] CalendarSuspendedExpectedColumns => CalendarSuspendedSchema.Columns;
+        // _Old: public static ExpectedColumn[] CalendarSuspendedReasonsExpectedColumns => CalendarSuspendedReasonsSchema.Columns;
+        // _Old: public static ExpectedColumn[] CalendarSecurityChangesExpectedColumns => CalendarSecurityChangesSchema.Columns;
+        // _Old: public static ExpectedColumn[] CalendarSecurityAttributesExpectedColumns => CalendarSecurityAttributesSchema.Columns;
+        // _Old: public static ExpectedColumn[] CalendarCursorExpectedColumns => CalendarCursorSchema.Columns;
         */
     }
 }

@@ -129,6 +129,7 @@ namespace ProjectTraiding.Moex.Endpoints
                 return Results.Text(raw, "application/json");
             });
 
+            /* _Old parsed MarketStatistics endpoints отключены, client methods перенесены в Old
             // ── MarketStatistics: Parsed ──
 
             group.MapGet("/market-statistics-securities-stock/{ticker}", async (
@@ -152,6 +153,7 @@ namespace ProjectTraiding.Moex.Endpoints
                     cancellationToken: ct);
                 return Results.Ok(result);
             });
+            */
 
             // ── MarketStatistics: Raw ──
 

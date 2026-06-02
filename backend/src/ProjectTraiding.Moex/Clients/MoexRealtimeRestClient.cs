@@ -2,7 +2,7 @@ using Microsoft.Extensions.Options;
 using Polly.Timeout;
 using ProjectTraiding.Moex.Clients.Errors;
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
-using ProjectTraiding.Moex.Contracts.Dto.MarketStatistics;
+// _Old: using ProjectTraiding.Moex.Contracts.Dto.MarketStatistics;
 using ProjectTraiding.Moex.Contracts.Dto.Realtime;
 using ProjectTraiding.Moex.Infrastructure.Buffers;
 using ProjectTraiding.Moex.Infrastructure.RawCapture;
@@ -213,6 +213,7 @@ namespace ProjectTraiding.Moex.Clients
         // MarketStatistics (capture-enabled)
         // ═══════════════════════════════════════════════════════════
 
+        /* _Old: заменён карточками инструментов, парсер ParsingMarketStatisticsUtf8 перенесён
         public async Task<MarketStatisticsStockSecuritiesDTO?> GetMarketStatisticsStockSecuritiesAsync(
            string ticker,
            string? runId = null,
@@ -301,7 +302,9 @@ namespace ProjectTraiding.Moex.Clients
                 throw;
             }
         }
+        */
 
+        /* _Old: заменён GetFuturesInstrumentCards, парсер ParsingMarketStatisticsUtf8 перенесён
         public async Task<MarketStatisticsFuturesSecuritiesDTO?> GetMarketStatisticsFuturesSecuritiesAsync(
             string ticker,
             string? runId = null,
@@ -390,6 +393,7 @@ namespace ProjectTraiding.Moex.Clients
                 throw;
             }
         }
+        */
 
         // ═══════════════════════════════════════════════════════════
         // Raw section (без capture — диагностический метод)

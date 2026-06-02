@@ -25,6 +25,7 @@ var app = builder.Build();
 
 app.MapObservabilityEndpoints();
 app.MapMoexProbeEndpoints();
+app.MapInstrumentCardEndpoints();
 app.MapMoexEndpoints();
 
 if (app.Environment.IsDevelopment())

@@ -1,7 +1,7 @@
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using ProjectTraiding.Moex.Contracts.Dto.Calendar;
 using ProjectTraiding.Moex.Contracts.Dto.Iss;
-using ProjectTraiding.Moex.Contracts.Dto.MarketStatistics;
+// _Old using ProjectTraiding.Moex.Contracts.Dto.MarketStatistics;
 using ProjectTraiding.Moex.Contracts.Dto.Realtime;
 using ProjectTraiding.Moex.Endpoints;
 using System.Text.Json;
@@ -13,8 +13,8 @@ namespace ProjectTraiding.Moex.Contracts.Serialization
     // Используются текущими endpoint'ами, которые копят все страницы в List<T> и отдают целиком.
     // Останутся нужны, пока не все endpoint'ы переведены на потоковую отдачу.
 
-    [JsonSerializable(typeof(List<FuturesSecurityDTO>))]
-    [JsonSerializable(typeof(List<StockSecurityDTO>))]
+    // _Old [JsonSerializable(typeof(List<FuturesSecurityDTO>))]
+    // _Old [JsonSerializable(typeof(List<StockSecurityDTO>))]
     [JsonSerializable(typeof(List<CandlesDTO>))]
     [JsonSerializable(typeof(List<SuperCandlesTradeStats5mDTO>))]
     [JsonSerializable(typeof(List<SuperCandlesOrderBookStats5mDTO>))]
@@ -28,25 +28,25 @@ namespace ProjectTraiding.Moex.Contracts.Serialization
     [JsonSerializable(typeof(List<MegaAlertsFuturesDTO>))]
 
     // Списки DTO календаря
-    [JsonSerializable(typeof(List<CalendarOffDaysAllDTO>))]
+    // _Old [JsonSerializable(typeof(List<CalendarOffDaysAllDTO>))]
     [JsonSerializable(typeof(List<CalendarOffDaysMarketDTO>))]
-    [JsonSerializable(typeof(List<CalendarStockSessionDTO>))]
-    [JsonSerializable(typeof(List<CalendarFuturesSessionDTO>))]
-    [JsonSerializable(typeof(List<CalendarSessionTypeDTO>))]
-    [JsonSerializable(typeof(List<CalendarFortsContractDTO>))]
-    [JsonSerializable(typeof(List<CalendarOptionsSeriesDTO>))]
-    [JsonSerializable(typeof(List<CalendarSuspendedDTO>))]
-    [JsonSerializable(typeof(List<CalendarSuspendedReasonDTO>))]
-    [JsonSerializable(typeof(List<CalendarSecurityChangeDTO>))]
-    [JsonSerializable(typeof(List<CalendarSecurityAttributeDTO>))]
+    // _Old [JsonSerializable(typeof(List<CalendarStockSessionDTO>))]
+    // _Old [JsonSerializable(typeof(List<CalendarFuturesSessionDTO>))]
+    // _Old [JsonSerializable(typeof(List<CalendarSessionTypeDTO>))]
+    // _Old [JsonSerializable(typeof(List<CalendarFortsContractDTO>))]
+    // _Old [JsonSerializable(typeof(List<CalendarOptionsSeriesDTO>))]
+    // _Old [JsonSerializable(typeof(List<CalendarSuspendedDTO>))]
+    // _Old [JsonSerializable(typeof(List<CalendarSuspendedReasonDTO>))]
+    // _Old [JsonSerializable(typeof(List<CalendarSecurityChangeDTO>))]
+    // _Old [JsonSerializable(typeof(List<CalendarSecurityAttributeDTO>))]
 
     // ── Одиночные DTO — для поштучной сериализации ──
     // Нужны source generator'у, чтобы знать как сериализовать один объект.
     // Используются IAsyncEnumerable-endpoint'ами (фреймворк сериализует по одному элементу)
     // и могут использоваться в будущем для ручной сериализации через Utf8JsonWriter.
 
-    [JsonSerializable(typeof(FuturesSecurityDTO))]
-    [JsonSerializable(typeof(StockSecurityDTO))]
+    // _Old [JsonSerializable(typeof(FuturesSecurityDTO))]
+    // _Old [JsonSerializable(typeof(StockSecurityDTO))]
     [JsonSerializable(typeof(CandlesDTO))]
     [JsonSerializable(typeof(SuperCandlesTradeStats5mDTO))]
     [JsonSerializable(typeof(SuperCandlesOrderBookStats5mDTO))]
@@ -60,17 +60,17 @@ namespace ProjectTraiding.Moex.Contracts.Serialization
     [JsonSerializable(typeof(MegaAlertsFuturesDTO))]
 
     // DTO календаря
-    [JsonSerializable(typeof(CalendarOffDaysAllDTO))]
+    // _Old [JsonSerializable(typeof(CalendarOffDaysAllDTO))]
     [JsonSerializable(typeof(CalendarOffDaysMarketDTO))]
-    [JsonSerializable(typeof(CalendarStockSessionDTO))]
-    [JsonSerializable(typeof(CalendarFuturesSessionDTO))]
-    [JsonSerializable(typeof(CalendarSessionTypeDTO))]
-    [JsonSerializable(typeof(CalendarFortsContractDTO))]
-    [JsonSerializable(typeof(CalendarOptionsSeriesDTO))]
-    [JsonSerializable(typeof(CalendarSuspendedDTO))]
-    [JsonSerializable(typeof(CalendarSuspendedReasonDTO))]
-    [JsonSerializable(typeof(CalendarSecurityChangeDTO))]
-    [JsonSerializable(typeof(CalendarSecurityAttributeDTO))]
+    // _Old [JsonSerializable(typeof(CalendarStockSessionDTO))]
+    // _Old [JsonSerializable(typeof(CalendarFuturesSessionDTO))]
+    // _Old [JsonSerializable(typeof(CalendarSessionTypeDTO))]
+    // _Old [JsonSerializable(typeof(CalendarFortsContractDTO))]
+    // _Old [JsonSerializable(typeof(CalendarOptionsSeriesDTO))]
+    // _Old [JsonSerializable(typeof(CalendarSuspendedDTO))]
+    // _Old [JsonSerializable(typeof(CalendarSuspendedReasonDTO))]
+    // _Old [JsonSerializable(typeof(CalendarSecurityChangeDTO))]
+    // _Old [JsonSerializable(typeof(CalendarSecurityAttributeDTO))]
 
     // ── IAsyncEnumerable<T> — для потоковой отдачи через встроенный механизм ASP.NET ──
     // Когда endpoint возвращает IAsyncEnumerable<T>, фреймворк вызывает
@@ -89,8 +89,8 @@ namespace ProjectTraiding.Moex.Contracts.Serialization
     [JsonSerializable(typeof(IAsyncEnumerable<Hi2FuturesDTO>))]
     [JsonSerializable(typeof(IAsyncEnumerable<MegaAlertsAssetsDTO>))]
     [JsonSerializable(typeof(IAsyncEnumerable<MegaAlertsFuturesDTO>))]
-    [JsonSerializable(typeof(IAsyncEnumerable<CalendarSuspendedDTO>))]
-    [JsonSerializable(typeof(IAsyncEnumerable<CalendarSecurityChangeDTO>))]
+    // _Old [JsonSerializable(typeof(IAsyncEnumerable<CalendarSuspendedDTO>))]
+    // _Old [JsonSerializable(typeof(IAsyncEnumerable<CalendarSecurityChangeDTO>))]
 
     [JsonSerializable(typeof(RealtimeOrderbookParseResult))]
     [JsonSerializable(typeof(RealtimeTradesParseResult<RealtimeTradesStockDTO>))]
@@ -116,8 +116,8 @@ namespace ProjectTraiding.Moex.Contracts.Serialization
     [JsonSerializable(typeof(RealtimeDiagnosticEndpoints.CandlesPollReport))]
     [JsonSerializable(typeof(RealtimeDiagnosticEndpoints.CandlesSnapshot))]
 
-    [JsonSerializable(typeof(MarketStatisticsStockSecuritiesDTO))]
-    [JsonSerializable(typeof(MarketStatisticsFuturesSecuritiesDTO))]
+    // _Old [JsonSerializable(typeof(MarketStatisticsStockSecuritiesDTO))]
+    // _Old [JsonSerializable(typeof(MarketStatisticsFuturesSecuritiesDTO))]
     
     [JsonSerializable(typeof(List<StockInstrumentCardDTO>))]
     [JsonSerializable(typeof(List<FuturesInstrumentCardDTO>))]

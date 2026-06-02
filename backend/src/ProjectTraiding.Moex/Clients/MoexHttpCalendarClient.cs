@@ -38,6 +38,7 @@ namespace ProjectTraiding.Moex.Clients
 
         // ── Выходные дни (capture-enabled) ────────────────────────────────
 
+        /* _Old: сценарий off_days_all больше не используется, парсер перенесён
         public async Task<List<CalendarOffDaysAllDTO>> GetOffDaysAll(
             string? runId = null,
             CancellationToken cancellationToken = default)
@@ -119,6 +120,7 @@ namespace ProjectTraiding.Moex.Clients
                 throw;
             }
         }
+        */
 
         public async Task<List<CalendarOffDaysMarketDTO>> GetStockOffDays(
             string? runId = null,
@@ -288,6 +290,7 @@ namespace ProjectTraiding.Moex.Clients
 
         // ── Сессии (capture-enabled) ────────────────────────────────────
 
+        /* _Old: сценарий stock session больше не используется, парсер перенесён
         public async Task<(List<CalendarStockSessionDTO> Sessions, List<CalendarSessionTypeDTO> Types)>
             GetStockSessionWithTypes(
             string? runId = null,
@@ -372,7 +375,9 @@ namespace ProjectTraiding.Moex.Clients
                 throw;
             }
         }
+        */
 
+        /* _Old: сценарий futures session больше не используется, парсер перенесён
         public async Task<(List<CalendarFuturesSessionDTO> Sessions, List<CalendarSessionTypeDTO> Types)>
             GetFuturesSessionWithTypes(
             string? runId = null,
@@ -457,6 +462,7 @@ namespace ProjectTraiding.Moex.Clients
                 throw;
             }
         }
+        */
 
         // ── B9.5: закомментированы — заменены на GetStockSessionWithTypes/GetFuturesSessionWithTypes/GetFuturesSecuritiesAll ──
         /*
@@ -499,6 +505,7 @@ namespace ProjectTraiding.Moex.Clients
 
         // ── Фьючерсы (capture-enabled) ──────────────────────────────────
 
+        /* _Old: сценарий futures securities больше не используется, парсер перенесён
         public async Task<(List<CalendarFortsContractDTO> Forts, List<CalendarOptionsSeriesDTO> Options)>
             GetFuturesSecuritiesAll(
             string? runId = null,
@@ -583,9 +590,11 @@ namespace ProjectTraiding.Moex.Clients
                 throw;
             }
         }
+        */
 
         // ── Приостановки торгов (capture-enabled) ──────────────────────────────
 
+        /* _Old: сценарий suspended-reasons больше не используется, парсер перенесён
         public async Task<List<CalendarSuspendedReasonDTO>> GetSuspendedReasons(
             string? runId = null,
             CancellationToken cancellationToken = default)
@@ -669,7 +678,9 @@ namespace ProjectTraiding.Moex.Clients
                 throw;
             }
         }
+        */
 
+        /* _Old: сценарий suspended больше не используется, парсер перенесён
         public async IAsyncEnumerable<List<CalendarSuspendedDTO>> GetSuspended(
             string? runId = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -787,9 +798,11 @@ namespace ProjectTraiding.Moex.Clients
                 effectiveRunId,
                 cancellationToken);
         }
+            */
 
         // ── Изменения по ценным бумагам (capture-enabled, cursor-пагинация) ──────
 
+        /* _Old: сценарий security-attributes больше не используется, парсер перенесён
         public async Task<List<CalendarSecurityAttributeDTO>> GetSecurityAttributes(
             string? runId = null,
             CancellationToken cancellationToken = default)
@@ -873,7 +886,9 @@ namespace ProjectTraiding.Moex.Clients
                 throw;
             }
         }
+        */
 
+        /* _Old: сценарий security-changes больше не используется, парсер перенесён
         public async IAsyncEnumerable<List<CalendarSecurityChangeDTO>> GetSecurityChanges(
             string? runId = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -991,6 +1006,7 @@ namespace ProjectTraiding.Moex.Clients
                 effectiveRunId,
                 cancellationToken);
         }
+            */
 
         // ── Инфраструктура ──────────────────────────────────────
 
