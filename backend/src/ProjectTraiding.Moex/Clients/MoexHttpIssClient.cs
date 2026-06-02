@@ -216,7 +216,23 @@ namespace ProjectTraiding.Moex.Clients
                 throw;
             }
         }
-
+        /// <summary>
+        /// Карточки всех акций TQBR — securities + marketdata одним запросом.
+        ///
+        /// Источник: /engines/stock/markets/shares/boards/tqbr/securities.json?iss.meta=off
+        /// Режим: ISS (публичный, без ключа).
+        /// Парсер: ParsingInstrumentCardUtf8.ParseStockCards (два прохода: securities + marketdata).
+        /// </summary>
+        public async Task<List<StockInstrumentCardDTO>> GetStockInstrumentCards(
+            CancellationToken cancellationToken = default)
+        {
+            const string endpoint =
+                "/engines/stock/markets/shares/boards/tqbr/securities.json?iss.meta=off";
+ 
+            using var response = await SendRequestAsync(endpoint, cancellationToken);
+            byte[] bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+            return ParsingInstrumentCardUtf8.ParseStockCards(bytes);
+        }
         private async Task<HttpResponseMessage> SendRequestAsync(string method, CancellationToken cancellationToken)
         {
             string requestUrl = _options.IssBaseUrl + method;

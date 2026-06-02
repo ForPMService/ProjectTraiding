@@ -118,6 +118,11 @@ namespace ProjectTraiding.Moex.Contracts.Serialization
 
     [JsonSerializable(typeof(MarketStatisticsStockSecuritiesDTO))]
     [JsonSerializable(typeof(MarketStatisticsFuturesSecuritiesDTO))]
+    
+    [JsonSerializable(typeof(List<StockInstrumentCardDTO>))]
+    [JsonSerializable(typeof(List<FuturesInstrumentCardDTO>))]
+    [JsonSerializable(typeof(StockInstrumentCardDTO))]
+    [JsonSerializable(typeof(FuturesInstrumentCardDTO))]
     public partial class AppJsonContext : JsonSerializerContext
     {
     }

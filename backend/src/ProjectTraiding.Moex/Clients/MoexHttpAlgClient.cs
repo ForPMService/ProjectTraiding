@@ -1033,6 +1033,23 @@ namespace ProjectTraiding.Moex.Clients
                 cancellationToken);
         }
 
+        // <summary>
+        /// Карточки всех фьючерсов RFUD — securities + marketdata одним запросом.
+        ///
+        /// Источник: /engines/futures/markets/forts/boards/RFUD/securities.json?iss.meta=off
+        /// Режим: APIM (платный, Bearer). ISS отдаёт пустые BID/OFFER по фьючерсам.
+        /// Парсер: ParsingInstrumentCardUtf8.ParseFuturesCards (два прохода: securities + marketdata).
+        /// </summary>
+        public async Task<List<FuturesInstrumentCardDTO>> GetFuturesInstrumentCards(
+            CancellationToken cancellationToken = default)
+        {
+            const string endpoint =
+                "/engines/futures/markets/forts/boards/RFUD/securities.json?iss.meta=off";
+ 
+            using var response = await SendRequestAsync(endpoint, cancellationToken: cancellationToken);
+            byte[] bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+            return ParsingInstrumentCardUtf8.ParseFuturesCards(bytes);
+        }
         // ═══════════════════════════════════════════════════════════
         // Инфраструктура
         // ═══════════════════════════════════════════════════════════

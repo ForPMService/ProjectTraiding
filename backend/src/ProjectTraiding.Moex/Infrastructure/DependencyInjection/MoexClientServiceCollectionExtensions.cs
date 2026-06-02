@@ -187,6 +187,8 @@ public static class MoexClientServiceCollectionExtensions
             options.Retry.OnRetry = args => OnRetryHandler(args, logger, MoexLogSources.RealtimeRest);
         });
         return services;
+
+
     }
 
     // ══════════════════════════════════════════════

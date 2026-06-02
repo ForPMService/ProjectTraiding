@@ -1,4 +1,5 @@
 using ProjectTraiding.Moex.Contracts.Serialization;
+using ProjectTraiding.Moex.Endpoints;
 using ProjectTraiding.Moex.Infrastructure.DependencyInjection;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Observability.Infrastructure.DependencyInjection;
@@ -23,6 +24,7 @@ builder.Services.AddOpenApi();
 var app = builder.Build();
 
 app.MapObservabilityEndpoints();
+app.MapMoexProbeEndpoints();
 app.MapMoexEndpoints();
 
 if (app.Environment.IsDevelopment())

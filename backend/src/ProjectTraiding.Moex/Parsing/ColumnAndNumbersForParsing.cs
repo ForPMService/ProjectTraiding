@@ -841,6 +841,117 @@ namespace ProjectTraiding.Moex.Parsing
                 new(22, "SCALPERFEE"u8.ToArray()),
                 new(25, "SETTLEPRICE_CLR"u8.ToArray()),
             });
+            
+        
+        // ═══════════════════════════════════════════════════════════
+        // Карточка акции — securities
+        // Источник: /engines/stock/markets/shares/boards/tqbr/securities.json
+        // Probe: probe-13, 2026-06-01
+        // rootKey: "securities", columnCount: 27, используем: 13
+        // ═══════════════════════════════════════════════════════════
+ 
+        public static readonly ExpectedSchema StockCardSecuritiesSchema = new(
+            TotalColumns: 27,
+            RootKey: "securities",
+            Columns: new ExpectedColumn[]
+            {
+                new(0,  "SECID"u8.ToArray()),        // case 0
+                new(1,  "BOARDID"u8.ToArray()),      // case 1
+                new(2,  "SHORTNAME"u8.ToArray()),    // case 2
+                new(4,  "LOTSIZE"u8.ToArray()),      // case 3
+                new(6,  "STATUS"u8.ToArray()),       // case 4
+                new(8,  "DECIMALS"u8.ToArray()),     // case 5
+                new(9,  "SECNAME"u8.ToArray()),      // case 6
+                new(14, "MINSTEP"u8.ToArray()),      // case 7
+                new(18, "ISSUESIZE"u8.ToArray()),    // case 8
+                new(19, "ISIN"u8.ToArray()),         // case 9
+                new(23, "CURRENCYID"u8.ToArray()),   // case 10
+                new(24, "SECTYPE"u8.ToArray()),      // case 11
+                new(25, "LISTLEVEL"u8.ToArray()),    // case 12
+            });
+ 
+        // ═══════════════════════════════════════════════════════════
+        // Карточка акции — marketdata
+        // Источник: тот же ответ, блок "marketdata"
+        // Probe: probe-13, 2026-06-01
+        // rootKey: "marketdata", columnCount: 56, используем: 12
+        // ═══════════════════════════════════════════════════════════
+ 
+        public static readonly ExpectedSchema StockCardMarketdataSchema = new(
+            TotalColumns: 56,
+            RootKey: "marketdata",
+            Columns: new ExpectedColumn[]
+            {
+                new(2,  "BID"u8.ToArray()),            // case 0
+                new(4,  "OFFER"u8.ToArray()),          // case 1
+                new(6,  "SPREAD"u8.ToArray()),         // case 2
+                new(9,  "OPEN"u8.ToArray()),           // case 3
+                new(10, "LOW"u8.ToArray()),            // case 4
+                new(11, "HIGH"u8.ToArray()),           // case 5
+                new(12, "LAST"u8.ToArray()),           // case 6
+                new(26, "NUMTRADES"u8.ToArray()),      // case 7
+                new(27, "VOLTODAY"u8.ToArray()),       // case 8
+                new(28, "VALTODAY"u8.ToArray()),       // case 9
+                new(31, "TRADINGSTATUS"u8.ToArray()),  // case 10
+                new(32, "UPDATETIME"u8.ToArray()),     // case 11
+            });
+ 
+        // ═══════════════════════════════════════════════════════════
+        // Карточка фьючерса — securities
+        // Источник: /engines/futures/markets/forts/boards/RFUD/securities.json
+        // Probe: probe-14, 2026-06-01
+        // rootKey: "securities", columnCount: 26, используем: 15
+        // ═══════════════════════════════════════════════════════════
+ 
+        public static readonly ExpectedSchema FuturesCardSecuritiesSchema = new(
+            TotalColumns: 26,
+            RootKey: "securities",
+            Columns: new ExpectedColumn[]
+            {
+                new(0,  "SECID"u8.ToArray()),          // case 0
+                new(1,  "BOARDID"u8.ToArray()),        // case 1
+                new(2,  "SHORTNAME"u8.ToArray()),      // case 2
+                new(3,  "SECNAME"u8.ToArray()),        // case 3
+                new(5,  "DECIMALS"u8.ToArray()),       // case 4
+                new(6,  "MINSTEP"u8.ToArray()),        // case 5
+                new(7,  "LASTTRADEDATE"u8.ToArray()),  // case 6
+                new(8,  "LASTDELDATE"u8.ToArray()),    // case 7
+                new(11, "ASSETCODE"u8.ToArray()),      // case 8
+                new(13, "LOTVOLUME"u8.ToArray()),      // case 9
+                new(14, "INITIALMARGIN"u8.ToArray()),  // case 10
+                new(15, "HIGHLIMIT"u8.ToArray()),      // case 11
+                new(16, "LOWLIMIT"u8.ToArray()),       // case 12
+                new(17, "STEPPRICE"u8.ToArray()),      // case 13
+                new(21, "BUYSELLFEE"u8.ToArray()),     // case 14
+            });
+ 
+        // ═══════════════════════════════════════════════════════════
+        // Карточка фьючерса — marketdata
+        // Источник: тот же ответ, блок "marketdata"
+        // Probe: probe-14, 2026-06-01
+        // rootKey: "marketdata", columnCount: 37, используем: 14
+        // ═══════════════════════════════════════════════════════════
+ 
+        public static readonly ExpectedSchema FuturesCardMarketdataSchema = new(
+            TotalColumns: 37,
+            RootKey: "marketdata",
+            Columns: new ExpectedColumn[]
+            {
+                new(2,  "BID"u8.ToArray()),            // case 0
+                new(3,  "OFFER"u8.ToArray()),          // case 1
+                new(4,  "SPREAD"u8.ToArray()),         // case 2
+                new(5,  "OPEN"u8.ToArray()),           // case 3
+                new(6,  "HIGH"u8.ToArray()),           // case 4
+                new(7,  "LOW"u8.ToArray()),            // case 5
+                new(8,  "LAST"u8.ToArray()),           // case 6
+                new(11, "SETTLEPRICE"u8.ToArray()),    // case 7
+                new(13, "OPENPOSITION"u8.ToArray()),   // case 8
+                new(14, "NUMTRADES"u8.ToArray()),      // case 9
+                new(15, "VOLTODAY"u8.ToArray()),       // case 10
+                new(16, "VALTODAY"u8.ToArray()),       // case 11
+                new(18, "UPDATETIME"u8.ToArray()),     // case 12
+                new(32, "OICHANGE"u8.ToArray()),       // case 13
+            });
         // ═══════════════════════════════════════════════════════════
         // Обратная совместимость
         // ═══════════════════════════════════════════════════════════
