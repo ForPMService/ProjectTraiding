@@ -77,8 +77,10 @@ namespace ProjectTraiding.Moex.Clients
                 activity?.SetTag(MoexTelemetryAttributes.Market, captureMarket);
             }
 
-            int queryStart = 0;
             queryParams ??= new Dictionary<string, string>();
+            queryParams["iss.meta"] = "off";
+            queryParams["iss.only"] = "candles";
+            int queryStart = 0;
 
             if (queryParams.TryGetValue("start", out string? start) && int.TryParse(start, out int parseValue))
             {
@@ -205,6 +207,9 @@ namespace ProjectTraiding.Moex.Clients
             activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Stock);
 
             queryParams ??= new Dictionary<string, string>();
+            queryParams["iss.meta"] = "off";
+            queryParams["iss.only"] = "data,data.cursor";
+            queryParams["data.columns"] = ColumnAndNumbersForParsing.AlgCandlesTradeStatSchema.BuildColumnsParam();
             string effectiveRunId = runId
                 ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
                 + "-" + Guid.NewGuid().ToString("N");
@@ -318,6 +323,9 @@ namespace ProjectTraiding.Moex.Clients
             activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Futures);
 
             queryParams ??= new Dictionary<string, string>();
+            queryParams["iss.meta"] = "off";
+            queryParams["iss.only"] = "data,data.cursor";
+            queryParams["data.columns"] = ColumnAndNumbersForParsing.FuturesTradeStatsSchema.BuildColumnsParam();
             string effectiveRunId = runId
                 ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
                 + "-" + Guid.NewGuid().ToString("N");
@@ -403,6 +411,9 @@ namespace ProjectTraiding.Moex.Clients
             activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Stock);
 
             queryParams ??= new Dictionary<string, string>();
+            queryParams["iss.meta"] = "off";
+            queryParams["iss.only"] = "data,data.cursor";
+            queryParams["data.columns"] = ColumnAndNumbersForParsing.AlgOrderBookStats5mSchema.BuildColumnsParam();
             string effectiveRunId = runId ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + "-" + Guid.NewGuid().ToString("N");
             using var accumulator = new RawCaptureAccumulator(_captureWriter);
             int pagesElapsed = 0; int totalRows = 0;
@@ -473,6 +484,9 @@ namespace ProjectTraiding.Moex.Clients
             activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Futures);
 
             queryParams ??= new Dictionary<string, string>();
+            queryParams["iss.meta"] = "off";
+            queryParams["iss.only"] = "data,data.cursor";
+            queryParams["data.columns"] = ColumnAndNumbersForParsing.AlgFuturesOrderBookSchema.BuildColumnsParam();
             string effectiveRunId = runId ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + "-" + Guid.NewGuid().ToString("N");
             using var accumulator = new RawCaptureAccumulator(_captureWriter);
             int pagesElapsed = 0; int totalRows = 0;
@@ -543,6 +557,9 @@ namespace ProjectTraiding.Moex.Clients
             activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Stock);
 
             queryParams ??= new Dictionary<string, string>();
+            queryParams["iss.meta"] = "off";
+            queryParams["iss.only"] = "data,data.cursor";
+            queryParams["data.columns"] = ColumnAndNumbersForParsing.AlgOrderStats5mSchema.BuildColumnsParam();
             string effectiveRunId = runId ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + "-" + Guid.NewGuid().ToString("N");
             using var accumulator = new RawCaptureAccumulator(_captureWriter);
             int pagesElapsed = 0; int totalRows = 0;
@@ -619,6 +636,7 @@ namespace ProjectTraiding.Moex.Clients
             activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Futures);
 
             queryParams ??= new Dictionary<string, string>();
+            queryParams["iss.meta"] = "off";
             string effectiveRunId = runId
                 ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
                 + "-" + Guid.NewGuid().ToString("N");
@@ -761,6 +779,9 @@ namespace ProjectTraiding.Moex.Clients
             activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Stock);
 
             queryParams ??= new Dictionary<string, string>();
+            queryParams["iss.meta"] = "off";
+            queryParams["iss.only"] = "data,data.cursor";
+            queryParams["data.columns"] = ColumnAndNumbersForParsing.Hi2AssetSchema.BuildColumnsParam();
             string effectiveRunId = runId ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + "-" + Guid.NewGuid().ToString("N");
             using var accumulator = new RawCaptureAccumulator(_captureWriter);
             int pagesElapsed = 0; int totalRows = 0;
@@ -831,6 +852,9 @@ namespace ProjectTraiding.Moex.Clients
             activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Futures);
 
             queryParams ??= new Dictionary<string, string>();
+            queryParams["iss.meta"] = "off";
+            queryParams["iss.only"] = "data,data.cursor";
+            queryParams["data.columns"] = ColumnAndNumbersForParsing.Hi2FuturesSchema.BuildColumnsParam();
             string effectiveRunId = runId ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + "-" + Guid.NewGuid().ToString("N");
             using var accumulator = new RawCaptureAccumulator(_captureWriter);
             int pagesElapsed = 0; int totalRows = 0;
@@ -905,6 +929,9 @@ namespace ProjectTraiding.Moex.Clients
             activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Stock);
 
             queryParams ??= new Dictionary<string, string>();
+            queryParams["iss.meta"] = "off";
+            queryParams["iss.only"] = "data,data.cursor";
+            queryParams["data.columns"] = ColumnAndNumbersForParsing.MegaAlertsAssetSchema.BuildColumnsParam();
             string effectiveRunId = runId ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + "-" + Guid.NewGuid().ToString("N");
             using var accumulator = new RawCaptureAccumulator(_captureWriter);
             int pagesElapsed = 0; int totalRows = 0;
@@ -975,6 +1002,9 @@ namespace ProjectTraiding.Moex.Clients
             activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Futures);
 
             queryParams ??= new Dictionary<string, string>();
+            queryParams["iss.meta"] = "off";
+            queryParams["iss.only"] = "data,data.cursor";
+            queryParams["data.columns"] = ColumnAndNumbersForParsing.MegaAlertsFuturesSchema.BuildColumnsParam();
             string effectiveRunId = runId ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + "-" + Guid.NewGuid().ToString("N");
             using var accumulator = new RawCaptureAccumulator(_captureWriter);
             int pagesElapsed = 0; int totalRows = 0;

@@ -28,7 +28,32 @@ namespace ProjectTraiding.Moex.Parsing
         public readonly record struct ExpectedSchema(
             int TotalColumns,
             ExpectedColumn[] Columns,
-            string RootKey);
+            string RootKey)
+        {
+            /// <summary>
+            /// Генерирует значение параметра data.columns для запроса к MOEX.
+            /// Возвращает имена колонок через запятую в порядке Columns[].
+            /// 
+            /// Пример: "tradedate,tradetime,secid,pr_open,pr_high,..."
+            /// 
+            /// Используется только для datashop-эндпоинтов (rootKey = "data"),
+            /// где MOEX принимает параметр data.columns и возвращает только
+            /// запрошенные колонки. Это делает схему единым источником правды:
+            /// она одновременно определяет что запросить и что валидировать.
+            /// 
+            /// Не использовать для: candles (rootKey "candles"), futoi (rootKey "futoi"),
+            /// ISS securities (SourceIndex с пропусками), cursor (rootKey "data.cursor").
+            /// </summary>
+            public string BuildColumnsParam()
+            {
+                string[] names = new string[Columns.Length];
+                for (int i = 0; i < Columns.Length; i++)
+                {
+                    names[i] = System.Text.Encoding.UTF8.GetString(Columns[i].Name);
+                }
+                return string.Join(',', names);
+            }
+        };
 
         // ═══════════════════════════════════════════════════════════
         // ALGOPACK — Свечи
