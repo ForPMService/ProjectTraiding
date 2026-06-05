@@ -1,3 +1,4 @@
+using ProjectTraiding.Api.Infrastructure;
 using ProjectTraiding.Moex.Contracts.Serialization;
 using ProjectTraiding.Moex.Endpoints;
 using ProjectTraiding.Moex.Infrastructure.DependencyInjection;
@@ -14,6 +15,7 @@ builder.AddProjectTraidingObservability(
     meters: [MoexTelemetry.MeterName]);
 
 builder.Services.AddMoexClients(builder.Configuration);
+builder.Services.AddPostgre(builder.Configuration);
 builder.Services.AddRawCapture(builder.Configuration);
 builder.Services.ConfigureHttpJsonOptions(options =>
 {

@@ -1,11 +1,9 @@
 <Solution>
-  <Configurations>
-    <Platform Name="Any CPU" />
-  </Configurations>
   <Folder Name="/src/">
     <Project Path="src/ProjectTraiding.Api/ProjectTraiding.Api.csproj" />
-    <Project Path="src/ProjectTraiding.Moex/ProjectTraiding.Moex.csproj" />
     <Project Path="src/ProjectTraiding.Moex.Tests/ProjectTraiding.Moex.Tests.csproj" />
+    <Project Path="src/ProjectTraiding.Moex/ProjectTraiding.Moex.csproj" />
     <Project Path="src/ProjectTraiding.Observability/ProjectTraiding.Observability.csproj" />
   </Folder>
+  <Project Path="Frontend/Frontend.csproj" Id="297da1fb-164a-4c1c-998e-e74f785b630a" />
 </Solution>
