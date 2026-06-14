@@ -1,6 +1,10 @@
 # .gitignore for ProjectTraiding
+# Моно-репо: backend (.NET 10, AOT) + frontend (Angular 21) + infrastructure.
+# Сохрани этот файл как .gitignore в корне репозитория.
 
-# Visual Studio / .NET
+# ─────────────────────────────────────────────────────────────
+# .NET / Visual Studio / build output
+# ─────────────────────────────────────────────────────────────
 .vs/
 bin/
 obj/
@@ -10,19 +14,56 @@ obj/
 *.suo
 *.userosscache
 *.sln.docstates
+*.binlog
+msbuild.log
+project.lock.json
 
-# Rider
+# Publish / AOT output
+publish/
+**/publish/
+*.pubxml.user
+
+# Packages
+*.nupkg
+*.snupkg
+
+# Test results / coverage
+[Tt]est[Rr]esults/
+*.trx
+*.coverage
+*.coverage.xml
+coverage/
+[Cc]overage[Rr]eport/
+
+# Benchmarks
+BenchmarkDotNet.Artifacts/
+
+# ─────────────────────────────────────────────────────────────
+# Rider / ReSharper
+# ─────────────────────────────────────────────────────────────
 .idea/
 *.sln.iml
+*.DotSettings.user
+_ReSharper.Caches/
 
+# ─────────────────────────────────────────────────────────────
 # Node / Angular
+# ─────────────────────────────────────────────────────────────
 node_modules/
 dist/
+.angular/
+*.tsbuildinfo
+.npm/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+# package-lock.json НЕ игнорируется — фиксирует версии зависимостей.
 
-# Docker
+# ─────────────────────────────────────────────────────────────
+# Docker / runtime data (bind-mounts)
+# ─────────────────────────────────────────────────────────────
 **/pgdata/
 **/garagedata/
 .env
@@ -31,34 +72,63 @@ yarn-error.log*
 !.env.example
 docker-compose.override.yml
 
-# Secrets
+# ─────────────────────────────────────────────────────────────
+# Secrets / app settings
+# ─────────────────────────────────────────────────────────────
 secrets/
+secrets.json
 **/*.pem
 **/*.key
 **/*.crt
+**/*.pfx
+**/*.p12
+# Локальные / dev-настройки — не в репозиторий.
+# Базовый appsettings.json коммитится (dev-плейсхолдеры), окружения — нет.
+**/appsettings.Development.json
+**/appsettings.Local.json
+**/appsettings.*.Local.json
 
+# ─────────────────────────────────────────────────────────────
+# Infrastructure (Flyway / отчёты)
+# ─────────────────────────────────────────────────────────────
+**/*.user.toml
+**/report.html
+**/report.json
+
+# ─────────────────────────────────────────────────────────────
 # OS files
+# ─────────────────────────────────────────────────────────────
 Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
 .DS_Store
+*~
 
-# Logs and temp
+# ─────────────────────────────────────────────────────────────
+# Logs / temp / local runtime storage
+# ─────────────────────────────────────────────────────────────
 *.log
 tmp/
 temp/
-
-# Local runtime storage
 storage/
-storage/raw/
-storage/logs/
 *.jsonl
-.angular
-node_modules
-Arch
-appsettings.Development.json
-# VS Code
-.vscode/
 
+# ─────────────────────────────────────────────────────────────
+# Editors
+# ─────────────────────────────────────────────────────────────
+.vscode/
+# !.vscode/settings.json
+# !.vscode/extensions.json
+# !.vscode/launch.json
+
+# ─────────────────────────────────────────────────────────────
+# Прочее 
+# ─────────────────────────────────────────────────────────────
+# Игнорируем все .txt, кроме README.txt:
 *.txt
 !README.txt
-.ps1
-re/
+# PowerShell-скрипты (было ".ps1" — не работало, исправлено на *.ps1):
+*.ps1
+# Локальная папка с архивом/черновиками в корне (было голое "Arch" —
+# ловило бы Arch где угодно; привязано к корню):
+/Arch/
