@@ -51,7 +51,9 @@ storage/
 storage/raw/
 storage/logs/
 *.jsonl
-
+.angular
+node_modules
+appsettings.Development.json
 # VS Code
 .vscode/
 
