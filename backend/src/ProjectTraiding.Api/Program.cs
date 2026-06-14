@@ -18,6 +18,7 @@ builder.AddProjectTraidingObservability(
 builder.Services.AddMoexClients(builder.Configuration);
 builder.Services.AddPostgre(builder.Configuration);
 builder.Services.AddTransient<MoexInstrumentWriter>();
+builder.Services.AddTransient<MoexCalendarWriter>();
 builder.Services.AddRawCapture(builder.Configuration);
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -30,6 +31,7 @@ var app = builder.Build();
 app.MapObservabilityEndpoints();
 app.MapMoexProbeEndpoints();
 app.MapInstrumentCardLoadEndpoints();
+app.MapCalendarLoadEndpoints();
 app.MapMoexEndpoints();
 
 if (app.Environment.IsDevelopment())

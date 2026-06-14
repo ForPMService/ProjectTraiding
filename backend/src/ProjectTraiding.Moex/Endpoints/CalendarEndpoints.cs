@@ -1,6 +1,7 @@
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Dto.Calendar;
 using ProjectTraiding.Moex.Contracts.Serialization;
+using ProjectTraiding.Moex.Storage.Postgres;
 using System.Runtime.CompilerServices;
 
 namespace ProjectTraiding.Moex.Endpoints
@@ -164,7 +165,30 @@ namespace ProjectTraiding.Moex.Endpoints
 
             return routes;
         }
+        public static IEndpointRouteBuilder MapCalendarLoadEndpoints(this IEndpointRouteBuilder routes)
+        {
+            routes.MapGet("/loads/calendar/stock", async (
+                MoexHttpCalendarClient client,
+                MoexCalendarWriter writer,
+                CancellationToken ct) =>
+            {
+                var days = await client.GetStockOffDays(cancellationToken: ct);
+                await writer.UpsertStockOffDaysAsync(days, ct);
+                return Results.NoContent();
+            });
 
+            routes.MapGet("/loads/calendar/futures", async (
+                MoexHttpCalendarClient client,
+                MoexCalendarWriter writer,
+                CancellationToken ct) =>
+            {
+                var days = await client.GetFuturesOffDays(cancellationToken: ct);
+                await writer.UpsertFuturesOffDaysAsync(days, ct);
+                return Results.NoContent();
+            });
+
+            return routes;
+        }
         /* _Old: streaming helper-методы для старых calendar endpoint-ов перенесены в Old
         static async IAsyncEnumerable<CalendarSuspendedDTO> StreamSuspended(
             MoexHttpCalendarClient client,

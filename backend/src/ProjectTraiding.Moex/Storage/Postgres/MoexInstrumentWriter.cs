@@ -191,8 +191,8 @@ namespace ProjectTraiding.Moex.Storage.Postgres
                     detailsCommand.Parameters.Add("@stepprice", NpgsqlDbType.Numeric).Value = (object?)future.StepPrice ?? DBNull.Value;
                     detailsCommand.Parameters.Add("@lotvolume", NpgsqlDbType.Integer).Value = (object?)future.LotVolume ?? DBNull.Value;
                     detailsCommand.Parameters.Add("@decimals", NpgsqlDbType.Integer).Value = (object?)future.Decimals ?? DBNull.Value;
-                    detailsCommand.Parameters.Add("@last_trade_date", NpgsqlDbType.Text).Value = (object?)future.LastTradeDate ?? DBNull.Value;
-                    detailsCommand.Parameters.Add("@last_del_date", NpgsqlDbType.Text).Value = (object?)future.LastDelDate ?? DBNull.Value;
+                    detailsCommand.Parameters.Add("@last_trade_date", NpgsqlDbType.Date).Value = string.IsNullOrWhiteSpace(future.LastTradeDate)? DBNull.Value: (object)DateOnly.Parse(future.LastTradeDate);
+                    detailsCommand.Parameters.Add("@last_del_date", NpgsqlDbType.Date).Value = string.IsNullOrWhiteSpace(future.LastDelDate)? DBNull.Value: (object)DateOnly.Parse(future.LastDelDate);
                     detailsCommand.Parameters.Add("@high_limit", NpgsqlDbType.Numeric).Value = (object?)future.HighLimit ?? DBNull.Value;
                     detailsCommand.Parameters.Add("@low_limit", NpgsqlDbType.Numeric).Value = (object?)future.LowLimit ?? DBNull.Value;
                     detailsCommand.Parameters.Add("@buysell_fee", NpgsqlDbType.Numeric).Value = (object?)future.BuySellFee ?? DBNull.Value;
