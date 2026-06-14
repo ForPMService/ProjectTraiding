@@ -1,5 +1,6 @@
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Serialization;
+using ProjectTraiding.Moex.Storage.Postgres;
 
 namespace ProjectTraiding.Moex.Endpoints
 {
@@ -14,22 +15,27 @@ namespace ProjectTraiding.Moex.Endpoints
     /// </summary>
     public static class InstrumentCardEndpoints
     {
-        public static IEndpointRouteBuilder MapInstrumentCardEndpoints(this IEndpointRouteBuilder routes)
+
+        public static IEndpointRouteBuilder MapInstrumentCardLoadEndpoints(this IEndpointRouteBuilder routes)
         {
-            routes.MapGet("/instrument-cards/stock", async (
+            routes.MapGet("/loads/instrument-cards/stock", async (
                 MoexHttpIssClient client,
+                MoexInstrumentWriter writer,
                 CancellationToken ct) =>
             {
                 var cards = await client.GetStockInstrumentCards(ct);
-                return Results.Json(cards, AppJsonContext.Default.ListStockInstrumentCardDTO);
+                await writer.UpsertStocksAsync(cards, ct);
+                return Results.NoContent();
             });
 
-            routes.MapGet("/instrument-cards/futures", async (
+            routes.MapGet("/loads/instrument-cards/futures", async (
                 MoexHttpAlgClient client,
+                MoexInstrumentWriter writer,
                 CancellationToken ct) =>
             {
                 var cards = await client.GetFuturesInstrumentCards(ct);
-                return Results.Json(cards, AppJsonContext.Default.ListFuturesInstrumentCardDTO);
+                await writer.UpsertFuturesAsync(cards, ct);
+                return Results.NoContent();
             });
 
             return routes;

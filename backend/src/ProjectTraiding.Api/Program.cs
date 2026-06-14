@@ -3,6 +3,7 @@ using ProjectTraiding.Moex.Contracts.Serialization;
 using ProjectTraiding.Moex.Endpoints;
 using ProjectTraiding.Moex.Infrastructure.DependencyInjection;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
+using ProjectTraiding.Moex.Storage.Postgres;
 using ProjectTraiding.Observability.Infrastructure.DependencyInjection;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -16,6 +17,7 @@ builder.AddProjectTraidingObservability(
 
 builder.Services.AddMoexClients(builder.Configuration);
 builder.Services.AddPostgre(builder.Configuration);
+builder.Services.AddTransient<MoexInstrumentWriter>();
 builder.Services.AddRawCapture(builder.Configuration);
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -27,7 +29,7 @@ var app = builder.Build();
 
 app.MapObservabilityEndpoints();
 app.MapMoexProbeEndpoints();
-app.MapInstrumentCardEndpoints();
+app.MapInstrumentCardLoadEndpoints();
 app.MapMoexEndpoints();
 
 if (app.Environment.IsDevelopment())
