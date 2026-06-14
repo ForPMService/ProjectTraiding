@@ -53,6 +53,7 @@ storage/logs/
 *.jsonl
 .angular
 node_modules
+Arch
 appsettings.Development.json
 # VS Code
 .vscode/
