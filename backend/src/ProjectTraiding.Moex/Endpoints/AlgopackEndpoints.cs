@@ -2,7 +2,6 @@ using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using ProjectTraiding.Moex.Contracts.Serialization;
 using ProjectTraiding.Moex.Infrastructure.RawCapture;
-using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization.Metadata;
 
 
@@ -160,6 +159,106 @@ namespace ProjectTraiding.Moex.Endpoints
             });
 
             diagnosticsGroup.MapGet("/parsed/market/stock/orderstats/{ticker}", GetParsedStockOrderStatsAsync);
+
+            diagnosticsGroup.MapGet("/raw/market/futures/futoi/{ticker}", async (
+                string ticker,
+                string? from,
+                string? till,
+                MoexHttpAlgClient client,
+                CancellationToken ct) =>
+            {
+                string? validationMessage = ValidateRangeRequest(ticker, from, till);
+                if (validationMessage is not null)
+                {
+                    return CreateDiagnosticError(400, "futoi", "futures", ticker, validationMessage);
+                }
+
+                string method = $"/analyticalproducts/futoi/securities/{ticker}.json";
+                Dictionary<string, string> queryParams = CreateRawFutoiQuery(from!, till!);
+                return await ExecuteRawAsync("futoi", "futures", ticker, client, method, queryParams, ct);
+            });
+
+            diagnosticsGroup.MapGet("/parsed/market/futures/futoi/{ticker}", GetParsedFuturesFutoiAsync);
+
+            diagnosticsGroup.MapGet("/raw/market/stock/hi2/{ticker}", async (
+                string ticker,
+                string? from,
+                string? till,
+                MoexHttpAlgClient client,
+                CancellationToken ct) =>
+            {
+                string? validationMessage = ValidateRangeRequest(ticker, from, till);
+                if (validationMessage is not null)
+                {
+                    return CreateDiagnosticError(400, "hi2", "stock", ticker, validationMessage);
+                }
+
+                string method = $"/datashop/algopack/eq/hi2/{ticker}.json";
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, ProjectTraiding.Moex.Parsing.ColumnAndNumbersForParsing.Hi2AssetSchema.BuildColumnsParam());
+                return await ExecuteRawAsync("hi2", "stock", ticker, client, method, queryParams, ct);
+            });
+
+            diagnosticsGroup.MapGet("/parsed/market/stock/hi2/{ticker}", GetParsedStockHi2Async);
+
+            diagnosticsGroup.MapGet("/raw/market/futures/hi2/{ticker}", async (
+                string ticker,
+                string? from,
+                string? till,
+                MoexHttpAlgClient client,
+                CancellationToken ct) =>
+            {
+                string? validationMessage = ValidateRangeRequest(ticker, from, till);
+                if (validationMessage is not null)
+                {
+                    return CreateDiagnosticError(400, "hi2", "futures", ticker, validationMessage);
+                }
+
+                string method = $"/datashop/algopack/fo/hi2/{ticker}.json";
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, ProjectTraiding.Moex.Parsing.ColumnAndNumbersForParsing.Hi2FuturesSchema.BuildColumnsParam());
+                return await ExecuteRawAsync("hi2", "futures", ticker, client, method, queryParams, ct);
+            });
+
+            diagnosticsGroup.MapGet("/parsed/market/futures/hi2/{ticker}", GetParsedFuturesHi2Async);
+
+            diagnosticsGroup.MapGet("/raw/market/stock/alerts/{ticker}", async (
+                string ticker,
+                string? from,
+                string? till,
+                MoexHttpAlgClient client,
+                CancellationToken ct) =>
+            {
+                string? validationMessage = ValidateRangeRequest(ticker, from, till);
+                if (validationMessage is not null)
+                {
+                    return CreateDiagnosticError(400, "alerts", "stock", ticker, validationMessage);
+                }
+
+                string method = $"/datashop/algopack/eq/alerts/{ticker}.json";
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, ProjectTraiding.Moex.Parsing.ColumnAndNumbersForParsing.MegaAlertsAssetSchema.BuildColumnsParam());
+                return await ExecuteRawAsync("alerts", "stock", ticker, client, method, queryParams, ct);
+            });
+
+            diagnosticsGroup.MapGet("/parsed/market/stock/alerts/{ticker}", GetParsedStockAlertsAsync);
+
+            diagnosticsGroup.MapGet("/raw/market/futures/alerts/{ticker}", async (
+                string ticker,
+                string? from,
+                string? till,
+                MoexHttpAlgClient client,
+                CancellationToken ct) =>
+            {
+                string? validationMessage = ValidateRangeRequest(ticker, from, till);
+                if (validationMessage is not null)
+                {
+                    return CreateDiagnosticError(400, "alerts", "futures", ticker, validationMessage);
+                }
+
+                string method = $"/datashop/algopack/fo/alerts/{ticker}.json";
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, ProjectTraiding.Moex.Parsing.ColumnAndNumbersForParsing.MegaAlertsFuturesSchema.BuildColumnsParam());
+                return await ExecuteRawAsync("alerts", "futures", ticker, client, method, queryParams, ct);
+            });
+
+            diagnosticsGroup.MapGet("/parsed/market/futures/alerts/{ticker}", GetParsedFuturesAlertsAsync);
 
             return routes;
         }
@@ -353,6 +452,131 @@ namespace ProjectTraiding.Moex.Endpoints
                 ct);
         }
 
+        private static Task<IResult> GetParsedFuturesFutoiAsync(
+            string ticker,
+            string? from,
+            string? till,
+            MoexHttpAlgClient client,
+            CancellationToken ct)
+        {
+            string? validationMessage = ValidateRangeRequest(ticker, from, till);
+            if (validationMessage is not null)
+            {
+                return Task.FromResult(CreateDiagnosticError(400, "futoi", "futures", ticker, validationMessage));
+            }
+
+            string method = $"/analyticalproducts/futoi/securities/{ticker}.json";
+            return ExecuteParsedAsync(
+                "futoi",
+                "futures",
+                ticker,
+                cancellationToken => CollectAsync(
+                    client.StreamFutoi(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
+                    cancellationToken),
+                AppJsonContext.Default.ListFutoiDTO,
+                ct);
+        }
+
+        private static Task<IResult> GetParsedStockHi2Async(
+            string ticker,
+            string? from,
+            string? till,
+            MoexHttpAlgClient client,
+            CancellationToken ct)
+        {
+            string? validationMessage = ValidateRangeRequest(ticker, from, till);
+            if (validationMessage is not null)
+            {
+                return Task.FromResult(CreateDiagnosticError(400, "hi2", "stock", ticker, validationMessage));
+            }
+
+            string method = $"/datashop/algopack/eq/hi2/{ticker}.json";
+            return ExecuteParsedAsync(
+                "hi2",
+                "stock",
+                ticker,
+                cancellationToken => CollectAsync(
+                    client.GetHi2Asset5m(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
+                    cancellationToken),
+                AppJsonContext.Default.ListHi2AssetDTO,
+                ct);
+        }
+
+        private static Task<IResult> GetParsedFuturesHi2Async(
+            string ticker,
+            string? from,
+            string? till,
+            MoexHttpAlgClient client,
+            CancellationToken ct)
+        {
+            string? validationMessage = ValidateRangeRequest(ticker, from, till);
+            if (validationMessage is not null)
+            {
+                return Task.FromResult(CreateDiagnosticError(400, "hi2", "futures", ticker, validationMessage));
+            }
+
+            string method = $"/datashop/algopack/fo/hi2/{ticker}.json";
+            return ExecuteParsedAsync(
+                "hi2",
+                "futures",
+                ticker,
+                cancellationToken => CollectAsync(
+                    client.GetHi2Furures5m(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
+                    cancellationToken),
+                AppJsonContext.Default.ListHi2FuturesDTO,
+                ct);
+        }
+
+        private static Task<IResult> GetParsedStockAlertsAsync(
+            string ticker,
+            string? from,
+            string? till,
+            MoexHttpAlgClient client,
+            CancellationToken ct)
+        {
+            string? validationMessage = ValidateRangeRequest(ticker, from, till);
+            if (validationMessage is not null)
+            {
+                return Task.FromResult(CreateDiagnosticError(400, "alerts", "stock", ticker, validationMessage));
+            }
+
+            string method = $"/datashop/algopack/eq/alerts/{ticker}.json";
+            return ExecuteParsedAsync(
+                "alerts",
+                "stock",
+                ticker,
+                cancellationToken => CollectAsync(
+                    client.GetMegaAlerts(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
+                    cancellationToken),
+                AppJsonContext.Default.ListMegaAlertsAssetsDTO,
+                ct);
+        }
+
+        private static Task<IResult> GetParsedFuturesAlertsAsync(
+            string ticker,
+            string? from,
+            string? till,
+            MoexHttpAlgClient client,
+            CancellationToken ct)
+        {
+            string? validationMessage = ValidateRangeRequest(ticker, from, till);
+            if (validationMessage is not null)
+            {
+                return Task.FromResult(CreateDiagnosticError(400, "alerts", "futures", ticker, validationMessage));
+            }
+
+            string method = $"/datashop/algopack/fo/alerts/{ticker}.json";
+            return ExecuteParsedAsync(
+                "alerts",
+                "futures",
+                ticker,
+                cancellationToken => CollectAsync(
+                    client.GetMegaAlertsFutures(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
+                    cancellationToken),
+                AppJsonContext.Default.ListMegaAlertsFuturesDTO,
+                ct);
+        }
+
         private static async Task<IResult> ExecuteRawAsync(
             string kind,
             string market,
@@ -449,6 +673,16 @@ namespace ProjectTraiding.Moex.Endpoints
             };
         }
 
+        private static Dictionary<string, string> CreateRawFutoiQuery(string from, string till)
+        {
+            return new Dictionary<string, string>
+            {
+                ["from"] = from,
+                ["till"] = till,
+                ["iss.meta"] = "off"
+            };
+        }
+
         private static string? ValidateRangeRequest(string ticker, string? from, string? till)
         {
             if (string.IsNullOrWhiteSpace(ticker))
@@ -485,151 +719,6 @@ namespace ProjectTraiding.Moex.Endpoints
                 .Replace("\"", "\\\"")
                 .Replace("\r", " ")
                 .Replace("\n", " ");
-        }
-
-        // ═══════════════════════════════════════════════════════════
-        // Stream helpers — все с cancellationToken: ct
-        // ═══════════════════════════════════════════════════════════
-
-        public static async IAsyncEnumerable<CandlesDTO> StreamCandles(MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams, string? captureMarket, string? secid, [EnumeratorCancellation] CancellationToken ct)
-        {
-            await foreach (List<CandlesDTO> candlesBatch in client.GetCandles(url, queryParams, captureMarket: captureMarket, secid: secid, cancellationToken: ct))
-            {
-                foreach (var candle in candlesBatch)
-                {
-                    yield return candle;
-                }
-            }
-        }
-
-        static async IAsyncEnumerable<SuperCandlesTradeStats5mDTO> StreamTradeStats(
-            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams, string? secid,
-            [EnumeratorCancellation] CancellationToken ct)
-        {
-            await foreach (List<SuperCandlesTradeStats5mDTO> batch in client.GetSuperCandlesTradeStats5m(url, queryParams, secid: secid, cancellationToken: ct))
-            {
-                foreach (var item in batch)
-                {
-                    yield return item;
-                }
-            }
-        }
-
-        static async IAsyncEnumerable<SuperCandlesOrderStats5mDTO> StreamOrderStats(
-            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams, string? secid,
-            [EnumeratorCancellation] CancellationToken ct)
-        {
-            await foreach (List<SuperCandlesOrderStats5mDTO> batch in client.GetSuperCandlesOrderStats5m(url, queryParams, secid: secid, cancellationToken: ct))
-            {
-                foreach (var item in batch)
-                {
-                    yield return item;
-                }
-            }
-        }
-
-        static async IAsyncEnumerable<SuperCandlesOrderBookStats5mDTO> StreamOrderBookStats(
-            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams, string? secid,
-            [EnumeratorCancellation] CancellationToken ct)
-        {
-            await foreach (List<SuperCandlesOrderBookStats5mDTO> batch in client.GetSuperCandlesOrderBookStats5m(url, queryParams, secid: secid, cancellationToken: ct))
-            {
-                foreach (var item in batch)
-                {
-                    yield return item;
-                }
-            }
-        }
-
-        static async IAsyncEnumerable<SuperCandlesFuturesTradeStats5mDTO> StreamFuturesTradeStats(
-            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams, string? secid,
-            [EnumeratorCancellation] CancellationToken ct)
-        {
-            await foreach (List<SuperCandlesFuturesTradeStats5mDTO> batch in client.GetSuperCandlesFuturesTradeStats5m(url, queryParams, secid: secid, cancellationToken: ct))
-            {
-                foreach (var item in batch)
-                {
-                    yield return item;
-                }
-            }
-        }
-
-        static async IAsyncEnumerable<SuperCandlesFuturesOrderBookStats5mDTO> StreamFuturesOrderBookStats(
-            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams, string? secid,
-            [EnumeratorCancellation] CancellationToken ct)
-        {
-            await foreach (List<SuperCandlesFuturesOrderBookStats5mDTO> batch in client.GetSuperCandlesFuturesOrderBookStats5m(url, queryParams, secid: secid, cancellationToken: ct))
-            {
-                foreach (var item in batch)
-                {
-                    yield return item;
-                }
-            }
-        }
-
-        static async IAsyncEnumerable<FutoiDTO> StreamFutoiItems(
-            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams, string? secid,
-            [EnumeratorCancellation] CancellationToken ct)
-        {
-            await foreach (List<FutoiDTO> batch in client.StreamFutoi(url, queryParams, secid: secid, cancellationToken: ct))
-            {
-                foreach (var item in batch)
-                {
-                    yield return item;
-                }
-            }
-        }
-
-        static async IAsyncEnumerable<Hi2AssetDTO> StreamHi2Asset(
-            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams, string? secid,
-            [EnumeratorCancellation] CancellationToken ct)
-        {
-            await foreach (List<Hi2AssetDTO> batch in client.GetHi2Asset5m(url, queryParams, secid: secid, cancellationToken: ct))
-            {
-                foreach (var item in batch)
-                {
-                    yield return item;
-                }
-            }
-        }
-
-        static async IAsyncEnumerable<Hi2FuturesDTO> StreamHi2Futures(
-            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams, string? secid,
-            [EnumeratorCancellation] CancellationToken ct)
-        {
-            await foreach (List<Hi2FuturesDTO> batch in client.GetHi2Furures5m(url, queryParams, secid: secid, cancellationToken: ct))
-            {
-                foreach (var item in batch)
-                {
-                    yield return item;
-                }
-            }
-        }
-
-        static async IAsyncEnumerable<MegaAlertsAssetsDTO> StreamMegaAlerts(
-            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams, string? secid,
-            [EnumeratorCancellation] CancellationToken ct)
-        {
-            await foreach (List<MegaAlertsAssetsDTO> batch in client.GetMegaAlerts(url, queryParams, secid: secid, cancellationToken: ct))
-            {
-                foreach (var item in batch)
-                {
-                    yield return item;
-                }
-            }
-        }
-
-        static async IAsyncEnumerable<MegaAlertsFuturesDTO> StreamMegaAlertsFutures(
-            MoexHttpAlgClient client, string url, Dictionary<string, string> queryParams, string? secid,
-            [EnumeratorCancellation] CancellationToken ct)
-        {
-            await foreach (List<MegaAlertsFuturesDTO> batch in client.GetMegaAlertsFutures(url, queryParams, secid: secid, cancellationToken: ct))
-            {
-                foreach (var item in batch)
-                {
-                    yield return item;
-                }
-            }
         }
 
     }
