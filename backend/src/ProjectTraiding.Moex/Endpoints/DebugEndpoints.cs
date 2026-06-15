@@ -9,16 +9,14 @@ using System.Text.Json;
 namespace ProjectTraiding.Moex.Endpoints
 {
     /// <summary>
-    /// Debug endpoint для сбора columns[] со всех MOEX endpoint'ов.
-    /// Вызвать один раз: GET http://localhost:5025/debug/columns-map
-    /// После получения результата — удалить этот файл.
+    /// Временные debug endpoint-ы и отдельные diagnostic raw route-ы для ручной проверки MOEX.
     /// </summary>
     public static class DebugEndpoints
     {
         private record ColumnResult(string RootKey, List<string> Columns);
         private record ErrorResult(string Message);
 
-        public static IEndpointRouteBuilder MapDebugEndpoints(this IEndpointRouteBuilder routes)
+        public static IEndpointRouteBuilder MapTemporaryDebugEndpoints(this IEndpointRouteBuilder routes)
         {
             routes.MapGet("/debug/columns-map", async (
                 MoexHttpAlgClient algClient,
@@ -226,149 +224,6 @@ namespace ProjectTraiding.Moex.Endpoints
                     cancellationToken: ct);
                 return Results.Text(raw, "application/json");
             });
-            // ── В DebugEndpoints.cs, внутри MapDebugEndpoints, перед return routes; ──
-
-            // ═══════════════════════════════════════════════
-            // Фаза 2–4: Real-time raw — orderbook, trades, candles today
-            // Все через APIM (требуют Bearer)
-            // ═══════════════════════════════════════════════
-
-            // ── Orderbook ──
-
-            routes.MapGet("/debug/orderbook-stock-raw", async (
-                MoexHttpAlgClient algClient,
-                CancellationToken ct) =>
-            {
-                string raw = await algClient.GetRaw(
-                    "/engines/stock/markets/shares/boards/TQBR/securities/SBER/orderbook.json",
-                    cancellationToken: ct);
-                return Results.Text(raw, "application/json");
-            });
-
-            routes.MapGet("/debug/orderbook-futures-raw", async (
-                MoexHttpAlgClient algClient,
-                CancellationToken ct) =>
-            {
-                string raw = await algClient.GetRaw(
-                    "/engines/futures/markets/forts/boards/RFUD/securities/SVM6/orderbook.json",
-                    cancellationToken: ct);
-                return Results.Text(raw, "application/json");
-            });
-
-            // ── Trades ──
-
-            routes.MapGet("/debug/trades-stock-raw", async (
-                MoexHttpAlgClient algClient,
-                CancellationToken ct) =>
-            {
-                string raw = await algClient.GetRaw(
-                    "/engines/stock/markets/shares/boards/TQBR/securities/SBER/trades.json",
-                    cancellationToken: ct);
-                return Results.Text(raw, "application/json");
-            });
-
-            routes.MapGet("/debug/trades-futures-raw", async (
-                MoexHttpAlgClient algClient,
-                CancellationToken ct) =>
-            {
-                string raw = await algClient.GetRaw(
-                    "/engines/futures/markets/forts/boards/RFUD/securities/SVM6/trades.json",
-                    cancellationToken: ct);
-                return Results.Text(raw, "application/json");
-            });
-
-            // ── Candles today ──
-
-            routes.MapGet("/debug/candles-today-stock-raw", async (
-                MoexHttpAlgClient algClient,
-                CancellationToken ct) =>
-            {
-                string today = DateTime.UtcNow.AddHours(3).ToString("yyyy-MM-dd");
-                string raw = await algClient.GetRaw(
-                    $"/engines/stock/markets/shares/boards/TQBR/securities/SBER/candles.json?interval=1&from={today}&till={today}",
-                    cancellationToken: ct);
-                return Results.Text(raw, "application/json");
-            });
-
-            routes.MapGet("/debug/candles-today-futures-raw", async (
-                MoexHttpAlgClient algClient,
-                CancellationToken ct) =>
-            {
-                string today = DateTime.UtcNow.AddHours(3).ToString("yyyy-MM-dd");
-                string raw = await algClient.GetRaw(
-                    $"/engines/futures/markets/forts/boards/RFUD/securities/SVM6/candles.json?interval=1&from={today}&till={today}",
-                    cancellationToken: ct);
-                return Results.Text(raw, "application/json");
-            });
-            // ═══════════════════════════════════════════════════════════
-            // Добавить в RealtimeDebugEndpoints.cs
-            // внутри MapRealtimeDebugEndpoints, в секцию "Raw endpoints",
-            // перед return routes;
-            // ═══════════════════════════════════════════════════════════
-
-            // ── MarketStatistics: Securities (справочные поля инструмента) ──
-
-            routes.MapGet("/raw/market-statistics-securities-stock/{ticker}", async (
-                string ticker,
-                MoexRealtimeRestClient client,
-                CancellationToken ct) =>
-            {
-                string url = $"/engines/stock/markets/shares/boards/TQBR/securities/{ticker}.json";
-                var queryParams = new Dictionary<string, string>
-                {
-                    ["iss.only"] = "securities",
-                    ["iss.meta"] = "off",
-                };
-                string raw = await client.GetRawSectionAsync(url, queryParams, ct);
-                return Results.Text(raw, "application/json");
-            });
-
-            routes.MapGet("/raw/market-statistics-securities-futures/{ticker}", async (
-                string ticker,
-                MoexRealtimeRestClient client,
-                CancellationToken ct) =>
-            {
-                string url = $"/engines/futures/markets/forts/boards/RFUD/securities/{ticker}.json";
-                var queryParams = new Dictionary<string, string>
-                {
-                    ["iss.only"] = "securities",
-                    ["iss.meta"] = "off",
-                };
-                string raw = await client.GetRawSectionAsync(url, queryParams, ct);
-                return Results.Text(raw, "application/json");
-            });
-
-            // ── MarketStatistics: Marketdata (текущие рыночные данные) ──
-
-            routes.MapGet("/raw/market-statistics-marketdata-stock/{ticker}", async (
-                string ticker,
-                MoexRealtimeRestClient client,
-                CancellationToken ct) =>
-            {
-                string url = $"/engines/stock/markets/shares/boards/TQBR/securities/{ticker}.json";
-                var queryParams = new Dictionary<string, string>
-                {
-                    ["iss.only"] = "marketdata",
-                    ["iss.meta"] = "off",
-                };
-                string raw = await client.GetRawSectionAsync(url, queryParams, ct);
-                return Results.Text(raw, "application/json");
-            });
-
-            routes.MapGet("/raw/market-statistics-marketdata-futures/{ticker}", async (
-                string ticker,
-                MoexRealtimeRestClient client,
-                CancellationToken ct) =>
-            {
-                string url = $"/engines/futures/markets/forts/boards/RFUD/securities/{ticker}.json";
-                var queryParams = new Dictionary<string, string>
-                {
-                    ["iss.only"] = "marketdata",
-                    ["iss.meta"] = "off",
-                };
-                string raw = await client.GetRawSectionAsync(url, queryParams, ct);
-                return Results.Text(raw, "application/json");
-            });
             routes.MapGet("/debug/s3/health", async (
     IAmazonS3 s3Client,
     IOptions<RawCaptureOptions> captureOptions,
@@ -492,6 +347,41 @@ namespace ProjectTraiding.Moex.Endpoints
                 }
 
                 return Results.Bytes(jsonStream.ToArray(), "application/json");
+            });
+
+            return routes;
+        }
+
+        public static IEndpointRouteBuilder MapDiagnosticDebugEndpoints(this IEndpointRouteBuilder routes)
+        {
+            routes.MapGet("/raw/market-statistics-marketdata-stock/{ticker}", async (
+                string ticker,
+                MoexRealtimeRestClient client,
+                CancellationToken ct) =>
+            {
+                string url = $"/engines/stock/markets/shares/boards/TQBR/securities/{ticker}.json";
+                Dictionary<string, string> queryParams = new Dictionary<string, string>
+                {
+                    ["iss.only"] = "marketdata",
+                    ["iss.meta"] = "off",
+                };
+                string raw = await client.GetRawSectionAsync(url, queryParams, ct);
+                return Results.Text(raw, "application/json");
+            });
+
+            routes.MapGet("/raw/market-statistics-marketdata-futures/{ticker}", async (
+                string ticker,
+                MoexRealtimeRestClient client,
+                CancellationToken ct) =>
+            {
+                string url = $"/engines/futures/markets/forts/boards/RFUD/securities/{ticker}.json";
+                Dictionary<string, string> queryParams = new Dictionary<string, string>
+                {
+                    ["iss.only"] = "marketdata",
+                    ["iss.meta"] = "off",
+                };
+                string raw = await client.GetRawSectionAsync(url, queryParams, ct);
+                return Results.Text(raw, "application/json");
             });
 
             return routes;

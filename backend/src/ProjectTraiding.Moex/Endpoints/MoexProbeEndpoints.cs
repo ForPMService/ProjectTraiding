@@ -9,8 +9,8 @@ namespace ProjectTraiding.Moex.Endpoints
     /// и вернуть его, обрезав строки до нескольких штук — чтобы посмотреть ФОРМУ:
     /// какие корневые блоки, массив columns, блок metadata (типы), блок *.cursor.
     ///
-    /// Регистрация: app.MapMoexProbeEndpoints(); — рядом с MapDebugEndpoints().
-    /// Временная диагностическая ручка, не часть публичного API. Удалить после исследования.
+    /// Регистрируется только в development-контуре временных debug-маршрутов.
+    /// Не часть публичного API.
     ///
     /// Пример:
     ///   GET /debug/probe?path=/datashop/algopack/eq/tradestats/SBER.json&amp;date=2026-05-05

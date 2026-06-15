@@ -7,10 +7,8 @@ using System.Runtime.CompilerServices;
 namespace ProjectTraiding.Moex.Endpoints
 {
     /// <summary>
-    /// Source endpoint-ы MOEX: в момент запроса идут в MOEX,
-    /// парсят ответ и возвращают DTO MOEX.
-    /// Это не ручки витрины для фронта; ручки витрины появятся позже
-    /// и будут читать данные из PostgreSQL/ClickHouse.
+    /// Календарные endpoint-ы MOEX.
+    /// Source/parsed routes возвращают DTO без записи, sync routes синхронизируют данные в PostgreSQL.
     /// </summary>
     public static class CalendarEndpoints
     {
@@ -46,22 +44,26 @@ namespace ProjectTraiding.Moex.Endpoints
         }
         public static IEndpointRouteBuilder MapCalendarLoadEndpoints(this IEndpointRouteBuilder routes)
         {
-            routes.MapGet("/loads/calendar/stock", async (
+            routes.MapGet("/operations/moex/sync/calendar/stock", async (
+                HttpContext httpContext,
                 MoexHttpCalendarClient client,
                 MoexCalendarWriter writer,
                 CancellationToken ct) =>
             {
-                var days = await client.GetStockOffDays(cancellationToken: ct);
+                httpContext.Response.Headers.CacheControl = "no-store";
+                List<CalendarOffDaysMarketDTO> days = await client.GetStockOffDays(cancellationToken: ct);
                 await writer.UpsertStockOffDaysAsync(days, ct);
                 return Results.NoContent();
             });
 
-            routes.MapGet("/loads/calendar/futures", async (
+            routes.MapGet("/operations/moex/sync/calendar/futures", async (
+                HttpContext httpContext,
                 MoexHttpCalendarClient client,
                 MoexCalendarWriter writer,
                 CancellationToken ct) =>
             {
-                var days = await client.GetFuturesOffDays(cancellationToken: ct);
+                httpContext.Response.Headers.CacheControl = "no-store";
+                List<CalendarOffDaysMarketDTO> days = await client.GetFuturesOffDays(cancellationToken: ct);
                 await writer.UpsertFuturesOffDaysAsync(days, ct);
                 return Results.NoContent();
             });

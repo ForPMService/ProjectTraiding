@@ -18,6 +18,8 @@ namespace ProjectTraiding.Moex.Clients
     /// <summary>
     /// HTTP-клиент для текущих REST-данных MOEX через платный APIM-доступ.
     /// Использует Moex:ApimBaseUrl и Authorization: Bearer {Moex:AlgKey}.
+    /// Даже вызовы с query-параметрами iss.only/iss.meta идут через APIM/Bearer,
+    /// а не через публичный ISS base URL без ключа.
     /// Подключается к тому же HTTP pipeline: rate limiter, logging handler, Polly resilience.
     /// 
     /// Endpoint-ы:
@@ -487,7 +489,7 @@ namespace ProjectTraiding.Moex.Clients
     Dictionary<string, string>? queryParams = null,
     CancellationToken cancellationToken = default)
         {
-            string requestUrl = _options.ApimBaseUrl + method;           // ← APIM, не ISS
+            string requestUrl = _options.ApimBaseUrl + method;           // Realtime REST transport: APIM base URL, не публичный ISS.
             queryParams ??= new Dictionary<string, string>();
             if (queryParams.Count > 0)
             {

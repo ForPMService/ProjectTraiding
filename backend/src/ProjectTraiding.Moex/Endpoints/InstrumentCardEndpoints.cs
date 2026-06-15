@@ -1,39 +1,39 @@
 using ProjectTraiding.Moex.Clients;
+using ProjectTraiding.Moex.Contracts.Dto.Iss;
 using ProjectTraiding.Moex.Contracts.Serialization;
 using ProjectTraiding.Moex.Storage.Postgres;
 
 namespace ProjectTraiding.Moex.Endpoints
 {
     /// <summary>
-    /// Карточки инструментов — списочные ответы с securities + marketdata.
-    ///
-    /// Акции:    ISS (публичный), парсинг ParsingInstrumentCardUtf8.ParseStockCards.
-    /// Фьючерсы: APIM (платный), парсинг ParsingInstrumentCardUtf8.ParseFuturesCards.
-    ///
-    /// Это source endpoint-ы: в момент запроса идут в MOEX, парсят и возвращают DTO.
-    /// Ручки витрины для фронта появятся позже.
+    /// Операционные sync endpoint-ы для карточек инструментов.
+    /// По запросу идут в MOEX, парсят ответ и синхронизируют данные в PostgreSQL.
     /// </summary>
     public static class InstrumentCardEndpoints
     {
 
         public static IEndpointRouteBuilder MapInstrumentCardLoadEndpoints(this IEndpointRouteBuilder routes)
         {
-            routes.MapGet("/loads/instrument-cards/stock", async (
+            routes.MapGet("/operations/moex/sync/instruments/stock", async (
+                HttpContext httpContext,
                 MoexHttpIssClient client,
                 MoexInstrumentWriter writer,
                 CancellationToken ct) =>
             {
-                var cards = await client.GetStockInstrumentCards(ct);
+                httpContext.Response.Headers.CacheControl = "no-store";
+                List<StockInstrumentCardDTO> cards = await client.GetStockInstrumentCards(ct);
                 await writer.UpsertStocksAsync(cards, ct);
                 return Results.NoContent();
             });
 
-            routes.MapGet("/loads/instrument-cards/futures", async (
+            routes.MapGet("/operations/moex/sync/instruments/futures", async (
+                HttpContext httpContext,
                 MoexHttpAlgClient client,
                 MoexInstrumentWriter writer,
                 CancellationToken ct) =>
             {
-                var cards = await client.GetFuturesInstrumentCards(ct);
+                httpContext.Response.Headers.CacheControl = "no-store";
+                List<FuturesInstrumentCardDTO> cards = await client.GetFuturesInstrumentCards(ct);
                 await writer.UpsertFuturesAsync(cards, ct);
                 return Results.NoContent();
             });
