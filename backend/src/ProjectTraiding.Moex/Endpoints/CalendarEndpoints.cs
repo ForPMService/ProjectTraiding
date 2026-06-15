@@ -1,7 +1,7 @@
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Dto.Calendar;
 using ProjectTraiding.Moex.Contracts.Serialization;
-using ProjectTraiding.Moex.Storage.Postgres;
+using ProjectTraiding.Moex.StorageBase.Postgres;
 using System.Runtime.CompilerServices;
 
 namespace ProjectTraiding.Moex.Endpoints

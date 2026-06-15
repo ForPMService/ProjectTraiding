@@ -108,9 +108,9 @@ $RECYCLE.BIN/
 # Logs / temp / local runtime storage
 # ─────────────────────────────────────────────────────────────
 *.log
-tmp/
-temp/
-storage/
+/tmp/
+/temp/
+/storage/
 *.jsonl
 
 # ─────────────────────────────────────────────────────────────
