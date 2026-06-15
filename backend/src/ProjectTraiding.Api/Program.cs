@@ -3,7 +3,7 @@ using ProjectTraiding.Moex.Contracts.Serialization;
 using ProjectTraiding.Moex.Endpoints;
 using ProjectTraiding.Moex.Infrastructure.DependencyInjection;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
-using ProjectTraiding.Moex.Storage.Postgres;
+using ProjectTraiding.Moex.StorageBase.Postgres;
 using ProjectTraiding.Observability.Infrastructure.DependencyInjection;
 
 var builder = WebApplication.CreateBuilder(args);
