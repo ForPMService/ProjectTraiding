@@ -7,7 +7,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
 
-namespace ProjectTraiding.Moex.Storage.Postgres
+namespace ProjectTraiding.Moex.StorageBase.Postgres
 {
     public sealed class MoexInstrumentWriter
     {
@@ -20,7 +20,7 @@ namespace ProjectTraiding.Moex.Storage.Postgres
             _logger = logger;
         }
 
-        public async Task UpsertStocksAsync(
+        public async Task<DbWriteResult> UpsertStocksAsync(
             IReadOnlyList<StockInstrumentCardDTO> stocks,
             CancellationToken ct)
         {
@@ -113,6 +113,9 @@ namespace ProjectTraiding.Moex.Storage.Postgres
                     processedCount++;
                 }
                 await transaction.CommitAsync(ct);
+                TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
+                MoexWriterLogMessages.WriteCompleted(_logger, table, processedCount, elapsed);
+                return new DbWriteResult(table, stocks.Count, processedCount, elapsed);
 
             }
             catch(Exception ex)
@@ -123,13 +126,13 @@ namespace ProjectTraiding.Moex.Storage.Postgres
             }
         }
 
-    public async Task UpsertFuturesAsync(
+    public async Task<DbWriteResult> UpsertFuturesAsync(
         IReadOnlyList<FuturesInstrumentCardDTO> futures,
         CancellationToken ct)
         {
-            const string table = "moex_instruments/moex_futures_details (future)";          // +
-            MoexWriterLogMessages.WriteStarted(_logger, table, futures.Count);            // +
-            long startTs = Stopwatch.GetTimestamp();                                     // +
+            const string table = "moex_instruments/moex_futures_details (futures)";
+            MoexWriterLogMessages.WriteStarted(_logger, table, futures.Count);
+            long startTs = Stopwatch.GetTimestamp();
 
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
             await using NpgsqlTransaction transaction = await connection.BeginTransactionAsync(ct);
@@ -212,8 +215,8 @@ namespace ProjectTraiding.Moex.Storage.Postgres
                     detailsCommand.Parameters.Add("@stepprice", NpgsqlDbType.Numeric).Value = (object?)future.StepPrice ?? DBNull.Value;
                     detailsCommand.Parameters.Add("@lotvolume", NpgsqlDbType.Integer).Value = (object?)future.LotVolume ?? DBNull.Value;
                     detailsCommand.Parameters.Add("@decimals", NpgsqlDbType.Integer).Value = (object?)future.Decimals ?? DBNull.Value;
-                    detailsCommand.Parameters.Add("@last_trade_date", NpgsqlDbType.Date).Value = string.IsNullOrWhiteSpace(future.LastTradeDate)? DBNull.Value: (object)DateOnly.Parse(future.LastTradeDate);
-                    detailsCommand.Parameters.Add("@last_del_date", NpgsqlDbType.Date).Value = string.IsNullOrWhiteSpace(future.LastDelDate)? DBNull.Value: (object)DateOnly.Parse(future.LastDelDate);
+                    detailsCommand.Parameters.Add("@last_trade_date", NpgsqlDbType.Date).Value = ParseNullableDateOrDbNull(future.LastTradeDate, table, "last_trade_date", future.SecId);
+                    detailsCommand.Parameters.Add("@last_del_date", NpgsqlDbType.Date).Value = ParseNullableDateOrDbNull(future.LastDelDate, table, "last_del_date", future.SecId);
                     detailsCommand.Parameters.Add("@high_limit", NpgsqlDbType.Numeric).Value = (object?)future.HighLimit ?? DBNull.Value;
                     detailsCommand.Parameters.Add("@low_limit", NpgsqlDbType.Numeric).Value = (object?)future.LowLimit ?? DBNull.Value;
                     detailsCommand.Parameters.Add("@buysell_fee", NpgsqlDbType.Numeric).Value = (object?)future.BuySellFee ?? DBNull.Value;
@@ -224,6 +227,9 @@ namespace ProjectTraiding.Moex.Storage.Postgres
                 }
 
                 await transaction.CommitAsync(ct);
+                TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
+                MoexWriterLogMessages.WriteCompleted(_logger, table, processedCount, elapsed);
+                return new DbWriteResult(table, futures.Count, processedCount, elapsed);
             }
             catch(Exception ex)
             {
@@ -231,6 +237,22 @@ namespace ProjectTraiding.Moex.Storage.Postgres
                 await transaction.RollbackAsync(CancellationToken.None);
                 throw;
             }
+        }
+
+        private object ParseNullableDateOrDbNull(string? raw, string table, string field, string key)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return DBNull.Value;
+            }
+
+            if (DateOnly.TryParse(raw, out DateOnly parsed))
+            {
+                return parsed;
+            }
+
+            MoexWriterLogMessages.DateParseFailed(_logger, table, field, key, raw);
+            return DBNull.Value;
         }
     }
 }

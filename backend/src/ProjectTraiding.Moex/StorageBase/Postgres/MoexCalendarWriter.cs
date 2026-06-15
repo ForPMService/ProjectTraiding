@@ -7,7 +7,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
 
-namespace ProjectTraiding.Moex.Storage.Postgres
+namespace ProjectTraiding.Moex.StorageBase.Postgres
 {
     public sealed class MoexCalendarWriter
     {
@@ -20,19 +20,19 @@ namespace ProjectTraiding.Moex.Storage.Postgres
             _logger = logger;
         }
 
-        public Task UpsertStockOffDaysAsync(
+        public Task<DbWriteResult> UpsertStockOffDaysAsync(
             IReadOnlyList<CalendarOffDaysMarketDTO> days,
             CancellationToken ct)
             => UpsertOffDaysAsync(days, "stock", ct);
 
-        public Task UpsertFuturesOffDaysAsync(
+        public Task<DbWriteResult> UpsertFuturesOffDaysAsync(
             IReadOnlyList<CalendarOffDaysMarketDTO> days,
             CancellationToken ct)
             => UpsertOffDaysAsync(days, "futures", ct);
 
         // Одна таблица, один UPSERT на строку, FK между строками нет —
         // stock/futures отличаются только константой market, тело общее.
-        private async Task UpsertOffDaysAsync(
+        private async Task<DbWriteResult> UpsertOffDaysAsync(
             IReadOnlyList<CalendarOffDaysMarketDTO> days,
             string market,
             CancellationToken ct)
@@ -87,9 +87,7 @@ namespace ProjectTraiding.Moex.Storage.Postgres
 
                     // trade_session_date: date-колонка, nullable (null при is_traded=0).
                     command.Parameters.Add("@trade_session_date", NpgsqlDbType.Date).Value =
-                        string.IsNullOrWhiteSpace(day.TradeSessionDate)
-                            ? DBNull.Value
-                            : (object)DateOnly.Parse(day.TradeSessionDate);
+                        ParseNullableDateOrDbNull(day.TradeSessionDate, table, "trade_session_date", day.TradeDate);
 
                     command.Parameters.Add("@reason", NpgsqlDbType.Text).Value =
                         (object?)day.Reason ?? DBNull.Value;
@@ -105,6 +103,9 @@ namespace ProjectTraiding.Moex.Storage.Postgres
                 }
 
                 await transaction.CommitAsync(ct);
+                TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
+                MoexWriterLogMessages.WriteCompleted(_logger, table, processedCount, elapsed);
+                return new DbWriteResult(table, days.Count, processedCount, elapsed);
             }
             catch(Exception ex)
             {
@@ -112,6 +113,22 @@ namespace ProjectTraiding.Moex.Storage.Postgres
                 await transaction.RollbackAsync(CancellationToken.None);
                 throw;
             }
+        }
+
+        private object ParseNullableDateOrDbNull(string? raw, string table, string field, string key)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return DBNull.Value;
+            }
+
+            if (DateOnly.TryParse(raw, out DateOnly parsed))
+            {
+                return parsed;
+            }
+
+            MoexWriterLogMessages.DateParseFailed(_logger, table, field, key, raw);
+            return DBNull.Value;
         }
     }
 }
