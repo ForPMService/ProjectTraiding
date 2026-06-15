@@ -141,6 +141,7 @@ namespace ProjectTraiding.Moex.Storage.Postgres
             {
                 foreach (FuturesInstrumentCardDTO future in futures)
                 {
+                    currentKey = future.SecId ?? "?";
                     // ── проверка NOT NULL полей до SQL ──
                     if (string.IsNullOrWhiteSpace(future.SecId))
                         throw new InvalidOperationException("SecId пустой");
