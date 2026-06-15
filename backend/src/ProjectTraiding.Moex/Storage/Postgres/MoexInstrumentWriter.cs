@@ -2,7 +2,9 @@
 using NpgsqlTypes;
 using ProjectTraiding.Moex.Contracts.Dto.Iss;
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 
 namespace ProjectTraiding.Moex.Storage.Postgres
@@ -10,23 +12,33 @@ namespace ProjectTraiding.Moex.Storage.Postgres
     public sealed class MoexInstrumentWriter
     {
         private readonly NpgsqlDataSource _dataSource;
+        private readonly ILogger<MoexInstrumentWriter> _logger;
 
-        public MoexInstrumentWriter(NpgsqlDataSource dataSource)
+        public MoexInstrumentWriter(NpgsqlDataSource dataSource, ILogger<MoexInstrumentWriter> logger)
         {
             _dataSource = dataSource;
+            _logger = logger;
         }
 
         public async Task UpsertStocksAsync(
             IReadOnlyList<StockInstrumentCardDTO> stocks,
             CancellationToken ct)
         {
+            const string table = "moex_instruments/moex_stock_details (stock)";          
+            MoexWriterLogMessages.WriteStarted(_logger, table, stocks.Count);            
+            long startTs = Stopwatch.GetTimestamp();
+
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
             await using NpgsqlTransaction transaction = await connection.BeginTransactionAsync(ct);
+
+            string currentKey = "?";
+            int processedCount = 0;
 
             try
             {
                 foreach (StockInstrumentCardDTO stock in stocks)
                 {
+                    currentKey = stock.SecId ?? "?";
                     // ── проверка NOT NULL полей до SQL ──
                     if (string.IsNullOrWhiteSpace(stock.SecId))
                         throw new InvalidOperationException("SecId пустой");
@@ -61,27 +73,27 @@ namespace ProjectTraiding.Moex.Storage.Postgres
 
                     // ── UPSERT 2: детали moex_stock_details ──
                     await using NpgsqlCommand detailsCommand = new NpgsqlCommand("""
-                INSERT INTO moex_stock_details
-                    (secid, boardid, shortname, secname, sectype, isin, lotsize,
-                     minstep, decimals, currency_id, issue_size, list_level, status, updated_at)
-                VALUES
-                    (@secid, @boardid, @shortname, @secname, @sectype, @isin, @lotsize,
-                     @minstep, @decimals, @currency_id, @issue_size, @list_level, @status, now())
-                ON CONFLICT (secid) DO UPDATE SET
-                    boardid     = EXCLUDED.boardid,
-                    shortname   = EXCLUDED.shortname,
-                    secname     = EXCLUDED.secname,
-                    sectype     = EXCLUDED.sectype,
-                    isin        = EXCLUDED.isin,
-                    lotsize     = EXCLUDED.lotsize,
-                    minstep     = EXCLUDED.minstep,
-                    decimals    = EXCLUDED.decimals,
-                    currency_id = EXCLUDED.currency_id,
-                    issue_size  = EXCLUDED.issue_size,
-                    list_level  = EXCLUDED.list_level,
-                    status      = EXCLUDED.status,
-                    updated_at  = now()
-                """, connection, transaction);
+                    INSERT INTO moex_stock_details
+                        (secid, boardid, shortname, secname, sectype, isin, lotsize,
+                         minstep, decimals, currency_id, issue_size, list_level, status, updated_at)
+                    VALUES
+                        (@secid, @boardid, @shortname, @secname, @sectype, @isin, @lotsize,
+                         @minstep, @decimals, @currency_id, @issue_size, @list_level, @status, now())
+                    ON CONFLICT (secid) DO UPDATE SET
+                        boardid     = EXCLUDED.boardid,
+                        shortname   = EXCLUDED.shortname,
+                        secname     = EXCLUDED.secname,
+                        sectype     = EXCLUDED.sectype,
+                        isin        = EXCLUDED.isin,
+                        lotsize     = EXCLUDED.lotsize,
+                        minstep     = EXCLUDED.minstep,
+                        decimals    = EXCLUDED.decimals,
+                        currency_id = EXCLUDED.currency_id,
+                        issue_size  = EXCLUDED.issue_size,
+                        list_level  = EXCLUDED.list_level,
+                        status      = EXCLUDED.status,
+                        updated_at  = now()
+                    """, connection, transaction);
 
                     detailsCommand.Parameters.Add("@secid", NpgsqlDbType.Text).Value = stock.SecId;
                     detailsCommand.Parameters.Add("@boardid", NpgsqlDbType.Text).Value = stock.BoardId;
@@ -98,13 +110,14 @@ namespace ProjectTraiding.Moex.Storage.Postgres
                     detailsCommand.Parameters.Add("@status", NpgsqlDbType.Text).Value = (object?)stock.Status ?? DBNull.Value;
 
                     await detailsCommand.ExecuteNonQueryAsync(ct);
-
+                    processedCount++;
                 }
                 await transaction.CommitAsync(ct);
 
             }
-            catch
+            catch(Exception ex)
             {
+                MoexWriterLogMessages.WriteRolledBack(_logger, ex, table, currentKey, processedCount, ex.GetType().Name);
                 await transaction.RollbackAsync(CancellationToken.None);
                 throw;
             }
@@ -114,8 +127,15 @@ namespace ProjectTraiding.Moex.Storage.Postgres
         IReadOnlyList<FuturesInstrumentCardDTO> futures,
         CancellationToken ct)
         {
+            const string table = "moex_instruments/moex_futures_details (future)";          // +
+            MoexWriterLogMessages.WriteStarted(_logger, table, futures.Count);            // +
+            long startTs = Stopwatch.GetTimestamp();                                     // +
+
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
             await using NpgsqlTransaction transaction = await connection.BeginTransactionAsync(ct);
+
+            string currentKey = "?";
+            int processedCount = 0;
 
             try
             {
@@ -198,12 +218,15 @@ namespace ProjectTraiding.Moex.Storage.Postgres
                     detailsCommand.Parameters.Add("@buysell_fee", NpgsqlDbType.Numeric).Value = (object?)future.BuySellFee ?? DBNull.Value;
 
                     await detailsCommand.ExecuteNonQueryAsync(ct);
+
+                    processedCount++;
                 }
 
                 await transaction.CommitAsync(ct);
             }
-            catch
+            catch(Exception ex)
             {
+                MoexWriterLogMessages.WriteRolledBack(_logger, ex, table, currentKey,processedCount, ex.GetType().Name);
                 await transaction.RollbackAsync(CancellationToken.None);
                 throw;
             }
