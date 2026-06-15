@@ -29,14 +29,12 @@ builder.Services.AddOpenApi();
 var app = builder.Build();
 
 app.MapObservabilityEndpoints();
-app.MapMoexProbeEndpoints();
-app.MapInstrumentCardLoadEndpoints();
-app.MapCalendarLoadEndpoints();
-app.MapMoexEndpoints();
+app.MapMoexSyncEndpoints();
 
 if (app.Environment.IsDevelopment())
 {
-    app.MapMoexDebugEndpoints();
+    app.MapMoexDiagnosticEndpoints();
+    app.MapMoexTemporaryDebugEndpoints();
     app.MapOpenApi();
 }
 
