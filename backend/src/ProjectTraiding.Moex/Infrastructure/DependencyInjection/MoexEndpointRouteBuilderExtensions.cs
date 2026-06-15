@@ -6,7 +6,6 @@ public static class MoexEndpointRouteBuilderExtensions
 {
     public static IEndpointRouteBuilder MapMoexEndpoints(this IEndpointRouteBuilder routes)
     {
-        // _Old routes.MapReferenceEndpoints();
         routes.MapAlgopackEndpoints();
         routes.MapCalendarEndpoints();
         routes.MapRealtimeDebugEndpoints();
