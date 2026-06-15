@@ -1,6 +1,7 @@
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using ProjectTraiding.Moex.Contracts.Dto.Calendar;
 using ProjectTraiding.Moex.Contracts.Dto.Iss;
+using ProjectTraiding.Moex.Contracts.Dto.Operations;
 using ProjectTraiding.Moex.Contracts.Dto.Realtime;
 using ProjectTraiding.Moex.Endpoints;
 using System.Text.Json;
@@ -94,6 +95,8 @@ namespace ProjectTraiding.Moex.Contracts.Serialization
     [JsonSerializable(typeof(List<FuturesInstrumentCardDTO>))]
     [JsonSerializable(typeof(StockInstrumentCardDTO))]
     [JsonSerializable(typeof(FuturesInstrumentCardDTO))]
+        [JsonSerializable(typeof(LoadResultDto))]
+        [JsonSerializable(typeof(LoadResultDto[]))]
     public partial class AppJsonContext : JsonSerializerContext
     {
     }
