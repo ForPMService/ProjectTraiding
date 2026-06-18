@@ -10,7 +10,7 @@ namespace ProjectTraiding.Management.DependencyInjection
         public static IServiceCollection AddManagement(this IServiceCollection services)
         {
             services.AddTransient<InstrumentRelationWriter>();
-            // services.AddTransient<BrokerTariffWriter>();   // шаг 5
+            services.AddTransient<BrokerTariffWriter>();
             return services;
         }
     }

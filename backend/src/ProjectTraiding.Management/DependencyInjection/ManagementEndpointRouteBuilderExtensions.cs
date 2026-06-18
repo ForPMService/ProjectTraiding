@@ -10,7 +10,7 @@ namespace ProjectTraiding.Management.DependencyInjection
         public static IEndpointRouteBuilder MapManagementEndpoints(this IEndpointRouteBuilder routes)
         {
             routes.MapRelationEndpoints();
-            // routes.MapTariffEndpoints();   // шаг 5
+            routes.MapTariffEndpoints();
             return routes;
         }
     }
