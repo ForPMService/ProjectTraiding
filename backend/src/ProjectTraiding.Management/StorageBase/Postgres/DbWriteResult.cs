@@ -8,6 +8,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
         string Table,
         int InputCount,
         int RowsWritten,
-        TimeSpan Elapsed);
+        TimeSpan Elapsed,
+        long Id);
     
 }

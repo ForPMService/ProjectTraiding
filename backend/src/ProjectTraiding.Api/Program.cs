@@ -1,4 +1,6 @@
 using ProjectTraiding.Api.Infrastructure;
+using ProjectTraiding.Management.Contracts;
+using ProjectTraiding.Management.DependencyInjection;
 using ProjectTraiding.Moex.Contracts.Serialization;
 using ProjectTraiding.Moex.Endpoints;
 using ProjectTraiding.Moex.Infrastructure.DependencyInjection;
@@ -20,9 +22,11 @@ builder.Services.AddPostgre(builder.Configuration);
 builder.Services.AddTransient<MoexInstrumentWriter>();
 builder.Services.AddTransient<MoexCalendarWriter>();
 builder.Services.AddRawCapture(builder.Configuration);
+builder.Services.AddManagement();
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default);
+    options.SerializerOptions.TypeInfoResolverChain.Insert(0, ManagementJsonContext.Default);
 });
 builder.Services.AddOpenApi();
 
@@ -30,6 +34,7 @@ var app = builder.Build();
 
 app.MapObservabilityEndpoints();
 app.MapMoexSyncEndpoints();
+app.MapManagementEndpoints();
 
 if (app.Environment.IsDevelopment())
 {
