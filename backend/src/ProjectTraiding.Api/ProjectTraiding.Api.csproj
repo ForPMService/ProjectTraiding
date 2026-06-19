@@ -12,6 +12,7 @@
     <ProjectReference Include="..\ProjectTraiding.Moex\ProjectTraiding.Moex.csproj" />
     <ProjectReference Include="..\ProjectTraiding.Observability\ProjectTraiding.Observability.csproj" />
     <ProjectReference Include="..\ProjectTraiding.Management\ProjectTraiding.Management.csproj" />
+    <ProjectReference Include="..\ProjectTraiding.Vitrine\ProjectTraiding.Vitrine.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="AWSSDK.S3" Version="4.0.23.4" />
