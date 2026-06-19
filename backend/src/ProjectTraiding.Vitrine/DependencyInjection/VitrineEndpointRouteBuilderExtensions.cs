@@ -11,6 +11,9 @@ namespace ProjectTraiding.Vitrine.DependencyInjection
         public static IEndpointRouteBuilder MapVitrineEndpoints(this IEndpointRouteBuilder routes)
         {
             routes.MapInstrumentEndpoints();
+            routes.MapCalendarEndpoints();
+            routes.MapBrokerTariffEndpoints();
+            routes.MapInstrumentRelationEndpoints();
             return routes;
         }
     }

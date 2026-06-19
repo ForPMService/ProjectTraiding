@@ -11,6 +11,9 @@ namespace ProjectTraiding.Vitrine.DependencyInjection
         public static IServiceCollection AddVitrine(this IServiceCollection services)
         {
             services.AddTransient<InstrumentReadQuery>();
+            services.AddTransient<CalendarReadQuery>();
+            services.AddTransient<BrokerTariffReadQuery>();
+            services.AddTransient<InstrumentRelationReadQuery>();
             return services;
         }
     }
