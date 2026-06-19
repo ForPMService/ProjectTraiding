@@ -7,6 +7,8 @@ using ProjectTraiding.Moex.Infrastructure.DependencyInjection;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using ProjectTraiding.Observability.Infrastructure.DependencyInjection;
+using ProjectTraiding.Vitrine.Contracts;
+using ProjectTraiding.Vitrine.DependencyInjection;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,10 +24,12 @@ builder.Services.AddPostgre(builder.Configuration);
 builder.Services.AddTransient<MoexInstrumentWriter>();
 builder.Services.AddTransient<MoexCalendarWriter>();
 builder.Services.AddRawCapture(builder.Configuration);
+builder.Services.AddVitrine();
 builder.Services.AddManagement();
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default);
+    options.SerializerOptions.TypeInfoResolverChain.Insert(0, VitrineJsonContext.Default);
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, ManagementJsonContext.Default);
 });
 builder.Services.AddOpenApi();
@@ -35,6 +39,7 @@ var app = builder.Build();
 app.MapObservabilityEndpoints();
 app.MapMoexSyncEndpoints();
 app.MapManagementEndpoints();
+app.MapVitrineEndpoints();
 
 if (app.Environment.IsDevelopment())
 {
