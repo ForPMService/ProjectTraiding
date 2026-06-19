@@ -18,5 +18,6 @@ namespace ProjectTraiding.Vitrine.Contracts
     [JsonSerializable(typeof(List<VitrineStockCardDto>))]
     [JsonSerializable(typeof(VitrineFuturesCardDto))]
     [JsonSerializable(typeof(List<VitrineFuturesCardDto>))]
+    [JsonSerializable(typeof(VitrineStatusDto))]
     public partial class VitrineJsonContext : JsonSerializerContext;
 }
