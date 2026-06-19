@@ -14,6 +14,9 @@ namespace ProjectTraiding.Vitrine.DependencyInjection
             services.AddTransient<CalendarReadQuery>();
             services.AddTransient<BrokerTariffReadQuery>();
             services.AddTransient<InstrumentRelationReadQuery>();
+            services.AddTransient<StockCardReadQuery>();
+            services.AddTransient<FuturesCardReadQuery>();
+            services.AddTransient<InstrumentRelationBySecidReadQuery>();
             return services;
         }
     }

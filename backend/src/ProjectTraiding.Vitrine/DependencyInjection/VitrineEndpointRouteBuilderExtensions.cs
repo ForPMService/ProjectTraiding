@@ -14,6 +14,9 @@ namespace ProjectTraiding.Vitrine.DependencyInjection
             routes.MapCalendarEndpoints();
             routes.MapBrokerTariffEndpoints();
             routes.MapInstrumentRelationEndpoints();
+            routes.MapStockCardEndpoints();
+            routes.MapFuturesCardEndpoints();
+            routes.MapInstrumentRelationBySecidEndpoints();
             return routes;
         }
     }
