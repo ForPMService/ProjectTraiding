@@ -1,14 +1,16 @@
 {
   "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
   "version": 1,
+  "cli": {
+    "packageManager": "npm"
+  },
   "newProjectRoot": "projects",
   "projects": {
-    "moex-console": {
+    "frontend": {
       "projectType": "application",
       "schematics": {
         "@schematics/angular:component": {
-          "style": "scss",
-          "changeDetection": "OnPush"
+          "style": "scss"
         }
       },
       "root": "",
@@ -18,15 +20,18 @@
         "build": {
           "builder": "@angular/build:application",
           "options": {
-            "outputPath": "dist/moex-console",
-            "index": "src/index.html",
             "browser": "src/main.ts",
             "tsConfig": "tsconfig.app.json",
             "inlineStyleLanguage": "scss",
-            "stylePreprocessorOptions": {
-              "includePaths": ["src/styles"]
-            },
-            "styles": ["src/styles/styles.scss"]
+            "assets": [
+              {
+                "glob": "**/*",
+                "input": "public"
+              }
+            ],
+            "styles": [
+              "src/styles.scss"
+            ]
           },
           "configurations": {
             "production": {
@@ -56,13 +61,16 @@
           "builder": "@angular/build:dev-server",
           "configurations": {
             "production": {
-              "buildTarget": "moex-console:build:production"
+              "buildTarget": "frontend:build:production"
             },
             "development": {
-              "buildTarget": "moex-console:build:development"
+              "buildTarget": "frontend:build:development"
             }
           },
           "defaultConfiguration": "development"
+        },
+        "test": {
+          "builder": "@angular/build:unit-test"
         }
       }
     }

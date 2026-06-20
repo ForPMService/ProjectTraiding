@@ -1,79 +1,59 @@
-# MOEX Data Operations Console — статическая вёрстка (Angular 21)
+# Frontend
 
-Статическая вёрстка операторской консоли (HTML/SCSS) на **Angular 21** с современным
-стеком: **zoneless** change detection, **signals**, функции **`input()` / `output()`**,
-**`OnPush`** во всех компонентах, standalone-by-default, новый style-guide (имена файлов
-без суффикса `.component`).
+This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 22.0.3.
 
-Без бизнес-логики, HTTP, сервисов, роутера и UI-библиотек. Все данные — мок,
-захардкоженный в компонентах. Навигация между экранами — через `output()`
-и `@switch` в `Shell`.
+## Development server
 
-## Запуск
+To start a local development server, run:
 
 ```bash
-npm install
-npm start          # = ng serve
+ng serve
 ```
 
-Откройте http://localhost:4200
+Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
 
-> Требуется Node.js 20.19+ (или 22.12+) — требование Angular 21.
-> Минимальная ширина макета — 1440px (адаптива нет по условию задания).
+## Code scaffolding
 
-## Что изменилось по сравнению с версией на Angular 18
+Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
 
-| Практика | Было (v18) | Стало (v21) |
-| --- | --- | --- |
-| Change detection | Zone.js | **Zoneless** (`provideZonelessChangeDetection`) |
-| Состояние навигации | поле `currentPage: PageKey` | **signal** `currentPage = signal<PageKey>(…)` |
-| Хлебная крошка | геттер | **computed** signal |
-| Входы / выходы | `@Input()` / `@Output() EventEmitter` | **`input()` / `output()`** |
-| Стратегия CD | по умолчанию | **`ChangeDetectionStrategy.OnPush`** везде |
-| `standalone: true` | явно указан | опущен (значение по умолчанию) |
-| Имена файлов / классов | `shell.component.ts` → `ShellComponent` | `shell.ts` → `Shell` |
-| Bootstrap | `bootstrapApplication(App)` | `app.config.ts` + `provideZonelessChangeDetection` |
-| Сборщик | — | `@angular/build:application` (esbuild) |
-
-> **Одно осознанное решение:** имена файлов без суффикса `.component` и классы без
-> суффикса `Component` — это поведение Angular CLI по умолчанию начиная с v20.
-> Если в команде принят старый стиль с суффиксами, его можно вернуть через
-> `ng config` / схематики — на архитектуру это не влияет.
-
-## Архитектура навигации
-
-- `currentPage` — единственный источник состояния, живёт **только** в `Shell` (signal).
-- Дочерние страницы ничего не знают о навигации: они лишь эмитят `pageChange` (`output<PageKey>()`).
-- `Shell` рендерит активную страницу через `@switch (currentPage())` и пишет новое
-  значение через `currentPage.set($event)`.
-
-## Структура
-
-```
-src/
-  app/
-    app.ts                      # корневой компонент App
-    app.config.ts               # ApplicationConfig (zoneless)
-    shared/page-key.ts          # тип PageKey
-    layout/
-      shell.ts / .html / .scss  # сайдбар + топбар + @switch
-    pages/
-      dashboard/
-      instruments/
-        catalog/                # каталог + drawer (input: activeTab, showDrawer)
-        card-stock/             # карточка акции
-        card-futures/           # карточка фьючерса
-  styles/                       # токены, миксины, общие примитивы
-  index.html
-  main.ts
+```bash
+ng generate component component-name
 ```
 
-## Экраны
+For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
 
-Переключение — кликами внутри интерфейса:
+```bash
+ng generate --help
+```
 
-- **Dashboard** — метрики + алерты + таблица загрузок
-- **Каталог · Акции / Фьючерсы** — таблицы инструментов, вкладки Все/Акции/Фьючерсы
-- **Каталог + Drawer** — боковая панель деталей (клик по action-кнопке в строке)
-- **Карточка акции (SBER)** / **Карточка фьючерса (SiM6)** — клик по строке
-- Возврат из карточки — «← Назад к инструментам».
+## Building
+
+To build the project run:
+
+```bash
+ng build
+```
+
+This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
+
+## Running unit tests
+
+To execute unit tests with the [Vitest](https://vitest.dev/) test runner, use the following command:
+
+```bash
+ng test
+```
+
+## Running end-to-end tests
+
+For end-to-end (e2e) testing, run:
+
+```bash
+ng e2e
+```
+
+Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
+
+## Additional Resources
+
+For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
