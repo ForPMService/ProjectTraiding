@@ -1,0 +1,104 @@
+<!-- Боковое меню. Показаны ВСЕ пункты макета. Пункты блока C ведут к реальным
+     экранам; пункты блока D — задел, пока пустые (помечены ниже). Данных
+     с сервера в самом меню нет — это статический каркас. -->
+<aside class="sidebar">
+
+  <!-- ── Логотип ──────────────────────────────────────── -->
+  <div class="logo">
+    <div class="logo__mark">
+      <svg class="logo__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/>
+      </svg>
+    </div>
+    <div class="logo__text">
+      <span class="logo__title">MOEX</span>
+      <span class="logo__subtitle">Data Ops</span>
+    </div>
+  </div>
+
+  <!-- ── Навигация ────────────────────────────────────── -->
+  <nav class="nav">
+
+    <div class="nav__group-label">Мониторинг</div>
+
+    <a class="nav__item nav__item--active">  <!-- Dashboard · [ЕСТЬ] срез 10 -->
+      <svg class="nav__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>
+      </svg>
+      <span>Dashboard</span>
+    </a>
+
+    <a class="nav__item">                     <!-- Загрузки · [НЕТ — блок D] -->
+      <svg class="nav__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/>
+      </svg>
+      <span>Загрузки</span>
+    </a>
+
+    <a class="nav__item">                     <!-- Инструменты · [ЕСТЬ] срез 2–3 -->
+      <svg class="nav__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/>
+      </svg>
+      <span>Инструменты</span>
+    </a>
+
+    <a class="nav__item">                     <!-- Календарь · [ЕСТЬ] срез 9 -->
+      <svg class="nav__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>
+      </svg>
+      <span>Календарь</span>
+    </a>
+
+    <a class="nav__item">                     <!-- Качество · [НЕТ — блок D] -->
+      <svg class="nav__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>
+      </svg>
+      <span>Качество</span>
+    </a>
+
+    <a class="nav__item">                     <!-- Операции · [НЕТ — блок D] -->
+      <svg class="nav__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/>
+      </svg>
+      <span>Операции</span>
+    </a>
+
+    <div class="nav__group-label nav__group-label--spaced">Аналитика</div>
+
+    <a class="nav__item">                     <!-- Издержки · [ЕСТЬ] срез 8 -->
+      <svg class="nav__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+      </svg>
+      <span>Издержки</span>
+    </a>
+
+    <a class="nav__item">                     <!-- Рейтинг · [НЕТ — блок D] -->
+      <svg class="nav__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"/>
+      </svg>
+      <span>Рейтинг</span>
+    </a>
+
+  </nav>
+
+  <!-- ── Низ: настройки + оператор ────────────────────── -->
+  <div class="sidebar__bottom">
+
+    <a class="nav__item">                     <!-- Настройки · [НЕТ — блок D] -->
+      <svg class="nav__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/>
+      </svg>
+      <span>Настройки</span>
+    </a>
+
+    <div class="operator">
+      <div class="operator__avatar"></div>
+      <div class="operator__text">
+        <span class="operator__name">Оператор</span>   <!-- заглушка, заменишь позже -->
+        <span class="operator__role">MOEX</span>
+      </div>
+    </div>
+
+  </div>
+
+</aside>
