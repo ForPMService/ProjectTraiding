@@ -1,0 +1,5 @@
+.metrics {
+  display: grid;                          /* раскладка сеткой */
+  grid-template-columns: repeat(4, 1fr);  /* четыре колонки равной ширины */
+  gap: var(--space-4);                    /* зазор между плашками */
+}
