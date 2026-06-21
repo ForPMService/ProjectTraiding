@@ -1,0 +1,28 @@
+<header class="topbar">
+
+  <!-- Слева: хлебные крошки — где мы находимся. Раздел пока заглушкой. -->
+  <div class="crumbs">
+    <span class="crumbs__root">MOEX Data Ops</span>
+    <span class="crumbs__sep">›</span>
+    <span class="crumbs__current">Инструменты</span>   <!-- заглушка, свяжем с адресом на срезе маршрутов -->
+  </div>
+
+  <!-- Распорка: отжимает правую группу к правому краю. -->
+  <div class="spacer"></div>
+
+  <!-- Справа: индикатор LIVE + часы. LIVE пока каркас, часы — живые. -->
+  <div class="live">
+    <span class="live__dot"></span>
+    <span class="live__label">LIVE</span>
+    <span class="live__time">{{ time() }}</span>   <!-- читаем сигнал: вот те самые скобки -->
+  </div>
+
+  <!-- Поиск: пока каркас, оживёт фильтром на срезе 4. -->
+  <div class="search">
+    <svg class="search__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+    </svg>
+    <input class="search__input" type="text" placeholder="Поиск secid, тикера или названия" />
+  </div>
+
+</header>

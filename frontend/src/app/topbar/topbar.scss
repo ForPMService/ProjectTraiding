@@ -1,0 +1,81 @@
+/* Шапка: полоска сверху колонки, содержимое в один ряд по горизонтали. */
+.topbar {
+  height: 48px;                       /* высота полоски шапки */
+  flex-shrink: 0;                     /* не сжимается, когда страница длинная */
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-hairline);
+  display: flex;                      /* всё содержимое — в строку */
+  align-items: center;                /* по вертикали — по центру полоски */
+  padding: 0 var(--space-5, 20px);
+  gap: var(--space-3);
+}
+
+/* ── Хлебные крошки ──────────────────────────────────── */
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 12px;
+}
+.crumbs__root { color: var(--text-muted); }
+.crumbs__sep { color: var(--text-muted); }
+.crumbs__current { color: var(--text-secondary); }
+
+/* Распорка: занимает всё свободное место между левым и правым. */
+.spacer { flex: 1; }
+
+/* ── LIVE + часы ─────────────────────────────────────── */
+.live {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.live__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--status-success-fg);    /* зелёная точка */
+}
+.live__label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  letter-spacing: 0.08em;
+}
+.live__time {
+  font-family: var(--font-mono);           /* часы — моноширинным, как числа */
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* ── Поиск ───────────────────────────────────────────── */
+.search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--bg-app);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-input);
+  padding: var(--space-2) var(--space-3);
+  width: 280px;
+}
+.search__icon {
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.search__input {
+  background: transparent;                  /* поле сливается с плашкой поиска */
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+  font-family: var(--font-ui);
+  width: 100%;
+}
+.search__input::placeholder { color: var(--text-muted); }   /* серый текст-подсказка */
+
+/* ── Раскладка колонки: рамка под шапкой занимает остаток ── */
+:host {
+  display: contents;     /* шапка не создаёт лишней обёртки в колонке */
+}
