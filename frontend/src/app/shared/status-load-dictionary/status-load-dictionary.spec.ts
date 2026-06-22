@@ -1,17 +1,17 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
-import { MetricCard } from './reference-load-status';
+import { StatusLoadDictionary } from './status-load-dictionary';
 
-describe('MetricCard', () => {
-  let component: MetricCard;
-  let fixture: ComponentFixture<MetricCard>;
+describe('StatusLoadDictionary', () => {
+  let component: StatusLoadDictionary;
+  let fixture: ComponentFixture<StatusLoadDictionary>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [MetricCard],
+      imports: [StatusLoadDictionary],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(MetricCard);
+    fixture = TestBed.createComponent(StatusLoadDictionary);
     component = fixture.componentInstance;
     await fixture.whenStable();
   });

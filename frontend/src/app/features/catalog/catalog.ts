@@ -1,9 +1,9 @@
 import { Component } from '@angular/core';
-import { ReferenceLoadStatus} from '../../shared/reference-load-status/reference-load-status';
+import { StatusLoadDictionary} from '../../shared/status-load-dictionary/status-load-dictionary';
 
 @Component({
   selector: 'app-catalog',
-  imports: [ReferenceLoadStatus],
+  imports: [StatusLoadDictionary],
   templateUrl: './catalog.html',
   styleUrl: './catalog.scss',
 })

@@ -1,0 +1,66 @@
+:host {
+  box-sizing: border-box;
+  display: inline-block;
+  width: 20%;
+  vertical-align: top;
+}
+
+.dictionary {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  padding: var(--space-6);
+  box-shadow: var(--shadow-card);
+}
+
+.dictionary__label {
+  font-size: var(--fs-table-header);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: var(--space-3);
+}
+
+.dictionary__value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-display);
+  font-weight: var(--fw-medium);
+  letter-spacing: -0.04em;
+  color: var(--text-primary);
+  line-height: 1;
+  margin-bottom: var(--space-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.dictionary__subtitle {
+  font-size: var(--fs-badge);
+  color: var(--text-secondary);
+}
+
+.dictionary--empty .dictionary__value    { color: var(--text-disabled); }
+.dictionary--empty .dictionary__subtitle { color: var(--text-muted); }
+
+.dictionary__error {
+  font-size: var(--fs-badge);
+  color: var(--status-error-fg);
+}
+
+/* ── Скелетон загрузки: четыре серые полоски, вся карточка пульсирует ── */
+.dictionary:has(.skeleton) {
+  animation: dictionary-pulse 1.2s ease-in-out infinite;
+}
+
+.skeleton {
+  background: var(--border-hairline);   /* #1A1E25 — цвет полосок эталона */
+  border-radius: var(--radius-badge);
+}
+.skeleton--label      { height: 12px; width: 96px;  margin-bottom: var(--space-4); }
+.skeleton--value      { height: 48px; width: 128px; margin-bottom: var(--space-4); }
+.skeleton--line       { height: 16px; width: 100%;  margin-bottom: 6px; }
+.skeleton--line-short { height: 16px; width: 112px; }
+
+@keyframes dictionary-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.5; }
+}

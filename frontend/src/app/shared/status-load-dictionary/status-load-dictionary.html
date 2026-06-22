@@ -1,0 +1,21 @@
+<div class="dictionary" [class.dictionary--empty]="state() === 'empty'">
+  @switch (state()) {
+    @case ('loading') {
+      <div class="skeleton skeleton--label"></div>
+      <div class="skeleton skeleton--value"></div>
+      <div class="skeleton skeleton--line"></div>
+      <div class="skeleton skeleton--line-short"></div>
+    }
+    @case ('error') {
+      <div class="dictionary__label">ВСЕГО ИНСТРУМЕНТОВ</div>
+      <div class="dictionary__error">ошибка загрузки</div>
+    }
+    @default {
+      <div class="dictionary__label">ВСЕГО ИНСТРУМЕНТОВ</div>
+      <div class="dictionary__value">{{ instrumentsTotal() }}</div>
+      <div class="dictionary__subtitle">
+        {{ instrumentsStock() }} акции · {{ instrumentsFutures() }} фьючерса
+      </div>
+    }
+  }
+</div>
