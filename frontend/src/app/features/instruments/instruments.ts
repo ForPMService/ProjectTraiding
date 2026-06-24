@@ -2,9 +2,9 @@ import { Component } from '@angular/core';
 import { StatusLoadDictionary} from '../../shared/status-load-dictionary/status-load-dictionary';
 
 @Component({
-  selector: 'app-catalog',
+  selector: 'app-instruments',
   imports: [StatusLoadDictionary],
-  templateUrl: './catalog.html',
-  styleUrl: './catalog.scss',
+  templateUrl: './instruments.html',
+  styleUrls: ['./instruments.scss'],
 })
-export class Catalog {}
+export class Instruments {}
