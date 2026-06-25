@@ -20,6 +20,7 @@ builder.AddProjectTraidingObservability(
     meters: [MoexTelemetry.MeterName]);
 
 builder.Services.AddMoexClients(builder.Configuration);
+builder.Services.AddClickHouse(builder.Configuration);
 builder.Services.AddPostgre(builder.Configuration);
 builder.Services.AddTransient<MoexInstrumentWriter>();
 builder.Services.AddTransient<MoexCalendarWriter>();
