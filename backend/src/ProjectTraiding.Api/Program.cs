@@ -38,6 +38,10 @@ builder.Services.AddTransient<MoexLoadTaskReader>();
 builder.Services.AddTransient<MoexLoadTaskWriter>();
 builder.Services.AddTransient<MoexLoadedRangeWriter>();
 builder.Services.AddTransient<CandlesLoadRunner>();
+builder.Services.AddHostedService(sp => new CandlesLoadBackgroundService(
+    sp.GetRequiredService<IServiceScopeFactory>(),
+    sp.GetRequiredService<ILogger<CandlesLoadBackgroundService>>(),
+    TimeSpan.FromSeconds(builder.Configuration.GetValue<int>("Loading:PollIntervalSeconds", 5))));
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default);

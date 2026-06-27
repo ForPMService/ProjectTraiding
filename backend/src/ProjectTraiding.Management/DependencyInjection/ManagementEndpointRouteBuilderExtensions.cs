@@ -11,6 +11,7 @@ namespace ProjectTraiding.Management.DependencyInjection
         {
             routes.MapRelationEndpoints();
             routes.MapTariffEndpoints();
+            routes.MapLoadTaskEndpoints();
             return routes;
         }
     }

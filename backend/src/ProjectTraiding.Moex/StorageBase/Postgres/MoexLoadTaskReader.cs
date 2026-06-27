@@ -48,5 +48,24 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 WriterVersion: reader.GetString(10),
                 Status: reader.GetString(11));
         }
+
+        /// <summary>
+        /// Берёт идентификатор самой старой ожидающей свечной задачи под ClickHouse, либо null.
+        /// FIFO по created_at. Claim не делает — его выполнит RunAsync атомарно по этому id,
+        /// поэтому гонка с параллельным взятием безопасна (второй получит NotClaimed).
+        /// </summary>
+        public async Task<Guid?> GetNextPendingCandlesTaskIdAsync(CancellationToken ct)
+        {
+            await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
+            await using NpgsqlCommand cmd = new NpgsqlCommand("""
+        SELECT id FROM moex_load_tasks
+        WHERE status = 'pending' AND data_kind = 'candles' AND storage_target = 'clickhouse'
+        ORDER BY created_at
+        LIMIT 1
+        """, connection);
+
+            object? idObj = await cmd.ExecuteScalarAsync(ct);
+            return idObj is Guid id ? id : null;
+        }
     }
 }
