@@ -16,6 +16,18 @@ namespace ProjectTraiding.Management.Validation
         private static readonly string[] StorageTargets = { "none", "file", "clickhouse" };
         private static readonly string[] DataKinds =
         { "candles", "tradestats", "obstats", "orderstats", "futoi", "hi2", "mega_alerts" };
+        // Допустимые рынки на каждый вид данных (без валюты).
+        // Асимметрия источника: заявки — только акции, открытый интерес — только фьючерсы.
+        private static readonly Dictionary<string, string[]> MarketsByDataKind = new()
+        {
+            ["candles"] = new[] { "stock", "futures" },
+            ["tradestats"] = new[] { "stock", "futures" },
+            ["obstats"] = new[] { "stock", "futures" },
+            ["orderstats"] = new[] { "stock" },
+            ["futoi"] = new[] { "futures" },
+            ["hi2"] = new[] { "stock", "futures" },
+            ["mega_alerts"] = new[] { "stock", "futures" },
+        };
 
         public static ValidationResult Validate(LoadTaskCreateRequest request)
         {
@@ -31,18 +43,29 @@ namespace ProjectTraiding.Management.Validation
                 result.Errors.Add("boardid обязателен");
 
             if (request.DataKind is null || Array.IndexOf(DataKinds, request.DataKind) < 0)
+            {
                 result.Errors.Add($"data_kind должен быть одним из: {string.Join(", ", DataKinds)}");
+            }
+            else if (request.Market is not null
+                     && MarketsByDataKind.TryGetValue(request.DataKind, out string[]? allowedMarkets)
+                     && Array.IndexOf(allowedMarkets, request.Market) < 0)
+            {
+                result.Errors.Add(
+                    $"для data_kind={request.DataKind} допустимы рынки: {string.Join(", ", allowedMarkets)}");
+            }
 
             if (request.StorageTarget is null || Array.IndexOf(StorageTargets, request.StorageTarget) < 0)
                 result.Errors.Add("storage_target должен быть одним из: none, file, clickhouse");
 
             // Интервал осмыслен только для свечей: для candles обязателен, для прочих запрещён.
+            // Коды интервала свечей MOEX: 1 — минута, 10 — десять минут, 60 — час, 24 — день.
+            // Пятиминутного у свечей нет; недельный (7) пока не заводим.
             if (request.DataKind == "candles")
             {
                 if (request.CandleInterval is null)
                     result.Errors.Add("candle_interval обязателен для candles");
-                else if (request.CandleInterval is not (1 or 5 or 60))
-                    result.Errors.Add("candle_interval должен быть 1, 5 или 60");
+                else if (request.CandleInterval is not (1 or 10 or 60 or 24))
+                    result.Errors.Add("candle_interval должен быть 1, 10, 60 или 24");
             }
             else if (request.CandleInterval is not null)
             {

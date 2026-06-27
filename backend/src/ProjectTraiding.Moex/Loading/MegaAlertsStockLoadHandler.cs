@@ -21,7 +21,7 @@ namespace ProjectTraiding.Moex.Loading
         }
 
         public bool CanHandle(MoexLoadTask task) =>
-            task.DataKind == "alerts" && task.Market == "stock";
+            task.DataKind == "mega_alerts" && task.Market == "stock";
 
         public async Task<CandlesWriteSummary> LoadAsync(
             MoexLoadTask task, LoadStopOutcome stopOutcome, CancellationToken ct)
