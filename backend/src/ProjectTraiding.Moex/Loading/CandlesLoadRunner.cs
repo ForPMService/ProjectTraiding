@@ -1,5 +1,6 @@
 ﻿using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
+using ProjectTraiding.Moex.Contracts.Pagination;
 using ProjectTraiding.Moex.Infrastructure.RawCapture;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
@@ -25,14 +26,14 @@ namespace ProjectTraiding.Moex.Loading
         private readonly MoexLoadTaskReader _taskReader;
         private readonly MoexLoadTaskWriter _taskWriter;
         private readonly MoexHttpAlgClient _algClient;
-        private readonly CandlesWriter _candlesWriter;
+        private readonly RowWriter<CandlesDTO> _candlesWriter;
         private readonly MoexLoadedRangeWriter _rangeWriter;
 
         public CandlesLoadRunner(
             MoexLoadTaskReader taskReader,
             MoexLoadTaskWriter taskWriter,
             MoexHttpAlgClient algClient,
-            CandlesWriter candlesWriter,
+            RowWriter<CandlesDTO> candlesWriter,
             MoexLoadedRangeWriter rangeWriter)
         {
             _taskReader = taskReader;
@@ -42,7 +43,7 @@ namespace ProjectTraiding.Moex.Loading
             _rangeWriter = rangeWriter;
         }
 
-        public async Task<CandlesLoadOutcome> RunAsync(Guid taskId, CancellationToken ct)
+        public async Task<CandlesLoadOutcome> RunAsync(Guid taskId, CancellationToken ct, bool alreadyClaimed = false)
         {
             MoexLoadTask? task = await _taskReader.GetByIdAsync(taskId, ct);
             if (task is null)
@@ -55,9 +56,14 @@ namespace ProjectTraiding.Moex.Loading
                 throw new InvalidOperationException(
                     $"Задача {taskId} не нацелена на ClickHouse (storage_target={task.StorageTarget}).");
 
-            bool claimed = await _taskWriter.MarkRunningAsync(taskId, ct);
-            if (!claimed)
-                return new CandlesLoadOutcome(CandlesLoadStatus.NotClaimed, 0);
+            // Фоновый подбор уже перевёл задачу в running одним атомарным запросом — повторный
+            // claim не нужен. Ручной запуск через операторскую точку приходит без захвата.
+            if (!alreadyClaimed)
+            {
+                bool claimed = await _taskWriter.MarkRunningAsync(taskId, ct);
+                if (!claimed)
+                    return new CandlesLoadOutcome(CandlesLoadStatus.NotClaimed, 0);
+            }
 
             try
             {
@@ -67,15 +73,25 @@ namespace ProjectTraiding.Moex.Loading
                     ? RawCaptureMarkets.Stock
                     : RawCaptureMarkets.Futures;
 
+                LoadStopOutcome stopOutcome = new LoadStopOutcome();
+
                 IAsyncEnumerable<List<CandlesDTO>> pages = _algClient.GetCandles(
-                    method, query, captureMarket: captureMarket, secid: task.Secid, cancellationToken: ct);
+                    method, query, captureMarket: captureMarket, secid: task.Secid,
+                    stopOutcome: stopOutcome, cancellationToken: ct);
 
                 CandlesWriteSummary summary = await _candlesWriter.WriteRangeAsync(
                     task.Secid, task.SourceContractVersion, task.WriterVersion, pages, ct);
 
-                // В учёт диапазона идёт покрытый объём (RowsRead), а не отчёт драйвера.
+                // Настоящая причина из потока; пустой держатель трактуем как штатное исчерпание.
+                string stopReason = stopOutcome.StopReason ?? "range_exhausted";
+
+                // Журнал результата пишем всегда — диапазон покрыт настолько, насколько прочитан.
                 await _rangeWriter.UpsertAsync(task, summary.RowsRead, summary.LastToken, ct);
-                await _taskWriter.MarkDoneAsync(taskId, summary.RowsRead, "range_exhausted", summary.LastToken, ct);
+
+                if (stopOutcome.IsPartial)
+                    await _taskWriter.MarkPartialAsync(taskId, summary.RowsRead, stopReason, summary.LastToken, ct);
+                else
+                    await _taskWriter.MarkDoneAsync(taskId, summary.RowsRead, stopReason, summary.LastToken, ct);
 
                 return new CandlesLoadOutcome(CandlesLoadStatus.Done, summary.RowsRead);
             }

@@ -54,15 +54,37 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         /// FIFO по created_at. Claim не делает — его выполнит RunAsync атомарно по этому id,
         /// поэтому гонка с параллельным взятием безопасна (второй получит NotClaimed).
         /// </summary>
-        public async Task<Guid?> GetNextPendingCandlesTaskIdAsync(CancellationToken ct)
+        /// <summary>
+        /// Атомарно берёт в работу самую старую задачу под ClickHouse в статусе pending или
+        /// partial (FIFO по created_at) и возвращает её идентификатор, либо null, если очереди нет.
+        /// Один запрос: подзапрос блокирует строку с пропуском уже заблокированных другими
+        /// дорожками (FOR UPDATE SKIP LOCKED), внешний UPDATE переводит её в running и чистит
+        /// хвост прошлой попытки. Несколько дорожек берут разные задачи без холостых проигрышей.
+        /// Вид данных здесь не различается — маршрутизацию по data_kind делает координатор.
+        /// </summary>
+        public async Task<Guid?> ClaimNextPendingTaskIdAsync(CancellationToken ct)
         {
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
             await using NpgsqlCommand cmd = new NpgsqlCommand("""
-        SELECT id FROM moex_load_tasks
-        WHERE status = 'pending' AND data_kind = 'candles' AND storage_target = 'clickhouse'
-        ORDER BY created_at
-        LIMIT 1
-        """, connection);
+                UPDATE moex_load_tasks
+                SET status = 'running',
+                    started_at = now(),
+                    finished_at = null,
+                    error_message = null,
+                    stop_reason = null,
+                    rows_loaded = 0,
+                    last_insert_deduplication_token = null,
+                    attempt_count = attempt_count + 1
+                WHERE id = (
+                    SELECT id FROM moex_load_tasks
+                    WHERE status IN ('pending', 'partial')
+                      AND storage_target = 'clickhouse'
+                    ORDER BY created_at
+                    FOR UPDATE SKIP LOCKED
+                    LIMIT 1
+                )
+                RETURNING id
+                """, connection);
 
             object? idObj = await cmd.ExecuteScalarAsync(ct);
             return idObj is Guid id ? id : null;

@@ -6,25 +6,22 @@ using System.Text;
 namespace ProjectTraiding.Moex.StorageBase.ClickHouse
 {
     /// <summary>
-    /// Единственный источник истины для вставки свечей в moex_candles_1m:
-    /// порядок столбцов (V012), типы столбцов, чистое преобразование DTO в строку
-    /// по позициям и стражи ключевых полей. Без базы, настроек и часов.
+    /// Карта формы вставки свечей в moex_candles_1m: порядок столбцов (V012), типы, превращение
+    /// свечи в строку по позициям и стражи ключевых полей. Реализует общий контракт карты,
+    /// поэтому писатель работает с ней, не зная, что это именно свечи.
     /// </summary>
-    public static class CandlesRowMap
+    public sealed class CandlesRowMap : IRowMap<CandlesDTO>
     {
-        public const string Table = "moex_candles_1m";
+        public string Table => "moex_candles_1m";
 
-        /// <summary>Порядок столбцов строго по V012. Длина 9. Изменение порядка = изменение контракта.</summary>
-        public static readonly string[] Columns =
+        public string TokenPrefix => "candles:1m";
+
+        public IReadOnlyList<string> Columns { get; } = new[]
         {
             "secid", "open", "close", "high", "low", "value", "volume", "begin", "end"
         };
 
-        /// <summary>
-        /// Типы столбцов (V012) для InsertOptions.ColumnTypes — чтобы исполнитель не слал
-        /// предварительный запрос схемы. Сопоставление по имени; состав совпадает с Columns.
-        /// </summary>
-        public static readonly IReadOnlyDictionary<string, string> ColumnTypes =
+        public IReadOnlyDictionary<string, string> ColumnTypes { get; } =
             new Dictionary<string, string>
             {
                 ["secid"] = "LowCardinality(String)",
@@ -38,37 +35,24 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 ["end"] = "Nullable(DateTime64(3, 'Europe/Moscow'))",
             };
 
-        /// <summary>
-        /// secid — параметр диапазона, один на весь батч (в ответе свечей его нет).
-        /// Проверяется один раз писателем до цикла, а не на каждой свече.
-        /// </summary>
-        public static void EnsureSecid(string secid)
+        // secid — параметр диапазона, один на весь батч (в ответе свечей его нет). Один раз до цикла.
+        public void EnsureRangeValid(string secid)
         {
             if (string.IsNullOrWhiteSpace(secid))
                 throw new InvalidOperationException("Загрузка свечей отвергнута: secid пустой.");
         }
 
-        /// <summary>
-        /// begin — ключевой столбец (not-null, ORDER BY), приходит из ответа у каждой свечи свой,
-        /// поэтому проверяется построчно. Остальные семь полей пустыми допустимы.
-        /// </summary>
-        public static void EnsureWritable(CandlesDTO candle)
+        // begin — ключевой not-null столбец (ORDER BY), у каждой свечи свой → проверяется построчно.
+        // Остальные семь полей пустыми допустимы. begin/end приводятся к Kind=Unspecified —
+        // московское стенное время без сдвига зоны. null в неключевых полях не подменяется нулём.
+        public (object?[] Row, DateTime Time) ToRow(CandlesDTO candle, string secid)
         {
             if (candle.Begin is null)
                 throw new InvalidOperationException("Свеча отвергнута: begin пустой.");
-        }
 
-        /// <summary>
-        /// Свеча и уже проверенный secid в строку вставки строго по Columns.
-        /// Вызывает построчный страж begin; secid здесь не перепроверяется (проверен EnsureSecid).
-        /// begin/end приводятся к Kind=Unspecified — московское стенное время без сдвига зоны.
-        /// null в неключевых полях не подменяется нулём.
-        /// </summary>
-        public static object?[] ToRow(CandlesDTO candle, string secid)
-        {
-            EnsureWritable(candle);
+            DateTime begin = candle.Begin.Value;
 
-            return new object?[]
+            object?[] row =
             {
                 secid,
                 candle.Open,
@@ -80,6 +64,8 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 AsWallClock(candle.Begin),
                 AsWallClock(candle.End)
             };
+
+            return (row, DateTime.SpecifyKind(begin, DateTimeKind.Unspecified));
         }
 
         private static DateTime? AsWallClock(DateTime? value)

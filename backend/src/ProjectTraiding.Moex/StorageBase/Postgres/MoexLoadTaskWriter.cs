@@ -42,7 +42,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                     rows_loaded = 0,
                     last_insert_deduplication_token = null,
                     attempt_count = attempt_count + 1
-                WHERE id = @id AND status IN ('pending', 'error')
+                WHERE id = @id AND status IN ('pending', 'error', 'partial')
                 """, connection);
             cmd.Parameters.Add("@id", NpgsqlDbType.Uuid).Value = taskId;
 
@@ -124,6 +124,42 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
 
             TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
             MoexLoadTaskLogMessages.TaskError(_logger, taskId, elapsed);
+        }
+
+        /// <summary>
+        /// Закрывает задачу частичной загрузкой: running → partial. Поля результата те же, что
+        /// при успехе, но статус отражает, что диапазон покрыт не полностью (например, сработал
+        /// защитный предел страниц). Задача остаётся до-гружаемой — partial входит в условие claim.
+        /// </summary>
+        public async Task MarkPartialAsync(
+            Guid taskId,
+            long rowsLoaded,
+            string? stopReason,
+            string? lastDeduplicationToken,
+            CancellationToken ct)
+        {
+            long startTs = Stopwatch.GetTimestamp();
+            await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
+
+            await using NpgsqlCommand cmd = new NpgsqlCommand("""
+                UPDATE moex_load_tasks
+                SET status = 'partial', finished_at = now(),
+                    rows_loaded = @rows, stop_reason = @stop_reason,
+                    last_insert_deduplication_token = @token
+                WHERE id = @id AND status = 'running'
+                """, connection);
+            cmd.Parameters.Add("@id", NpgsqlDbType.Uuid).Value = taskId;
+            cmd.Parameters.Add("@rows", NpgsqlDbType.Bigint).Value = rowsLoaded;
+            cmd.Parameters.Add("@stop_reason", NpgsqlDbType.Text).Value = (object?)stopReason ?? DBNull.Value;
+            cmd.Parameters.Add("@token", NpgsqlDbType.Text).Value = (object?)lastDeduplicationToken ?? DBNull.Value;
+
+            int affected = await cmd.ExecuteNonQueryAsync(ct);
+            if (affected != 1)
+                throw new InvalidOperationException(
+                    $"Задача {taskId} не в статусе running — закрыть частичной нельзя (affected={affected}).");
+
+            TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
+            MoexLoadTaskLogMessages.TaskPartial(_logger, taskId, rowsLoaded, elapsed);
         }
     }
 }

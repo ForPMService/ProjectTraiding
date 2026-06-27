@@ -67,6 +67,7 @@ namespace ProjectTraiding.Moex.Clients
             string? runId = null,
             string? captureMarket = null,
             string? secid = null,
+            LoadStopOutcome? stopOutcome = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
@@ -174,6 +175,7 @@ namespace ProjectTraiding.Moex.Clients
                 else
                 {
                     MoexLogMessages.FixedPagePaginationStopped(_logger, method, "last_page_incomplete", pagesElapsed, totalRows, candlesList.Count, 500);
+                    stopOutcome?.Complete("range_exhausted", isPartial: false);
                     break;
                 }
             }

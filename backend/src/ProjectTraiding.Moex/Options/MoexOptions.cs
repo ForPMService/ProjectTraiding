@@ -29,7 +29,7 @@ namespace ProjectTraiding.Moex.Options
         /// MOEX ≈ 10 req/sec на IP (частная переписка, май 2026).
         /// Ставим 8, чтобы оставить запас и не ходить по краю.
         /// </summary>
-        public int MaxRequestsPerSecond { get; set; } = 8;
+        public int MaxRequestsPerSecond { get; set; } = 10;
 
         /// <summary>
         /// Максимум запросов, ожидающих жетон в очереди rate limiter.
@@ -45,5 +45,13 @@ namespace ProjectTraiding.Moex.Options
         /// 30 секунд — долго ждать одного жетона, значит что-то сильно не так.
         /// </summary>
         public TimeSpan RateLimitAcquireTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+        /// <summary>
+        /// Число одновременных дорожек загрузки в фоновом исполнителе.
+        /// Потолок темпа — общий ограничитель частоты, поэтому при задержке страницы около
+        /// двухсот миллисекунд полезны примерно три дорожки; четыре — осторожный запас.
+        /// Не должно превышать MaxConnectionsPerServer (пул соединений).
+        /// </summary>
+        public int LoadWorkerConcurrency { get; set; } = 4;
     }
 }

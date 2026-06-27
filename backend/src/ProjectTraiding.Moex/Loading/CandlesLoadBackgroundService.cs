@@ -19,21 +19,41 @@ namespace ProjectTraiding.Moex.Loading
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<CandlesLoadBackgroundService> _logger;
         private readonly TimeSpan _pollInterval;
+        private readonly int _concurrency;
 
         public CandlesLoadBackgroundService(
             IServiceScopeFactory scopeFactory,
             ILogger<CandlesLoadBackgroundService> logger,
-            TimeSpan pollInterval)
+            TimeSpan pollInterval,
+            int concurrency)
         {
+            if (concurrency < 1)
+                throw new ArgumentOutOfRangeException(nameof(concurrency), "Число дорожек должно быть положительным.");
+
             _scopeFactory = scopeFactory;
             _logger = logger;
             _pollInterval = pollInterval;
+            _concurrency = concurrency;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             MoexLoadTaskLogMessages.BackgroundStarted(_logger, _pollInterval);
 
+            Task[] lanes = new Task[_concurrency];
+            for (int i = 0; i < _concurrency; i++)
+                lanes[i] = RunLaneAsync(stoppingToken);
+
+            await Task.WhenAll(lanes);
+
+            MoexLoadTaskLogMessages.BackgroundStopped(_logger);
+        }
+
+        // Одна дорожка — последовательный конвейер: подобрать задачу с захватом и пропуском
+        // занятых, прогнать через координатор, повторить. Пусто — пауза и снова.
+        // Общий ограничитель частоты держит суммарный темп независимо от числа дорожек.
+        private async Task RunLaneAsync(CancellationToken stoppingToken)
+        {
             while (!stoppingToken.IsCancellationRequested)
             {
                 bool worked;
@@ -47,7 +67,7 @@ namespace ProjectTraiding.Moex.Loading
                 }
                 catch (Exception ex)
                 {
-                    // Сбой самого цикла (подбора), не сбой задачи. Не валим сервис.
+                    // Сбой самого цикла (подбора), не сбой задачи. Не валим дорожку.
                     MoexLoadTaskLogMessages.BackgroundPollFailed(_logger, ex);
                     worked = false;
                 }
@@ -65,8 +85,6 @@ namespace ProjectTraiding.Moex.Loading
                     }
                 }
             }
-
-            MoexLoadTaskLogMessages.BackgroundStopped(_logger);
         }
 
         // true — задача была (выполнена или помечена error); false — очередь пуста.
@@ -75,14 +93,14 @@ namespace ProjectTraiding.Moex.Loading
             await using AsyncServiceScope scope = _scopeFactory.CreateAsyncScope();
 
             MoexLoadTaskReader reader = scope.ServiceProvider.GetRequiredService<MoexLoadTaskReader>();
-            Guid? taskId = await reader.GetNextPendingCandlesTaskIdAsync(ct);
+            Guid? taskId = await reader.ClaimNextPendingTaskIdAsync(ct);
             if (taskId is null)
                 return false;
 
             CandlesLoadRunner runner = scope.ServiceProvider.GetRequiredService<CandlesLoadRunner>();
             try
             {
-                await runner.RunAsync(taskId.Value, ct);
+                await runner.RunAsync(taskId.Value, ct, alreadyClaimed: true);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {

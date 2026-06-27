@@ -1,6 +1,7 @@
 using ProjectTraiding.Api.Infrastructure;
 using ProjectTraiding.Management.Contracts;
 using ProjectTraiding.Management.DependencyInjection;
+using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using ProjectTraiding.Moex.Contracts.Serialization;
 using ProjectTraiding.Moex.Endpoints;
 using ProjectTraiding.Moex.Infrastructure.DependencyInjection;
@@ -30,9 +31,11 @@ builder.Services.AddRawCapture(builder.Configuration);
 builder.Services.AddVitrine();
 builder.Services.AddManagement();
 builder.Services.AddTransient<ClickHouseInsertExecutor>();
-builder.Services.AddTransient<CandlesWriter>(sp => new CandlesWriter(
+builder.Services.AddSingleton<CandlesRowMap>();
+builder.Services.AddTransient<RowWriter<CandlesDTO>>(sp => new RowWriter<CandlesDTO>(
     sp.GetRequiredService<ClickHouseInsertExecutor>(),
-    sp.GetRequiredService<ILogger<CandlesWriter>>(),
+    sp.GetRequiredService<CandlesRowMap>(),
+    sp.GetRequiredService<ILogger<RowWriter<CandlesDTO>>>(),
     builder.Configuration.GetValue<int>("ClickHouse:CandlesBatchSize", 10000)));
 builder.Services.AddTransient<MoexLoadTaskReader>();
 builder.Services.AddTransient<MoexLoadTaskWriter>();
@@ -41,7 +44,8 @@ builder.Services.AddTransient<CandlesLoadRunner>();
 builder.Services.AddHostedService(sp => new CandlesLoadBackgroundService(
     sp.GetRequiredService<IServiceScopeFactory>(),
     sp.GetRequiredService<ILogger<CandlesLoadBackgroundService>>(),
-    TimeSpan.FromSeconds(builder.Configuration.GetValue<int>("Loading:PollIntervalSeconds", 5))));
+    TimeSpan.FromSeconds(builder.Configuration.GetValue<int>("Loading:PollIntervalSeconds", 5)),
+    builder.Configuration.GetValue<int>("Moex:LoadWorkerConcurrency", 4)));
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default);
