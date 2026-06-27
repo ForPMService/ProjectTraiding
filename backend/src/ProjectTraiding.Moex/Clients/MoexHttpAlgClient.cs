@@ -197,11 +197,12 @@ namespace ProjectTraiding.Moex.Clients
         // ═══════════════════════════════════════════════════════════
 
         public async IAsyncEnumerable<List<SuperCandlesTradeStats5mDTO>> GetSuperCandlesTradeStats5m(
-            string method,
-            Dictionary<string, string>? queryParams = null,
-            string? runId = null,
-            string? secid = null,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+          string method,
+          Dictionary<string, string>? queryParams = null,
+          string? runId = null,
+          string? secid = null,
+          LoadStopOutcome? stopOutcome = null,
+          [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
             activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
@@ -295,6 +296,7 @@ namespace ProjectTraiding.Moex.Clients
                 if (step.IsStop)
                 {
                     MoexLogMessages.PaginationStopped(_logger, method, step.StopReason!, pagesElapsed, totalRows);
+                    stopOutcome?.Complete(step.StopReason!, isPartial: step.StopReason == "safety_cap_hit");
                     break;
                 }
                 queryParams["start"] = step.NextStart.ToString();
@@ -317,6 +319,7 @@ namespace ProjectTraiding.Moex.Clients
             Dictionary<string, string>? queryParams = null,
             string? runId = null,
             string? secid = null,
+            LoadStopOutcome? stopOutcome = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
@@ -386,7 +389,12 @@ namespace ProjectTraiding.Moex.Clients
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.TradeStats));
                 yield return tradeStats;
                 PaginationStep step = MoexCursorPagination.Next(cursor, pagesElapsed, _options.MaxPagesPerLoad);
-                if (step.IsStop) { MoexLogMessages.PaginationStopped(_logger, method, step.StopReason!, pagesElapsed, totalRows); break; }
+                if (step.IsStop)
+                {
+                    MoexLogMessages.PaginationStopped(_logger, method, step.StopReason!, pagesElapsed, totalRows);
+                    stopOutcome?.Complete(step.StopReason!, isPartial: step.StopReason == "safety_cap_hit");
+                    break;
+                }
                 queryParams["start"] = step.NextStart.ToString();
             }
 
@@ -405,6 +413,7 @@ namespace ProjectTraiding.Moex.Clients
         public async IAsyncEnumerable<List<SuperCandlesOrderBookStats5mDTO>> GetSuperCandlesOrderBookStats5m(
             string method, Dictionary<string, string>? queryParams = null, string? runId = null,
             string? secid = null,
+            LoadStopOutcome? stopOutcome = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
@@ -459,7 +468,12 @@ namespace ProjectTraiding.Moex.Clients
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OBStats));
                 yield return orderBookStats;
                 PaginationStep step = MoexCursorPagination.Next(cursor, pagesElapsed, _options.MaxPagesPerLoad);
-                if (step.IsStop) { MoexLogMessages.PaginationStopped(_logger, method, step.StopReason!, pagesElapsed, totalRows); break; }
+                if (step.IsStop)
+                {
+                    MoexLogMessages.PaginationStopped(_logger, method, step.StopReason!, pagesElapsed, totalRows);
+                    stopOutcome?.Complete(step.StopReason!, isPartial: step.StopReason == "safety_cap_hit");
+                    break;
+                }
                 queryParams["start"] = step.NextStart.ToString();
             }
 
@@ -478,6 +492,7 @@ namespace ProjectTraiding.Moex.Clients
         public async IAsyncEnumerable<List<SuperCandlesFuturesOrderBookStats5mDTO>> GetSuperCandlesFuturesOrderBookStats5m(
             string method, Dictionary<string, string>? queryParams = null, string? runId = null,
             string? secid = null,
+            LoadStopOutcome? stopOutcome = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
@@ -532,7 +547,12 @@ namespace ProjectTraiding.Moex.Clients
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OBStats));
                 yield return orderBookStats;
                 PaginationStep step = MoexCursorPagination.Next(cursor, pagesElapsed, _options.MaxPagesPerLoad);
-                if (step.IsStop) { MoexLogMessages.PaginationStopped(_logger, method, step.StopReason!, pagesElapsed, totalRows); break; }
+                if (step.IsStop)
+                {
+                    MoexLogMessages.PaginationStopped(_logger, method, step.StopReason!, pagesElapsed, totalRows);
+                    stopOutcome?.Complete(step.StopReason!, isPartial: step.StopReason == "safety_cap_hit");
+                    break;
+                }
                 queryParams["start"] = step.NextStart.ToString();
             }
 
@@ -551,6 +571,7 @@ namespace ProjectTraiding.Moex.Clients
         public async IAsyncEnumerable<List<SuperCandlesOrderStats5mDTO>> GetSuperCandlesOrderStats5m(
             string method, Dictionary<string, string>? queryParams = null, string? runId = null,
             string? secid = null,
+            LoadStopOutcome? stopOutcome = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
@@ -605,7 +626,12 @@ namespace ProjectTraiding.Moex.Clients
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OrderStats));
                 yield return orderStats;
                 PaginationStep step = MoexCursorPagination.Next(cursor, pagesElapsed, _options.MaxPagesPerLoad);
-                if (step.IsStop) { MoexLogMessages.PaginationStopped(_logger, method, step.StopReason!, pagesElapsed, totalRows); break; }
+                if (step.IsStop)
+                {
+                    MoexLogMessages.PaginationStopped(_logger, method, step.StopReason!, pagesElapsed, totalRows);
+                    stopOutcome?.Complete(step.StopReason!, isPartial: step.StopReason == "safety_cap_hit");
+                    break;
+                }
                 queryParams["start"] = step.NextStart.ToString();
             }
 
@@ -773,6 +799,7 @@ namespace ProjectTraiding.Moex.Clients
         public async IAsyncEnumerable<List<Hi2AssetDTO>> GetHi2Asset5m(
             string method, Dictionary<string, string>? queryParams = null, string? runId = null,
             string? secid = null,
+            LoadStopOutcome? stopOutcome = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
@@ -827,7 +854,12 @@ namespace ProjectTraiding.Moex.Clients
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Hi2));
                 yield return hi2Assets;
                 PaginationStep step = MoexCursorPagination.Next(cursor, pagesElapsed, _options.MaxPagesPerLoad);
-                if (step.IsStop) { MoexLogMessages.PaginationStopped(_logger, method, step.StopReason!, pagesElapsed, totalRows); break; }
+                if (step.IsStop)
+                {
+                    MoexLogMessages.PaginationStopped(_logger, method, step.StopReason!, pagesElapsed, totalRows);
+                    stopOutcome?.Complete(step.StopReason!, isPartial: step.StopReason == "safety_cap_hit");
+                    break;
+                }
                 queryParams["start"] = step.NextStart.ToString();
             }
 
@@ -846,6 +878,7 @@ namespace ProjectTraiding.Moex.Clients
         public async IAsyncEnumerable<List<Hi2FuturesDTO>> GetHi2Furures5m(
             string method, Dictionary<string, string>? queryParams = null, string? runId = null,
             string? secid = null,
+            LoadStopOutcome? stopOutcome = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
@@ -900,7 +933,12 @@ namespace ProjectTraiding.Moex.Clients
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Hi2));
                 yield return hi2Futures;
                 PaginationStep step = MoexCursorPagination.Next(cursor, pagesElapsed, _options.MaxPagesPerLoad);
-                if (step.IsStop) { MoexLogMessages.PaginationStopped(_logger, method, step.StopReason!, pagesElapsed, totalRows); break; }
+                if (step.IsStop)
+                {
+                    MoexLogMessages.PaginationStopped(_logger, method, step.StopReason!, pagesElapsed, totalRows);
+                    stopOutcome?.Complete(step.StopReason!, isPartial: step.StopReason == "safety_cap_hit");
+                    break;
+                }
                 queryParams["start"] = step.NextStart.ToString();
             }
 
@@ -923,6 +961,7 @@ namespace ProjectTraiding.Moex.Clients
         public async IAsyncEnumerable<List<MegaAlertsAssetsDTO>> GetMegaAlerts(
             string method, Dictionary<string, string>? queryParams = null, string? runId = null,
             string? secid = null,
+            LoadStopOutcome? stopOutcome = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
@@ -977,7 +1016,12 @@ namespace ProjectTraiding.Moex.Clients
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.MegaAlerts));
                 yield return megaAlerts;
                 PaginationStep step = MoexCursorPagination.Next(cursor, pagesElapsed, _options.MaxPagesPerLoad);
-                if (step.IsStop) { MoexLogMessages.PaginationStopped(_logger, method, step.StopReason!, pagesElapsed, totalRows); break; }
+                if (step.IsStop)
+                {
+                    MoexLogMessages.PaginationStopped(_logger, method, step.StopReason!, pagesElapsed, totalRows);
+                    stopOutcome?.Complete(step.StopReason!, isPartial: step.StopReason == "safety_cap_hit");
+                    break;
+                }
                 queryParams["start"] = step.NextStart.ToString();
             }
 
@@ -996,6 +1040,7 @@ namespace ProjectTraiding.Moex.Clients
         public async IAsyncEnumerable<List<MegaAlertsFuturesDTO>> GetMegaAlertsFutures(
             string method, Dictionary<string, string>? queryParams = null, string? runId = null,
             string? secid = null,
+            LoadStopOutcome? stopOutcome = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
@@ -1050,7 +1095,12 @@ namespace ProjectTraiding.Moex.Clients
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.MegaAlerts));
                 yield return megaAlertsFutures;
                 PaginationStep step = MoexCursorPagination.Next(cursor, pagesElapsed, _options.MaxPagesPerLoad);
-                if (step.IsStop) { MoexLogMessages.PaginationStopped(_logger, method, step.StopReason!, pagesElapsed, totalRows); break; }
+                if (step.IsStop)
+                {
+                    MoexLogMessages.PaginationStopped(_logger, method, step.StopReason!, pagesElapsed, totalRows);
+                    stopOutcome?.Complete(step.StopReason!, isPartial: step.StopReason == "safety_cap_hit");
+                    break;
+                }
                 queryParams["start"] = step.NextStart.ToString();
             }
 

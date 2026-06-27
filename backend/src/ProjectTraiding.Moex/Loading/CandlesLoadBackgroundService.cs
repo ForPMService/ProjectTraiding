@@ -97,7 +97,7 @@ namespace ProjectTraiding.Moex.Loading
             if (taskId is null)
                 return false;
 
-            CandlesLoadRunner runner = scope.ServiceProvider.GetRequiredService<CandlesLoadRunner>();
+            LoadRunner runner = scope.ServiceProvider.GetRequiredService<LoadRunner>();
             try
             {
                 await runner.RunAsync(taskId.Value, ct, alreadyClaimed: true);

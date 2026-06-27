@@ -40,7 +40,9 @@ builder.Services.AddTransient<RowWriter<CandlesDTO>>(sp => new RowWriter<Candles
 builder.Services.AddTransient<MoexLoadTaskReader>();
 builder.Services.AddTransient<MoexLoadTaskWriter>();
 builder.Services.AddTransient<MoexLoadedRangeWriter>();
-builder.Services.AddTransient<CandlesLoadRunner>();
+builder.Services.AddScoped<ILoadHandler, CandlesLoadHandler>();
+builder.Services.AddScoped<LoadHandlerDispatcher>();
+builder.Services.AddScoped<LoadRunner>();
 builder.Services.AddHostedService(sp => new CandlesLoadBackgroundService(
     sp.GetRequiredService<IServiceScopeFactory>(),
     sp.GetRequiredService<ILogger<CandlesLoadBackgroundService>>(),

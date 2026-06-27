@@ -15,7 +15,7 @@ namespace ProjectTraiding.Moex.Endpoints
             // Строку парсим сами — заодно отдаём понятный 400 на битый идентификатор.
             routes.MapPost("/operations/moex/load/candles/{taskId}", async (
                 string taskId,
-                CandlesLoadRunner runner,
+                LoadRunner runner,
                 CancellationToken ct) =>
             {
                 if (!Guid.TryParse(taskId, out Guid id))
