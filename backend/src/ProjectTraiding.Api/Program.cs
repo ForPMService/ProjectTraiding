@@ -5,6 +5,8 @@ using ProjectTraiding.Moex.Contracts.Serialization;
 using ProjectTraiding.Moex.Endpoints;
 using ProjectTraiding.Moex.Infrastructure.DependencyInjection;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
+using ProjectTraiding.Moex.Loading;
+using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using ProjectTraiding.Observability.Infrastructure.DependencyInjection;
 using ProjectTraiding.Vitrine.Contracts;
@@ -27,6 +29,15 @@ builder.Services.AddTransient<MoexCalendarWriter>();
 builder.Services.AddRawCapture(builder.Configuration);
 builder.Services.AddVitrine();
 builder.Services.AddManagement();
+builder.Services.AddTransient<ClickHouseInsertExecutor>();
+builder.Services.AddTransient<CandlesWriter>(sp => new CandlesWriter(
+    sp.GetRequiredService<ClickHouseInsertExecutor>(),
+    sp.GetRequiredService<ILogger<CandlesWriter>>(),
+    builder.Configuration.GetValue<int>("ClickHouse:CandlesBatchSize", 10000)));
+builder.Services.AddTransient<MoexLoadTaskReader>();
+builder.Services.AddTransient<MoexLoadTaskWriter>();
+builder.Services.AddTransient<MoexLoadedRangeWriter>();
+builder.Services.AddTransient<CandlesLoadRunner>();
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default);
@@ -39,6 +50,7 @@ var app = builder.Build();
 
 app.MapObservabilityEndpoints();
 app.MapMoexSyncEndpoints();
+app.MapCandlesLoadEndpoints();
 app.MapManagementEndpoints();
 app.MapVitrineEndpoints();
 
