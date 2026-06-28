@@ -31,12 +31,25 @@ builder.Services.AddRawCapture(builder.Configuration);
 builder.Services.AddVitrine();
 builder.Services.AddManagement();
 builder.Services.AddTransient<ClickHouseInsertExecutor>();
-builder.Services.AddSingleton<CandlesRowMap>();
-builder.Services.AddTransient<RowWriter<CandlesDTO>>(sp => new RowWriter<CandlesDTO>(
-    sp.GetRequiredService<ClickHouseInsertExecutor>(),
-    sp.GetRequiredService<CandlesRowMap>(),
-    sp.GetRequiredService<ILogger<RowWriter<CandlesDTO>>>(),
-    builder.Configuration.GetValue<int>("ClickHouse:CandlesBatchSize", 10000)));
+// Свечные карты по интервалам: одна форма, разные таблица и префикс токена.
+// Коды интервала MOEX: 1 — минута, 10 — десять минут, 60 — час, 24 — день.
+builder.Services.AddSingleton<IReadOnlyDictionary<int, RowWriter<CandlesDTO>>>(sp =>
+{
+    ClickHouseInsertExecutor executor = sp.GetRequiredService<ClickHouseInsertExecutor>();
+    ILogger<RowWriter<CandlesDTO>> logger = sp.GetRequiredService<ILogger<RowWriter<CandlesDTO>>>();
+    int candlesBatchSize = builder.Configuration.GetValue<int>("ClickHouse:CandlesBatchSize", 10000);
+
+    RowWriter<CandlesDTO> Make(string table, string tokenPrefix) =>
+        new RowWriter<CandlesDTO>(executor, new CandlesRowMap(table, tokenPrefix), logger, candlesBatchSize);
+
+    return new Dictionary<int, RowWriter<CandlesDTO>>
+    {
+        [1] = Make("moex_candles_1m", "candles:1m"),
+        [10] = Make("moex_candles_10m", "candles:10m"),
+        [60] = Make("moex_candles_1h", "candles:1h"),
+        [24] = Make("moex_candles_1d", "candles:1d"),
+    };
+});
 // Карты столбцов остальных видов (без состояния — одиночки).
 builder.Services.AddSingleton<TradeStatsStockRowMap>();
 builder.Services.AddSingleton<TradeStatsFuturesRowMap>();

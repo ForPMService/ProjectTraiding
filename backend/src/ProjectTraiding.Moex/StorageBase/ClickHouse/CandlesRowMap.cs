@@ -1,20 +1,31 @@
 ﻿using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using System;
 using System.Collections.Generic;
-using System.Text;
 
 namespace ProjectTraiding.Moex.StorageBase.ClickHouse
 {
     /// <summary>
-    /// Карта формы вставки свечей в moex_candles_1m: порядок столбцов (V012), типы, превращение
-    /// свечи в строку по позициям и стражи ключевых полей. Реализует общий контракт карты,
-    /// поэтому писатель работает с ней, не зная, что это именно свечи.
+    /// Карта формы вставки свечей: порядок столбцов (V012), типы, превращение свечи в строку по
+    /// позициям и страж ключевого begin. Форма свечи от интервала не зависит, поэтому одна карта
+    /// обслуживает все интервалы — различаются лишь целевая таблица и префикс токена, заданные
+    /// в конструкторе (moex_candles_1m + "candles:1m", moex_candles_10m + "candles:10m" и т.д.).
     /// </summary>
     public sealed class CandlesRowMap : IRowMap<CandlesDTO>
     {
-        public string Table => "moex_candles_1m";
+        public string Table { get; }
 
-        public string TokenPrefix => "candles:1m";
+        public string TokenPrefix { get; }
+
+        public CandlesRowMap(string table, string tokenPrefix)
+        {
+            if (string.IsNullOrWhiteSpace(table))
+                throw new ArgumentException("Имя таблицы свечей обязательно.", nameof(table));
+            if (string.IsNullOrWhiteSpace(tokenPrefix))
+                throw new ArgumentException("Префикс токена свечей обязателен.", nameof(tokenPrefix));
+
+            Table = table;
+            TokenPrefix = tokenPrefix;
+        }
 
         public IReadOnlyList<string> Columns { get; } = new[]
         {
@@ -35,16 +46,12 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 ["end"] = "Nullable(DateTime64(3, 'Europe/Moscow'))",
             };
 
-        // secid — параметр диапазона, один на весь батч (в ответе свечей его нет). Один раз до цикла.
         public void EnsureRangeValid(string secid)
         {
             if (string.IsNullOrWhiteSpace(secid))
                 throw new InvalidOperationException("Загрузка свечей отвергнута: secid пустой.");
         }
 
-        // begin — ключевой not-null столбец (ORDER BY), у каждой свечи свой → проверяется построчно.
-        // Остальные семь полей пустыми допустимы. begin/end приводятся к Kind=Unspecified —
-        // московское стенное время без сдвига зоны. null в неключевых полях не подменяется нулём.
         public (object?[] Row, DateTime Time) ToRow(CandlesDTO candle, string secid)
         {
             if (candle.Begin is null)

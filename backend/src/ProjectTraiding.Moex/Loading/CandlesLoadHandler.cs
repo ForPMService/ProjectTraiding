@@ -4,36 +4,40 @@ using ProjectTraiding.Moex.Contracts.Pagination;
 using ProjectTraiding.Moex.Infrastructure.RawCapture;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
-using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Text;
 
 namespace ProjectTraiding.Moex.Loading
 {
     /// <summary>
     /// Обработчик свечей. Один метод клиента на оба рынка, адрес различается регистром доски.
-    /// Пока обслуживает минутные свечи (целевая таблица moex_candles_1m); другие интервалы —
-    /// отдельными картами и обработчиками на следующем шаге.
+    /// Целевая таблица различается интервалом: писатель выбирается по коду интервала задачи
+    /// (1, 10, 60, 24). Каждый писатель несёт свою карту с нужной таблицей.
     /// </summary>
     public sealed class CandlesLoadHandler : ILoadHandler
     {
         private readonly MoexHttpAlgClient _client;
-        private readonly RowWriter<CandlesDTO> _writer;
+        private readonly IReadOnlyDictionary<int, RowWriter<CandlesDTO>> _writersByInterval;
 
-        public CandlesLoadHandler(MoexHttpAlgClient client, RowWriter<CandlesDTO> writer)
+        public CandlesLoadHandler(
+            MoexHttpAlgClient client,
+            IReadOnlyDictionary<int, RowWriter<CandlesDTO>> writersByInterval)
         {
             _client = client;
-            _writer = writer;
+            _writersByInterval = writersByInterval;
         }
 
         public bool CanHandle(MoexLoadTask task) =>
             task.DataKind == "candles"
-            && (task.Market == "stock" || task.Market == "futures");
+            && (task.Market == "stock" || task.Market == "futures")
+            && task.CandleInterval is not null
+            && _writersByInterval.ContainsKey(task.CandleInterval.Value);
 
         public async Task<CandlesWriteSummary> LoadAsync(
             MoexLoadTask task, LoadStopOutcome stopOutcome, CancellationToken ct)
         {
+            RowWriter<CandlesDTO> writer = _writersByInterval[task.CandleInterval!.Value];
+
             string method = BuildMethod(task);
             Dictionary<string, string> query = BuildQuery(task);
             string captureMarket = task.Market == "stock"
@@ -44,7 +48,7 @@ namespace ProjectTraiding.Moex.Loading
                 method, query, captureMarket: captureMarket, secid: task.Secid,
                 stopOutcome: stopOutcome, cancellationToken: ct);
 
-            return await _writer.WriteRangeAsync(
+            return await writer.WriteRangeAsync(
                 task.Secid, task.SourceContractVersion, task.WriterVersion, pages, ct);
         }
 

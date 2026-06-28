@@ -1,0 +1,27 @@
+databaseType = "ClickHouse"
+id = "15a0da3b-ae4c-4148-95a6-a250982a9a9f"
+name = "Clickhouse"
+
+[flyway]
+callbackLocations = [ "filesystem:callbacks" ]
+locations = [ "filesystem:migrations" ]
+mixed = true
+outOfOrder = true
+schemaModelLocation = "schema-model"
+validateMigrationNaming = true
+
+[flywayDesktop]
+enableMigrations = true
+showDeploymentDecision = true
+developmentEnvironment = "development"
+shadowEnvironment = "shadow"
+
+  [flywayDesktop.generate]
+  undoScripts = false
+
+[redgateCompare]
+filterFile = "filter.rgf"
+
+[environments.Clickhouse]
+url = "jdbc:clickhouse://localhost:8123/projecttraiding"
+displayName = "projecttraiding"
