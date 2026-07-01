@@ -24,5 +24,15 @@ namespace ProjectTraiding.Management.Endpoints
             EventId = 212, EventName = "MgmtDbErrorMapped", Level = LogLevel.Warning,
             Message = "Management DB error mapped to operator text: route={Route}, sqlState={SqlState}.")]
         public static partial void DbErrorMapped(ILogger logger, string route, string sqlState);
+
+        [LoggerMessage(
+            EventId = 213, EventName = "MgmtBulkLoadTasksCreated", Level = LogLevel.Information,
+            Message = "Management bulk load tasks created: route={Route}, expanded={ExpandedCount}, inserted={InsertedCount}, skippedDuplicates={SkippedDuplicateCount}.")]
+        public static partial void BulkLoadTasksCreated(
+            ILogger logger,
+            string route,
+            int expandedCount,
+            int insertedCount,
+            int skippedDuplicateCount);
     }
 }

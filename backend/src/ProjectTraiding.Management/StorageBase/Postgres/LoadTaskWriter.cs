@@ -52,5 +52,96 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
             object? idObj = await cmd.ExecuteScalarAsync(ct);
             return (Guid)idObj!;
         }
+
+        public async Task<BulkCreateResult> CreateManyAsync(
+            IReadOnlyList<LoadTaskCreateRequest> tasks,
+            CancellationToken ct)
+        {
+            if (tasks.Count == 0)
+                return new BulkCreateResult(
+                    ExpandedCount: 0,
+                    InsertedCount: 0,
+                    SkippedDuplicateCount: 0);
+
+            await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
+            await using NpgsqlTransaction transaction = await connection.BeginTransactionAsync(ct);
+
+            try
+            {
+                await using NpgsqlCommand createTempCommand = new NpgsqlCommand("""
+                    CREATE TEMP TABLE tmp_moex_load_tasks_bulk (
+                        secid           text,
+                        market          text,
+                        boardid         text,
+                        data_kind       text,
+                        candle_interval integer,
+                        date_from       date,
+                        date_till       date,
+                        storage_target  text
+                    ) ON COMMIT DROP
+                    """, connection, transaction);
+                await createTempCommand.ExecuteNonQueryAsync(ct);
+
+                await using NpgsqlBinaryImporter importer = await connection.BeginBinaryImportAsync("""
+                    COPY tmp_moex_load_tasks_bulk
+                        (secid, market, boardid, data_kind, candle_interval,
+                         date_from, date_till, storage_target)
+                    FROM STDIN (FORMAT BINARY)
+                    """, ct);
+
+                for (int i = 0; i < tasks.Count; i++)
+                {
+                    LoadTaskCreateRequest task = tasks[i];
+
+                    await importer.StartRowAsync(ct);
+                    await importer.WriteAsync(task.Secid, NpgsqlDbType.Text, ct);
+                    await importer.WriteAsync(task.Market, NpgsqlDbType.Text, ct);
+                    await importer.WriteAsync(task.Boardid, NpgsqlDbType.Text, ct);
+                    await importer.WriteAsync(task.DataKind, NpgsqlDbType.Text, ct);
+
+                    if (task.CandleInterval is int candleInterval)
+                        await importer.WriteAsync(candleInterval, NpgsqlDbType.Integer, ct);
+                    else
+                        await importer.WriteNullAsync(ct);
+
+                    await importer.WriteAsync(task.DateFrom, NpgsqlDbType.Date, ct);
+                    await importer.WriteAsync(task.DateTill, NpgsqlDbType.Date, ct);
+                    await importer.WriteAsync(task.StorageTarget, NpgsqlDbType.Text, ct);
+                }
+
+                await importer.CompleteAsync(ct);
+
+                await using NpgsqlCommand insertCommand = new NpgsqlCommand("""
+                    INSERT INTO moex_load_tasks
+                        (secid, market, boardid, data_kind, candle_interval,
+                         date_from, date_till, storage_target)
+                    SELECT secid, market, boardid, data_kind, candle_interval,
+                           date_from, date_till, storage_target
+                    FROM tmp_moex_load_tasks_bulk
+                    ON CONFLICT (secid, market, boardid, data_kind, candle_interval,
+                                 date_from, date_till, storage_target)
+                        WHERE status IN ('pending', 'running', 'partial')
+                    DO NOTHING
+                    """, connection, transaction);
+                int insertedCount = await insertCommand.ExecuteNonQueryAsync(ct);
+
+                await transaction.CommitAsync(ct);
+
+                return new BulkCreateResult(
+                    ExpandedCount: tasks.Count,
+                    InsertedCount: insertedCount,
+                    SkippedDuplicateCount: tasks.Count - insertedCount);
+            }
+            catch (Exception ex)
+            {
+                ManagementWriterLogMessages.WriteRolledBack(
+                    _logger,
+                    ex,
+                    "moex_load_tasks",
+                    ex.GetType().Name);
+                await transaction.RollbackAsync(CancellationToken.None);
+                throw;
+            }
+        }
     }
 }

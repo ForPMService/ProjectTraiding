@@ -10,6 +10,9 @@ namespace ProjectTraiding.Management.Contracts
     [JsonSerializable(typeof(InstrumentRelationCreateRequest))]
     [JsonSerializable(typeof(ManagementResultDto))]
     [JsonSerializable(typeof(LoadTaskCreateRequest))]
+    [JsonSerializable(typeof(LoadTaskBulkCreateRequest))]
+    [JsonSerializable(typeof(LoadTaskBulkCreateResponse))]
+    [JsonSerializable(typeof(LoadTaskBulkInstrumentRequest))]
     public partial class ManagementJsonContext : JsonSerializerContext;
     
 }
