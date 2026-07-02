@@ -4,7 +4,7 @@ using System.Text;
 
 namespace ProjectTraiding.Moex.StorageBase.Postgres
 {
-    /// <summary>EventId 190–199: жизненный цикл задачи загрузки и учёт диапазона.</summary>
+    /// <summary>EventId 190–199 и 220–229: жизненный цикл задачи загрузки и учёт диапазона.</summary>
     public static partial class MoexLoadTaskLogMessages
     {
         [LoggerMessage(
@@ -33,8 +33,8 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         public static partial void RangeRecorded(ILogger logger, string secid, string dataKind, long rowsTotal, TimeSpan elapsed);
 
         [LoggerMessage(
-    EventId = 195, EventName = "LoadBackgroundStarted", Level = LogLevel.Information,
-    Message = "Load background service started: pollInterval={PollInterval}.")]
+        EventId = 195, EventName = "LoadBackgroundStarted", Level = LogLevel.Information,
+        Message = "Load background service started: pollInterval={PollInterval}.")]
         public static partial void BackgroundStarted(ILogger logger, TimeSpan pollInterval);
 
         [LoggerMessage(
@@ -56,5 +56,10 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             EventId = 199, EventName = "LoadTaskPartial", Level = LogLevel.Warning,
             Message = "Load task partial: id={TaskId}, rows={RowsLoaded}, time={Elapsed}.")]
         public static partial void TaskPartial(ILogger logger, Guid taskId, long rowsLoaded, TimeSpan elapsed);
+
+        [LoggerMessage(EventId = 220, EventName = "MoexLoadTaskRequeuedAfterCancel",
+           Level = LogLevel.Information,
+           Message = "Load task requeued after cancel: taskId={TaskId}, affected={Affected}, elapsed={Elapsed}.")]
+        public static partial void TaskRequeuedAfterCancel(ILogger logger, Guid taskId, int affected, TimeSpan elapsed);
     }
 }

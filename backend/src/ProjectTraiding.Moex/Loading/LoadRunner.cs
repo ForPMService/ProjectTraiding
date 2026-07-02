@@ -11,7 +11,7 @@ using System.Text;
 
 namespace ProjectTraiding.Moex.Loading
 {
-    public enum LoadStatus { NotFound, NotClaimed, Done }
+    public enum LoadStatus { NotFound, NotClaimed, Done, Failed }
 
     public readonly record struct LoadOutcome(LoadStatus Status, long RowsCovered);
 
@@ -73,19 +73,33 @@ namespace ProjectTraiding.Moex.Loading
                 // Настоящая причина из потока; пустой держатель трактуем как штатное исчерпание.
                 string stopReason = stopOutcome.StopReason ?? "range_exhausted";
 
-                // Журнал результата пишем всегда — диапазон покрыт настолько, насколько прочитан.
-                await _rangeWriter.UpsertAsync(task, summary.RowsRead, summary.LastToken, ct);
-
+                // Частичный исход = сработал защитный предел страниц: диапазон шире, чем можно
+                // безопасно вычитать за один проход. Покрытие НЕ пишем (иначе неполный диапазон
+                // закрепился бы как полный) и закрываем задачу отказом с машинной причиной.
+                // Оператор пересоздаёт задачи меньшим окном. Ветвление стоит ДО записи покрытия —
+                // в этом суть правки А1.
                 if (stopOutcome.IsPartial)
-                    await _taskWriter.MarkPartialAsync(taskId, summary.RowsRead, stopReason, summary.LastToken, ct);
-                else
-                    await _taskWriter.MarkDoneAsync(taskId, summary.RowsRead, stopReason, summary.LastToken, ct);
+                {
+                    await _taskWriter.MarkErrorAsync(
+                        taskId,
+                        "диапазон превышает предел страниц: пересоздайте задачи с меньшим окном",
+                        stopReason,
+                        ct);
+                    return new LoadOutcome(LoadStatus.Failed, summary.RowsRead);
+                }
+
+                // Штатное полное покрытие: журнал результата и закрытие успехом.
+                await _rangeWriter.UpsertAsync(task, summary.RowsRead, summary.LastToken, ct);
+                await _taskWriter.MarkDoneAsync(taskId, summary.RowsRead, stopReason, summary.LastToken, ct);
 
                 return new LoadOutcome(LoadStatus.Done, summary.RowsRead);
             }
             catch (OperationCanceledException)
             {
-                await _taskWriter.MarkErrorAsync(taskId, "cancelled", "cancelled", CancellationToken.None);
+                // Остановка хоста, а не сбой задачи: возвращаем в очередь, а не в error.
+                // Иначе задача стала бы сиротой — автоподбор error не берёт (правка А2).
+                // CancellationToken.None: ct уже отменён, но статус закрыть обязаны.
+                await _taskWriter.RequeueAfterCancelAsync(taskId, CancellationToken.None);
                 throw;
             }
             catch (Exception ex)

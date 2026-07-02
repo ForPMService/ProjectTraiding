@@ -127,9 +127,12 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         }
 
         /// <summary>
-        /// Закрывает задачу частичной загрузкой: running → partial. Поля результата те же, что
-        /// при успехе, но статус отражает, что диапазон покрыт не полностью (например, сработал
-        /// защитный предел страниц). Задача остаётся до-гружаемой — partial входит в условие claim.
+        /// Закрывает задачу частичной загрузкой: running → partial.
+        /// ВНИМАНИЕ (А1): координатор больше НЕ вызывает этот метод. Срабатывание защитного
+        /// предела страниц теперь закрывается через MarkErrorAsync (stop_reason='safety_cap_hit')
+        /// без записи покрытия, а автоподбор берёт только 'pending'. Метод оставлен для возможного
+        /// ручного сценария; статус 'partial' сохранён в схеме. Кандидат на удаление при ревизии
+        /// мёртвого кода (блок Д3), если ручной путь его так и не использует.
         /// </summary>
         public async Task MarkPartialAsync(
             Guid taskId,
@@ -160,6 +163,32 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
 
             TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
             MoexLoadTaskLogMessages.TaskPartial(_logger, taskId, rowsLoaded, elapsed);
+        }
+
+        /// <summary>
+        /// Возвращает прерванную остановкой хоста задачу в очередь: running → pending,
+        /// finished_at обнуляется. Вызывается координатором из catch(OperationCanceledException)
+        /// вместо пометки error — иначе задача осталась бы сиротой, ведь автоподбор error не
+        /// берёт. После перезапуска хоста автоподбор снова возьмёт её из pending. Если строка
+        /// уже не в running (успела закрыться другим путём) — ничего не делаем: гонка с
+        /// завершением здесь безопасна, поэтому исключение при affected≠1 НЕ бросаем.
+        /// </summary>
+        public async Task RequeueAfterCancelAsync(Guid taskId, CancellationToken ct)
+        {
+            long startTs = Stopwatch.GetTimestamp();
+            await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
+
+            await using NpgsqlCommand cmd = new NpgsqlCommand("""
+                UPDATE moex_load_tasks
+                SET status = 'pending', finished_at = null
+                WHERE id = @id AND status = 'running'
+                """, connection);
+            cmd.Parameters.Add("@id", NpgsqlDbType.Uuid).Value = taskId;
+
+            int affected = await cmd.ExecuteNonQueryAsync(ct);
+            TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
+
+            MoexLoadTaskLogMessages.TaskRequeuedAfterCancel(_logger, taskId, affected, elapsed);
         }
     }
 }

@@ -27,9 +27,13 @@ namespace ProjectTraiding.Moex.Endpoints
                 {
                     LoadStatus.NotFound => Results.NotFound(),
                     LoadStatus.NotClaimed => Results.StatusCode(StatusCodes.Status409Conflict),
-                    _ => Results.Text(
+                    LoadStatus.Failed => Results.Text(
+                        $"candles load failed: task={id} — диапазон превышает предел страниц, пересоздайте задачи меньшим окном (rows={outcome.RowsCovered.ToString(CultureInfo.InvariantCulture)})",
+                        "text/plain", statusCode: StatusCodes.Status422UnprocessableEntity),
+                    LoadStatus.Done => Results.Text(
                         $"candles load done: task={id}, rows={outcome.RowsCovered.ToString(CultureInfo.InvariantCulture)}",
                         "text/plain"),
+                    _ => Results.StatusCode(StatusCodes.Status500InternalServerError),
                 };
             });
 

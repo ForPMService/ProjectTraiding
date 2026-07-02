@@ -77,12 +77,12 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                     attempt_count = attempt_count + 1
                 WHERE id = (
                     SELECT id FROM moex_load_tasks
-                    WHERE status IN ('pending', 'partial')
-                      AND storage_target = 'clickhouse'
+                    WHERE status = 'pending'
+                    AND storage_target = 'clickhouse'
                     ORDER BY created_at
                     FOR UPDATE SKIP LOCKED
                     LIMIT 1
-                )
+                    )
                 RETURNING id
                 """, connection);
 
