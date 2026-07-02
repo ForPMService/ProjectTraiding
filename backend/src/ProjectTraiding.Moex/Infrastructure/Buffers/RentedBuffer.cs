@@ -29,32 +29,66 @@ namespace ProjectTraiding.Moex.Infrastructure.Buffers
             }
         }
 
-        public static async Task<RentedBuffer> RentFromStreamAsync(Stream stream, int lengthArrayFromStreamHttp, CancellationToken cancellationToken)
+        /// <summary>
+        /// Читает поток ДО ФАКТИЧЕСКОГО КОНЦА (Read==0), а не до объявленной длины.
+        /// contentLength — лишь подсказка начального размера буфера (обычно Content-Length);
+        /// если тела оказалось больше, массив дорастает. Так ни заниженный, ни завышенный,
+        /// ни отсутствующий Content-Length не портит результат — читается ровно то, что
+        /// реально прислал сервер. Чтение накрыто сторожем bodyReadTimeout: связанный
+        /// с ct источник отмены рвёт зависшее чтение тела; вызывающий транслирует это
+        /// в MoexTimeoutException(source="body_read").
+        /// </summary>
+        public static async Task<RentedBuffer> RentFromStreamAsync(
+            Stream stream,
+            int contentLengthHint,
+            TimeSpan bodyReadTimeout,
+            CancellationToken cancellationToken)
         {
-            var arr = ArrayPool<byte>.Shared.Rent(lengthArrayFromStreamHttp);
-            int sizeLatsPortionByteInArray = 0;
-            int currentPositionInArray = 0;
+            // Подсказка размера не может быть нулевой/отрицательной — берём разумный минимум.
+            int initialCapacity = contentLengthHint > 0 ? contentLengthHint : 64 * 1024;
+
+            using CancellationTokenSource timeoutCts = new(bodyReadTimeout);
+            using CancellationTokenSource linkedCts =
+                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
+            byte[] arr = ArrayPool<byte>.Shared.Rent(initialCapacity);
+            int position = 0;
             try
             {
-
-                while (currentPositionInArray < lengthArrayFromStreamHttp)
+                while (true)
                 {
-                    sizeLatsPortionByteInArray = await stream.ReadAsync(arr, currentPositionInArray, lengthArrayFromStreamHttp - currentPositionInArray, cancellationToken);
-                    currentPositionInArray += sizeLatsPortionByteInArray;
-                    if (sizeLatsPortionByteInArray == 0)
+                    // Буфер заполнен — удваиваем ёмкость и переносим прочитанное.
+                    if (position == arr.Length)
                     {
-                        break;
+                        byte[] bigger = ArrayPool<byte>.Shared.Rent(arr.Length * 2);
+                        Array.Copy(arr, bigger, position);
+                        ArrayPool<byte>.Shared.Return(arr);
+                        arr = bigger;
                     }
 
+                    int read = await stream.ReadAsync(
+                        arr.AsMemory(position, arr.Length - position), linkedCts.Token);
+
+                    if (read == 0)
+                        break; // фактический конец потока
+
+                    position += read;
                 }
 
-                return new RentedBuffer(currentPositionInArray, arr);
+                return new RentedBuffer(position, arr);
+            }
+            catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested
+                                                     && !cancellationToken.IsCancellationRequested)
+            {
+                // Отмена именно по нашему сторожу тела, а не по внешнему токену.
+                ArrayPool<byte>.Shared.Return(arr);
+                throw new TimeoutException(
+                    $"MOEX body read exceeded {bodyReadTimeout.TotalSeconds:0.#}s");
             }
             catch
             {
                 ArrayPool<byte>.Shared.Return(arr);
                 throw;
-
             }
         }
     }

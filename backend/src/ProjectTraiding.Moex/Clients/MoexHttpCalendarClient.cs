@@ -141,9 +141,10 @@ namespace ProjectTraiding.Moex.Clients
                 using var response = await SendRequestAsync(endpoint, cancellationToken: cancellationToken);
                 int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
                 using var rentedArr = await RentedBuffer.RentFromStreamAsync(
-                    await response.Content.ReadAsStreamAsync(cancellationToken),
-                    contentLength,
-                    cancellationToken);
+                        await response.Content.ReadAsStreamAsync(cancellationToken),
+                        contentLength,
+                        _options.BodyReadTimeout,
+                        cancellationToken);
                 try
                 {
                     List<CalendarOffDaysMarketDTO> result = ParsingCalendarUtf8.ParseOffDaysMarket(rentedArr.Span);
@@ -224,9 +225,10 @@ namespace ProjectTraiding.Moex.Clients
                 using var response = await SendRequestAsync(endpoint, cancellationToken: cancellationToken);
                 int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
                 using var rentedArr = await RentedBuffer.RentFromStreamAsync(
-                    await response.Content.ReadAsStreamAsync(cancellationToken),
-                    contentLength,
-                    cancellationToken);
+                        await response.Content.ReadAsStreamAsync(cancellationToken),
+                        contentLength,
+                        _options.BodyReadTimeout,
+                        cancellationToken);
                 try
                 {
                     List<CalendarOffDaysMarketDTO> result = ParsingCalendarUtf8.ParseOffDaysMarket(rentedArr.Span);
@@ -1030,6 +1032,15 @@ namespace ProjectTraiding.Moex.Clients
                 var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
                 await HttpClientHelpers.EnsureSuccessOrThrowAsync(response, method, cancellationToken);
                 return response;
+            }
+            catch (TimeoutException ex)
+            {
+                var timeoutEx = new MoexTimeoutException(
+                    $"MOEX body read timeout for {method}", method, "body_read",
+                    _options.BodyReadTimeout, ex);
+                MoexLogMessages.RequestFailed(_logger, timeoutEx, MoexLogSources.Algopack, method,
+                    timeoutEx.ErrorCategory, null, timeoutEx.TimeoutSource, timeoutEx.Message);
+                throw timeoutEx;
             }
             catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
             {

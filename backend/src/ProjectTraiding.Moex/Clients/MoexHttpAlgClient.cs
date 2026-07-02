@@ -130,6 +130,7 @@ namespace ProjectTraiding.Moex.Clients
                     using var rentedArr = await RentedBuffer.RentFromStreamAsync(
                         await response.Content.ReadAsStreamAsync(cancellationToken),
                         contentLength,
+                        _options.BodyReadTimeout,
                         cancellationToken);
                     try
                     {
@@ -255,6 +256,7 @@ namespace ProjectTraiding.Moex.Clients
                     using var rentedArr = await RentedBuffer.RentFromStreamAsync(
                         await response.Content.ReadAsStreamAsync(cancellationToken),
                         contentLength,
+                        _options.BodyReadTimeout,
                         cancellationToken);
                     try
                     {
@@ -360,7 +362,11 @@ namespace ProjectTraiding.Moex.Clients
                 using (response)
                 {
                     int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-                    using var rentedArr = await RentedBuffer.RentFromStreamAsync(await response.Content.ReadAsStreamAsync(cancellationToken), contentLength, cancellationToken);
+                    using var rentedArr = await RentedBuffer.RentFromStreamAsync(
+                        await response.Content.ReadAsStreamAsync(cancellationToken),
+                        contentLength,
+                        _options.BodyReadTimeout,
+                        cancellationToken);
                     try { tradeStats = ParsingAlgUtf8.ParseTradeStatsFutures(rentedArr.Span, out cursor); }
                     catch (MoexSchemaMismatchException ex)
                     {
@@ -444,7 +450,11 @@ namespace ProjectTraiding.Moex.Clients
                 using (response)
                 {
                     int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-                    using var rentedArr = await RentedBuffer.RentFromStreamAsync(await response.Content.ReadAsStreamAsync(cancellationToken), contentLength, cancellationToken);
+                    using var rentedArr = await RentedBuffer.RentFromStreamAsync(
+                        await response.Content.ReadAsStreamAsync(cancellationToken),
+                        contentLength,
+                        _options.BodyReadTimeout,
+                        cancellationToken);
                     try { orderBookStats = ParsingAlgUtf8.ParseOBStatsStock(rentedArr.Span, out cursor); }
                     catch (MoexSchemaMismatchException ex)
                     {
@@ -523,7 +533,11 @@ namespace ProjectTraiding.Moex.Clients
                 using (response)
                 {
                     int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-                    using var rentedArr = await RentedBuffer.RentFromStreamAsync(await response.Content.ReadAsStreamAsync(cancellationToken), contentLength, cancellationToken);
+                    using var rentedArr = await RentedBuffer.RentFromStreamAsync(
+                        await response.Content.ReadAsStreamAsync(cancellationToken),
+                        contentLength,
+                        _options.BodyReadTimeout,
+                        cancellationToken);
                     try { orderBookStats = ParsingAlgUtf8.ParseOBStatsFutures(rentedArr.Span, out cursor); }
                     catch (MoexSchemaMismatchException ex)
                     {
@@ -602,7 +616,11 @@ namespace ProjectTraiding.Moex.Clients
                 using (response)
                 {
                     int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-                    using var rentedArr = await RentedBuffer.RentFromStreamAsync(await response.Content.ReadAsStreamAsync(cancellationToken), contentLength, cancellationToken);
+                    using var rentedArr = await RentedBuffer.RentFromStreamAsync(
+                        await response.Content.ReadAsStreamAsync(cancellationToken),
+                        contentLength,
+                        _options.BodyReadTimeout,
+                        cancellationToken);
                     try { orderStats = ParsingAlgUtf8.ParseOrderStatsStock(rentedArr.Span, out cursor); }
                     catch (MoexSchemaMismatchException ex)
                     {
@@ -736,6 +754,7 @@ namespace ProjectTraiding.Moex.Clients
                     using var rentedArr = await RentedBuffer.RentFromStreamAsync(
                         await response.Content.ReadAsStreamAsync(cancellationToken),
                         contentLength,
+                        _options.BodyReadTimeout,
                         cancellationToken);
                     try
                     {
@@ -830,7 +849,11 @@ namespace ProjectTraiding.Moex.Clients
                 using (response)
                 {
                     int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-                    using var rentedArr = await RentedBuffer.RentFromStreamAsync(await response.Content.ReadAsStreamAsync(cancellationToken), contentLength, cancellationToken);
+                    using var rentedArr = await RentedBuffer.RentFromStreamAsync(
+                        await response.Content.ReadAsStreamAsync(cancellationToken),
+                        contentLength,
+                        _options.BodyReadTimeout,
+                        cancellationToken);
                     try { hi2Assets = ParsingAlgUtf8.ParseHi2Stock(rentedArr.Span, out cursor); }
                     catch (MoexSchemaMismatchException ex)
                     {
@@ -909,7 +932,11 @@ namespace ProjectTraiding.Moex.Clients
                 using (response)
                 {
                     int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-                    using var rentedArr = await RentedBuffer.RentFromStreamAsync(await response.Content.ReadAsStreamAsync(cancellationToken), contentLength, cancellationToken);
+                    using var rentedArr = await RentedBuffer.RentFromStreamAsync(
+                        await response.Content.ReadAsStreamAsync(cancellationToken),
+                        contentLength,
+                        _options.BodyReadTimeout,
+                        cancellationToken);
                     try { hi2Futures = ParsingAlgUtf8.ParseHi2Futures(rentedArr.Span, out cursor); }
                     catch (MoexSchemaMismatchException ex)
                     {
@@ -992,7 +1019,11 @@ namespace ProjectTraiding.Moex.Clients
                 using (response)
                 {
                     int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-                    using var rentedArr = await RentedBuffer.RentFromStreamAsync(await response.Content.ReadAsStreamAsync(cancellationToken), contentLength, cancellationToken);
+                    using var rentedArr = await RentedBuffer.RentFromStreamAsync(
+                        await response.Content.ReadAsStreamAsync(cancellationToken),
+                        contentLength,
+                        _options.BodyReadTimeout,
+                        cancellationToken);
                     try { megaAlerts = ParsingAlgUtf8.ParseMegaAlertsStock(rentedArr.Span, out cursor); }
                     catch (MoexSchemaMismatchException ex)
                     {
@@ -1071,7 +1102,11 @@ namespace ProjectTraiding.Moex.Clients
                 using (response)
                 {
                     int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-                    using var rentedArr = await RentedBuffer.RentFromStreamAsync(await response.Content.ReadAsStreamAsync(cancellationToken), contentLength, cancellationToken);
+                    using var rentedArr = await RentedBuffer.RentFromStreamAsync(
+                        await response.Content.ReadAsStreamAsync(cancellationToken),
+                        contentLength,
+                        _options.BodyReadTimeout,
+                        cancellationToken);
                     try { megaAlertsFutures = ParsingAlgUtf8.ParseMegaAlertsFutures(rentedArr.Span, out cursor); }
                     catch (MoexSchemaMismatchException ex)
                     {
@@ -1155,6 +1190,15 @@ namespace ProjectTraiding.Moex.Clients
                 var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
                 await HttpClientHelpers.EnsureSuccessOrThrowAsync(response, method, cancellationToken);
                 return response;
+            }
+            catch (TimeoutException ex)
+            {
+                var timeoutEx = new MoexTimeoutException(
+                    $"MOEX body read timeout for {method}", method, "body_read",
+                    _options.BodyReadTimeout, ex);
+                MoexLogMessages.RequestFailed(_logger, timeoutEx, MoexLogSources.Algopack, method,
+                    timeoutEx.ErrorCategory, null, timeoutEx.TimeoutSource, timeoutEx.Message);
+                throw timeoutEx;
             }
             catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
             {

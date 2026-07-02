@@ -82,34 +82,41 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                     """, connection, transaction);
                 await createTempCommand.ExecuteNonQueryAsync(ct);
 
-                await using NpgsqlBinaryImporter importer = await connection.BeginBinaryImportAsync("""
+                // COPY держит соединение в состоянии Copy до Dispose импортёра. Ограничиваем его
+                // жизнь собственным блоком: после CompleteAsync импортёр освобождается здесь же,
+                // и соединение выходит из Copy ДО следующей команды. Иначе INSERT на том же
+                // соединении падает с NpgsqlOperationInProgressException (state 'Copy').
+                // CompleteAsync — внутри блока: без него Dispose истолковал бы импорт как отмену
+                // и откатил бы COPY.
+                await using (NpgsqlBinaryImporter importer = await connection.BeginBinaryImportAsync("""
                     COPY tmp_moex_load_tasks_bulk
                         (secid, market, boardid, data_kind, candle_interval,
                          date_from, date_till, storage_target)
                     FROM STDIN (FORMAT BINARY)
-                    """, ct);
-
-                for (int i = 0; i < tasks.Count; i++)
+                    """, ct))
                 {
-                    LoadTaskCreateRequest task = tasks[i];
+                    for (int i = 0; i < tasks.Count; i++)
+                    {
+                        LoadTaskCreateRequest task = tasks[i];
 
-                    await importer.StartRowAsync(ct);
-                    await importer.WriteAsync(task.Secid, NpgsqlDbType.Text, ct);
-                    await importer.WriteAsync(task.Market, NpgsqlDbType.Text, ct);
-                    await importer.WriteAsync(task.Boardid, NpgsqlDbType.Text, ct);
-                    await importer.WriteAsync(task.DataKind, NpgsqlDbType.Text, ct);
+                        await importer.StartRowAsync(ct);
+                        await importer.WriteAsync(task.Secid, NpgsqlDbType.Text, ct);
+                        await importer.WriteAsync(task.Market, NpgsqlDbType.Text, ct);
+                        await importer.WriteAsync(task.Boardid, NpgsqlDbType.Text, ct);
+                        await importer.WriteAsync(task.DataKind, NpgsqlDbType.Text, ct);
 
-                    if (task.CandleInterval is int candleInterval)
-                        await importer.WriteAsync(candleInterval, NpgsqlDbType.Integer, ct);
-                    else
-                        await importer.WriteNullAsync(ct);
+                        if (task.CandleInterval is int candleInterval)
+                            await importer.WriteAsync(candleInterval, NpgsqlDbType.Integer, ct);
+                        else
+                            await importer.WriteNullAsync(ct);
 
-                    await importer.WriteAsync(task.DateFrom, NpgsqlDbType.Date, ct);
-                    await importer.WriteAsync(task.DateTill, NpgsqlDbType.Date, ct);
-                    await importer.WriteAsync(task.StorageTarget, NpgsqlDbType.Text, ct);
+                        await importer.WriteAsync(task.DateFrom, NpgsqlDbType.Date, ct);
+                        await importer.WriteAsync(task.DateTill, NpgsqlDbType.Date, ct);
+                        await importer.WriteAsync(task.StorageTarget, NpgsqlDbType.Text, ct);
+                    }
+
+                    await importer.CompleteAsync(ct);
                 }
-
-                await importer.CompleteAsync(ct);
 
                 await using NpgsqlCommand insertCommand = new NpgsqlCommand("""
                     INSERT INTO moex_load_tasks

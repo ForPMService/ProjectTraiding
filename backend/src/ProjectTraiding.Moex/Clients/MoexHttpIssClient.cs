@@ -253,6 +253,15 @@ namespace ProjectTraiding.Moex.Clients
                 MoexLogMessages.RequestFailed(_logger, timeoutEx, MoexLogSources.Iss, method, timeoutEx.ErrorCategory, null, timeoutEx.TimeoutSource, timeoutEx.Message);
                 throw timeoutEx;
             }
+            catch (TimeoutException ex)
+            {
+                var timeoutEx = new MoexTimeoutException(
+                    $"MOEX body read timeout for {method}", method, "body_read",
+                    _options.BodyReadTimeout, ex);
+                MoexLogMessages.RequestFailed(_logger, timeoutEx, MoexLogSources.Algopack, method,
+                    timeoutEx.ErrorCategory, null, timeoutEx.TimeoutSource, timeoutEx.Message);
+                throw timeoutEx;
+            }
             catch (TimeoutRejectedException ex)
             {
                 var timeoutEx = new MoexTimeoutException($"MOEX attempt timeout for {method}", method, "polly_attempt", null, ex);

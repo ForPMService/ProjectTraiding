@@ -19,6 +19,14 @@ namespace ProjectTraiding.Moex.Options
         /// <summary>Таймаут одного HTTP-запроса.</summary>
         public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
+        /// <summary>
+        /// Предельное время на ЧТЕНИЕ тела ответа (фаза после получения заголовков).
+        /// Отдельный сторож от RequestTimeout: общий HttpClient.Timeout снимается (В1),
+        /// и без этого предела зависшее чтение тела висело бы бесконечно. Рвётся
+        /// типизированной MoexTimeoutException с источником "body_read", запрос повторяем.
+        /// </summary>
+        public TimeSpan BodyReadTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
         public int MaxConnectionsPerServer { get; set; } = 10;
         public int MaxPagesPerLoad { get; set; } = 10_000;
 

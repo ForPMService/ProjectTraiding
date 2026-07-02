@@ -102,9 +102,10 @@ namespace ProjectTraiding.Moex.Clients
             using var response = await SendRequestAsync(endpoint, queryParams, cancellationToken);
             int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
             using var rentedArr = await RentedBuffer.RentFromStreamAsync(
-                await response.Content.ReadAsStreamAsync(cancellationToken),
-                contentLength,
-                cancellationToken);
+                        await response.Content.ReadAsStreamAsync(cancellationToken),
+                        contentLength,
+                        _options.BodyReadTimeout,
+                        cancellationToken);
             try
             {
                 var result = ParsingRealtimeRestUtf8.ParseTradesStock(rentedArr.Span);
@@ -141,9 +142,10 @@ namespace ProjectTraiding.Moex.Clients
             using var response = await SendRequestAsync(endpoint, queryParams, cancellationToken);
             int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
             using var rentedArr = await RentedBuffer.RentFromStreamAsync(
-                await response.Content.ReadAsStreamAsync(cancellationToken),
-                contentLength,
-                cancellationToken);
+                        await response.Content.ReadAsStreamAsync(cancellationToken),
+                        contentLength,
+                        _options.BodyReadTimeout,
+                        cancellationToken);
             try
             {
                 var result = ParsingRealtimeRestUtf8.ParseTradesFutures(rentedArr.Span);
@@ -427,9 +429,10 @@ namespace ProjectTraiding.Moex.Clients
             using var response = await SendRequestAsync(endpoint, queryParams: null, cancellationToken);
             int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
             using var rentedArr = await RentedBuffer.RentFromStreamAsync(
-                await response.Content.ReadAsStreamAsync(cancellationToken),
-                contentLength,
-                cancellationToken);
+                        await response.Content.ReadAsStreamAsync(cancellationToken),
+                        contentLength,
+                        _options.BodyReadTimeout,
+                        cancellationToken);
             try
             {
                 var result = ParsingRealtimeRestUtf8.ParseOrderbook(rentedArr.Span);
@@ -460,9 +463,10 @@ namespace ProjectTraiding.Moex.Clients
             using var response = await SendRequestAsync(endpoint, queryParams, cancellationToken);
             int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
             using var rentedArr = await RentedBuffer.RentFromStreamAsync(
-                await response.Content.ReadAsStreamAsync(cancellationToken),
-                contentLength,
-                cancellationToken);
+                        await response.Content.ReadAsStreamAsync(cancellationToken),
+                        contentLength,
+                        _options.BodyReadTimeout,
+                        cancellationToken);
             try
             {
                 var result = ParsingAlgUtf8.ParseAlgCandles(rentedArr.Span);
@@ -523,6 +527,15 @@ namespace ProjectTraiding.Moex.Clients
                 MoexLogMessages.RequestFailed(_logger, timeoutEx,
                     MoexLogSources.RealtimeRest, method, timeoutEx.ErrorCategory,
                     null, timeoutEx.TimeoutSource, timeoutEx.Message);
+                throw timeoutEx;
+            }
+            catch (TimeoutException ex)
+            {
+                var timeoutEx = new MoexTimeoutException(
+                    $"MOEX body read timeout for {method}", method, "body_read",
+                    _options.BodyReadTimeout, ex);
+                MoexLogMessages.RequestFailed(_logger, timeoutEx, MoexLogSources.Algopack, method,
+                    timeoutEx.ErrorCategory, null, timeoutEx.TimeoutSource, timeoutEx.Message);
                 throw timeoutEx;
             }
             catch (MoexHttpException ex)
