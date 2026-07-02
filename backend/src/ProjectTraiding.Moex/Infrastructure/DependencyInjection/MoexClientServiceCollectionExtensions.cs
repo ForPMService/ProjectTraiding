@@ -19,7 +19,7 @@ public static class MoexClientServiceCollectionExtensions
 
         services.AddOptions<MoexOptions>()
             .Bind(configuration.GetSection("Moex"));
-
+        MoexOptions moexOptions = configuration.GetSection("Moex").Get<MoexOptions>() ?? new MoexOptions();
         // ══════════════════════════════════════════════
         // Rate Limiter — один на все MOEX-клиенты.
         // Лимит MOEX на IP, не на endpoint, поэтому один limiter на процесс.
@@ -43,7 +43,7 @@ public static class MoexClientServiceCollectionExtensions
         services.AddHttpClient<MoexHttpIssClient>((sp, client) =>
         {
             MoexOptions options = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
-            client.Timeout = options.RequestTimeout;
+            client.Timeout = Timeout.InfiniteTimeSpan;
 
         }).ConfigurePrimaryHttpMessageHandler(sp =>
         {
@@ -65,7 +65,7 @@ public static class MoexClientServiceCollectionExtensions
             MoexLogSources.Iss))
         .AddStandardResilienceHandler(options =>
         {
-            ConfigureStandardResilience(options);
+            ConfigureStandardResilience(options, moexOptions);
         })
         .Configure((options, sp) =>
         {
@@ -82,7 +82,7 @@ public static class MoexClientServiceCollectionExtensions
         services.AddHttpClient<MoexHttpAlgClient>((sp, client) =>
         {
             MoexOptions options = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
-            client.Timeout = options.RequestTimeout;
+            client.Timeout = Timeout.InfiniteTimeSpan;
         }).ConfigurePrimaryHttpMessageHandler(sp =>
         {
             var options = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
@@ -103,7 +103,7 @@ public static class MoexClientServiceCollectionExtensions
             MoexLogSources.Algopack))
         .AddStandardResilienceHandler(options =>
         {
-            ConfigureStandardResilience(options);
+            ConfigureStandardResilience(options, moexOptions);
         })
         .Configure((options, sp) =>
         {
@@ -118,7 +118,7 @@ public static class MoexClientServiceCollectionExtensions
         services.AddHttpClient<MoexHttpCalendarClient>((sp, client) =>
         {
             MoexOptions options = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
-            client.Timeout = options.RequestTimeout;
+            client.Timeout = Timeout.InfiniteTimeSpan;
         }).ConfigurePrimaryHttpMessageHandler(sp =>
         {
             MoexOptions options = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
@@ -139,7 +139,7 @@ public static class MoexClientServiceCollectionExtensions
             MoexLogSources.Calendar))
         .AddStandardResilienceHandler(options =>
         {
-            ConfigureStandardResilience(options);
+            ConfigureStandardResilience(options, moexOptions);
         })
         .Configure((options, sp) =>
         {
@@ -157,7 +157,7 @@ public static class MoexClientServiceCollectionExtensions
         services.AddHttpClient<MoexRealtimeRestClient>((sp, client) =>
         {
             MoexOptions options = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
-            client.Timeout = options.RequestTimeout;
+            client.Timeout = Timeout.InfiniteTimeSpan;
         }).ConfigurePrimaryHttpMessageHandler(sp =>
         {
             var options = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
@@ -178,7 +178,7 @@ public static class MoexClientServiceCollectionExtensions
             MoexLogSources.RealtimeRest))
         .AddStandardResilienceHandler(options =>
         {
-            ConfigureStandardResilience(options);
+            ConfigureStandardResilience(options, moexOptions);
         })
         .Configure((options, sp) =>
         {
@@ -194,7 +194,9 @@ public static class MoexClientServiceCollectionExtensions
     // ══════════════════════════════════════════════
     // Общая настройка resilience (timeout, retry, circuit breaker)
     // ══════════════════════════════════════════════
-    private static void ConfigureStandardResilience(HttpStandardResilienceOptions options)
+    private static void ConfigureStandardResilience(
+        HttpStandardResilienceOptions options,
+        MoexOptions moexOptions)
     {
         // ── Timeout budget ──
         // TotalRequestTimeout = 10 мин (весь запрос включая все retry).
@@ -204,9 +206,12 @@ public static class MoexClientServiceCollectionExtensions
         // При TotalRequestTimeout = 10 мин реально возможны 2–3 retry при длинном Retry-After,
         // а не 5 (дефолт MaxRetryAttempts). Это осознанное поведение:
         // лучше отдать управление вызывающему коду, чем зависнуть на 20 минут.
-        options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(10);
-        options.AttemptTimeout.Timeout = TimeSpan.FromMinutes(2);
-        options.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(5);
+        options.TotalRequestTimeout.Timeout = moexOptions.TotalRequestTimeout;
+        options.AttemptTimeout.Timeout = moexOptions.AttemptTimeout;
+        // Окно наблюдения размыкателя цепи (Polly CircuitBreaker) должно быть не меньше
+        // удвоенного предела одной попытки — таково требование библиотеки. Берём предел
+        // попытки плюс запас, чтобы одиночная медленная попытка не размыкала цепь ложно.
+        options.CircuitBreaker.SamplingDuration = moexOptions.AttemptTimeout + TimeSpan.FromMinutes(3);
         options.Retry.MaxRetryAttempts = MaxRetryAttempts;
 
         // Учитываем Retry-After из ответа сервера при 429 (rate limit).

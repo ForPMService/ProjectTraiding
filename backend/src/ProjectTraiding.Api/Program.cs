@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using ProjectTraiding.Api.Infrastructure;
 using ProjectTraiding.Management.Contracts;
 using ProjectTraiding.Management.DependencyInjection;
@@ -7,6 +8,7 @@ using ProjectTraiding.Moex.Endpoints;
 using ProjectTraiding.Moex.Infrastructure.DependencyInjection;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Loading;
+using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using ProjectTraiding.Observability.Infrastructure.DependencyInjection;
@@ -138,6 +140,14 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
+using (IServiceScope startupScope = app.Services.CreateScope())
+{
+    MoexOptions moexOptions = startupScope.ServiceProvider
+        .GetRequiredService<IOptions<MoexOptions>>().Value;
+    ILogger<Program> startupLogger = startupScope.ServiceProvider
+        .GetRequiredService<ILogger<Program>>();
+    MoexOptionsValidator.ValidateAndLog(moexOptions, startupLogger);
+}
 app.MapObservabilityEndpoints();
 app.MapMoexSyncEndpoints();
 app.MapCandlesLoadEndpoints();

@@ -132,6 +132,14 @@ namespace ProjectTraiding.Moex.Clients
             Level = LogLevel.Information,
             Message = "MOEX rate limit queued: endpoint={Endpoint}, waitMs={WaitMs}.")]
         public static partial void RateLimitQueued(ILogger logger, string endpoint, double waitMs);
+        [LoggerMessage(
+          EventId = 152,
+          EventName = "MoexOptionsApplied", Level = LogLevel.Information,
+          Message = "MOEX options applied: attemptTimeout={AttemptTimeout}, totalTimeout={TotalTimeout}, bodyReadTimeout={BodyReadTimeout}, maxRps={MaxRps}, maxConns={MaxConns}, maxPages={MaxPages}, workers={Workers}, algKeyConfigured={AlgKeyConfigured}.")]
+        public static partial void OptionsApplied(
+          ILogger logger,
+          TimeSpan attemptTimeout, TimeSpan totalTimeout, TimeSpan bodyReadTimeout,
+          int maxRps, int maxConns, int maxPages, int workers, bool algKeyConfigured);
 
     }
 

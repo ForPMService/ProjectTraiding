@@ -48,6 +48,20 @@ namespace ProjectTraiding.Moex.Options
         public int RateLimitQueueLimit { get; set; } = 64;
 
         /// <summary>
+        /// Предельное время ОДНОЙ попытки запроса — фазы до получения заголовков ответа.
+        /// Владелец предела — слой устойчивости (Polly AttemptTimeout), а не общий тайм-аут
+        /// клиента, который снят (равен бесконечности). Фазу чтения тела охраняет отдельный
+        /// BodyReadTimeout. Прежде это значение было зашито в коде как две минуты.
+        /// </summary>
+        public TimeSpan AttemptTimeout { get; set; } = TimeSpan.FromMinutes(2);
+
+        /// <summary>
+        /// Полный бюджет запроса вместе со всеми повторными попытками и ожиданиями между ними.
+        /// Владелец — слой устойчивости (Polly TotalRequestTimeout). По истечении управление
+        /// возвращается вызывающему коду. Прежде это значение было зашито в коде как десять минут.
+        /// </summary>
+        public TimeSpan TotalRequestTimeout { get; set; } = TimeSpan.FromMinutes(10);
+        /// <summary>
         /// Сколько запрос ждёт жетон, прежде чем получить отказ.
         /// Если за это время жетон не появился — MoexRateLimitRejectedException.
         /// 30 секунд — долго ждать одного жетона, значит что-то сильно не так.
