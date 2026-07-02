@@ -258,7 +258,7 @@ namespace ProjectTraiding.Moex.Clients
                 var timeoutEx = new MoexTimeoutException(
                     $"MOEX body read timeout for {method}", method, "body_read",
                     _options.BodyReadTimeout, ex);
-                MoexLogMessages.RequestFailed(_logger, timeoutEx, MoexLogSources.Algopack, method,
+                MoexLogMessages.RequestFailed(_logger, timeoutEx, MoexLogSources.Iss, method,
                     timeoutEx.ErrorCategory, null, timeoutEx.TimeoutSource, timeoutEx.Message);
                 throw timeoutEx;
             }
