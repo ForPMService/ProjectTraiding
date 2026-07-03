@@ -13,7 +13,7 @@ namespace ProjectTraiding.Moex.Endpoints
             // taskId принимаем строкой, а не {taskId:guid}: типизированный Guid в маршруте
             // тянет System.Guid в схему OpenAPI, для которой нет source-generated метаданных.
             // Строку парсим сами — заодно отдаём понятный 400 на битый идентификатор.
-            routes.MapPost("/operations/moex/load/candles/{taskId}", async (
+            routes.MapPost("/operations/moex/load-tasks/{taskId}/run", async (
                string taskId,
                LoadRunner runner,
                CancellationToken ct) =>
@@ -28,10 +28,10 @@ namespace ProjectTraiding.Moex.Endpoints
                     LoadStatus.NotFound => Results.NotFound(),
                     LoadStatus.NotClaimed => Results.StatusCode(StatusCodes.Status409Conflict),
                     LoadStatus.Failed => Results.Text(
-                        $"candles load failed: task={id} — диапазон превышает предел страниц, пересоздайте задачи меньшим окном (rows={outcome.RowsCovered.ToString(CultureInfo.InvariantCulture)})",
+                        $"load failed: task={id} — диапазон превышает предел страниц, пересоздайте задачи меньшим окном (rows={outcome.RowsCovered.ToString(CultureInfo.InvariantCulture)})",
                         "text/plain", statusCode: StatusCodes.Status422UnprocessableEntity),
                     LoadStatus.Done => Results.Text(
-                        $"candles load done: task={id}, rows={outcome.RowsCovered.ToString(CultureInfo.InvariantCulture)}",
+                         $"load done: task={id}, rows={outcome.RowsCovered.ToString(CultureInfo.InvariantCulture)}",
                         "text/plain"),
                     _ => Results.StatusCode(StatusCodes.Status500InternalServerError),
                 };

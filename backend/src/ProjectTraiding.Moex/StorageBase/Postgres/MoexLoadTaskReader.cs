@@ -52,6 +52,11 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         /// <summary>
         /// Атомарно берёт в работу самую старую задачу под ClickHouse в статусе pending
         /// (FIFO по created_at) и возвращает её идентификатор, либо null, если очереди нет.
+        /// Один запрос: подзапрос блокирует строку с пропуском уже заблокированных другими
+        /// дорожками (FOR UPDATE SKIP LOCKED), внешний UPDATE переводит её в running и чистит
+        /// хвост прошлой попытки. Несколько дорожек берут разные задачи без холостых проигрышей.
+        /// Вид данных здесь не различается — маршрутизацию по data_kind делает координатор.
+        /// </summary>
         public async Task<Guid?> ClaimNextPendingTaskIdAsync(CancellationToken ct)
         {
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);

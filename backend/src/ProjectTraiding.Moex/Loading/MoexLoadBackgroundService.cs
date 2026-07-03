@@ -7,9 +7,9 @@ using System.Text;
 namespace ProjectTraiding.Moex.Loading
 {
     /// <summary>
-    /// Фоновый исполнитель загрузок: подбирает ожидающие свечные задачи из moex_load_tasks
-    /// и гонит их через LoadRunner. Убирает ручной запуск — оператор создаёт задачу
-    /// командой Management, исполнитель сам её подхватывает.
+    /// Фоновый исполнитель загрузок: подбирает ожидающие задачи любого вида из moex_load_tasks
+    /// и гонит их через LoadRunner. Оператор создаёт задачу командой Management, исполнитель
+    /// сам её подхватывает.
     /// Берёт зависимости через область видимости на итерацию (сам — одиночка, runner/reader — Transient).
     /// Прерывание корректно на границе пачки (токен прокинут вглубь загрузки).
     /// Сбой одной задачи не валит сервис: RunAsync помечает error, исполнитель идёт дальше.
@@ -104,13 +104,13 @@ namespace ProjectTraiding.Moex.Loading
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                // Остановка посреди загрузки. RunAsync уже пометил задачу cancelled.
+                // Остановка посреди загрузки. RunAsync уже вернул задачу в очередь (pending).
                 // Пробрасываем, чтобы внешний цикл штатно завершился.
                 throw;
             }
             catch (Exception)
             {
-                // Сбой загрузки. RunAsync уже вернул задачу в очередь (pending).
+                // Сбой загрузки. RunAsync уже пометил задачу error и записал причину.
                 // Исполнитель не падает — берёт следующую.
                 MoexLoadTaskLogMessages.BackgroundTaskFailed(_logger, taskId.Value);
             }
