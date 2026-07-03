@@ -33,15 +33,7 @@ builder.Services.AddRawCapture(builder.Configuration);
 builder.Services.AddVitrine();
 builder.Services.AddManagement();
 builder.Services.AddMoexLoading(builder.Configuration);
-builder.Services.AddHostedService(sp =>
-{
-    MoexOptions moexOptions = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
-    return new MoexLoadBackgroundService(
-        sp.GetRequiredService<IServiceScopeFactory>(),
-        sp.GetRequiredService<ILogger<MoexLoadBackgroundService>>(),
-        TimeSpan.FromSeconds(moexOptions.PollIntervalSeconds),
-        moexOptions.LoadWorkerConcurrency);
-});
+
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default);
