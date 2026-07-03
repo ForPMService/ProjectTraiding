@@ -125,11 +125,15 @@ builder.Services.AddTransient<MoexLoadedRangeWriter>();
 builder.Services.AddScoped<ILoadHandler, CandlesLoadHandler>();
 builder.Services.AddScoped<LoadHandlerDispatcher>();
 builder.Services.AddScoped<LoadRunner>();
-builder.Services.AddHostedService(sp => new CandlesLoadBackgroundService(
-    sp.GetRequiredService<IServiceScopeFactory>(),
-    sp.GetRequiredService<ILogger<CandlesLoadBackgroundService>>(),
-    TimeSpan.FromSeconds(builder.Configuration.GetValue<int>("Loading:PollIntervalSeconds", 5)),
-    builder.Configuration.GetValue<int>("Moex:LoadWorkerConcurrency", 4)));
+builder.Services.AddHostedService(sp =>
+{
+    MoexOptions moexOptions = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
+    return new CandlesLoadBackgroundService(
+        sp.GetRequiredService<IServiceScopeFactory>(),
+        sp.GetRequiredService<ILogger<CandlesLoadBackgroundService>>(),
+        TimeSpan.FromSeconds(moexOptions.PollIntervalSeconds),
+        moexOptions.LoadWorkerConcurrency);
+});
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default);
@@ -147,6 +151,10 @@ using (IServiceScope startupScope = app.Services.CreateScope())
     ILogger<Program> startupLogger = startupScope.ServiceProvider
         .GetRequiredService<ILogger<Program>>();
     MoexOptionsValidator.ValidateAndLog(moexOptions, startupLogger);
+
+    RawCaptureOptions rawCaptureOptions = startupScope.ServiceProvider
+        .GetRequiredService<IOptions<RawCaptureOptions>>().Value;
+    RawCaptureOptionsValidator.Validate(rawCaptureOptions);
 }
 app.MapObservabilityEndpoints();
 app.MapMoexSyncEndpoints();

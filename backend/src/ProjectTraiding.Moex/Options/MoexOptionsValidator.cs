@@ -21,24 +21,34 @@ namespace ProjectTraiding.Moex.Options
             if (options.TotalRequestTimeout <= TimeSpan.Zero)
                 throw new InvalidOperationException("Moex:TotalRequestTimeout должен быть положительным.");
 
-            if (options.TotalRequestTimeout < options.AttemptTimeout)
-                throw new InvalidOperationException(
-                    "Moex:TotalRequestTimeout не может быть меньше Moex:AttemptTimeout.");
-
             if (options.BodyReadTimeout <= TimeSpan.Zero)
                 throw new InvalidOperationException("Moex:BodyReadTimeout должен быть положительным.");
 
-            if (options.RequestTimeout <= TimeSpan.Zero)
-                throw new InvalidOperationException("Moex:RequestTimeout должен быть положительным.");
+            if (options.RateLimitAcquireTimeout <= TimeSpan.Zero)
+                throw new InvalidOperationException("Moex:RateLimitAcquireTimeout должен быть положительным.");
 
-            if (options.MaxRequestsPerSecond <= 0)
-                throw new InvalidOperationException("Moex:MaxRequestsPerSecond должен быть положительным.");
+            // Иерархия тайм-аутов: ожидание жетона ≤ одна попытка ≤ полный бюджет запроса.
+            // Нарушение — ошибка конфигурации, обрывающая старт (правило иерархии времени).
+            if (options.RateLimitAcquireTimeout > options.AttemptTimeout)
+                throw new InvalidOperationException(
+                    "Moex:RateLimitAcquireTimeout не может превышать Moex:AttemptTimeout.");
+
+            if (options.AttemptTimeout > options.TotalRequestTimeout)
+                throw new InvalidOperationException(
+                    "Moex:AttemptTimeout не может превышать Moex:TotalRequestTimeout.");
+
+            if (options.MaxRequestsPerSecond is < 1 or > 10)
+                throw new InvalidOperationException(
+                    "Moex:MaxRequestsPerSecond должен быть в диапазоне от 1 до 10.");
 
             if (options.MaxConnectionsPerServer <= 0)
                 throw new InvalidOperationException("Moex:MaxConnectionsPerServer должен быть положительным.");
 
             if (options.MaxPagesPerLoad <= 0)
                 throw new InvalidOperationException("Moex:MaxPagesPerLoad должен быть положительным.");
+
+            if (options.PollIntervalSeconds <= 0)
+                throw new InvalidOperationException("Moex:PollIntervalSeconds должен быть положительным.");
 
             if (options.LoadWorkerConcurrency <= 0)
                 throw new InvalidOperationException("Moex:LoadWorkerConcurrency должен быть положительным.");
@@ -53,6 +63,7 @@ namespace ProjectTraiding.Moex.Options
                 options.AttemptTimeout,
                 options.TotalRequestTimeout,
                 options.BodyReadTimeout,
+                options.PollIntervalSeconds,
                 options.MaxRequestsPerSecond,
                 options.MaxConnectionsPerServer,
                 options.MaxPagesPerLoad,

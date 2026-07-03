@@ -16,8 +16,6 @@ namespace ProjectTraiding.Moex.Options
         /// <summary>Bearer-токен для APIM. Через user-secrets или переменные окружения.</summary>
         public string AlgKey { get; set; } = string.Empty;
 
-        /// <summary>Таймаут одного HTTP-запроса.</summary>
-        public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
         /// <summary>
         /// Предельное время на ЧТЕНИЕ тела ответа (фаза после получения заголовков).
@@ -34,8 +32,8 @@ namespace ProjectTraiding.Moex.Options
 
         /// <summary>
         /// Максимум HTTP-запросов к MOEX в секунду (все клиенты суммарно).
-        /// MOEX ≈ 10 req/sec на IP (частная переписка, май 2026).
-        /// Ставим 8, чтобы оставить запас и не ходить по краю.
+        /// MOEX ≈ 10 req/sec на IP (частная переписка, май 2026). Держим на верхней границе 10;
+        /// проверка настроек не пропускает значения вне диапазона от одного до десяти.
         /// </summary>
         public int MaxRequestsPerSecond { get; set; } = 10;
 
@@ -75,5 +73,13 @@ namespace ProjectTraiding.Moex.Options
         /// Не должно превышать MaxConnectionsPerServer (пул соединений).
         /// </summary>
         public int LoadWorkerConcurrency { get; set; } = 4;
+
+        /// <summary>
+        /// Интервал опроса очереди задач фоновым исполнителем, в секундах. Прежде читался
+        /// напрямую из конфигурации мимо настроек; теперь принадлежит настройкам, как того
+        /// требует правило «конфигурация — только через настройки». Пустая очередь опрашивается
+        /// с этим интервалом; при наличии задач исполнитель берёт следующую сразу.
+        /// </summary>
+        public int PollIntervalSeconds { get; set; } = 5;
     }
 }
