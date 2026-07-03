@@ -10,8 +10,9 @@ namespace ProjectTraiding.Api.Infrastructure
             {
                 throw new InvalidOperationException("Connection string 'ClickHouseDb' not found.");
             }
-            ClickHouseClient connection = new ClickHouseClient(connectionString);
-            services.AddSingleton(connection);
+            // Регистрация фабрикой, а не готовым экземпляром: так контейнер владеет жизненным
+            // циклом единственного клиента и освобождает его при остановке приложения.
+            services.AddSingleton<ClickHouseClient>(_ => new ClickHouseClient(connectionString));
             return services;
         }
     }

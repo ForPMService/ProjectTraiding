@@ -33,7 +33,7 @@ namespace ProjectTraiding.Moex.Loading
             && task.CandleInterval is not null
             && _writersByInterval.ContainsKey(task.CandleInterval.Value);
 
-        public async Task<CandlesWriteSummary> LoadAsync(
+        public async Task<RowWriteSummary> LoadAsync(
             MoexLoadTask task, LoadStopOutcome stopOutcome, CancellationToken ct)
         {
             RowWriter<CandlesDTO> writer = _writersByInterval[task.CandleInterval!.Value];

@@ -22,6 +22,6 @@ namespace ProjectTraiding.Moex.Loading
         /// Тянет данные вида и пишет их в ClickHouse. stopOutcome заполняется методом клиента
         /// в точке остановки; координатор читает его после. Возвращает итог записи.
         /// </summary>
-        Task<CandlesWriteSummary> LoadAsync(MoexLoadTask task, LoadStopOutcome stopOutcome, CancellationToken ct);
+        Task<RowWriteSummary> LoadAsync(MoexLoadTask task, LoadStopOutcome stopOutcome, CancellationToken ct);
     }
 }

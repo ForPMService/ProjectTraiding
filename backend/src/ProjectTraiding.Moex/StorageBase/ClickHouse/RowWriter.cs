@@ -41,7 +41,7 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
         /// объём (RowsRead), отчёт драйвера (RowsInsertedReported) и токен последней пачки.
         /// Нарезка детерминирована (сквозной счёт от начала диапазона).
         /// </summary>
-        public async Task<CandlesWriteSummary> WriteRangeAsync(
+        public async Task<RowWriteSummary> WriteRangeAsync(
             string secid,
             string sourceContractVersion,
             string writerVersion,
@@ -90,7 +90,7 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
             }
 
             ClickHouseWriterLogMessages.RangeWritten(_logger, secid, rowsRead, rowsInsertedReported);
-            return new CandlesWriteSummary(rowsRead, rowsInsertedReported, lastToken);
+            return new RowWriteSummary(rowsRead, rowsInsertedReported, lastToken);
         }
 
         private async Task<(string Token, long Reported)> FlushAsync(

@@ -8,22 +8,22 @@ namespace ProjectTraiding.Moex.Loading
 {
     /// <summary>
     /// Фоновый исполнитель загрузок: подбирает ожидающие свечные задачи из moex_load_tasks
-    /// и гонит их через CandlesLoadRunner. Убирает ручной запуск — оператор создаёт задачу
+    /// и гонит их через LoadRunner. Убирает ручной запуск — оператор создаёт задачу
     /// командой Management, исполнитель сам её подхватывает.
     /// Берёт зависимости через область видимости на итерацию (сам — одиночка, runner/reader — Transient).
     /// Прерывание корректно на границе пачки (токен прокинут вглубь загрузки).
     /// Сбой одной задачи не валит сервис: RunAsync помечает error, исполнитель идёт дальше.
     /// </summary>
-    public sealed class CandlesLoadBackgroundService : BackgroundService
+    public sealed class MoexLoadBackgroundService : BackgroundService
     {
         private readonly IServiceScopeFactory _scopeFactory;
-        private readonly ILogger<CandlesLoadBackgroundService> _logger;
+        private readonly ILogger<MoexLoadBackgroundService> _logger;
         private readonly TimeSpan _pollInterval;
         private readonly int _concurrency;
 
-        public CandlesLoadBackgroundService(
+        public MoexLoadBackgroundService(
             IServiceScopeFactory scopeFactory,
-            ILogger<CandlesLoadBackgroundService> logger,
+            ILogger<MoexLoadBackgroundService> logger,
             TimeSpan pollInterval,
             int concurrency)
         {
@@ -110,7 +110,7 @@ namespace ProjectTraiding.Moex.Loading
             }
             catch (Exception)
             {
-                // Сбой загрузки. RunAsync уже пометил задачу error и записал причину.
+                // Сбой загрузки. RunAsync уже вернул задачу в очередь (pending).
                 // Исполнитель не падает — берёт следующую.
                 MoexLoadTaskLogMessages.BackgroundTaskFailed(_logger, taskId.Value);
             }

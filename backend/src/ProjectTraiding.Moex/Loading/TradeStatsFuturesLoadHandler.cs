@@ -23,7 +23,7 @@ namespace ProjectTraiding.Moex.Loading
         public bool CanHandle(MoexLoadTask task) =>
             task.DataKind == "tradestats" && task.Market == "futures";
 
-        public async Task<CandlesWriteSummary> LoadAsync(
+        public async Task<RowWriteSummary> LoadAsync(
             MoexLoadTask task, LoadStopOutcome stopOutcome, CancellationToken ct)
         {
             string method = BuildMethod(task);

@@ -6,9 +6,9 @@ using System.Text;
 
 namespace ProjectTraiding.Moex.Endpoints
 {
-    public static class CandlesLoadEndpoints
+    public static class MoexLoadRunEndpoints
     {
-        public static IEndpointRouteBuilder MapCandlesLoadEndpoints(this IEndpointRouteBuilder routes)
+        public static IEndpointRouteBuilder MapMoexLoadRunEndpoints(this IEndpointRouteBuilder routes)
         {
             // taskId принимаем строкой, а не {taskId:guid}: типизированный Guid в маршруте
             // тянет System.Guid в схему OpenAPI, для которой нет source-generated метаданных.

@@ -68,7 +68,7 @@ namespace ProjectTraiding.Moex.Loading
             {
                 LoadStopOutcome stopOutcome = new LoadStopOutcome();
 
-                CandlesWriteSummary summary = await handler.LoadAsync(task, stopOutcome, ct);
+                RowWriteSummary summary = await handler.LoadAsync(task, stopOutcome, ct);
 
                 // Настоящая причина из потока; пустой держатель трактуем как штатное исчерпание.
                 string stopReason = stopOutcome.StopReason ?? "range_exhausted";
