@@ -8,5 +8,5 @@ namespace ProjectTraiding.Management.Contracts.Dto
         int ExpandedCount,
         int InsertedCount,
         int SkippedDuplicateCount,
-        int SliceWeeks);
+        int? SliceWeeks);
 }

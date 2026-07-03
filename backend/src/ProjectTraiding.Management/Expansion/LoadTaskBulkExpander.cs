@@ -9,8 +9,6 @@ namespace ProjectTraiding.Management.Expansion
     {
         public static IReadOnlyList<LoadTaskCreateRequest> Expand(LoadTaskBulkCreateRequest request)
         {
-            int normalizedSliceWeeks = (request.SliceWeeks < 1) ? 1 : request.SliceWeeks;
-            int sliceDays = normalizedSliceWeeks * 7;
             List<LoadTaskCreateRequest> tasks = new();
 
             for (int instrumentIndex = 0; instrumentIndex < request.Instruments.Count; instrumentIndex++)
@@ -22,28 +20,54 @@ namespace ProjectTraiding.Management.Expansion
 
                 for (int intervalIndex = 0; intervalIndex < request.CandleIntervals.Length; intervalIndex++)
                 {
+                    int candleWeeks = ResolveSliceWeeks(request.SliceWeeks, "candles", instrument.Market);
                     AddWindows(
                         tasks,
                         instrument,
                         dataKind: "candles",
                         candleInterval: request.CandleIntervals[intervalIndex],
                         storageTarget: request.StorageTarget,
-                        sliceDays: sliceDays);
+                        sliceDays: candleWeeks * 7);
                 }
 
                 for (int dataKindIndex = 0; dataKindIndex < dataKinds.Length; dataKindIndex++)
                 {
+                    string dataKind = dataKinds[dataKindIndex];
+                    int weeks = ResolveSliceWeeks(request.SliceWeeks, dataKind, instrument.Market);
                     AddWindows(
                         tasks,
                         instrument,
-                        dataKind: dataKinds[dataKindIndex],
+                        dataKind: dataKind,
                         candleInterval: null,
                         storageTarget: request.StorageTarget,
-                        sliceDays: sliceDays);
+                        sliceDays: weeks * 7);
                 }
             }
 
             return tasks;
+        }
+
+        /// <summary>
+        /// Ширина окна нарезки в неделях для конкретной пары «вид данных × рынок».
+        /// Если оператор задал ширину явно — используется она (не меньше одной недели) для всех
+        /// видов. Если не задал (значение отсутствует) — применяется правило по умолчанию:
+        /// узкое недельное окно для медленной статистики заявок по акциям и широкое годовое
+        /// окно для остальных видов. Инструмент правилом не различается — только вид и рынок.
+        /// </summary>
+        private static int ResolveSliceWeeks(int? requestedWeeks, string dataKind, string market)
+        {
+            if (requestedWeeks.HasValue)
+                return requestedWeeks.Value < 1 ? 1 : requestedWeeks.Value;
+
+            return GetDefaultSliceWeeks(dataKind, market);
+        }
+
+        private static int GetDefaultSliceWeeks(string dataKind, string market)
+        {
+            if (dataKind == "orderstats" && market == "stock")
+                return 1;
+
+            return 52;
         }
 
         private static void AddWindows(

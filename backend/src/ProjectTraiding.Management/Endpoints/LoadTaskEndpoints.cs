@@ -88,7 +88,9 @@ namespace ProjectTraiding.Management.Endpoints
                     return Results.BadRequest(errors);
                 }
 
-                int normalizedSliceWeeks = (request.SliceWeeks < 1) ? 1 : request.SliceWeeks;
+                int? normalizedSliceWeeks = request.SliceWeeks.HasValue
+                   ? (request.SliceWeeks.Value < 1 ? 1 : request.SliceWeeks.Value)
+                   : (int?)null;
                 IReadOnlyList<LoadTaskCreateRequest> tasks = LoadTaskBulkExpander.Expand(request);
 
                 ValidationResult validation = ValidateBulkExpandedTasks(tasks);

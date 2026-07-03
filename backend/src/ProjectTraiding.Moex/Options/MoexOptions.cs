@@ -51,14 +51,14 @@ namespace ProjectTraiding.Moex.Options
         /// клиента, который снят (равен бесконечности). Фазу чтения тела охраняет отдельный
         /// BodyReadTimeout. Прежде это значение было зашито в коде как две минуты.
         /// </summary>
-        public TimeSpan AttemptTimeout { get; set; } = TimeSpan.FromMinutes(2);
+        public TimeSpan AttemptTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
         /// <summary>
         /// Полный бюджет запроса вместе со всеми повторными попытками и ожиданиями между ними.
         /// Владелец — слой устойчивости (Polly TotalRequestTimeout). По истечении управление
         /// возвращается вызывающему коду. Прежде это значение было зашито в коде как десять минут.
         /// </summary>
-        public TimeSpan TotalRequestTimeout { get; set; } = TimeSpan.FromMinutes(10);
+        public TimeSpan TotalRequestTimeout { get; set; } = TimeSpan.FromMinutes(5);
         /// <summary>
         /// Сколько запрос ждёт жетон, прежде чем получить отказ.
         /// Если за это время жетон не появился — MoexRateLimitRejectedException.
