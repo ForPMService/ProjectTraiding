@@ -45,7 +45,7 @@ namespace ProjectTraiding.Moex.Loading
                 : RawCaptureMarkets.Futures;
 
             IAsyncEnumerable<List<CandlesDTO>> pages = _client.GetCandles(
-                method, query, captureMarket: captureMarket, secid: task.Secid,
+                method, query, runId: task.Id.ToString("N"), captureMarket: captureMarket, secid: task.Secid,
                 stopOutcome: stopOutcome, cancellationToken: ct);
 
             return await writer.WriteRangeAsync(

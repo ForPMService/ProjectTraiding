@@ -92,7 +92,13 @@ namespace ProjectTraiding.Moex.Clients
                 ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
                 + "-" + Guid.NewGuid().ToString("N");
 
-            using var accumulator = new RawCaptureAccumulator(_captureWriter);
+            var accumulator = new RawCaptureAccumulator(
+                _captureWriter,
+                RawCaptureClients.Alg,
+                RawCaptureDataTypes.Candles,
+                captureMarket,
+                secid,
+                effectiveRunId);
             int pagesElapsed = 0;
             int totalRows = 0;
 
@@ -135,7 +141,7 @@ namespace ProjectTraiding.Moex.Clients
                     try
                     {
                         candlesList = ParsingAlgUtf8.ParseAlgCandles(rentedArr.Span);
-                        accumulator.AppendPage(rentedArr.Memory);
+                        await accumulator.AppendPageAsync(rentedArr.Memory, pagesElapsed, cancellationToken);
                     }
                     catch (MoexSchemaMismatchException ex)
                     {
@@ -184,13 +190,6 @@ namespace ProjectTraiding.Moex.Clients
             activity?.SetTag("total_pages", pagesElapsed);
             activity?.SetTag("total_rows", totalRows);
 
-            await accumulator.FlushNdjsonAsync(
-                RawCaptureClients.Alg,
-                RawCaptureDataTypes.Candles,
-                captureMarket,
-                secid,
-                effectiveRunId,
-                cancellationToken);
         }
 
         // ═══════════════════════════════════════════════════════════
@@ -218,7 +217,13 @@ namespace ProjectTraiding.Moex.Clients
                 ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
                 + "-" + Guid.NewGuid().ToString("N");
 
-            using var accumulator = new RawCaptureAccumulator(_captureWriter);
+            var accumulator = new RawCaptureAccumulator(
+                _captureWriter,
+                RawCaptureClients.Alg,
+                RawCaptureDataTypes.TradeStats,
+                RawCaptureMarkets.Stock,
+                secid,
+                effectiveRunId);
             int pagesElapsed = 0;
             int totalRows = 0;
             while (true)
@@ -261,7 +266,7 @@ namespace ProjectTraiding.Moex.Clients
                     try
                     {
                         tradeStats = ParsingAlgUtf8.ParseTradeStatsStock(rentedArr.Span, out cursor);
-                        accumulator.AppendPage(rentedArr.Memory);
+                        await accumulator.AppendPageAsync(rentedArr.Memory, pagesElapsed, cancellationToken);
                     }
                     catch (MoexSchemaMismatchException ex)
                     {
@@ -307,13 +312,6 @@ namespace ProjectTraiding.Moex.Clients
             activity?.SetTag("total_pages", pagesElapsed);
             activity?.SetTag("total_rows", totalRows);
 
-            await accumulator.FlushNdjsonAsync(
-                RawCaptureClients.Alg,
-                RawCaptureDataTypes.TradeStats,
-                RawCaptureMarkets.Stock,
-                secid,
-                effectiveRunId,
-                cancellationToken);
         }
 
         public async IAsyncEnumerable<List<SuperCandlesFuturesTradeStats5mDTO>> GetSuperCandlesFuturesTradeStats5m(
@@ -337,7 +335,13 @@ namespace ProjectTraiding.Moex.Clients
                 ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
                 + "-" + Guid.NewGuid().ToString("N");
 
-            using var accumulator = new RawCaptureAccumulator(_captureWriter);
+            var accumulator = new RawCaptureAccumulator(
+                _captureWriter,
+                RawCaptureClients.Alg,
+                RawCaptureDataTypes.TradeStats,
+                RawCaptureMarkets.Futures,
+                secid,
+                effectiveRunId);
             int pagesElapsed = 0;
             int totalRows = 0;
             while (true)
@@ -379,7 +383,7 @@ namespace ProjectTraiding.Moex.Clients
                         throw;
                     }
 
-                    accumulator.AppendPage(rentedArr.Memory);
+                    await accumulator.AppendPageAsync(rentedArr.Memory, pagesElapsed, cancellationToken);
                 }
 
                 pagesElapsed++;
@@ -407,13 +411,6 @@ namespace ProjectTraiding.Moex.Clients
             activity?.SetTag("total_pages", pagesElapsed);
             activity?.SetTag("total_rows", totalRows);
 
-            await accumulator.FlushNdjsonAsync(
-                RawCaptureClients.Alg,
-                RawCaptureDataTypes.TradeStats,
-                RawCaptureMarkets.Futures,
-                secid,
-                effectiveRunId,
-                cancellationToken);
         }
 
         public async IAsyncEnumerable<List<SuperCandlesOrderBookStats5mDTO>> GetSuperCandlesOrderBookStats5m(
@@ -432,7 +429,13 @@ namespace ProjectTraiding.Moex.Clients
             queryParams["iss.only"] = "data,data.cursor";
             queryParams["data.columns"] = ColumnAndNumbersForParsing.AlgOrderBookStats5mSchema.BuildColumnsParam();
             string effectiveRunId = runId ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + "-" + Guid.NewGuid().ToString("N");
-            using var accumulator = new RawCaptureAccumulator(_captureWriter);
+            var accumulator = new RawCaptureAccumulator(
+                _captureWriter,
+                RawCaptureClients.Alg,
+                RawCaptureDataTypes.OBStats,
+                RawCaptureMarkets.Stock,
+                secid,
+                effectiveRunId);
             int pagesElapsed = 0; int totalRows = 0;
             while (true)
             {
@@ -464,7 +467,7 @@ namespace ProjectTraiding.Moex.Clients
                         throw;
                     }
 
-                    accumulator.AppendPage(rentedArr.Memory);
+                    await accumulator.AppendPageAsync(rentedArr.Memory, pagesElapsed, cancellationToken);
                 }
                 pagesElapsed++; totalRows += orderBookStats.Count;
                 MoexLogMessages.PageReceived(_logger, method, pagesElapsed, orderBookStats.Count, Stopwatch.GetElapsedTime(pageStart));
@@ -490,13 +493,6 @@ namespace ProjectTraiding.Moex.Clients
             activity?.SetTag("total_pages", pagesElapsed);
             activity?.SetTag("total_rows", totalRows);
 
-            await accumulator.FlushNdjsonAsync(
-                RawCaptureClients.Alg,
-                RawCaptureDataTypes.OBStats,
-                RawCaptureMarkets.Stock,
-                secid,
-                effectiveRunId,
-                cancellationToken);
         }
 
         public async IAsyncEnumerable<List<SuperCandlesFuturesOrderBookStats5mDTO>> GetSuperCandlesFuturesOrderBookStats5m(
@@ -515,7 +511,13 @@ namespace ProjectTraiding.Moex.Clients
             queryParams["iss.only"] = "data,data.cursor";
             queryParams["data.columns"] = ColumnAndNumbersForParsing.AlgFuturesOrderBookSchema.BuildColumnsParam();
             string effectiveRunId = runId ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + "-" + Guid.NewGuid().ToString("N");
-            using var accumulator = new RawCaptureAccumulator(_captureWriter);
+            var accumulator = new RawCaptureAccumulator(
+                _captureWriter,
+                RawCaptureClients.Alg,
+                RawCaptureDataTypes.OBStats,
+                RawCaptureMarkets.Futures,
+                secid,
+                effectiveRunId);
             int pagesElapsed = 0; int totalRows = 0;
             while (true)
             {
@@ -547,7 +549,7 @@ namespace ProjectTraiding.Moex.Clients
                         throw;
                     }
 
-                    accumulator.AppendPage(rentedArr.Memory);
+                    await accumulator.AppendPageAsync(rentedArr.Memory, pagesElapsed, cancellationToken);
                 }
                 pagesElapsed++; totalRows += orderBookStats.Count;
                 MoexLogMessages.PageReceived(_logger, method, pagesElapsed, orderBookStats.Count, Stopwatch.GetElapsedTime(pageStart));
@@ -573,13 +575,6 @@ namespace ProjectTraiding.Moex.Clients
             activity?.SetTag("total_pages", pagesElapsed);
             activity?.SetTag("total_rows", totalRows);
 
-            await accumulator.FlushNdjsonAsync(
-                RawCaptureClients.Alg,
-                RawCaptureDataTypes.OBStats,
-                RawCaptureMarkets.Futures,
-                secid,
-                effectiveRunId,
-                cancellationToken);
         }
 
         public async IAsyncEnumerable<List<SuperCandlesOrderStats5mDTO>> GetSuperCandlesOrderStats5m(
@@ -598,7 +593,13 @@ namespace ProjectTraiding.Moex.Clients
             queryParams["iss.only"] = "data,data.cursor";
             queryParams["data.columns"] = ColumnAndNumbersForParsing.AlgOrderStats5mSchema.BuildColumnsParam();
             string effectiveRunId = runId ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + "-" + Guid.NewGuid().ToString("N");
-            using var accumulator = new RawCaptureAccumulator(_captureWriter);
+            var accumulator = new RawCaptureAccumulator(
+                _captureWriter,
+                RawCaptureClients.Alg,
+                RawCaptureDataTypes.OrderStats,
+                RawCaptureMarkets.Stock,
+                secid,
+                effectiveRunId);
             int pagesElapsed = 0; int totalRows = 0;
             while (true)
             {
@@ -630,7 +631,7 @@ namespace ProjectTraiding.Moex.Clients
                         throw;
                     }
 
-                    accumulator.AppendPage(rentedArr.Memory);
+                    await accumulator.AppendPageAsync(rentedArr.Memory, pagesElapsed, cancellationToken);
                 }
                 pagesElapsed++; totalRows += orderStats.Count;
                 MoexLogMessages.PageReceived(_logger, method, pagesElapsed, orderStats.Count, Stopwatch.GetElapsedTime(pageStart));
@@ -656,13 +657,6 @@ namespace ProjectTraiding.Moex.Clients
             activity?.SetTag("total_pages", pagesElapsed);
             activity?.SetTag("total_rows", totalRows);
 
-            await accumulator.FlushNdjsonAsync(
-                RawCaptureClients.Alg,
-                RawCaptureDataTypes.OrderStats,
-                RawCaptureMarkets.Stock,
-                secid,
-                effectiveRunId,
-                cancellationToken);
         }
 
         // ═══════════════════════════════════════════════════════════
@@ -713,7 +707,13 @@ namespace ProjectTraiding.Moex.Clients
             queryParams.Remove("start");
             queryParams.Remove("offset");
 
-            using var accumulator = new RawCaptureAccumulator(_captureWriter);
+            var accumulator = new RawCaptureAccumulator(
+                _captureWriter,
+                RawCaptureClients.Alg,
+                RawCaptureDataTypes.Futoi,
+                RawCaptureMarkets.Futures,
+                secid,
+                effectiveRunId);
             int dayIndex = 0;
             int totalRows = 0;
 
@@ -760,7 +760,7 @@ namespace ProjectTraiding.Moex.Clients
                     try
                     {
                         page = ParsingAlgUtf8.ParseFutoi(rentedArr.Span);
-                        accumulator.AppendPage(rentedArr.Memory);
+                        await accumulator.AppendPageAsync(rentedArr.Memory, dayIndex, cancellationToken);
                     }
                     catch (MoexSchemaMismatchException ex)
                     {
@@ -807,13 +807,6 @@ namespace ProjectTraiding.Moex.Clients
             activity?.SetTag("total_pages", dayIndex);
             activity?.SetTag("total_rows", totalRows);
 
-            await accumulator.FlushNdjsonAsync(
-                RawCaptureClients.Alg,
-                RawCaptureDataTypes.Futoi,
-                RawCaptureMarkets.Futures,
-                secid,
-                effectiveRunId,
-                cancellationToken);
         }
 
         // ═══════════════════════════════════════════════════════════
@@ -836,7 +829,13 @@ namespace ProjectTraiding.Moex.Clients
             queryParams["iss.only"] = "data,data.cursor";
             queryParams["data.columns"] = ColumnAndNumbersForParsing.Hi2AssetSchema.BuildColumnsParam();
             string effectiveRunId = runId ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + "-" + Guid.NewGuid().ToString("N");
-            using var accumulator = new RawCaptureAccumulator(_captureWriter);
+            var accumulator = new RawCaptureAccumulator(
+                _captureWriter,
+                RawCaptureClients.Alg,
+                RawCaptureDataTypes.Hi2,
+                RawCaptureMarkets.Stock,
+                secid,
+                effectiveRunId);
             int pagesElapsed = 0; int totalRows = 0;
             while (true)
             {
@@ -868,7 +867,7 @@ namespace ProjectTraiding.Moex.Clients
                         throw;
                     }
 
-                    accumulator.AppendPage(rentedArr.Memory);
+                    await accumulator.AppendPageAsync(rentedArr.Memory, pagesElapsed, cancellationToken);
                 }
                 pagesElapsed++; totalRows += hi2Assets.Count;
                 MoexLogMessages.PageReceived(_logger, method, pagesElapsed, hi2Assets.Count, Stopwatch.GetElapsedTime(pageStart));
@@ -894,13 +893,6 @@ namespace ProjectTraiding.Moex.Clients
             activity?.SetTag("total_pages", pagesElapsed);
             activity?.SetTag("total_rows", totalRows);
 
-            await accumulator.FlushNdjsonAsync(
-                RawCaptureClients.Alg,
-                RawCaptureDataTypes.Hi2,
-                RawCaptureMarkets.Stock,
-                secid,
-                effectiveRunId,
-                cancellationToken);
         }
 
         public async IAsyncEnumerable<List<Hi2FuturesDTO>> GetHi2Futures5m(
@@ -919,7 +911,13 @@ namespace ProjectTraiding.Moex.Clients
             queryParams["iss.only"] = "data,data.cursor";
             queryParams["data.columns"] = ColumnAndNumbersForParsing.Hi2FuturesSchema.BuildColumnsParam();
             string effectiveRunId = runId ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + "-" + Guid.NewGuid().ToString("N");
-            using var accumulator = new RawCaptureAccumulator(_captureWriter);
+            var accumulator = new RawCaptureAccumulator(
+                _captureWriter,
+                RawCaptureClients.Alg,
+                RawCaptureDataTypes.Hi2,
+                RawCaptureMarkets.Futures,
+                secid,
+                effectiveRunId);
             int pagesElapsed = 0; int totalRows = 0;
             while (true)
             {
@@ -951,7 +949,7 @@ namespace ProjectTraiding.Moex.Clients
                         throw;
                     }
 
-                    accumulator.AppendPage(rentedArr.Memory);
+                    await accumulator.AppendPageAsync(rentedArr.Memory, pagesElapsed, cancellationToken);
                 }
                 pagesElapsed++; totalRows += hi2Futures.Count;
                 MoexLogMessages.PageReceived(_logger, method, pagesElapsed, hi2Futures.Count, Stopwatch.GetElapsedTime(pageStart));
@@ -977,13 +975,6 @@ namespace ProjectTraiding.Moex.Clients
             activity?.SetTag("total_pages", pagesElapsed);
             activity?.SetTag("total_rows", totalRows);
 
-            await accumulator.FlushNdjsonAsync(
-                RawCaptureClients.Alg,
-                RawCaptureDataTypes.Hi2,
-                RawCaptureMarkets.Futures,
-                secid,
-                effectiveRunId,
-                cancellationToken);
         }
 
         // ═══════════════════════════════════════════════════════════
@@ -1006,7 +997,13 @@ namespace ProjectTraiding.Moex.Clients
             queryParams["iss.only"] = "data,data.cursor";
             queryParams["data.columns"] = ColumnAndNumbersForParsing.MegaAlertsAssetSchema.BuildColumnsParam();
             string effectiveRunId = runId ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + "-" + Guid.NewGuid().ToString("N");
-            using var accumulator = new RawCaptureAccumulator(_captureWriter);
+            var accumulator = new RawCaptureAccumulator(
+                _captureWriter,
+                RawCaptureClients.Alg,
+                RawCaptureDataTypes.MegaAlerts,
+                RawCaptureMarkets.Stock,
+                secid,
+                effectiveRunId);
             int pagesElapsed = 0; int totalRows = 0;
             while (true)
             {
@@ -1038,7 +1035,7 @@ namespace ProjectTraiding.Moex.Clients
                         throw;
                     }
 
-                    accumulator.AppendPage(rentedArr.Memory);
+                    await accumulator.AppendPageAsync(rentedArr.Memory, pagesElapsed, cancellationToken);
                 }
                 pagesElapsed++; totalRows += megaAlerts.Count;
                 MoexLogMessages.PageReceived(_logger, method, pagesElapsed, megaAlerts.Count, Stopwatch.GetElapsedTime(pageStart));
@@ -1064,13 +1061,6 @@ namespace ProjectTraiding.Moex.Clients
             activity?.SetTag("total_pages", pagesElapsed);
             activity?.SetTag("total_rows", totalRows);
 
-            await accumulator.FlushNdjsonAsync(
-                RawCaptureClients.Alg,
-                RawCaptureDataTypes.MegaAlerts,
-                RawCaptureMarkets.Stock,
-                secid,
-                effectiveRunId,
-                cancellationToken);
         }
 
         public async IAsyncEnumerable<List<MegaAlertsFuturesDTO>> GetMegaAlertsFutures(
@@ -1089,7 +1079,13 @@ namespace ProjectTraiding.Moex.Clients
             queryParams["iss.only"] = "data,data.cursor";
             queryParams["data.columns"] = ColumnAndNumbersForParsing.MegaAlertsFuturesSchema.BuildColumnsParam();
             string effectiveRunId = runId ?? "manual-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + "-" + Guid.NewGuid().ToString("N");
-            using var accumulator = new RawCaptureAccumulator(_captureWriter);
+            var accumulator = new RawCaptureAccumulator(
+                _captureWriter,
+                RawCaptureClients.Alg,
+                RawCaptureDataTypes.MegaAlerts,
+                RawCaptureMarkets.Futures,
+                secid,
+                effectiveRunId);
             int pagesElapsed = 0; int totalRows = 0;
             while (true)
             {
@@ -1121,7 +1117,7 @@ namespace ProjectTraiding.Moex.Clients
                         throw;
                     }
 
-                    accumulator.AppendPage(rentedArr.Memory);
+                    await accumulator.AppendPageAsync(rentedArr.Memory, pagesElapsed, cancellationToken);
                 }
                 pagesElapsed++; totalRows += megaAlertsFutures.Count;
                 MoexLogMessages.PageReceived(_logger, method, pagesElapsed, megaAlertsFutures.Count, Stopwatch.GetElapsedTime(pageStart));
@@ -1147,13 +1143,6 @@ namespace ProjectTraiding.Moex.Clients
             activity?.SetTag("total_pages", pagesElapsed);
             activity?.SetTag("total_rows", totalRows);
 
-            await accumulator.FlushNdjsonAsync(
-                RawCaptureClients.Alg,
-                RawCaptureDataTypes.MegaAlerts,
-                RawCaptureMarkets.Futures,
-                secid,
-                effectiveRunId,
-                cancellationToken);
         }
 
         // <summary>

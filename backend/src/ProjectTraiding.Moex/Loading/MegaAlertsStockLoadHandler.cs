@@ -31,7 +31,7 @@ namespace ProjectTraiding.Moex.Loading
 
             IAsyncEnumerable<List<MegaAlertsAssetsDTO>> pages =
                 _client.GetMegaAlerts(
-                    method, query, secid: task.Secid,
+                    method, query, runId: task.Id.ToString("N"), secid: task.Secid,
                     stopOutcome: stopOutcome, cancellationToken: ct);
 
             return await _writer.WriteRangeAsync(

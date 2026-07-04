@@ -29,7 +29,7 @@ namespace ProjectTraiding.Moex.Loading
 
             IAsyncEnumerable<List<Hi2AssetDTO>> pages =
                 _client.GetHi2Asset5m(
-                    method, query, secid: task.Secid,
+                    method, query, runId: task.Id.ToString("N"), secid: task.Secid,
                     stopOutcome: stopOutcome, cancellationToken: ct);
 
             return await _writer.WriteRangeAsync(
