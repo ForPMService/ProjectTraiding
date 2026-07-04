@@ -28,7 +28,7 @@ namespace ProjectTraiding.Moex.Loading
             Dictionary<string, string> query = BuildQuery(task);
 
             IAsyncEnumerable<List<Hi2FuturesDTO>> pages =
-                _client.GetHi2Furures5m(
+                _client.GetHi2Futures5m(
                     method, query, secid: task.Secid,
                     stopOutcome: stopOutcome, cancellationToken: ct);
 

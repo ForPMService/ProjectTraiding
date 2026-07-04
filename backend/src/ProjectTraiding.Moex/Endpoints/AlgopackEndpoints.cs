@@ -521,7 +521,7 @@ namespace ProjectTraiding.Moex.Endpoints
                 "futures",
                 ticker,
                 cancellationToken => CollectAsync(
-                    client.GetHi2Furures5m(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
+                    client.GetHi2Futures5m(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
                     cancellationToken),
                 AppJsonContext.Default.ListHi2FuturesDTO,
                 ct);

@@ -30,7 +30,7 @@ namespace ProjectTraiding.Moex.Loading
             IAsyncEnumerable<List<FutoiDTO>> pages =
                 _client.StreamFutoi(
                     method, query, secid: task.Secid,
-                    cancellationToken: ct);
+                    stopOutcome: stopOutcome, cancellationToken: ct);
 
             return await _writer.WriteRangeAsync(
                 task.Secid, task.SourceContractVersion, task.WriterVersion, pages, ct);

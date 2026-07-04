@@ -674,6 +674,7 @@ namespace ProjectTraiding.Moex.Clients
             Dictionary<string, string>? queryParams = null,
             string? runId = null,
             string? secid = null,
+            LoadStopOutcome? stopOutcome = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
@@ -799,6 +800,10 @@ namespace ProjectTraiding.Moex.Clients
             }
             MoexLogMessages.DaySplitCompleted(_logger, method, fromStr, tillStr, dayIndex, totalRows);
 
+            // Дневное разбиение всегда проходит весь диапазон целиком: защитного предела страниц
+            // здесь нет, поэтому исход только штатный — исчерпание диапазона, не частичный.
+            stopOutcome?.Complete("range_exhausted", isPartial: false);
+
             activity?.SetTag("total_pages", dayIndex);
             activity?.SetTag("total_rows", totalRows);
 
@@ -898,7 +903,7 @@ namespace ProjectTraiding.Moex.Clients
                 cancellationToken);
         }
 
-        public async IAsyncEnumerable<List<Hi2FuturesDTO>> GetHi2Furures5m(
+        public async IAsyncEnumerable<List<Hi2FuturesDTO>> GetHi2Futures5m(
             string method, Dictionary<string, string>? queryParams = null, string? runId = null,
             string? secid = null,
             LoadStopOutcome? stopOutcome = null,

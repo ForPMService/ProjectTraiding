@@ -66,7 +66,6 @@ if (app.Environment.IsDevelopment())
 {
     app.MapMoexDiagnosticEndpoints();
     app.MapMoexTemporaryDebugEndpoints();
-    app.MapClickHouseDebugEndpoints();
     app.MapOpenApi();
 }
 
