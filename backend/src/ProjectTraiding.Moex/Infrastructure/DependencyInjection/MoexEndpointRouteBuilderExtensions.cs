@@ -21,9 +21,5 @@ public static class MoexEndpointRouteBuilderExtensions
         return routes;
     }
 
-    public static IEndpointRouteBuilder MapMoexTemporaryDebugEndpoints(this IEndpointRouteBuilder routes)
-    {
-        routes.MapTemporaryDebugEndpoints();
-        return routes;
-    }
+   
 }
