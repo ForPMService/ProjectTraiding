@@ -3,6 +3,7 @@ using ProjectTraiding.Moex.Contracts.Dto.Iss;
 using ProjectTraiding.Moex.Contracts.Dto.Operations;
 using ProjectTraiding.Moex.Contracts.Serialization;
 using ProjectTraiding.Moex.StorageBase.Postgres;
+using ProjectTraiding.Moex.StorageBase.Redis;
 
 namespace ProjectTraiding.Moex.Endpoints
 {
@@ -19,6 +20,7 @@ namespace ProjectTraiding.Moex.Endpoints
                 HttpContext httpContext,
                 MoexHttpIssClient client,
                 MoexInstrumentWriter writer,
+                CatalogEventPublisher catalogEventPublisher,
                 CancellationToken ct) =>
             {
                 httpContext.Response.Headers.CacheControl = "no-store";
@@ -43,6 +45,7 @@ namespace ProjectTraiding.Moex.Endpoints
                 MoexHttpAlgClient algClient,
                 MoexHttpCalendarClient calendarClient,
                 MoexInstrumentWriter instrumentWriter,
+                CatalogEventPublisher catalogEventPublisher,
                 MoexCalendarWriter calendarWriter,
                 CancellationToken ct) =>
             {
@@ -55,6 +58,9 @@ namespace ProjectTraiding.Moex.Endpoints
                     await CalendarEndpoints.LoadStockCalendarAsync(calendarClient, calendarWriter, ct),
                     await CalendarEndpoints.LoadFuturesCalendarAsync(calendarClient, calendarWriter, ct)
                 };
+                // Справочник успешно обновлён в базе истины — извещаем витрину одним событием.
+                // Стоит после загрузок: если любая из них бросит исключение, сюда не дойдём и событие не выйдет.
+                await catalogEventPublisher.PublishChangedAsync();
 
                 return Results.Json(results, AppJsonContext.Default.LoadResultDtoArray);
             });

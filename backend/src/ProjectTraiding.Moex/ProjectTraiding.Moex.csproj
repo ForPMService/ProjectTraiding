@@ -23,5 +23,6 @@
     <PackageReference Include="ClickHouse.Driver" Version="1.2.0" />
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="10.5.0" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
+    <PackageReference Include="StackExchange.Redis" Version="3.0.11" />
   </ItemGroup>
 </Project>

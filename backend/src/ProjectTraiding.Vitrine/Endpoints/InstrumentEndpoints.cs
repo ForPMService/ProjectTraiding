@@ -18,16 +18,6 @@ namespace ProjectTraiding.Vitrine.Endpoints
         public static IEndpointRouteBuilder MapInstrumentEndpoints(this IEndpointRouteBuilder routes)
         {
             routes.MapGet("/vitrine/instruments", async (
-                InstrumentReadQuery query,
-                ILogger<InstrumentEndpointsLog> logger,
-                CancellationToken ct) =>
-            {
-                const string route = "GET /vitrine/instruments";
-                VitrineEndpointLogMessages.OperationStarted(logger, route);
-                List<VitrineInstrumentDto> items = await query.GetAllAsync(ct);
-                return Results.Json(items, VitrineJsonContext.Default.ListVitrineInstrumentDto);
-            });
-            routes.MapGet("/vitrine/instruments", async (
                 InstrumentCatalogCache cache,               // ← было InstrumentReadQuery query
                 ILogger<InstrumentEndpointsLog> logger,
                 CancellationToken ct) =>
