@@ -27,10 +27,11 @@ builder.AddProjectTraidingObservability(
 builder.Services.AddMoexClients(builder.Configuration);
 builder.Services.AddClickHouse(builder.Configuration);
 builder.Services.AddPostgre(builder.Configuration);
+builder.Services.AddRedis(builder.Configuration);
 builder.Services.AddTransient<MoexInstrumentWriter>();
 builder.Services.AddTransient<MoexCalendarWriter>();
 builder.Services.AddRawCapture(builder.Configuration);
-builder.Services.AddVitrine();
+builder.Services.AddVitrine(builder.Configuration);
 builder.Services.AddManagement();
 builder.Services.AddMoexLoading(builder.Configuration);
 
