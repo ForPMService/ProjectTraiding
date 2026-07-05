@@ -91,6 +91,22 @@ namespace ProjectTraiding.Vitrine.StorageBase.Redis
             }
         }
 
+        public async Task InvalidateAsync()
+        {
+            // Удаление ключа по событию изменения справочника. Ближайшее чтение получит
+            // промах и перечитает свежие данные из базы истины. Неудача некритична:
+            // суточный срок жизни ключа и без того обновит кеш со временем.
+            try
+            {
+                IDatabase db = _redis.GetDatabase();
+                await db.KeyDeleteAsync(CacheKey);
+                VitrineCacheLogMessages.CacheInvalidated(_logger, CacheKey);
+            }
+            catch (Exception ex)
+            {
+                VitrineCacheLogMessages.CacheInvalidateFailed(_logger, ex, CacheKey, ex.GetType().Name);
+            }
+        }
         private async Task TryWriteToCacheAsync(List<VitrineInstrumentDto> list)
         {
             try

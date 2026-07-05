@@ -20,7 +20,6 @@ namespace ProjectTraiding.Moex.Endpoints
                 HttpContext httpContext,
                 MoexHttpIssClient client,
                 MoexInstrumentWriter writer,
-                CatalogEventPublisher catalogEventPublisher,
                 CancellationToken ct) =>
             {
                 httpContext.Response.Headers.CacheControl = "no-store";

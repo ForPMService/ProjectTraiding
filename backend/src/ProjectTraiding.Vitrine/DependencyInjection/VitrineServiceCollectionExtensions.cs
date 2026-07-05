@@ -19,6 +19,7 @@ namespace ProjectTraiding.Vitrine.DependencyInjection
             services.AddTransient<InstrumentRelationReadQuery>();
             services.AddTransient<StockCardReadQuery>();
             services.AddTransient<FuturesCardReadQuery>();
+            services.AddSingleton<CatalogEventReader>();
             services.AddTransient<InstrumentRelationBySecidReadQuery>();
             services.AddTransient<StatusReadQuery>();
 
@@ -34,6 +35,14 @@ namespace ProjectTraiding.Vitrine.DependencyInjection
                 sp.GetRequiredService<ILogger<InstrumentCatalogCache>>(),
                 cacheTtl));
 
+            string pollRaw = configuration["Vitrine:CatalogPollInterval"] ?? "00:00:02";
+            TimeSpan catalogPoll = TimeSpan.Parse(pollRaw, CultureInfo.InvariantCulture);
+
+            services.AddHostedService(sp => new CatalogEventListener(
+                sp.GetRequiredService<CatalogEventReader>(),
+                sp.GetRequiredService<IServiceScopeFactory>(),
+                sp.GetRequiredService<ILogger<CatalogEventListener>>(),
+                catalogPoll));
             return services;
         }
     }

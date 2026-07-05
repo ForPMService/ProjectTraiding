@@ -33,5 +33,13 @@ namespace ProjectTraiding.Vitrine.StorageBase.Redis
         [LoggerMessage(EventId = 325, EventName = "VitrineCacheWriteFailed", Level = LogLevel.Warning,
             Message = "Vitrine cache write failed: key={Key}, errorType={ErrorType}.")]
         public static partial void CacheWriteFailed(ILogger logger, Exception exception, string key, string errorType);
+
+        [LoggerMessage(EventId = 326, EventName = "VitrineCacheInvalidated", Level = LogLevel.Information,
+    Message = "Vitrine cache invalidated by event: key={Key}.")]
+        public static partial void CacheInvalidated(ILogger logger, string key);
+
+        [LoggerMessage(EventId = 327, EventName = "VitrineCacheInvalidateFailed", Level = LogLevel.Warning,
+            Message = "Vitrine cache invalidate failed: key={Key}, errorType={ErrorType}.")]
+        public static partial void CacheInvalidateFailed(ILogger logger, Exception exception, string key, string errorType);
     }
 }
