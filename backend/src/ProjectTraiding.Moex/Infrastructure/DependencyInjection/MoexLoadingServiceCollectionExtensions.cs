@@ -100,16 +100,17 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
                 sp.GetRequiredService<ILogger<RowWriter<MegaAlertsFuturesDTO>>>(), batchSize));
 
             // Обработчики видов — диспетчер соберёт их все через IEnumerable<ILoadHandler>.
-            services.AddScoped<ILoadHandler, TradeStatsStockLoadHandler>();
-            services.AddScoped<ILoadHandler, TradeStatsFuturesLoadHandler>();
-            services.AddScoped<ILoadHandler, ObStatsStockLoadHandler>();
-            services.AddScoped<ILoadHandler, ObStatsFuturesLoadHandler>();
-            services.AddScoped<ILoadHandler, OrderStatsStockLoadHandler>();
-            services.AddScoped<ILoadHandler, FutoiLoadHandler>();
-            services.AddScoped<ILoadHandler, Hi2StockLoadHandler>();
-            services.AddScoped<ILoadHandler, Hi2FuturesLoadHandler>();
-            services.AddScoped<ILoadHandler, MegaAlertsStockLoadHandler>();
-            services.AddScoped<ILoadHandler, MegaAlertsFuturesLoadHandler>();
+            // Десять видов одной формы закрыты обобщённым обработчиком парой «паспорт × строка».
+            services.AddScoped<ILoadHandler, SeriesLoadHandler<TradeStatsStockKind, SuperCandlesTradeStats5mDTO>>();
+            services.AddScoped<ILoadHandler, SeriesLoadHandler<TradeStatsFuturesKind, SuperCandlesFuturesTradeStats5mDTO>>();
+            services.AddScoped<ILoadHandler, SeriesLoadHandler<ObStatsStockKind, SuperCandlesOrderBookStats5mDTO>>();
+            services.AddScoped<ILoadHandler, SeriesLoadHandler<ObStatsFuturesKind, SuperCandlesFuturesOrderBookStats5mDTO>>();
+            services.AddScoped<ILoadHandler, SeriesLoadHandler<OrderStatsStockKind, SuperCandlesOrderStats5mDTO>>();
+            services.AddScoped<ILoadHandler, SeriesLoadHandler<FutoiKind, FutoiDTO>>();
+            services.AddScoped<ILoadHandler, SeriesLoadHandler<Hi2StockKind, Hi2AssetDTO>>();
+            services.AddScoped<ILoadHandler, SeriesLoadHandler<Hi2FuturesKind, Hi2FuturesDTO>>();
+            services.AddScoped<ILoadHandler, SeriesLoadHandler<MegaAlertsStockKind, MegaAlertsAssetsDTO>>();
+            services.AddScoped<ILoadHandler, SeriesLoadHandler<MegaAlertsFuturesKind, MegaAlertsFuturesDTO>>();
             services.AddScoped<ILoadHandler, CandlesLoadHandler>();
 
             // Читатель и писатели задач, диспетчер и координатор.
