@@ -143,17 +143,13 @@ namespace ProjectTraiding.Moex.Parsing
         // TradeStats Stock (акции) — 27 колонок (B2)
         // ═══════════════════════════════════════════════════════════
 
-        public static List<SuperCandlesTradeStats5mDTO> ParseTradeStatsStock(ReadOnlySpan<byte> jsonBytes)
-        {
-            return ParseTradeStatsStock(jsonBytes, out _);
-        }
-
-        public static List<SuperCandlesTradeStats5mDTO> ParseTradeStatsStock(
+        public static List<TRow> ParseCursorBlock<TReader, TRow>(
             ReadOnlySpan<byte> jsonBytes,
             out PaginationCursorDTO cursor)
+            where TReader : struct, ICursorRowReader<TRow>
         {
-            var schema = ColumnAndNumbersForParsing.AlgCandlesTradeStatSchema;
-            var list = new List<SuperCandlesTradeStats5mDTO>();
+            var schema = TReader.Schema;
+            var list = new List<TRow>();
             var reader = new Utf8JsonReader(jsonBytes);
 
             ParseHelpersUtf8.SkipToRootObject(ref reader, schema.RootKey);
@@ -181,7 +177,7 @@ namespace ProjectTraiding.Moex.Parsing
                             $"[{schema.RootKey}] Секция 'data' встретилась до 'columns'. Порядок columns → data обязателен.");
 
                     foundData = true;
-                    ReadTradeStatsStockData(ref reader, list, schema);
+                    TReader.ReadRows(ref reader, list, schema);
                 }
                 else
                 {
@@ -209,6 +205,16 @@ namespace ProjectTraiding.Moex.Parsing
 
             return list;
         }
+
+        public static List<SuperCandlesTradeStats5mDTO> ParseTradeStatsStock(ReadOnlySpan<byte> jsonBytes)
+        {
+            return ParseTradeStatsStock(jsonBytes, out _);
+        }
+
+        public static List<SuperCandlesTradeStats5mDTO> ParseTradeStatsStock(
+            ReadOnlySpan<byte> jsonBytes,
+            out PaginationCursorDTO cursor)
+            => ParseCursorBlock<TradeStatsStockRowReader, SuperCandlesTradeStats5mDTO>(jsonBytes, out cursor);
 
         private static void ReadTradeStatsStockData(
             ref Utf8JsonReader reader,
@@ -341,64 +347,7 @@ namespace ProjectTraiding.Moex.Parsing
         public static List<SuperCandlesFuturesTradeStats5mDTO> ParseTradeStatsFutures(
             ReadOnlySpan<byte> jsonBytes,
             out PaginationCursorDTO cursor)
-        {
-            var schema = ColumnAndNumbersForParsing.FuturesTradeStatsSchema;
-            var list = new List<SuperCandlesFuturesTradeStats5mDTO>();
-            var reader = new Utf8JsonReader(jsonBytes);
-
-            ParseHelpersUtf8.SkipToRootObject(ref reader, schema.RootKey);
-
-            bool foundColumns = false;
-            bool foundData = false;
-
-            while (reader.Read())
-            {
-                if (reader.TokenType == JsonTokenType.EndObject)
-                    break;
-
-                if (reader.TokenType != JsonTokenType.PropertyName)
-                    continue;
-
-                if (reader.ValueTextEquals("columns"u8))
-                {
-                    foundColumns = true;
-                    ParseHelpersUtf8.ValidateColumnsUtf8(ref reader, schema);
-                }
-                else if (reader.ValueTextEquals("data"u8))
-                {
-                    if (!foundColumns)
-                        ParseHelpersUtf8.SchemaMismatch(schema.RootKey,
-                            $"[{schema.RootKey}] Секция 'data' встретилась до 'columns'. Порядок columns → data обязателен.");
-
-                    foundData = true;
-                    ReadTradeStatsFuturesData(ref reader, list, schema);
-                }
-                else
-                {
-                    reader.Skip();
-                }
-            }
-
-            ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, schema.RootKey);
-
-            // ── Phase 3: cursor ──
-            cursor = new PaginationCursorDTO();
-            while (reader.Read())
-            {
-                if (reader.TokenType == JsonTokenType.EndObject)
-                    break;
-                if (reader.TokenType != JsonTokenType.PropertyName)
-                    continue;
-                if (reader.ValueTextEquals("data.cursor"u8))
-                {
-                    cursor = ParseHelpersUtf8.ReadCursorRootObject(ref reader, "data.cursor");
-                    break;
-                }
-                reader.Skip();
-            }
-
-            return list;
-        }
+            => ParseCursorBlock<TradeStatsFuturesRowReader, SuperCandlesFuturesTradeStats5mDTO>(jsonBytes, out cursor);
 
         private static void ReadTradeStatsFuturesData(
             ref Utf8JsonReader reader,
@@ -543,64 +492,7 @@ namespace ProjectTraiding.Moex.Parsing
         public static List<SuperCandlesOrderBookStats5mDTO> ParseOBStatsStock(
             ReadOnlySpan<byte> jsonBytes,
             out PaginationCursorDTO cursor)
-        {
-            var schema = ColumnAndNumbersForParsing.AlgOrderBookStats5mSchema;
-            var list = new List<SuperCandlesOrderBookStats5mDTO>();
-            var reader = new Utf8JsonReader(jsonBytes);
-
-            ParseHelpersUtf8.SkipToRootObject(ref reader, schema.RootKey);
-
-            bool foundColumns = false;
-            bool foundData = false;
-
-            while (reader.Read())
-            {
-                if (reader.TokenType == JsonTokenType.EndObject)
-                    break;
-
-                if (reader.TokenType != JsonTokenType.PropertyName)
-                    continue;
-
-                if (reader.ValueTextEquals("columns"u8))
-                {
-                    foundColumns = true;
-                    ParseHelpersUtf8.ValidateColumnsUtf8(ref reader, schema);
-                }
-                else if (reader.ValueTextEquals("data"u8))
-                {
-                    if (!foundColumns)
-                        ParseHelpersUtf8.SchemaMismatch(schema.RootKey,
-                            $"[{schema.RootKey}] Секция 'data' встретилась до 'columns'. Порядок columns → data обязателен.");
-
-                    foundData = true;
-                    ReadOBStatsStockData(ref reader, list, schema);
-                }
-                else
-                {
-                    reader.Skip();
-                }
-            }
-
-            ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, schema.RootKey);
-
-            // ── Phase 3: cursor ──
-            cursor = new PaginationCursorDTO();
-            while (reader.Read())
-            {
-                if (reader.TokenType == JsonTokenType.EndObject)
-                    break;
-                if (reader.TokenType != JsonTokenType.PropertyName)
-                    continue;
-                if (reader.ValueTextEquals("data.cursor"u8))
-                {
-                    cursor = ParseHelpersUtf8.ReadCursorRootObject(ref reader, "data.cursor");
-                    break;
-                }
-                reader.Skip();
-            }
-
-            return list;
-        }
+            => ParseCursorBlock<ObStatsStockRowReader, SuperCandlesOrderBookStats5mDTO>(jsonBytes, out cursor);
 
         private static void ReadOBStatsStockData(
             ref Utf8JsonReader reader,
@@ -717,64 +609,7 @@ namespace ProjectTraiding.Moex.Parsing
         public static List<SuperCandlesFuturesOrderBookStats5mDTO> ParseOBStatsFutures(
             ReadOnlySpan<byte> jsonBytes,
             out PaginationCursorDTO cursor)
-        {
-            var schema = ColumnAndNumbersForParsing.AlgFuturesOrderBookSchema;
-            var list = new List<SuperCandlesFuturesOrderBookStats5mDTO>();
-            var reader = new Utf8JsonReader(jsonBytes);
-
-            ParseHelpersUtf8.SkipToRootObject(ref reader, schema.RootKey);
-
-            bool foundColumns = false;
-            bool foundData = false;
-
-            while (reader.Read())
-            {
-                if (reader.TokenType == JsonTokenType.EndObject)
-                    break;
-
-                if (reader.TokenType != JsonTokenType.PropertyName)
-                    continue;
-
-                if (reader.ValueTextEquals("columns"u8))
-                {
-                    foundColumns = true;
-                    ParseHelpersUtf8.ValidateColumnsUtf8(ref reader, schema);
-                }
-                else if (reader.ValueTextEquals("data"u8))
-                {
-                    if (!foundColumns)
-                        ParseHelpersUtf8.SchemaMismatch(schema.RootKey,
-                            $"[{schema.RootKey}] Секция 'data' встретилась до 'columns'. Порядок columns → data обязателен.");
-
-                    foundData = true;
-                    ReadOBStatsFuturesData(ref reader, list, schema);
-                }
-                else
-                {
-                    reader.Skip();
-                }
-            }
-
-            ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, schema.RootKey);
-
-            // ── Phase 3: cursor ──
-            cursor = new PaginationCursorDTO();
-            while (reader.Read())
-            {
-                if (reader.TokenType == JsonTokenType.EndObject)
-                    break;
-                if (reader.TokenType != JsonTokenType.PropertyName)
-                    continue;
-                if (reader.ValueTextEquals("data.cursor"u8))
-                {
-                    cursor = ParseHelpersUtf8.ReadCursorRootObject(ref reader, "data.cursor");
-                    break;
-                }
-                reader.Skip();
-            }
-
-            return list;
-        }
+            => ParseCursorBlock<ObStatsFuturesRowReader, SuperCandlesFuturesOrderBookStats5mDTO>(jsonBytes, out cursor);
 
         private static void ReadOBStatsFuturesData(
             ref Utf8JsonReader reader,
@@ -923,64 +758,7 @@ namespace ProjectTraiding.Moex.Parsing
         public static List<SuperCandlesOrderStats5mDTO> ParseOrderStatsStock(
             ReadOnlySpan<byte> jsonBytes,
             out PaginationCursorDTO cursor)
-        {
-            var schema = ColumnAndNumbersForParsing.AlgOrderStats5mSchema;
-            var list = new List<SuperCandlesOrderStats5mDTO>();
-            var reader = new Utf8JsonReader(jsonBytes);
-
-            ParseHelpersUtf8.SkipToRootObject(ref reader, schema.RootKey);
-
-            bool foundColumns = false;
-            bool foundData = false;
-
-            while (reader.Read())
-            {
-                if (reader.TokenType == JsonTokenType.EndObject)
-                    break;
-
-                if (reader.TokenType != JsonTokenType.PropertyName)
-                    continue;
-
-                if (reader.ValueTextEquals("columns"u8))
-                {
-                    foundColumns = true;
-                    ParseHelpersUtf8.ValidateColumnsUtf8(ref reader, schema);
-                }
-                else if (reader.ValueTextEquals("data"u8))
-                {
-                    if (!foundColumns)
-                        ParseHelpersUtf8.SchemaMismatch(schema.RootKey,
-                            $"[{schema.RootKey}] Секция 'data' встретилась до 'columns'. Порядок columns → data обязателен.");
-
-                    foundData = true;
-                    ReadOrderStatsStockData(ref reader, list, schema);
-                }
-                else
-                {
-                    reader.Skip();
-                }
-            }
-
-            ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, schema.RootKey);
-
-            // ── Phase 3: cursor ──
-            cursor = new PaginationCursorDTO();
-            while (reader.Read())
-            {
-                if (reader.TokenType == JsonTokenType.EndObject)
-                    break;
-                if (reader.TokenType != JsonTokenType.PropertyName)
-                    continue;
-                if (reader.ValueTextEquals("data.cursor"u8))
-                {
-                    cursor = ParseHelpersUtf8.ReadCursorRootObject(ref reader, "data.cursor");
-                    break;
-                }
-                reader.Skip();
-            }
-
-            return list;
-        }
+            => ParseCursorBlock<OrderStatsStockRowReader, SuperCandlesOrderStats5mDTO>(jsonBytes, out cursor);
 
         private static void ReadOrderStatsStockData(
             ref Utf8JsonReader reader,
@@ -1116,59 +894,7 @@ namespace ProjectTraiding.Moex.Parsing
         public static List<Hi2AssetDTO> ParseHi2Stock(
             ReadOnlySpan<byte> jsonBytes,
             out PaginationCursorDTO cursor)
-        {
-            var schema = ColumnAndNumbersForParsing.Hi2AssetSchema;
-            var list = new List<Hi2AssetDTO>();
-            var reader = new Utf8JsonReader(jsonBytes);
-
-            ParseHelpersUtf8.SkipToRootObject(ref reader, schema.RootKey);
-
-            bool foundColumns = false;
-            bool foundData = false;
-
-            while (reader.Read())
-            {
-                if (reader.TokenType == JsonTokenType.EndObject)
-                    break;
-                if (reader.TokenType != JsonTokenType.PropertyName)
-                    continue;
-
-                if (reader.ValueTextEquals("columns"u8))
-                {
-                    foundColumns = true;
-                    ParseHelpersUtf8.ValidateColumnsUtf8(ref reader, schema);
-                }
-                else if (reader.ValueTextEquals("data"u8))
-                {
-                    if (!foundColumns)
-                        ParseHelpersUtf8.SchemaMismatch(schema.RootKey,
-                            $"[{schema.RootKey}] Секция 'data' встретилась до 'columns'. Порядок columns → data обязателен.");
-                    foundData = true;
-                    ReadHi2StockData(ref reader, list, schema);
-                }
-                else { reader.Skip(); }
-            }
-
-            ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, schema.RootKey);
-
-            // ── Phase 3: cursor ──
-            cursor = new PaginationCursorDTO();
-            while (reader.Read())
-            {
-                if (reader.TokenType == JsonTokenType.EndObject)
-                    break;
-                if (reader.TokenType != JsonTokenType.PropertyName)
-                    continue;
-                if (reader.ValueTextEquals("data.cursor"u8))
-                {
-                    cursor = ParseHelpersUtf8.ReadCursorRootObject(ref reader, "data.cursor");
-                    break;
-                }
-                reader.Skip();
-            }
-
-            return list;
-        }
+            => ParseCursorBlock<Hi2StockRowReader, Hi2AssetDTO>(jsonBytes, out cursor);
 
         private static void ReadHi2StockData(
             ref Utf8JsonReader reader,
@@ -1251,59 +977,7 @@ namespace ProjectTraiding.Moex.Parsing
         public static List<Hi2FuturesDTO> ParseHi2Futures(
             ReadOnlySpan<byte> jsonBytes,
             out PaginationCursorDTO cursor)
-        {
-            var schema = ColumnAndNumbersForParsing.Hi2FuturesSchema;
-            var list = new List<Hi2FuturesDTO>();
-            var reader = new Utf8JsonReader(jsonBytes);
-
-            ParseHelpersUtf8.SkipToRootObject(ref reader, schema.RootKey);
-
-            bool foundColumns = false;
-            bool foundData = false;
-
-            while (reader.Read())
-            {
-                if (reader.TokenType == JsonTokenType.EndObject)
-                    break;
-                if (reader.TokenType != JsonTokenType.PropertyName)
-                    continue;
-
-                if (reader.ValueTextEquals("columns"u8))
-                {
-                    foundColumns = true;
-                    ParseHelpersUtf8.ValidateColumnsUtf8(ref reader, schema);
-                }
-                else if (reader.ValueTextEquals("data"u8))
-                {
-                    if (!foundColumns)
-                        ParseHelpersUtf8.SchemaMismatch(schema.RootKey,
-                            $"[{schema.RootKey}] Секция 'data' встретилась до 'columns'. Порядок columns → data обязателен.");
-                    foundData = true;
-                    ReadHi2FuturesData(ref reader, list, schema);
-                }
-                else { reader.Skip(); }
-            }
-
-            ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, schema.RootKey);
-
-            // ── Phase 3: cursor ──
-            cursor = new PaginationCursorDTO();
-            while (reader.Read())
-            {
-                if (reader.TokenType == JsonTokenType.EndObject)
-                    break;
-                if (reader.TokenType != JsonTokenType.PropertyName)
-                    continue;
-                if (reader.ValueTextEquals("data.cursor"u8))
-                {
-                    cursor = ParseHelpersUtf8.ReadCursorRootObject(ref reader, "data.cursor");
-                    break;
-                }
-                reader.Skip();
-            }
-
-            return list;
-        }
+            => ParseCursorBlock<Hi2FuturesRowReader, Hi2FuturesDTO>(jsonBytes, out cursor);
 
         private static void ReadHi2FuturesData(
             ref Utf8JsonReader reader,
@@ -1389,59 +1063,7 @@ namespace ProjectTraiding.Moex.Parsing
         public static List<MegaAlertsAssetsDTO> ParseMegaAlertsStock(
             ReadOnlySpan<byte> jsonBytes,
             out PaginationCursorDTO cursor)
-        {
-            var schema = ColumnAndNumbersForParsing.MegaAlertsAssetSchema;
-            var list = new List<MegaAlertsAssetsDTO>();
-            var reader = new Utf8JsonReader(jsonBytes);
-
-            ParseHelpersUtf8.SkipToRootObject(ref reader, schema.RootKey);
-
-            bool foundColumns = false;
-            bool foundData = false;
-
-            while (reader.Read())
-            {
-                if (reader.TokenType == JsonTokenType.EndObject)
-                    break;
-                if (reader.TokenType != JsonTokenType.PropertyName)
-                    continue;
-
-                if (reader.ValueTextEquals("columns"u8))
-                {
-                    foundColumns = true;
-                    ParseHelpersUtf8.ValidateColumnsUtf8(ref reader, schema);
-                }
-                else if (reader.ValueTextEquals("data"u8))
-                {
-                    if (!foundColumns)
-                        ParseHelpersUtf8.SchemaMismatch(schema.RootKey,
-                            $"[{schema.RootKey}] Секция 'data' встретилась до 'columns'. Порядок columns → data обязателен.");
-                    foundData = true;
-                    ReadMegaAlertsStockData(ref reader, list, schema);
-                }
-                else { reader.Skip(); }
-            }
-
-            ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, schema.RootKey);
-
-            // ── Phase 3: cursor ──
-            cursor = new PaginationCursorDTO();
-            while (reader.Read())
-            {
-                if (reader.TokenType == JsonTokenType.EndObject)
-                    break;
-                if (reader.TokenType != JsonTokenType.PropertyName)
-                    continue;
-                if (reader.ValueTextEquals("data.cursor"u8))
-                {
-                    cursor = ParseHelpersUtf8.ReadCursorRootObject(ref reader, "data.cursor");
-                    break;
-                }
-                reader.Skip();
-            }
-
-            return list;
-        }
+            => ParseCursorBlock<MegaAlertsStockRowReader, MegaAlertsAssetsDTO>(jsonBytes, out cursor);
 
         private static void ReadMegaAlertsStockData(
             ref Utf8JsonReader reader,
@@ -1526,59 +1148,7 @@ namespace ProjectTraiding.Moex.Parsing
         public static List<MegaAlertsFuturesDTO> ParseMegaAlertsFutures(
             ReadOnlySpan<byte> jsonBytes,
             out PaginationCursorDTO cursor)
-        {
-            var schema = ColumnAndNumbersForParsing.MegaAlertsFuturesSchema;
-            var list = new List<MegaAlertsFuturesDTO>();
-            var reader = new Utf8JsonReader(jsonBytes);
-
-            ParseHelpersUtf8.SkipToRootObject(ref reader, schema.RootKey);
-
-            bool foundColumns = false;
-            bool foundData = false;
-
-            while (reader.Read())
-            {
-                if (reader.TokenType == JsonTokenType.EndObject)
-                    break;
-                if (reader.TokenType != JsonTokenType.PropertyName)
-                    continue;
-
-                if (reader.ValueTextEquals("columns"u8))
-                {
-                    foundColumns = true;
-                    ParseHelpersUtf8.ValidateColumnsUtf8(ref reader, schema);
-                }
-                else if (reader.ValueTextEquals("data"u8))
-                {
-                    if (!foundColumns)
-                        ParseHelpersUtf8.SchemaMismatch(schema.RootKey,
-                            $"[{schema.RootKey}] Секция 'data' встретилась до 'columns'. Порядок columns → data обязателен.");
-                    foundData = true;
-                    ReadMegaAlertsFuturesData(ref reader, list, schema);
-                }
-                else { reader.Skip(); }
-            }
-
-            ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, schema.RootKey);
-
-            // ── Phase 3: cursor ──
-            cursor = new PaginationCursorDTO();
-            while (reader.Read())
-            {
-                if (reader.TokenType == JsonTokenType.EndObject)
-                    break;
-                if (reader.TokenType != JsonTokenType.PropertyName)
-                    continue;
-                if (reader.ValueTextEquals("data.cursor"u8))
-                {
-                    cursor = ParseHelpersUtf8.ReadCursorRootObject(ref reader, "data.cursor");
-                    break;
-                }
-                reader.Skip();
-            }
-
-            return list;
-        }
+            => ParseCursorBlock<MegaAlertsFuturesRowReader, MegaAlertsFuturesDTO>(jsonBytes, out cursor);
 
         private static void ReadMegaAlertsFuturesData(
             ref Utf8JsonReader reader,
@@ -1777,6 +1347,121 @@ namespace ProjectTraiding.Moex.Parsing
                 });
                 rowIndex++;
             }
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // Читатели строк курсорных видов: пара «схема + приватный метод чтения».
+        // Структуры без состояния и без экземпляров — существуют только как
+        // параметр типа обобщённого каркаса ParseCursorBlock. Вложены в класс,
+        // чтобы иметь доступ к приватным методам чтения без расширения видимости.
+        // ═══════════════════════════════════════════════════════════
+
+        public readonly struct TradeStatsStockRowReader : ICursorRowReader<SuperCandlesTradeStats5mDTO>
+        {
+            public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
+                ColumnAndNumbersForParsing.AlgCandlesTradeStatSchema;
+
+            public static void ReadRows(
+                ref Utf8JsonReader reader,
+                List<SuperCandlesTradeStats5mDTO> list,
+                ColumnAndNumbersForParsing.ExpectedSchema schema)
+                => ReadTradeStatsStockData(ref reader, list, schema);
+        }
+
+        public readonly struct TradeStatsFuturesRowReader : ICursorRowReader<SuperCandlesFuturesTradeStats5mDTO>
+        {
+            public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
+                ColumnAndNumbersForParsing.FuturesTradeStatsSchema;
+
+            public static void ReadRows(
+                ref Utf8JsonReader reader,
+                List<SuperCandlesFuturesTradeStats5mDTO> list,
+                ColumnAndNumbersForParsing.ExpectedSchema schema)
+                => ReadTradeStatsFuturesData(ref reader, list, schema);
+        }
+
+        public readonly struct ObStatsStockRowReader : ICursorRowReader<SuperCandlesOrderBookStats5mDTO>
+        {
+            public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
+                ColumnAndNumbersForParsing.AlgOrderBookStats5mSchema;
+
+            public static void ReadRows(
+                ref Utf8JsonReader reader,
+                List<SuperCandlesOrderBookStats5mDTO> list,
+                ColumnAndNumbersForParsing.ExpectedSchema schema)
+                => ReadOBStatsStockData(ref reader, list, schema);
+        }
+
+        public readonly struct ObStatsFuturesRowReader : ICursorRowReader<SuperCandlesFuturesOrderBookStats5mDTO>
+        {
+            public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
+                ColumnAndNumbersForParsing.AlgFuturesOrderBookSchema;
+
+            public static void ReadRows(
+                ref Utf8JsonReader reader,
+                List<SuperCandlesFuturesOrderBookStats5mDTO> list,
+                ColumnAndNumbersForParsing.ExpectedSchema schema)
+                => ReadOBStatsFuturesData(ref reader, list, schema);
+        }
+
+        public readonly struct OrderStatsStockRowReader : ICursorRowReader<SuperCandlesOrderStats5mDTO>
+        {
+            public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
+                ColumnAndNumbersForParsing.AlgOrderStats5mSchema;
+
+            public static void ReadRows(
+                ref Utf8JsonReader reader,
+                List<SuperCandlesOrderStats5mDTO> list,
+                ColumnAndNumbersForParsing.ExpectedSchema schema)
+                => ReadOrderStatsStockData(ref reader, list, schema);
+        }
+
+        public readonly struct Hi2StockRowReader : ICursorRowReader<Hi2AssetDTO>
+        {
+            public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
+                ColumnAndNumbersForParsing.Hi2AssetSchema;
+
+            public static void ReadRows(
+                ref Utf8JsonReader reader,
+                List<Hi2AssetDTO> list,
+                ColumnAndNumbersForParsing.ExpectedSchema schema)
+                => ReadHi2StockData(ref reader, list, schema);
+        }
+
+        public readonly struct Hi2FuturesRowReader : ICursorRowReader<Hi2FuturesDTO>
+        {
+            public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
+                ColumnAndNumbersForParsing.Hi2FuturesSchema;
+
+            public static void ReadRows(
+                ref Utf8JsonReader reader,
+                List<Hi2FuturesDTO> list,
+                ColumnAndNumbersForParsing.ExpectedSchema schema)
+                => ReadHi2FuturesData(ref reader, list, schema);
+        }
+
+        public readonly struct MegaAlertsStockRowReader : ICursorRowReader<MegaAlertsAssetsDTO>
+        {
+            public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
+                ColumnAndNumbersForParsing.MegaAlertsAssetSchema;
+
+            public static void ReadRows(
+                ref Utf8JsonReader reader,
+                List<MegaAlertsAssetsDTO> list,
+                ColumnAndNumbersForParsing.ExpectedSchema schema)
+                => ReadMegaAlertsStockData(ref reader, list, schema);
+        }
+
+        public readonly struct MegaAlertsFuturesRowReader : ICursorRowReader<MegaAlertsFuturesDTO>
+        {
+            public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
+                ColumnAndNumbersForParsing.MegaAlertsFuturesSchema;
+
+            public static void ReadRows(
+                ref Utf8JsonReader reader,
+                List<MegaAlertsFuturesDTO> list,
+                ColumnAndNumbersForParsing.ExpectedSchema schema)
+                => ReadMegaAlertsFuturesData(ref reader, list, schema);
         }
     }
 }
