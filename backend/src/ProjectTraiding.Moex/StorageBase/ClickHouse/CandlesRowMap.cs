@@ -68,19 +68,11 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 candle.Low,
                 candle.Value,
                 candle.Volume,
-                AsWallClock(candle.Begin),
-                AsWallClock(candle.End)
+                MoexClickHouseTime.AsWallClock(candle.Begin),
+                MoexClickHouseTime.AsWallClock(candle.End)
             };
 
             return (row, DateTime.SpecifyKind(begin, DateTimeKind.Unspecified));
-        }
-
-        private static DateTime? AsWallClock(DateTime? value)
-        {
-            if (value is null)
-                return null;
-
-            return DateTime.SpecifyKind(value.Value, DateTimeKind.Unspecified);
         }
     }
 }

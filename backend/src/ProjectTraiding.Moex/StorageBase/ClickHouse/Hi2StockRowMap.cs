@@ -42,7 +42,7 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
         {
             // source_time — ключевой not-null столбец (ORDER BY), собирается построчно из
             // даты и времени торгов. Пустые дата/время — отвергаем строку.
-            DateTime sourceTime = BuildSourceTime(item.TradeDate, item.TradeTime);
+            DateTime sourceTime = MoexClickHouseTime.BuildSourceTime(item.TradeDate, item.TradeTime);
 
             if (string.IsNullOrWhiteSpace(item.Metric))
                 throw new InvalidOperationException("Строка концентрации отвергнута: metric пустой.");
@@ -54,35 +54,10 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 item.Metric,
                 item.Value,
                 item.Reference,
-                AsWallClock(item.SysTime),
+                MoexClickHouseTime.AsWallClock(item.SysTime),
             };
 
             return (row, sourceTime);
-        }
-
-        // Дата "yyyy-MM-dd" и время "HH:mm:ss" из источника в одно московское стенное время.
-        // Kind=Unspecified — bulk insert трактует его как стенное время зоны столбца без сдвига.
-        private static DateTime BuildSourceTime(string? tradeDate, string? tradeTime)
-        {
-            if (string.IsNullOrWhiteSpace(tradeDate) || string.IsNullOrWhiteSpace(tradeTime))
-                throw new InvalidOperationException(
-                    "Строка статистики отвергнута: пустые дата или время торгов.");
-
-            DateTime parsed = DateTime.ParseExact(
-                $"{tradeDate} {tradeTime}",
-                "yyyy-MM-dd HH:mm:ss",
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.None);
-
-            return DateTime.SpecifyKind(parsed, DateTimeKind.Unspecified);
-        }
-
-        private static DateTime? AsWallClock(DateTime? value)
-        {
-            if (value is null)
-                return null;
-
-            return DateTime.SpecifyKind(value.Value, DateTimeKind.Unspecified);
         }
     }
 }
