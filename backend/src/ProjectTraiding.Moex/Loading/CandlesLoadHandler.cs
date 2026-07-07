@@ -34,7 +34,7 @@ namespace ProjectTraiding.Moex.Loading
             && _writersByInterval.ContainsKey(task.CandleInterval.Value);
 
         public async Task<RowWriteSummary> LoadAsync(
-            MoexLoadTask task, LoadStopOutcome stopOutcome, CancellationToken ct)
+            MoexLoadTask task, LoadStopOutcome stopOutcome, ILoadProgressReporter progress, CancellationToken ct)
         {
             RowWriter<CandlesDTO> writer = _writersByInterval[task.CandleInterval!.Value];
 
@@ -49,7 +49,7 @@ namespace ProjectTraiding.Moex.Loading
                 stopOutcome: stopOutcome, cancellationToken: ct);
 
             return await writer.WriteRangeAsync(
-                task.Secid, task.SourceContractVersion, task.WriterVersion, pages, ct);
+                task.Id, task.Secid, task.SourceContractVersion, task.WriterVersion, pages, progress, ct);
         }
 
         // Доска в адресе в РАЗНОМ регистре: у акций строчными (boards/tqbr),

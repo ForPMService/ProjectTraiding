@@ -27,17 +27,20 @@ namespace ProjectTraiding.Moex.Loading
         private readonly MoexLoadTaskWriter _taskWriter;
         private readonly MoexLoadedRangeWriter _rangeWriter;
         private readonly LoadHandlerDispatcher _dispatcher;
+        private readonly ILoadProgressReporter _progress;
 
         public LoadRunner(
             MoexLoadTaskReader taskReader,
             MoexLoadTaskWriter taskWriter,
             MoexLoadedRangeWriter rangeWriter,
-            LoadHandlerDispatcher dispatcher)
+            LoadHandlerDispatcher dispatcher,
+            ILoadProgressReporter progress)
         {
             _taskReader = taskReader;
             _taskWriter = taskWriter;
             _rangeWriter = rangeWriter;
             _dispatcher = dispatcher;
+            _progress = progress;
         }
 
         public async Task<LoadOutcome> RunAsync(Guid taskId, CancellationToken ct, bool alreadyClaimed = false)
@@ -68,7 +71,7 @@ namespace ProjectTraiding.Moex.Loading
             {
                 LoadStopOutcome stopOutcome = new LoadStopOutcome();
 
-                RowWriteSummary summary = await handler.LoadAsync(task, stopOutcome, ct);
+                RowWriteSummary summary = await handler.LoadAsync(task, stopOutcome, _progress, ct);
 
                 // Настоящая причина из потока; пустой держатель трактуем как штатное исчерпание.
                 string stopReason = stopOutcome.StopReason ?? "range_exhausted";

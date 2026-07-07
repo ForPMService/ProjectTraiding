@@ -120,6 +120,10 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
             services.AddScoped<LoadHandlerDispatcher>();
             services.AddScoped<LoadRunner>();
 
+            // Приёмник хода загрузки: пока пустая реализация (шаг 1). Шаг 2 заменит её
+            // на писателя прогресса в оперативное хранилище.
+            services.AddSingleton<ILoadProgressReporter, NoOpLoadProgressReporter>();
+
             // Фоновый исполнитель: интервал опроса и число дорожек — из настроек.
             services.AddHostedService(sp =>
             {

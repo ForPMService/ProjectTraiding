@@ -1,4 +1,5 @@
 ﻿using ProjectTraiding.Moex.Contracts.Dto.Algopack;
+using ProjectTraiding.Moex.Loading;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -42,10 +43,12 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
         /// Нарезка детерминирована (сквозной счёт от начала диапазона).
         /// </summary>
         public async Task<RowWriteSummary> WriteRangeAsync(
+            Guid taskId,
             string secid,
             string sourceContractVersion,
             string writerVersion,
             IAsyncEnumerable<List<T>> pages,
+            ILoadProgressReporter progress,
             CancellationToken ct)
         {
             _map.EnsureRangeValid(secid);
@@ -77,6 +80,8 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                             batch, batchFirstTime, batchLastTime, ct);
                         rowsInsertedReported += reported;
                         batch.Clear();
+
+                        await progress.ReportAsync(taskId, rowsRead, batchLastTime, ct);
                     }
                 }
             }
@@ -87,6 +92,8 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                     secid, sourceContractVersion, writerVersion,
                     batch, batchFirstTime, batchLastTime, ct);
                 rowsInsertedReported += reported;
+
+                await progress.ReportAsync(taskId, rowsRead, batchLastTime, ct);
             }
 
             ClickHouseWriterLogMessages.RangeWritten(_logger, secid, rowsRead, rowsInsertedReported);
