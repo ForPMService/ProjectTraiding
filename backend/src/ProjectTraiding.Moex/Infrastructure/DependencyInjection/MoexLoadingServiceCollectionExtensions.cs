@@ -4,8 +4,11 @@ using ProjectTraiding.Moex.Loading;
 using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
+using ProjectTraiding.Moex.StorageBase.Redis;
+using StackExchange.Redis;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 
 namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
@@ -120,9 +123,16 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
             services.AddScoped<LoadHandlerDispatcher>();
             services.AddScoped<LoadRunner>();
 
-            // Приёмник хода загрузки: пока пустая реализация (шаг 1). Шаг 2 заменит её
-            // на писателя прогресса в оперативное хранилище.
-            services.AddSingleton<ILoadProgressReporter, NoOpLoadProgressReporter>();
+            // Приёмник хода загрузки: писатель прогресса в оперативное хранилище.
+            // Срок жизни ключа прогресса — самоочистка; по умолчанию сутки,
+            // переопределяется настройкой Moex:LoadProgressTtl.
+            string progressTtlRaw = configuration["Moex:LoadProgressTtl"] ?? "1.00:00:00";
+            TimeSpan progressTtl = TimeSpan.Parse(progressTtlRaw, CultureInfo.InvariantCulture);
+
+            services.AddSingleton<ILoadProgressReporter>(sp => new LoadProgressWriter(
+                sp.GetRequiredService<IConnectionMultiplexer>(),
+                sp.GetRequiredService<ILogger<LoadProgressWriter>>(),
+                progressTtl));
 
             // Фоновый исполнитель: интервал опроса и число дорожек — из настроек.
             services.AddHostedService(sp =>

@@ -97,6 +97,7 @@ namespace ProjectTraiding.Moex.Contracts.Serialization
     [JsonSerializable(typeof(FuturesInstrumentCardDTO))]
         [JsonSerializable(typeof(LoadResultDto))]
         [JsonSerializable(typeof(LoadResultDto[]))]
+        [JsonSerializable(typeof(LoadProgressValue))]
     public partial class AppJsonContext : JsonSerializerContext
     {
     }
