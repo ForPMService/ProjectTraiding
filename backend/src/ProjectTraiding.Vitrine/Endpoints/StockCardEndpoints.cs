@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using ProjectTraiding.Vitrine.Contracts;
 using ProjectTraiding.Vitrine.Contracts.Dto;
 using ProjectTraiding.Vitrine.StorageBase.Postgres;
+using ProjectTraiding.Vitrine.StorageBase.Redis;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -18,13 +19,13 @@ namespace ProjectTraiding.Vitrine.Endpoints
         {
             routes.MapGet("/vitrine/cards/stock/{secid}", async (
                 string secid,
-                StockCardReadQuery query,
+                StockCardCache cache,
                 ILogger<StockCardEndpointsLog> logger,
                 CancellationToken ct) =>
             {
                 string route = $"GET /vitrine/cards/stock/{secid}";
                 VitrineEndpointLogMessages.OperationStarted(logger, route);
-                VitrineStockCardDto? card = await query.GetBySecidAsync(secid, ct);
+                VitrineStockCardDto? card = await cache.GetBySecidAsync(secid, ct);
                 if (card is null)
                     return Results.NotFound();
                 return Results.Json(card, VitrineJsonContext.Default.VitrineStockCardDto);

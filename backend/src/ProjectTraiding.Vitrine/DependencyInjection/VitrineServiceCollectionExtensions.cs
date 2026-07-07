@@ -36,6 +36,23 @@ namespace ProjectTraiding.Vitrine.DependencyInjection
                 sp.GetRequiredService<ILogger<InstrumentCatalogCache>>(),
                 cacheTtl));
 
+            // Кеши карточек — тот же образец «чтение через кеш», список на рынок под одним
+            // ключом, общий срок жизни. Сброс — по тому же событию catalog:changed.
+            string cardsTtlRaw = configuration["Vitrine:CardsCacheTtl"] ?? "1.00:00:00";
+            TimeSpan cardsCacheTtl = TimeSpan.Parse(cardsTtlRaw, CultureInfo.InvariantCulture);
+
+            services.AddTransient<StockCardCache>(sp => new StockCardCache(
+                sp.GetRequiredService<IConnectionMultiplexer>(),
+                sp.GetRequiredService<StockCardReadQuery>(),
+                sp.GetRequiredService<ILogger<StockCardCache>>(),
+                cardsCacheTtl));
+
+            services.AddTransient<FuturesCardCache>(sp => new FuturesCardCache(
+                sp.GetRequiredService<IConnectionMultiplexer>(),
+                sp.GetRequiredService<FuturesCardReadQuery>(),
+                sp.GetRequiredService<ILogger<FuturesCardCache>>(),
+                cardsCacheTtl));
+
             // Кеш тарифов — тот же образец «чтение через кеш», свой ключ и свой срок жизни.
             string tariffsTtlRaw = configuration["Vitrine:TariffsCacheTtl"] ?? "1.00:00:00";
             TimeSpan tariffsCacheTtl = TimeSpan.Parse(tariffsTtlRaw, CultureInfo.InvariantCulture);

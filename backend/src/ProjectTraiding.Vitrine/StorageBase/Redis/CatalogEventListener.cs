@@ -89,6 +89,13 @@ namespace ProjectTraiding.Vitrine.StorageBase.Redis
             InstrumentCatalogCache cache = scope.ServiceProvider.GetRequiredService<InstrumentCatalogCache>();
             await cache.InvalidateAsync();
 
+            // Карточки меняются вместе со справочником, поэтому по тому же событию
+            // сбрасываем и их кеши. Все три кеша обновляются событием catalog:changed.
+            StockCardCache stockCardCache = scope.ServiceProvider.GetRequiredService<StockCardCache>();
+            await stockCardCache.InvalidateAsync();
+            FuturesCardCache futuresCardCache = scope.ServiceProvider.GetRequiredService<FuturesCardCache>();
+            await futuresCardCache.InvalidateAsync();
+
             // Подтверждаем разбор всех полученных записей.
             RedisValue[] ids = new RedisValue[entries.Length];
             for (int i = 0; i < entries.Length; i++)

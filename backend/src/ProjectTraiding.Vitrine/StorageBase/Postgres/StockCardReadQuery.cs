@@ -67,5 +67,52 @@ namespace ProjectTraiding.Vitrine.StorageBase.Postgres
                 throw;
             }
         }
+
+        public async Task<List<VitrineStockCardDto>> GetAllAsync(CancellationToken ct)
+        {
+            const string table = "moex_stock_details";
+            VitrineReadLogMessages.ReadStarted(_logger, table);
+            long startTs = Stopwatch.GetTimestamp();
+
+            try
+            {
+                await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
+                await using NpgsqlCommand cmd = new NpgsqlCommand("""
+                    SELECT secid, boardid, shortname, secname, sectype, isin, lotsize, minstep,
+                           decimals, currency_id, issue_size, list_level, status
+                    FROM moex_stock_details
+                    ORDER BY secid
+                    """, connection);
+
+                List<VitrineStockCardDto> result = new();
+                await using NpgsqlDataReader reader = await cmd.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct))
+                {
+                    result.Add(new VitrineStockCardDto(
+                        Secid: reader.GetString(0),
+                        Boardid: reader.GetString(1),
+                        Shortname: reader.IsDBNull(2) ? null : reader.GetString(2),
+                        Secname: reader.IsDBNull(3) ? null : reader.GetString(3),
+                        Sectype: reader.IsDBNull(4) ? null : reader.GetString(4),
+                        Isin: reader.IsDBNull(5) ? null : reader.GetString(5),
+                        Lotsize: reader.IsDBNull(6) ? null : (int?)reader.GetInt32(6),
+                        Minstep: reader.IsDBNull(7) ? null : (decimal?)reader.GetDecimal(7),
+                        Decimals: reader.IsDBNull(8) ? null : (int?)reader.GetInt32(8),
+                        CurrencyId: reader.IsDBNull(9) ? null : reader.GetString(9),
+                        IssueSize: reader.IsDBNull(10) ? null : (long?)reader.GetInt64(10),
+                        ListLevel: reader.IsDBNull(11) ? null : (int?)reader.GetInt32(11),
+                        Status: reader.IsDBNull(12) ? null : reader.GetString(12)));
+                }
+
+                TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
+                VitrineReadLogMessages.ReadCompleted(_logger, table, result.Count, elapsed);
+                return result;
+            }
+            catch (Exception ex)
+            {
+                VitrineReadLogMessages.ReadFailed(_logger, ex, table, ex.GetType().Name);
+                throw;
+            }
+        }
     }
 }
