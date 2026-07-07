@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using ProjectTraiding.Vitrine.Contracts;
 using ProjectTraiding.Vitrine.Contracts.Dto;
 using ProjectTraiding.Vitrine.StorageBase.Postgres;
+using ProjectTraiding.Vitrine.StorageBase.Redis;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -17,13 +18,13 @@ namespace ProjectTraiding.Vitrine.Endpoints
         public static IEndpointRouteBuilder MapBrokerTariffEndpoints(this IEndpointRouteBuilder routes)
         {
             routes.MapGet("/vitrine/tariffs", async (
-                BrokerTariffReadQuery query,
+                BrokerTariffCache cache,
                 ILogger<BrokerTariffEndpointsLog> logger,
                 CancellationToken ct) =>
             {
                 const string route = "GET /vitrine/tariffs";
                 VitrineEndpointLogMessages.OperationStarted(logger, route);
-                List<VitrineBrokerTariffDto> items = await query.GetAllAsync(ct);
+                List<VitrineBrokerTariffDto> items = await cache.GetAllAsync(ct);
                 return Results.Json(items, VitrineJsonContext.Default.ListVitrineBrokerTariffDto);
             });
 

@@ -20,6 +20,7 @@ namespace ProjectTraiding.Vitrine.DependencyInjection
             services.AddTransient<StockCardReadQuery>();
             services.AddTransient<FuturesCardReadQuery>();
             services.AddSingleton<CatalogEventReader>();
+            services.AddSingleton<TariffEventReader>();
             services.AddTransient<InstrumentRelationBySecidReadQuery>();
             services.AddTransient<StatusReadQuery>();
 
@@ -35,6 +36,16 @@ namespace ProjectTraiding.Vitrine.DependencyInjection
                 sp.GetRequiredService<ILogger<InstrumentCatalogCache>>(),
                 cacheTtl));
 
+            // Кеш тарифов — тот же образец «чтение через кеш», свой ключ и свой срок жизни.
+            string tariffsTtlRaw = configuration["Vitrine:TariffsCacheTtl"] ?? "1.00:00:00";
+            TimeSpan tariffsCacheTtl = TimeSpan.Parse(tariffsTtlRaw, CultureInfo.InvariantCulture);
+
+            services.AddTransient<BrokerTariffCache>(sp => new BrokerTariffCache(
+                sp.GetRequiredService<IConnectionMultiplexer>(),
+                sp.GetRequiredService<BrokerTariffReadQuery>(),
+                sp.GetRequiredService<ILogger<BrokerTariffCache>>(),
+                tariffsCacheTtl));
+
             string pollRaw = configuration["Vitrine:CatalogPollInterval"] ?? "00:00:02";
             TimeSpan catalogPoll = TimeSpan.Parse(pollRaw, CultureInfo.InvariantCulture);
 
@@ -43,6 +54,16 @@ namespace ProjectTraiding.Vitrine.DependencyInjection
                 sp.GetRequiredService<IServiceScopeFactory>(),
                 sp.GetRequiredService<ILogger<CatalogEventListener>>(),
                 catalogPoll));
+
+            // Слушатель потока изменения тарифов — тот же образец, свой интервал опроса.
+            string tariffPollRaw = configuration["Vitrine:TariffPollInterval"] ?? "00:00:02";
+            TimeSpan tariffPoll = TimeSpan.Parse(tariffPollRaw, CultureInfo.InvariantCulture);
+
+            services.AddHostedService(sp => new TariffEventListener(
+                sp.GetRequiredService<TariffEventReader>(),
+                sp.GetRequiredService<IServiceScopeFactory>(),
+                sp.GetRequiredService<ILogger<TariffEventListener>>(),
+                tariffPoll));
             return services;
         }
     }
