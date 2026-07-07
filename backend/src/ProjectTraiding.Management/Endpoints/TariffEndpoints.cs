@@ -2,6 +2,7 @@ using Npgsql;
 using ProjectTraiding.Management.Contracts;
 using ProjectTraiding.Management.Contracts.Dto;
 using ProjectTraiding.Management.StorageBase.Postgres;
+using ProjectTraiding.Management.StorageBase.Redis;
 using ProjectTraiding.Management.Validation;
 using System;
 using System.Collections.Generic;
@@ -17,6 +18,7 @@ namespace ProjectTraiding.Management.Endpoints
             routes.MapPost("/management/tariffs", async (
                 BrokerTariffCreateRequest request,
                 BrokerTariffWriter writer,
+                TariffEventPublisher publisher,
                 ILogger<TariffEndpointsLog> logger,
                 CancellationToken ct) =>
             {
@@ -34,6 +36,7 @@ namespace ProjectTraiding.Management.Endpoints
                 try
                 {
                     DbWriteResult w = await writer.CreateAsync(request, ct);
+                    await publisher.PublishChangedAsync();
                     ManagementResultDto dto = new(
                         Operation: "create_broker_tariff",
                         Target: "moex_broker_tariffs",

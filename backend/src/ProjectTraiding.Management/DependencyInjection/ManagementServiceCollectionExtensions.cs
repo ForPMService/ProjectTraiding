@@ -1,4 +1,5 @@
 ﻿using ProjectTraiding.Management.StorageBase.Postgres;
+using ProjectTraiding.Management.StorageBase.Redis;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -12,6 +13,7 @@ namespace ProjectTraiding.Management.DependencyInjection
             services.AddTransient<InstrumentRelationWriter>();
             services.AddTransient<BrokerTariffWriter>();
             services.AddTransient<LoadTaskWriter>();
+            services.AddTransient<TariffEventPublisher>();
             return services;
         }
     }
