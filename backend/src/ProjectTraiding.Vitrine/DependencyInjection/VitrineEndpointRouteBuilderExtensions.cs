@@ -18,6 +18,7 @@ namespace ProjectTraiding.Vitrine.DependencyInjection
             routes.MapFuturesCardEndpoints();
             routes.MapInstrumentRelationBySecidEndpoints();
             routes.MapStatusEndpoints();
+            routes.MapLoadedRangeEndpoints();
             return routes;
         }
     }

@@ -23,6 +23,7 @@ namespace ProjectTraiding.Vitrine.DependencyInjection
             services.AddSingleton<TariffEventReader>();
             services.AddTransient<InstrumentRelationBySecidReadQuery>();
             services.AddTransient<StatusReadQuery>();
+            services.AddTransient<LoadedRangeReadQuery>();
 
             // Срок жизни ключа справочника — страховка на случай потерянного события.
             // Основную свежесть даёт событие catalog:changed (добавляется следующими шагами).
