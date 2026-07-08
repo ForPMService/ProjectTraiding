@@ -23,7 +23,7 @@ var builder = WebApplication.CreateBuilder(args);
 // ══════════════════════════════════════════════
 builder.AddProjectTraidingObservability(
     activitySources: [MoexTelemetry.ActivitySourceName],
-    meters: [MoexTelemetry.MeterName]);
+    meters: [MoexTelemetry.MeterName, ApiMetrics.MeterName]);
 
 builder.Services.AddMoexClients(builder.Configuration);
 builder.Services.AddClickHouse(builder.Configuration);
@@ -44,6 +44,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, ManagementJsonContext.Default);
 });
 builder.Services.AddOpenApi();
+builder.Services.AddProjectTraidingRateLimiter();
 
 var app = builder.Build();
 
@@ -62,8 +63,16 @@ using (IServiceScope startupScope = app.Services.CreateScope())
 app.MapObservabilityEndpoints();
 app.MapMoexSyncEndpoints();
 app.MapMoexLoadRunEndpoints();
-app.MapManagementEndpoints();
-app.MapVitrineEndpoints();
+
+// Управление — под ведро управления (редкие команды оператора, 1 в 30 с).
+app.MapGroup(string.Empty)
+    .RequireRateLimiting(RateLimiting.ManagementPolicy)
+    .MapManagementEndpoints();
+
+// Витрина — под ведро витрины (частый публичный поток, 1 в 2 с, ёмкость под всплеск).
+app.MapGroup(string.Empty)
+    .RequireRateLimiting(RateLimiting.VitrinePolicy)
+    .MapVitrineEndpoints();
 
 if (app.Environment.IsDevelopment())
 {
@@ -71,5 +80,6 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
+app.UseRateLimiter();
 app.UseHttpsRedirection();
 app.Run();

@@ -28,19 +28,22 @@ namespace ProjectTraiding.Moex.Loading
         private readonly MoexLoadedRangeWriter _rangeWriter;
         private readonly LoadHandlerDispatcher _dispatcher;
         private readonly ILoadProgressReporter _progress;
+        private readonly ProjectTraiding.Moex.StorageBase.Redis.LoadedRangeEventPublisher _rangeEventPublisher;
 
         public LoadRunner(
             MoexLoadTaskReader taskReader,
             MoexLoadTaskWriter taskWriter,
             MoexLoadedRangeWriter rangeWriter,
             LoadHandlerDispatcher dispatcher,
-            ILoadProgressReporter progress)
+            ILoadProgressReporter progress,
+            ProjectTraiding.Moex.StorageBase.Redis.LoadedRangeEventPublisher rangeEventPublisher)
         {
             _taskReader = taskReader;
             _taskWriter = taskWriter;
             _rangeWriter = rangeWriter;
             _dispatcher = dispatcher;
             _progress = progress;
+            _rangeEventPublisher = rangeEventPublisher;
         }
 
         public async Task<LoadOutcome> RunAsync(Guid taskId, CancellationToken ct, bool alreadyClaimed = false)
@@ -91,8 +94,9 @@ namespace ProjectTraiding.Moex.Loading
                     return new LoadOutcome(LoadStatus.Failed, summary.RowsRead);
                 }
 
-                // Штатное полное покрытие: журнал результата и закрытие успехом.
+                // Штатное полное покрытие: журнал результата, извещение витрины, закрытие успехом.
                 await _rangeWriter.UpsertAsync(task, summary.RowsRead, summary.LastToken, ct);
+                await _rangeEventPublisher.PublishChangedAsync(task.Secid);
                 await _taskWriter.MarkDoneAsync(taskId, summary.RowsRead, stopReason, summary.LastToken, ct);
 
                 return new LoadOutcome(LoadStatus.Done, summary.RowsRead);

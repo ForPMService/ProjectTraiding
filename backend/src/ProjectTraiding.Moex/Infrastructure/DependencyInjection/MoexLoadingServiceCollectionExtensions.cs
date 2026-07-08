@@ -120,6 +120,7 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
             services.AddTransient<MoexLoadTaskReader>();
             services.AddTransient<MoexLoadTaskWriter>();
             services.AddTransient<MoexLoadedRangeWriter>();
+            services.AddSingleton<ProjectTraiding.Moex.StorageBase.Redis.LoadedRangeEventPublisher>();
             services.AddScoped<LoadHandlerDispatcher>();
             services.AddScoped<LoadRunner>();
 

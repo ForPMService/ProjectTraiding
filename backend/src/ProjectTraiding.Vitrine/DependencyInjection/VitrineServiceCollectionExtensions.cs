@@ -21,6 +21,7 @@ namespace ProjectTraiding.Vitrine.DependencyInjection
             services.AddTransient<FuturesCardReadQuery>();
             services.AddSingleton<CatalogEventReader>();
             services.AddSingleton<TariffEventReader>();
+            services.AddSingleton<LoadedRangeEventReader>();
             services.AddTransient<InstrumentRelationBySecidReadQuery>();
             services.AddTransient<StatusReadQuery>();
             services.AddTransient<LoadedRangeReadQuery>();
@@ -64,6 +65,15 @@ namespace ProjectTraiding.Vitrine.DependencyInjection
                 sp.GetRequiredService<ILogger<BrokerTariffCache>>(),
                 tariffsCacheTtl));
 
+            string rangesTtlRaw = configuration["Vitrine:LoadedRangesCacheTtl"] ?? "1.00:00:00";
+            TimeSpan rangesCacheTtl = TimeSpan.Parse(rangesTtlRaw, CultureInfo.InvariantCulture);
+
+            services.AddTransient<LoadedRangeCache>(sp => new LoadedRangeCache(
+                sp.GetRequiredService<IConnectionMultiplexer>(),
+                sp.GetRequiredService<LoadedRangeReadQuery>(),
+                sp.GetRequiredService<ILogger<LoadedRangeCache>>(),
+                rangesCacheTtl));
+
             string pollRaw = configuration["Vitrine:CatalogPollInterval"] ?? "00:00:02";
             TimeSpan catalogPoll = TimeSpan.Parse(pollRaw, CultureInfo.InvariantCulture);
 
@@ -82,6 +92,15 @@ namespace ProjectTraiding.Vitrine.DependencyInjection
                 sp.GetRequiredService<IServiceScopeFactory>(),
                 sp.GetRequiredService<ILogger<TariffEventListener>>(),
                 tariffPoll));
+
+            string rangesPollRaw = configuration["Vitrine:LoadedRangesPollInterval"] ?? "00:00:02";
+            TimeSpan rangesPoll = TimeSpan.Parse(rangesPollRaw, CultureInfo.InvariantCulture);
+
+            services.AddHostedService(sp => new LoadedRangeEventListener(
+                sp.GetRequiredService<LoadedRangeEventReader>(),
+                sp.GetRequiredService<IServiceScopeFactory>(),
+                sp.GetRequiredService<ILogger<LoadedRangeEventListener>>(),
+                rangesPoll));
             return services;
         }
     }
