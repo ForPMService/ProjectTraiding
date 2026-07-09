@@ -13,6 +13,7 @@ namespace ProjectTraiding.Management.DependencyInjection
             services.AddTransient<InstrumentRelationWriter>();
             services.AddTransient<BrokerTariffWriter>();
             services.AddTransient<LoadTaskWriter>();
+            services.AddTransient<LoadedRangeCoverageReader>();
             services.AddTransient<TariffEventPublisher>();
             return services;
         }

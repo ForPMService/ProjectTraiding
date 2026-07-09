@@ -66,6 +66,7 @@ namespace ProjectTraiding.Management.Endpoints
             routes.MapPost("/management/load-tasks/bulk", async (
                 LoadTaskBulkCreateRequest request,
                 LoadTaskWriter writer,
+                LoadedRangeCoverageReader coverageReader,
                 ILogger<LoadTaskEndpointsLog> logger,
                 CancellationToken ct) =>
             {
@@ -91,7 +92,55 @@ namespace ProjectTraiding.Management.Endpoints
                 int? normalizedSliceWeeks = request.SliceWeeks.HasValue
                    ? (request.SliceWeeks.Value < 1 ? 1 : request.SliceWeeks.Value)
                    : (int?)null;
-                IReadOnlyList<LoadTaskCreateRequest> tasks = LoadTaskBulkExpander.Expand(request);
+                List<LoadTaskCreateRequest> tasks = new();
+                for (int instrumentIndex = 0; instrumentIndex < request.Instruments.Count; instrumentIndex++)
+                {
+                    LoadTaskBulkInstrumentRequest instrument = request.Instruments[instrumentIndex];
+                    string[] dataKinds = instrument.Market == "stock"
+                        ? request.StockDataKinds
+                        : request.FuturesDataKinds;
+
+                    DateOnly processLocalToday = DateOnly.FromDateTime(DateTime.Today);
+                    DateOnly lastMatureDate = processLocalToday.AddDays(-1);
+                    DateOnly effectiveFrom = instrument.DateFrom;
+                    DateOnly effectiveTill = instrument.DateTill < lastMatureDate
+                        ? instrument.DateTill
+                        : lastMatureDate;
+
+                    for (int intervalIndex = 0; intervalIndex < request.CandleIntervals.Length; intervalIndex++)
+                    {
+                        await AddMissingWindowsAsync(
+                            tasks,
+                            coverageReader,
+                            logger,
+                            route,
+                            instrument,
+                            dataKind: "candles",
+                            candleInterval: request.CandleIntervals[intervalIndex],
+                            storageTarget: request.StorageTarget,
+                            requestedSliceWeeks: request.SliceWeeks,
+                            effectiveFrom,
+                            effectiveTill,
+                            ct);
+                    }
+
+                    for (int dataKindIndex = 0; dataKindIndex < dataKinds.Length; dataKindIndex++)
+                    {
+                        await AddMissingWindowsAsync(
+                            tasks,
+                            coverageReader,
+                            logger,
+                            route,
+                            instrument,
+                            dataKind: dataKinds[dataKindIndex],
+                            candleInterval: null,
+                            storageTarget: request.StorageTarget,
+                            requestedSliceWeeks: request.SliceWeeks,
+                            effectiveFrom,
+                            effectiveTill,
+                            ct);
+                    }
+                }
 
                 ValidationResult validation = ValidateBulkExpandedTasks(tasks);
                 if (!validation.IsValid)
@@ -225,6 +274,80 @@ namespace ProjectTraiding.Management.Endpoints
             }
 
             return result;
+        }
+
+        private static async Task AddMissingWindowsAsync(
+            List<LoadTaskCreateRequest> tasks,
+            LoadedRangeCoverageReader coverageReader,
+            ILogger logger,
+            string route,
+            LoadTaskBulkInstrumentRequest instrument,
+            string dataKind,
+            int? candleInterval,
+            string storageTarget,
+            int? requestedSliceWeeks,
+            DateOnly effectiveFrom,
+            DateOnly effectiveTill,
+            CancellationToken ct)
+        {
+            if (effectiveFrom > effectiveTill)
+            {
+                ManagementEndpointLogMessages.BulkFillMissingResolved(
+                    logger,
+                    route,
+                    instrument.Secid,
+                    dataKind,
+                    candleInterval,
+                    instrument.DateFrom,
+                    instrument.DateTill,
+                    effectiveFrom,
+                    effectiveTill,
+                    coveredIntervalsCount: 0,
+                    missingIntervalsCount: 0,
+                    missingDaysTotal: 0,
+                    windowsCreatedCount: 0);
+                return;
+            }
+
+            IReadOnlyList<CoverageInterval> covered = await coverageReader.GetCoveredRangesAsync(
+                instrument.Secid,
+                instrument.Market,
+                instrument.Boardid,
+                dataKind,
+                candleInterval,
+                storageTarget,
+                effectiveFrom,
+                effectiveTill,
+                ct);
+
+            CoverageSubtractResult result = LoadedRangeCoverageCalculator.Subtract(
+                effectiveFrom,
+                effectiveTill,
+                covered);
+
+            int windowsCreatedCount = LoadTaskBulkExpander.AddMissingWindows(
+                tasks,
+                instrument,
+                dataKind,
+                candleInterval,
+                storageTarget,
+                requestedSliceWeeks,
+                result.Missing);
+
+            ManagementEndpointLogMessages.BulkFillMissingResolved(
+                logger,
+                route,
+                instrument.Secid,
+                dataKind,
+                candleInterval,
+                instrument.DateFrom,
+                instrument.DateTill,
+                effectiveFrom,
+                effectiveTill,
+                result.CoveredIntervalsCount,
+                result.MissingIntervalsCount,
+                result.MissingDaysTotal,
+                windowsCreatedCount);
         }
     }
 }

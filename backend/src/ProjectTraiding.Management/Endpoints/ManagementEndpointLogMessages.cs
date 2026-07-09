@@ -34,5 +34,23 @@ namespace ProjectTraiding.Management.Endpoints
             int expandedCount,
             int insertedCount,
             int skippedDuplicateCount);
+
+        [LoggerMessage(
+            EventId = 214, EventName = "MgmtBulkFillMissingResolved", Level = LogLevel.Information,
+            Message = "Management bulk fill missing resolved: route={Route}, secid={Secid}, dataKind={DataKind}, candleInterval={CandleInterval}, requestedFrom={RequestedFrom}, requestedTill={RequestedTill}, effectiveFrom={EffectiveFrom}, effectiveTill={EffectiveTill}, coveredIntervals={CoveredIntervalsCount}, missingIntervals={MissingIntervalsCount}, missingDays={MissingDaysTotal}, windowsCreated={WindowsCreatedCount}.")]
+        public static partial void BulkFillMissingResolved(
+            ILogger logger,
+            string route,
+            string secid,
+            string dataKind,
+            int? candleInterval,
+            DateOnly requestedFrom,
+            DateOnly requestedTill,
+            DateOnly effectiveFrom,
+            DateOnly effectiveTill,
+            int coveredIntervalsCount,
+            int missingIntervalsCount,
+            int missingDaysTotal,
+            int windowsCreatedCount);
     }
 }

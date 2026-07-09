@@ -47,6 +47,36 @@ namespace ProjectTraiding.Management.Expansion
             return tasks;
         }
 
+        public static int AddMissingWindows(
+            List<LoadTaskCreateRequest> tasks,
+            LoadTaskBulkInstrumentRequest instrument,
+            string dataKind,
+            int? candleInterval,
+            string storageTarget,
+            int? requestedSliceWeeks,
+            IReadOnlyList<MissingInterval> missing)
+        {
+            int initialCount = tasks.Count;
+            int weeks = ResolveSliceWeeks(requestedSliceWeeks, dataKind, instrument.Market);
+            int sliceDays = weeks * 7;
+
+            for (int i = 0; i < missing.Count; i++)
+            {
+                MissingInterval interval = missing[i];
+                AddWindows(
+                    tasks,
+                    instrument,
+                    dataKind,
+                    candleInterval,
+                    storageTarget,
+                    sliceDays,
+                    interval.From,
+                    interval.Till);
+            }
+
+            return tasks.Count - initialCount;
+        }
+
         /// <summary>
         /// Ширина окна нарезки в неделях для конкретной пары «вид данных × рынок».
         /// Если оператор задал ширину явно — используется она (не меньше одной недели) для всех
@@ -78,13 +108,34 @@ namespace ProjectTraiding.Management.Expansion
             string storageTarget,
             int sliceDays)
         {
-            DateOnly windowFrom = instrument.DateFrom;
+            AddWindows(
+                tasks,
+                instrument,
+                dataKind,
+                candleInterval,
+                storageTarget,
+                sliceDays,
+                instrument.DateFrom,
+                instrument.DateTill);
+        }
 
-            while (windowFrom <= instrument.DateTill)
+        private static void AddWindows(
+            List<LoadTaskCreateRequest> tasks,
+            LoadTaskBulkInstrumentRequest instrument,
+            string dataKind,
+            int? candleInterval,
+            string storageTarget,
+            int sliceDays,
+            DateOnly dateFrom,
+            DateOnly dateTill)
+        {
+            DateOnly windowFrom = dateFrom;
+
+            while (windowFrom <= dateTill)
             {
                 DateOnly windowTill = windowFrom.AddDays(sliceDays - 1);
-                if (windowTill > instrument.DateTill)
-                    windowTill = instrument.DateTill;
+                if (windowTill > dateTill)
+                    windowTill = dateTill;
 
                 tasks.Add(new LoadTaskCreateRequest(
                     Secid: instrument.Secid,
