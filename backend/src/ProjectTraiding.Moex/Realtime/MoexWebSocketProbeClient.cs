@@ -17,7 +17,11 @@ public sealed class MoexWebSocketProbeClient
     private static readonly TimeSpan OperationTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan CloseTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan MinimumDuration = TimeSpan.FromSeconds(1);
+    private static readonly UTF8Encoding StrictUtf8 = new UTF8Encoding(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true);
     private const int ReceiveChunkSize = 16 * 1024;
+    private const int UnreadablePreviewBytes = 256;
 
     private readonly MoexOptions _options;
     private readonly ILogger<MoexWebSocketProbeClient> _logger;
@@ -69,13 +73,29 @@ public sealed class MoexWebSocketProbeClient
             MoexWebSocketLogMessages.Connecting(
                 _logger, MoexLogSources.WebSocket, _options.WebSocketUrl, _options.WebSocketDomain);
 
+            long handshakeBytes = 0;
             ReceiveOutcome handshake;
             try
             {
                 await socket.ConnectAsync(new Uri(_options.WebSocketUrl), handshakeCts.Token);
                 await SendFrameAsync(socket, BuildConnectFrame(), handshakeCts.Token);
-                handshake = await ReadMeaningfulMessageAsync(
-                    socket, _options.WebSocketProbeMaxCapturedBytes, handshakeCts.Token);
+
+                while (true)
+                {
+                    handshake = await ReceiveMessageAsync(
+                        socket,
+                        _options.WebSocketProbeMaxCapturedBytes - handshakeBytes,
+                        handshakeCts.Token);
+
+                    handshakeBytes += handshake.Bytes;
+
+                    if (handshake.Kind != ReceiveKind.Text
+                        || !StompFrame.IsHeartbeat(handshake.Text!))
+                    {
+                        handshake = handshake with { Bytes = handshakeBytes };
+                        break;
+                    }
+                }
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
@@ -83,22 +103,29 @@ public sealed class MoexWebSocketProbeClient
                     _logger, MoexLogSources.WebSocket, _options.WebSocketUrl,
                     "handshake_timeout", "Биржа не ответила на CONNECT в отведённое время.");
 
-                return FailedHandshake("handshake_timeout", startedAt);
+                return new WebSocketProbeReport
+                {
+                    Connected = false,
+                    HandshakeBytes = handshakeBytes,
+                    NegotiatedSubProtocol = socket.SubProtocol,
+                    TerminationReason = "handshake_timeout",
+                    Elapsed = Stopwatch.GetElapsedTime(startedAt),
+                };
             }
 
             if (handshake.Kind == ReceiveKind.Closed)
             {
-                return FailedHandshake("websocket_closed", startedAt);
+                return FailedHandshake("websocket_closed", startedAt, socket, handshake);
             }
 
-            if (handshake.Kind == ReceiveKind.UnexpectedBinary)
+            if (handshake.Kind == ReceiveKind.InvalidUtf8)
             {
-                return FailedHandshake("unexpected_binary", startedAt);
+                return FailedHandshake("handshake_invalid_utf8", startedAt, socket, handshake);
             }
 
             if (handshake.Kind == ReceiveKind.ByteLimitExceeded)
             {
-                return FailedHandshake("handshake_byte_limit", startedAt);
+                return FailedHandshake("handshake_byte_limit", startedAt, socket, handshake);
             }
 
             string handshakeRaw = handshake.Text!;
@@ -114,12 +141,10 @@ public sealed class MoexWebSocketProbeClient
                     _logger, MoexLogSources.WebSocket, _options.WebSocketUrl,
                     nameof(FormatException), exception.Message);
 
-                return new WebSocketProbeReport
+                return FailedHandshake(
+                    "unexpected_handshake_frame", startedAt, socket, handshake) with
                 {
-                    Connected = false,
                     RawUnexpectedHandshakeFrame = handshakeRaw,
-                    TerminationReason = "unexpected_handshake_frame",
-                    Elapsed = Stopwatch.GetElapsedTime(startedAt),
                 };
             }
 
@@ -128,15 +153,15 @@ public sealed class MoexWebSocketProbeClient
                 MoexWebSocketLogMessages.ConnectRejected(
                     _logger, MoexLogSources.WebSocket, _options.WebSocketUrl, handshakeFrame.Command);
 
-                bool isError = string.Equals(handshakeFrame.Command, "ERROR", StringComparison.Ordinal);
+                bool isError = string.Equals(
+                    handshakeFrame.Command, "ERROR", StringComparison.Ordinal);
 
-                return new WebSocketProbeReport
+                return FailedHandshake(
+                    isError ? "connect_rejected" : "unexpected_handshake_frame",
+                    startedAt, socket, handshake) with
                 {
-                    Connected = false,
                     RawErrorFrame = isError ? handshakeRaw : null,
                     RawUnexpectedHandshakeFrame = isError ? null : handshakeRaw,
-                    TerminationReason = isError ? "connect_rejected" : "unexpected_handshake_frame",
-                    Elapsed = Stopwatch.GetElapsedTime(startedAt),
                 };
             }
 
@@ -161,7 +186,15 @@ public sealed class MoexWebSocketProbeClient
                 _logger, MoexLogSources.WebSocket, destination, selector);
 
             return await CollectAsync(
-                socket, handshakeRaw, destination, effective, startedAt, cancellationToken);
+                socket,
+                handshakeRaw,
+                handshake.Bytes,
+                handshake.MessageType?.ToString(),
+                socket.SubProtocol,
+                destination,
+                effective,
+                startedAt,
+                cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -183,6 +216,9 @@ public sealed class MoexWebSocketProbeClient
     private async Task<WebSocketProbeReport> CollectAsync(
         ClientWebSocket socket,
         string rawConnectedFrame,
+        long handshakeBytes,
+        string? handshakeMessageType,
+        string? negotiatedSubProtocol,
         string destination,
         TimeSpan duration,
         long startedAt,
@@ -194,6 +230,9 @@ public sealed class MoexWebSocketProbeClient
         string? rawError = null;
         long capturedBytes = 0;
         int unparsedFrames = 0;
+        int binaryMessages = 0;
+        int heartbeats = 0;
+        string? unreadablePreview = null;
         bool truncated = false;
         string terminationReason = "duration_elapsed";
         string? closeStatus = null;
@@ -213,6 +252,12 @@ public sealed class MoexWebSocketProbeClient
 
                 capturedBytes += outcome.Bytes;
 
+                if (outcome.MessageType == WebSocketMessageType.Binary
+                    && outcome.Kind != ReceiveKind.ByteLimitExceeded)
+                {
+                    binaryMessages++;
+                }
+
                 if (outcome.Kind == ReceiveKind.Closed)
                 {
                     terminationReason = "websocket_closed";
@@ -221,9 +266,10 @@ public sealed class MoexWebSocketProbeClient
                     break;
                 }
 
-                if (outcome.Kind == ReceiveKind.UnexpectedBinary)
+                if (outcome.Kind == ReceiveKind.InvalidUtf8)
                 {
-                    terminationReason = "unexpected_binary";
+                    unreadablePreview = outcome.UnreadablePreview;
+                    terminationReason = "invalid_utf8";
                     break;
                 }
 
@@ -237,6 +283,7 @@ public sealed class MoexWebSocketProbeClient
                 string raw = outcome.Text!;
                 if (StompFrame.IsHeartbeat(raw))
                 {
+                    heartbeats++;
                     continue;
                 }
 
@@ -308,7 +355,13 @@ public sealed class MoexWebSocketProbeClient
             RawFrames = rawFrames,
             FramesReceived = rawFrames.Count,
             UnparsedFrames = unparsedFrames,
+            HandshakeBytes = handshakeBytes,
             CapturedBytes = capturedBytes,
+            HandshakeMessageType = handshakeMessageType,
+            NegotiatedSubProtocol = negotiatedSubProtocol,
+            BinaryMessagesReceived = binaryMessages,
+            HeartbeatsReceived = heartbeats,
+            UnreadableContentPreview = unreadablePreview,
             Truncated = truncated,
             TerminationReason = terminationReason,
             CloseStatus = closeStatus,
@@ -319,13 +372,22 @@ public sealed class MoexWebSocketProbeClient
 
     private enum ReceiveKind
     {
+        /// <summary>Сообщение получено и прочитано как UTF-8. Двоичный кадр — тоже сюда.</summary>
         Text,
         Closed,
-        UnexpectedBinary,
+
+        /// <summary>Содержимое не читается как UTF-8.</summary>
+        InvalidUtf8,
+
         ByteLimitExceeded,
     }
 
-    private readonly record struct ReceiveOutcome(ReceiveKind Kind, string? Text, long Bytes);
+    private readonly record struct ReceiveOutcome(
+        ReceiveKind Kind,
+        string? Text,
+        long Bytes,
+        WebSocketMessageType? MessageType,
+        string? UnreadablePreview);
 
     private static async Task<ReceiveOutcome> ReceiveMessageAsync(
         ClientWebSocket socket,
@@ -335,6 +397,7 @@ public sealed class MoexWebSocketProbeClient
         using MemoryStream buffer = new MemoryStream(ReceiveChunkSize);
         byte[] chunk = new byte[ReceiveChunkSize];
         long total = 0;
+        WebSocketMessageType? messageType = null;
 
         while (true)
         {
@@ -343,19 +406,17 @@ public sealed class MoexWebSocketProbeClient
 
             if (result.MessageType == WebSocketMessageType.Close)
             {
-                return new ReceiveOutcome(ReceiveKind.Closed, null, total);
+                return new ReceiveOutcome(
+                    ReceiveKind.Closed, null, total, WebSocketMessageType.Close, null);
             }
 
+            messageType ??= result.MessageType;
             total += result.Count;
-
-            if (result.MessageType == WebSocketMessageType.Binary)
-            {
-                return new ReceiveOutcome(ReceiveKind.UnexpectedBinary, null, total);
-            }
 
             if (total > remainingBytes)
             {
-                return new ReceiveOutcome(ReceiveKind.ByteLimitExceeded, null, total);
+                return new ReceiveOutcome(
+                    ReceiveKind.ByteLimitExceeded, null, total, messageType, null);
             }
 
             buffer.Write(chunk, 0, result.Count);
@@ -366,41 +427,38 @@ public sealed class MoexWebSocketProbeClient
             }
         }
 
-        string text = Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
-        return new ReceiveOutcome(ReceiveKind.Text, text, total);
-    }
-
-    private static async Task<ReceiveOutcome> ReadMeaningfulMessageAsync(
-        ClientWebSocket socket,
-        long maxBytes,
-        CancellationToken cancellationToken)
-    {
-        long consumed = 0;
-
-        while (true)
+        try
         {
-            ReceiveOutcome outcome =
-                await ReceiveMessageAsync(socket, maxBytes - consumed, cancellationToken);
+            string text = StrictUtf8.GetString(
+                buffer.GetBuffer(), 0, checked((int)buffer.Length));
 
-            consumed += outcome.Bytes;
+            return new ReceiveOutcome(ReceiveKind.Text, text, total, messageType, null);
+        }
+        catch (DecoderFallbackException)
+        {
+            string preview = Convert.ToHexString(
+                buffer.GetBuffer(),
+                0,
+                (int)Math.Min(buffer.Length, UnreadablePreviewBytes));
 
-            if (outcome.Kind != ReceiveKind.Text)
-            {
-                return outcome;
-            }
-
-            if (!StompFrame.IsHeartbeat(outcome.Text!))
-            {
-                return outcome;
-            }
+            return new ReceiveOutcome(
+                ReceiveKind.InvalidUtf8, null, total, messageType, preview);
         }
     }
 
-    private static WebSocketProbeReport FailedHandshake(string reason, long startedAt) =>
+    private static WebSocketProbeReport FailedHandshake(
+        string reason,
+        long startedAt,
+        ClientWebSocket socket,
+        ReceiveOutcome outcome) =>
         new WebSocketProbeReport
         {
             Connected = false,
             TerminationReason = reason,
+            HandshakeBytes = outcome.Bytes,
+            HandshakeMessageType = outcome.MessageType?.ToString(),
+            UnreadableContentPreview = outcome.UnreadablePreview,
+            NegotiatedSubProtocol = socket.SubProtocol,
             Elapsed = Stopwatch.GetElapsedTime(startedAt),
         };
 
