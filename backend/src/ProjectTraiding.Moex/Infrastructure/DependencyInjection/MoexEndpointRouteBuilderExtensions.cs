@@ -18,6 +18,7 @@ public static class MoexEndpointRouteBuilderExtensions
         routes.MapRealtimeDebugEndpoints();
         routes.MapRealtimeDiagnosticEndpoints();
         routes.MapDiagnosticDebugEndpoints();
+        routes.MapWebSocketProbeEndpoints();
         return routes;
     }
 

@@ -150,5 +150,6 @@ namespace ProjectTraiding.Moex.Clients
         public const string Algopack = "MOEX_ALGOPACK";
         public const string Calendar = "MOEX_CALENDAR";
         public const string RealtimeRest = "MOEX_REALTIME_REST";
+        public const string WebSocket = "MOEX_WEBSOCKET";
     }
 }

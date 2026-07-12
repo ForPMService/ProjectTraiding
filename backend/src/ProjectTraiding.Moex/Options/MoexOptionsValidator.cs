@@ -57,6 +57,35 @@ namespace ProjectTraiding.Moex.Options
                 throw new InvalidOperationException(
                     "Moex:LoadWorkerConcurrency не должен превышать Moex:MaxConnectionsPerServer.");
 
+            // Потоковое соединение. Логин и пароль здесь НЕ проверяются: иначе приложение
+            // перестанет запускаться у всех, кто пробником не пользуется. Их проверяет
+            // сам пробник перед подключением.
+            //
+            // Схема — только wss. По этому каналу передаётся пароль учётной записи, и
+            // незашифрованный ws здесь недопустим. Понадобится локальный сервер по ws —
+            // это будет отдельный явный режим, а не допустимое значение настройки.
+            if (!Uri.TryCreate(options.WebSocketUrl, UriKind.Absolute, out Uri? webSocketUri)
+                || !string.Equals(webSocketUri.Scheme, "wss", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "Moex:WebSocketUrl должен быть абсолютным адресом со схемой wss.");
+            }
+
+            if (string.IsNullOrWhiteSpace(options.WebSocketDomain))
+                throw new InvalidOperationException("Moex:WebSocketDomain не может быть пустым.");
+
+            // Не меньше секунды: клиент снизу усекает длительность до одной секунды, и
+            // меньший предел противоречил бы сам себе.
+            if (options.WebSocketProbeMaxDuration < TimeSpan.FromSeconds(1))
+                throw new InvalidOperationException(
+                    "Moex:WebSocketProbeMaxDuration должен быть не меньше одной секунды.");
+
+            if (options.WebSocketProbeMaxFrames <= 0)
+                throw new InvalidOperationException("Moex:WebSocketProbeMaxFrames должен быть положительным.");
+
+            if (options.WebSocketProbeMaxCapturedBytes <= 0)
+                throw new InvalidOperationException("Moex:WebSocketProbeMaxCapturedBytes должен быть положительным.");
+
             // Действующие значения — в журнал. Ключ доступа НЕ пишем, только признак наличия.
             MoexLogMessages.OptionsApplied(
                 logger,

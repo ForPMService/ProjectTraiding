@@ -1,0 +1,507 @@
+using Microsoft.Extensions.Options;
+using ProjectTraiding.Moex.Clients;
+using ProjectTraiding.Moex.Options;
+using System.Diagnostics;
+using System.Net.WebSockets;
+using System.Text;
+
+namespace ProjectTraiding.Moex.Realtime;
+
+/// <summary>
+/// Пробник потокового соединения биржи. Отладочная точка: подключается, аутентифицируется,
+/// подписывается на один поток и возвращает сырые кадры как есть. Ничего не разбирает
+/// по смыслу и ничего никуда не пишет.
+/// </summary>
+public sealed class MoexWebSocketProbeClient
+{
+    private static readonly TimeSpan OperationTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan CloseTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan MinimumDuration = TimeSpan.FromSeconds(1);
+    private const int ReceiveChunkSize = 16 * 1024;
+
+    private readonly MoexOptions _options;
+    private readonly ILogger<MoexWebSocketProbeClient> _logger;
+
+    public MoexWebSocketProbeClient(
+        IOptions<MoexOptions> options,
+        ILogger<MoexWebSocketProbeClient> logger)
+    {
+        _options = options.Value;
+        _logger = logger;
+    }
+
+    public async Task<WebSocketProbeReport> ProbeAsync(
+        string destination,
+        string selector,
+        TimeSpan duration,
+        CancellationToken cancellationToken)
+    {
+        EnsureCredentialsConfigured();
+        EnsureSafeHeaderValue(_options.WebSocketDomain, "Moex:WebSocketDomain");
+        EnsureSafeHeaderValue(_options.WebSocketLogin, "Moex:WebSocketLogin");
+        EnsureSafeHeaderValue(_options.WebSocketPasscode, "Moex:WebSocketPasscode");
+
+        if (string.IsNullOrWhiteSpace(destination))
+        {
+            throw new ArgumentException("destination обязателен.", nameof(destination));
+        }
+
+        if (string.IsNullOrWhiteSpace(selector))
+        {
+            throw new ArgumentException("selector обязателен.", nameof(selector));
+        }
+
+        EnsureSafeHeaderValue(destination, nameof(destination));
+        EnsureSafeHeaderValue(selector, nameof(selector));
+
+        TimeSpan effective = ClampDuration(duration);
+        long startedAt = Stopwatch.GetTimestamp();
+
+        using ClientWebSocket socket = new ClientWebSocket();
+        socket.Options.AddSubProtocol("STOMP");
+
+        try
+        {
+            using CancellationTokenSource handshakeCts =
+                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            handshakeCts.CancelAfter(OperationTimeout);
+
+            MoexWebSocketLogMessages.Connecting(
+                _logger, MoexLogSources.WebSocket, _options.WebSocketUrl, _options.WebSocketDomain);
+
+            ReceiveOutcome handshake;
+            try
+            {
+                await socket.ConnectAsync(new Uri(_options.WebSocketUrl), handshakeCts.Token);
+                await SendFrameAsync(socket, BuildConnectFrame(), handshakeCts.Token);
+                handshake = await ReadMeaningfulMessageAsync(
+                    socket, _options.WebSocketProbeMaxCapturedBytes, handshakeCts.Token);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                MoexWebSocketLogMessages.Failed(
+                    _logger, MoexLogSources.WebSocket, _options.WebSocketUrl,
+                    "handshake_timeout", "Биржа не ответила на CONNECT в отведённое время.");
+
+                return FailedHandshake("handshake_timeout", startedAt);
+            }
+
+            if (handshake.Kind == ReceiveKind.Closed)
+            {
+                return FailedHandshake("websocket_closed", startedAt);
+            }
+
+            if (handshake.Kind == ReceiveKind.UnexpectedBinary)
+            {
+                return FailedHandshake("unexpected_binary", startedAt);
+            }
+
+            if (handshake.Kind == ReceiveKind.ByteLimitExceeded)
+            {
+                return FailedHandshake("handshake_byte_limit", startedAt);
+            }
+
+            string handshakeRaw = handshake.Text!;
+            StompFrame handshakeFrame;
+
+            try
+            {
+                handshakeFrame = StompFrame.Parse(handshakeRaw);
+            }
+            catch (FormatException exception)
+            {
+                MoexWebSocketLogMessages.Failed(
+                    _logger, MoexLogSources.WebSocket, _options.WebSocketUrl,
+                    nameof(FormatException), exception.Message);
+
+                return new WebSocketProbeReport
+                {
+                    Connected = false,
+                    RawUnexpectedHandshakeFrame = handshakeRaw,
+                    TerminationReason = "unexpected_handshake_frame",
+                    Elapsed = Stopwatch.GetElapsedTime(startedAt),
+                };
+            }
+
+            if (!string.Equals(handshakeFrame.Command, "CONNECTED", StringComparison.Ordinal))
+            {
+                MoexWebSocketLogMessages.ConnectRejected(
+                    _logger, MoexLogSources.WebSocket, _options.WebSocketUrl, handshakeFrame.Command);
+
+                bool isError = string.Equals(handshakeFrame.Command, "ERROR", StringComparison.Ordinal);
+
+                return new WebSocketProbeReport
+                {
+                    Connected = false,
+                    RawErrorFrame = isError ? handshakeRaw : null,
+                    RawUnexpectedHandshakeFrame = isError ? null : handshakeRaw,
+                    TerminationReason = isError ? "connect_rejected" : "unexpected_handshake_frame",
+                    Elapsed = Stopwatch.GetElapsedTime(startedAt),
+                };
+            }
+
+            MoexWebSocketLogMessages.Connected(
+                _logger, MoexLogSources.WebSocket, _options.WebSocketUrl,
+                Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
+
+            string subscriptionId = Guid.NewGuid().ToString("N");
+
+            using (CancellationTokenSource subscribeCts =
+                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+            {
+                subscribeCts.CancelAfter(OperationTimeout);
+
+                await SendFrameAsync(
+                    socket,
+                    BuildSubscribeFrame(subscriptionId, destination, selector),
+                    subscribeCts.Token);
+            }
+
+            MoexWebSocketLogMessages.Subscribed(
+                _logger, MoexLogSources.WebSocket, destination, selector);
+
+            return await CollectAsync(
+                socket, handshakeRaw, destination, effective, startedAt, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            MoexWebSocketLogMessages.Failed(
+                _logger, MoexLogSources.WebSocket, _options.WebSocketUrl,
+                exception.GetType().Name, exception.Message);
+            throw;
+        }
+        finally
+        {
+            await TryCloseAsync(socket);
+        }
+    }
+
+    private async Task<WebSocketProbeReport> CollectAsync(
+        ClientWebSocket socket,
+        string rawConnectedFrame,
+        string destination,
+        TimeSpan duration,
+        long startedAt,
+        CancellationToken cancellationToken)
+    {
+        List<string> rawFrames = new List<string>();
+        string? rawReceipt = null;
+        string? receiptId = null;
+        string? rawError = null;
+        long capturedBytes = 0;
+        int unparsedFrames = 0;
+        bool truncated = false;
+        string terminationReason = "duration_elapsed";
+        string? closeStatus = null;
+        string? closeDescription = null;
+
+        using CancellationTokenSource collectCts =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        collectCts.CancelAfter(duration);
+
+        try
+        {
+            while (true)
+            {
+                long remainingBytes = _options.WebSocketProbeMaxCapturedBytes - capturedBytes;
+                ReceiveOutcome outcome =
+                    await ReceiveMessageAsync(socket, remainingBytes, collectCts.Token);
+
+                capturedBytes += outcome.Bytes;
+
+                if (outcome.Kind == ReceiveKind.Closed)
+                {
+                    terminationReason = "websocket_closed";
+                    closeStatus = socket.CloseStatus?.ToString();
+                    closeDescription = socket.CloseStatusDescription;
+                    break;
+                }
+
+                if (outcome.Kind == ReceiveKind.UnexpectedBinary)
+                {
+                    terminationReason = "unexpected_binary";
+                    break;
+                }
+
+                if (outcome.Kind == ReceiveKind.ByteLimitExceeded)
+                {
+                    truncated = true;
+                    terminationReason = "byte_limit";
+                    break;
+                }
+
+                string raw = outcome.Text!;
+                if (StompFrame.IsHeartbeat(raw))
+                {
+                    continue;
+                }
+
+                rawFrames.Add(raw);
+                MoexWebSocketLogMessages.FrameReceived(
+                    _logger, MoexLogSources.WebSocket, PeekCommand(raw), outcome.Bytes);
+
+                StompFrame frame;
+                try
+                {
+                    frame = StompFrame.Parse(raw);
+                }
+                catch (FormatException)
+                {
+                    unparsedFrames++;
+
+                    if (rawFrames.Count >= _options.WebSocketProbeMaxFrames)
+                    {
+                        truncated = true;
+                        terminationReason = "frame_limit";
+                        break;
+                    }
+
+                    continue;
+                }
+
+                if (string.Equals(frame.Command, "RECEIPT", StringComparison.Ordinal))
+                {
+                    rawReceipt = raw;
+                    frame.Headers.TryGetValue("receipt-id", out receiptId);
+                }
+                else if (string.Equals(frame.Command, "ERROR", StringComparison.Ordinal))
+                {
+                    rawError = raw;
+                    terminationReason = "stomp_error";
+                    break;
+                }
+
+                if (rawFrames.Count >= _options.WebSocketProbeMaxFrames)
+                {
+                    truncated = true;
+                    terminationReason = "frame_limit";
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            terminationReason = "duration_elapsed";
+        }
+
+        TimeSpan elapsed = Stopwatch.GetElapsedTime(startedAt);
+
+        MoexWebSocketLogMessages.ProbeCompleted(
+            _logger, MoexLogSources.WebSocket, destination,
+            rawFrames.Count, capturedBytes, truncated, elapsed.TotalMilliseconds);
+
+        return new WebSocketProbeReport
+        {
+            Connected = true,
+            RawConnectedFrame = rawConnectedFrame,
+            RawReceiptFrame = rawReceipt,
+            ReceiptId = receiptId,
+            RawErrorFrame = rawError,
+            RawFrames = rawFrames,
+            FramesReceived = rawFrames.Count,
+            UnparsedFrames = unparsedFrames,
+            CapturedBytes = capturedBytes,
+            Truncated = truncated,
+            TerminationReason = terminationReason,
+            CloseStatus = closeStatus,
+            CloseDescription = closeDescription,
+            Elapsed = elapsed,
+        };
+    }
+
+    private enum ReceiveKind
+    {
+        Text,
+        Closed,
+        UnexpectedBinary,
+        ByteLimitExceeded,
+    }
+
+    private readonly record struct ReceiveOutcome(ReceiveKind Kind, string? Text, long Bytes);
+
+    private static async Task<ReceiveOutcome> ReceiveMessageAsync(
+        ClientWebSocket socket,
+        long remainingBytes,
+        CancellationToken cancellationToken)
+    {
+        using MemoryStream buffer = new MemoryStream(ReceiveChunkSize);
+        byte[] chunk = new byte[ReceiveChunkSize];
+        long total = 0;
+
+        while (true)
+        {
+            ValueWebSocketReceiveResult result =
+                await socket.ReceiveAsync(chunk.AsMemory(), cancellationToken);
+
+            if (result.MessageType == WebSocketMessageType.Close)
+            {
+                return new ReceiveOutcome(ReceiveKind.Closed, null, total);
+            }
+
+            total += result.Count;
+
+            if (result.MessageType == WebSocketMessageType.Binary)
+            {
+                return new ReceiveOutcome(ReceiveKind.UnexpectedBinary, null, total);
+            }
+
+            if (total > remainingBytes)
+            {
+                return new ReceiveOutcome(ReceiveKind.ByteLimitExceeded, null, total);
+            }
+
+            buffer.Write(chunk, 0, result.Count);
+
+            if (result.EndOfMessage)
+            {
+                break;
+            }
+        }
+
+        string text = Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
+        return new ReceiveOutcome(ReceiveKind.Text, text, total);
+    }
+
+    private static async Task<ReceiveOutcome> ReadMeaningfulMessageAsync(
+        ClientWebSocket socket,
+        long maxBytes,
+        CancellationToken cancellationToken)
+    {
+        long consumed = 0;
+
+        while (true)
+        {
+            ReceiveOutcome outcome =
+                await ReceiveMessageAsync(socket, maxBytes - consumed, cancellationToken);
+
+            consumed += outcome.Bytes;
+
+            if (outcome.Kind != ReceiveKind.Text)
+            {
+                return outcome;
+            }
+
+            if (!StompFrame.IsHeartbeat(outcome.Text!))
+            {
+                return outcome;
+            }
+        }
+    }
+
+    private static WebSocketProbeReport FailedHandshake(string reason, long startedAt) =>
+        new WebSocketProbeReport
+        {
+            Connected = false,
+            TerminationReason = reason,
+            Elapsed = Stopwatch.GetElapsedTime(startedAt),
+        };
+
+    private static void EnsureSafeHeaderValue(string value, string parameterName)
+    {
+        if (value.IndexOfAny(['\r', '\n', '\0']) >= 0)
+        {
+            throw new ArgumentException(
+                $"{parameterName} содержит недопустимый управляющий символ.",
+                parameterName);
+        }
+    }
+
+    private StompFrame BuildConnectFrame()
+    {
+        Dictionary<string, string> headers = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["domain"] = _options.WebSocketDomain,
+            ["login"] = _options.WebSocketLogin,
+            ["passcode"] = _options.WebSocketPasscode,
+        };
+
+        return new StompFrame("CONNECT", headers, string.Empty);
+    }
+
+    private static StompFrame BuildSubscribeFrame(string id, string destination, string selector)
+    {
+        Dictionary<string, string> headers = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["id"] = id,
+            ["destination"] = destination,
+            ["selector"] = selector,
+            ["receipt"] = id,
+        };
+
+        return new StompFrame("SUBSCRIBE", headers, string.Empty);
+    }
+
+    private static async Task SendFrameAsync(
+        ClientWebSocket socket,
+        StompFrame frame,
+        CancellationToken cancellationToken)
+    {
+        byte[] bytes = StompFrame.Serialize(frame);
+        await socket.SendAsync(
+            bytes.AsMemory(), WebSocketMessageType.Text, endOfMessage: true, cancellationToken);
+    }
+
+    private async Task TryCloseAsync(ClientWebSocket socket)
+    {
+        if (socket.State != WebSocketState.Open)
+        {
+            return;
+        }
+
+        try
+        {
+            using CancellationTokenSource closeCts = new CancellationTokenSource(CloseTimeout);
+
+            await SendFrameAsync(
+                socket,
+                new StompFrame("DISCONNECT", new Dictionary<string, string>(), string.Empty),
+                closeCts.Token);
+
+            await socket.CloseAsync(
+                WebSocketCloseStatus.NormalClosure, "probe finished", closeCts.Token);
+        }
+        catch (Exception exception)
+        {
+            MoexWebSocketLogMessages.Failed(
+                _logger, MoexLogSources.WebSocket, _options.WebSocketUrl,
+                exception.GetType().Name, "Ошибка при закрытии соединения, подавлена.");
+        }
+    }
+
+    private static string PeekCommand(string raw)
+    {
+        int lineEnd = raw.IndexOf('\n');
+        return lineEnd > 0 ? raw[..lineEnd].TrimEnd('\r') : "UNKNOWN";
+    }
+
+    private TimeSpan ClampDuration(TimeSpan requested)
+    {
+        if (requested < MinimumDuration)
+        {
+            return MinimumDuration;
+        }
+
+        return requested > _options.WebSocketProbeMaxDuration
+            ? _options.WebSocketProbeMaxDuration
+            : requested;
+    }
+
+    private void EnsureCredentialsConfigured()
+    {
+        if (string.IsNullOrWhiteSpace(_options.WebSocketLogin)
+            || string.IsNullOrWhiteSpace(_options.WebSocketPasscode))
+        {
+            throw new InvalidOperationException(
+                "Moex:WebSocketLogin и Moex:WebSocketPasscode не заданы. " +
+                "Положите их в пользовательские секреты, как AlgKey.");
+        }
+    }
+}

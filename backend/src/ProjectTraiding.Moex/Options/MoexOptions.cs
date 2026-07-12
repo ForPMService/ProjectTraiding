@@ -16,6 +16,31 @@ namespace ProjectTraiding.Moex.Options
         /// <summary>Bearer-токен для APIM. Через user-secrets или переменные окружения.</summary>
         public string AlgKey { get; set; } = string.Empty;
 
+        // ── Потоковое соединение (ISS+ / STOMP) ────────────────
+        // Аутентификация НЕ ключом-предъявителем, а учётной записью:
+        // заголовки кадра CONNECT — domain, login, passcode.
+
+        /// <summary>Точка подключения. Только защищённая схема: по каналу идёт пароль.</summary>
+        public string WebSocketUrl { get; set; } = "wss://iss.moex.com/infocx/v3/websocket";
+
+        /// <summary>Область: passport для подписчиков, DEMO для гостевого режима.</summary>
+        public string WebSocketDomain { get; set; } = "passport";
+
+        /// <summary>Логин учётной записи. Через user-secrets. В журнал не пишется.</summary>
+        public string WebSocketLogin { get; set; } = string.Empty;
+
+        /// <summary>Пароль учётной записи. Через user-secrets. В журнал не пишется НИКОГДА.</summary>
+        public string WebSocketPasscode { get; set; } = string.Empty;
+
+        /// <summary>Предельная длительность сбора кадров пробником.</summary>
+        public TimeSpan WebSocketProbeMaxDuration { get; set; } = TimeSpan.FromSeconds(60);
+
+        /// <summary>Предельное число собираемых кадров. Защита памяти.</summary>
+        public int WebSocketProbeMaxFrames { get; set; } = 500;
+
+        /// <summary>Предельный суммарный объём собранных кадров в байтах. Защита памяти.</summary>
+        public int WebSocketProbeMaxCapturedBytes { get; set; } = 5 * 1024 * 1024;
+
 
         /// <summary>
         /// Предельное время на ЧТЕНИЕ тела ответа (фаза после получения заголовков).

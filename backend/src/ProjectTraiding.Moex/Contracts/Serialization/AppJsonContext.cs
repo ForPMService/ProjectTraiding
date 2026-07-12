@@ -90,6 +90,11 @@ namespace ProjectTraiding.Moex.Contracts.Serialization
     [JsonSerializable(typeof(RealtimeDiagnosticEndpoints.CandlesPollReport))]
     [JsonSerializable(typeof(RealtimeDiagnosticEndpoints.CandlesSnapshot))]
 
+    // Полное имя намеренно: в файле импортировано ProjectTraiding.Moex.Contracts.Dto.Realtime,
+    // а отчёт лежит в ProjectTraiding.Moex.Realtime — это разные пространства имён,
+    // и короткое имя не разрешится.
+    [JsonSerializable(typeof(ProjectTraiding.Moex.Realtime.WebSocketProbeReport))]
+
     
     [JsonSerializable(typeof(List<StockInstrumentCardDTO>))]
     [JsonSerializable(typeof(List<FuturesInstrumentCardDTO>))]

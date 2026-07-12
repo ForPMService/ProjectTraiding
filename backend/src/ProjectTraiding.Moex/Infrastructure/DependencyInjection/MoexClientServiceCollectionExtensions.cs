@@ -217,6 +217,8 @@ public static class MoexClientServiceCollectionExtensions
             sp.GetRequiredService<IOptions<MoexOptions>>().Value,
             sp.GetRequiredService<ILogger<MoexRateLimitHandler>>()));
 
+        services.AddTransient<ProjectTraiding.Moex.Realtime.MoexWebSocketProbeClient>();
+
         return services;
 
 
