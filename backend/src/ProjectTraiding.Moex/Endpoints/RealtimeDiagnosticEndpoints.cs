@@ -181,8 +181,9 @@ namespace ProjectTraiding.Moex.Endpoints
             RealtimeTradesParseResult<RealtimeTradesStockDTO> r1 =
                 await client.GetTradesStockAsync(ticker, cancellationToken: ct);
             await Task.Delay(effectivePauseMs, ct);
+            long? afterTradeNo = r1.Rows.Count > 0 ? r1.Rows[^1].TradeNo : null;
             RealtimeTradesParseResult<RealtimeTradesStockDTO> r2 =
-                await client.GetTradesStockAsync(ticker, cancellationToken: ct);
+                await client.GetTradesStockAsync(ticker, afterTradeNo, cancellationToken: ct);
 
             TradesSnapshot snap1 = BuildTradesSnapshot(
                 r1.Rows.Count, r1.DataVersion,
@@ -242,8 +243,9 @@ namespace ProjectTraiding.Moex.Endpoints
             RealtimeTradesParseResult<RealtimeTradesFuturesDTO> r1 =
                 await client.GetTradesFuturesAsync(ticker, cancellationToken: ct);
             await Task.Delay(effectivePauseMs, ct);
+            long? afterTradeNo = r1.Rows.Count > 0 ? r1.Rows[^1].TradeNo : null;
             RealtimeTradesParseResult<RealtimeTradesFuturesDTO> r2 =
-                await client.GetTradesFuturesAsync(ticker, cancellationToken: ct);
+                await client.GetTradesFuturesAsync(ticker, afterTradeNo, cancellationToken: ct);
 
             TradesSnapshot snap1 = BuildTradesSnapshot(
                 r1.Rows.Count, r1.DataVersion,

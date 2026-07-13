@@ -10,6 +10,7 @@ using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Parsing;
 using ProjectTraiding.Moex.Parsing.Errors;
 using System.Diagnostics;
+using System.Globalization;
 using System.Net;
 
 namespace ProjectTraiding.Moex.Clients
@@ -108,10 +109,17 @@ namespace ProjectTraiding.Moex.Clients
 
         public async Task<RealtimeTradesParseResult<RealtimeTradesStockDTO>> GetTradesStockAsync(
             string ticker,
+            long? afterTradeNo = null,
             Dictionary<string, string>? queryParams = null,
             CancellationToken cancellationToken = default)
         {
             queryParams ??= new Dictionary<string, string>();
+            if (afterTradeNo is not null)
+            {
+                queryParams["tradeno"] = afterTradeNo.Value.ToString(CultureInfo.InvariantCulture);
+                queryParams["next_trade"] = "1";
+            }
+
             queryParams.TryAdd("iss.meta", "off");
             queryParams.TryAdd("iss.only", "trades,dataversion,trades_yields");
             queryParams.TryAdd(
@@ -158,10 +166,17 @@ namespace ProjectTraiding.Moex.Clients
 
         public async Task<RealtimeTradesParseResult<RealtimeTradesFuturesDTO>> GetTradesFuturesAsync(
             string ticker,
+            long? afterTradeNo = null,
             Dictionary<string, string>? queryParams = null,
             CancellationToken cancellationToken = default)
         {
             queryParams ??= new Dictionary<string, string>();
+            if (afterTradeNo is not null)
+            {
+                queryParams["tradeno"] = afterTradeNo.Value.ToString(CultureInfo.InvariantCulture);
+                queryParams["next_trade"] = "1";
+            }
+
             queryParams.TryAdd("iss.meta", "off");
             queryParams.TryAdd("iss.only", "trades,dataversion,trades_yields");
             queryParams.TryAdd(
