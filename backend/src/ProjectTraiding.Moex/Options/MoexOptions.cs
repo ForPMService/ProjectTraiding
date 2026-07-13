@@ -56,6 +56,14 @@ namespace ProjectTraiding.Moex.Options
         /// <summary>Максимальное число сделок в одной странице real-time REST. Default: 5000.</summary>
         public int TradesPageLimit { get; set; } = 5_000;
 
+        /// <summary>
+        /// Размер страницы свечей у источника: 500 строк.
+        ///
+        /// Проверено живым ответом 13.07.2026: полный день минутных свечей SBER — 1009 строк,
+        /// то есть 500 + 500 + 9. Страница меньше предела означает конец выборки.
+        /// </summary>
+        public int CandlesPageLimit { get; init; } = 500;
+
         // ── Rate Limiter ────────────────────────────────────
 
         /// <summary>

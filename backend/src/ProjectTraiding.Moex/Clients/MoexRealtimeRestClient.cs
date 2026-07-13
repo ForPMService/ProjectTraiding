@@ -335,9 +335,24 @@ namespace ProjectTraiding.Moex.Clients
         // Candles Today
         // ═══════════════════════════════════════════════════════════
 
+        /// <summary>
+        /// Свечи торгового дня в окне [from, till]. Окно задаётся МОСКОВСКИМ временем: биржа
+        /// отдаёт и принимает московское, часовой пояс машины к делу не относится.
+        ///
+        /// Догружает все страницы окна. Одно-запросного варианта нет намеренно — в отличие от
+        /// сделок, где одностраничный метод оставлен ради дешёвого опроса. У сделок окно
+        /// двигает курсор TRADENO; у свечей курсора нет, и запрос без смещения всегда отдаёт
+        /// начало окна. Метод без догрузки после пятисотой свечи возвращал бы одно и то же
+        /// вечно — именно это и происходило до правки.
+        ///
+        /// Опасности всплеска у свечей нет: за минуту рождается ровно одна минутная свеча,
+        /// поэтому окно опроса в одну-две минуты укладывается в одну страницу и цикл делает
+        /// ровно один запрос.
+        /// </summary>
         public async Task<List<CandlesDTO>> GetCandlesTodayStockAsync(
             string ticker,
-            DateOnly tradeDate,
+            DateTime from,
+            DateTime till,
             int interval = 1,
             CancellationToken cancellationToken = default)
         {
@@ -347,22 +362,27 @@ namespace ProjectTraiding.Moex.Clients
             activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Stock);
 
             string endpoint = $"/engines/stock/markets/shares/boards/TQBR/securities/{ticker}/candles.json";
-            Dictionary<string, string> queryParams = new Dictionary<string, string>
-            {
-                ["iss.meta"] = "off",
-                ["iss.only"] = "candles",
-                ["candles.columns"] =
-                    ColumnAndNumbersForParsing.AlgCandlesSchema.BuildColumnsParam(),
-                ["interval"] = interval.ToString(),
-                ["from"] = tradeDate.ToString("yyyy-MM-dd"),
-                ["till"] = tradeDate.ToString("yyyy-MM-dd"),
-            };
-            return await GetCandlesTodayAsync(endpoint, queryParams, cancellationToken);
+            return await GetCandlesWindowPagedAsync(endpoint, from, till, interval, cancellationToken);
         }
 
+        /// <summary>
+        /// Свечи торгового дня в окне [from, till]. Окно задаётся МОСКОВСКИМ временем: биржа
+        /// отдаёт и принимает московское, часовой пояс машины к делу не относится.
+        ///
+        /// Догружает все страницы окна. Одно-запросного варианта нет намеренно — в отличие от
+        /// сделок, где одностраничный метод оставлен ради дешёвого опроса. У сделок окно
+        /// двигает курсор TRADENO; у свечей курсора нет, и запрос без смещения всегда отдаёт
+        /// начало окна. Метод без догрузки после пятисотой свечи возвращал бы одно и то же
+        /// вечно — именно это и происходило до правки.
+        ///
+        /// Опасности всплеска у свечей нет: за минуту рождается ровно одна минутная свеча,
+        /// поэтому окно опроса в одну-две минуты укладывается в одну страницу и цикл делает
+        /// ровно один запрос.
+        /// </summary>
         public async Task<List<CandlesDTO>> GetCandlesTodayFuturesAsync(
             string ticker,
-            DateOnly tradeDate,
+            DateTime from,
+            DateTime till,
             int interval = 1,
             CancellationToken cancellationToken = default)
         {
@@ -372,17 +392,7 @@ namespace ProjectTraiding.Moex.Clients
             activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Futures);
 
             string endpoint = $"/engines/futures/markets/forts/boards/RFUD/securities/{ticker}/candles.json";
-            Dictionary<string, string> queryParams = new Dictionary<string, string>
-            {
-                ["iss.meta"] = "off",
-                ["iss.only"] = "candles",
-                ["candles.columns"] =
-                    ColumnAndNumbersForParsing.AlgCandlesSchema.BuildColumnsParam(),
-                ["interval"] = interval.ToString(),
-                ["from"] = tradeDate.ToString("yyyy-MM-dd"),
-                ["till"] = tradeDate.ToString("yyyy-MM-dd"),
-            };
-            return await GetCandlesTodayAsync(endpoint, queryParams, cancellationToken);
+            return await GetCandlesWindowPagedAsync(endpoint, from, till, interval, cancellationToken);
         }
 
 
@@ -441,6 +451,69 @@ namespace ProjectTraiding.Moex.Clients
                 MoexLogMessages.ParseFailed(_logger, ex, endpoint, "schema_mismatch", ex.Message);
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Догрузка страниц свечей внутри окна. Признак последней страницы — строк меньше
+        /// Moex:CandlesPageLimit. Правило то же, что в MoexHttpAlgClient.GetCandles.
+        /// </summary>
+        private async Task<List<CandlesDTO>> GetCandlesWindowPagedAsync(
+            string endpoint,
+            DateTime from,
+            DateTime till,
+            int interval,
+            CancellationToken cancellationToken)
+        {
+            if (till < from)
+            {
+                throw new ArgumentException(
+                    $"Окно свечей пусто: till={till:yyyy-MM-dd HH:mm:ss} " +
+                    $"раньше from={from:yyyy-MM-dd HH:mm:ss}.",
+                    nameof(till));
+            }
+
+            List<CandlesDTO> rows = new List<CandlesDTO>();
+            int start = 0;
+
+            for (int pageNumber = 1; pageNumber <= _options.MaxPagesPerLoad; pageNumber++)
+            {
+                Dictionary<string, string> queryParams = new Dictionary<string, string>
+                {
+                    ["iss.meta"] = "off",
+                    ["iss.only"] = "candles",
+                    ["candles.columns"] =
+                        ColumnAndNumbersForParsing.AlgCandlesSchema.BuildColumnsParam(),
+                    ["interval"] = interval.ToString(CultureInfo.InvariantCulture),
+                    ["from"] = from.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+                    ["till"] = till.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+                };
+
+                if (start > 0)
+                {
+                    queryParams["start"] = start.ToString(CultureInfo.InvariantCulture);
+                }
+
+                List<CandlesDTO> page =
+                    await GetCandlesTodayAsync(endpoint, queryParams, cancellationToken);
+
+                rows.AddRange(page);
+
+                if (page.Count != _options.CandlesPageLimit)
+                {
+                    return rows;
+                }
+
+                if (pageNumber == _options.MaxPagesPerLoad)
+                {
+                    throw new InvalidOperationException(
+                        $"Догрузка свечей достигла защитного предела " +
+                        $"Moex:MaxPagesPerLoad={_options.MaxPagesPerLoad} на полной странице.");
+                }
+
+                start += _options.CandlesPageLimit;
+            }
+
+            throw new InvalidOperationException("Недостижимое состояние пагинации свечей.");
         }
 
         private async Task<List<CandlesDTO>> GetCandlesTodayAsync(

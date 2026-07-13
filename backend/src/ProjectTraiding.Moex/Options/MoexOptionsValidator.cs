@@ -50,6 +50,9 @@ namespace ProjectTraiding.Moex.Options
             if (options.TradesPageLimit <= 0)
                 throw new InvalidOperationException("Moex:TradesPageLimit должен быть положительным.");
 
+            if (options.CandlesPageLimit <= 0)
+                throw new InvalidOperationException("Moex:CandlesPageLimit должен быть положительным.");
+
             if (options.PollIntervalSeconds <= 0)
                 throw new InvalidOperationException("Moex:PollIntervalSeconds должен быть положительным.");
 

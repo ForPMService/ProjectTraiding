@@ -1,6 +1,7 @@
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using ProjectTraiding.Moex.Contracts.Dto.Realtime;
+using ProjectTraiding.Moex.Infrastructure;
 
 namespace ProjectTraiding.Moex.Endpoints
 {
@@ -300,16 +301,18 @@ namespace ProjectTraiding.Moex.Endpoints
             CancellationToken ct)
         {
             int effectivePauseMs = pauseMs ?? 3000;
-            DateOnly tradeDate = DateOnly.FromDateTime(DateTime.Today);
+            DateOnly tradeDate = MoexTime.Today;
+            DateTime from = tradeDate.ToDateTime(TimeOnly.MinValue);
+            DateTime till = tradeDate.ToDateTime(new TimeOnly(23, 59, 59));
 
             IResult? pauseError = ValidatePauseMs(effectivePauseMs);
             if (pauseError is not null) return pauseError;
 
             List<CandlesDTO> r1 = await client.GetCandlesTodayStockAsync(
-                ticker, tradeDate, interval: 1, cancellationToken: ct);
+                ticker, from, till, interval: 1, cancellationToken: ct);
             await Task.Delay(effectivePauseMs, ct);
             List<CandlesDTO> r2 = await client.GetCandlesTodayStockAsync(
-                ticker, tradeDate, interval: 1, cancellationToken: ct);
+                ticker, from, till, interval: 1, cancellationToken: ct);
 
             return Results.Ok(BuildCandlesReport(r1, r2, effectivePauseMs));
         }
@@ -321,16 +324,18 @@ namespace ProjectTraiding.Moex.Endpoints
             CancellationToken ct)
         {
             int effectivePauseMs = pauseMs ?? 3000;
-            DateOnly tradeDate = DateOnly.FromDateTime(DateTime.Today);
+            DateOnly tradeDate = MoexTime.Today;
+            DateTime from = tradeDate.ToDateTime(TimeOnly.MinValue);
+            DateTime till = tradeDate.ToDateTime(new TimeOnly(23, 59, 59));
 
             IResult? pauseError = ValidatePauseMs(effectivePauseMs);
             if (pauseError is not null) return pauseError;
 
             List<CandlesDTO> r1 = await client.GetCandlesTodayFuturesAsync(
-                ticker, tradeDate, interval: 1, cancellationToken: ct);
+                ticker, from, till, interval: 1, cancellationToken: ct);
             await Task.Delay(effectivePauseMs, ct);
             List<CandlesDTO> r2 = await client.GetCandlesTodayFuturesAsync(
-                ticker, tradeDate, interval: 1, cancellationToken: ct);
+                ticker, from, till, interval: 1, cancellationToken: ct);
 
             return Results.Ok(BuildCandlesReport(r1, r2, effectivePauseMs));
         }

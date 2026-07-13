@@ -1,4 +1,5 @@
 using ProjectTraiding.Moex.Clients;
+using ProjectTraiding.Moex.Infrastructure;
 
 namespace ProjectTraiding.Moex.Endpoints
 {
@@ -64,10 +65,16 @@ namespace ProjectTraiding.Moex.Endpoints
                 MoexRealtimeRestClient client,
                 CancellationToken ct) =>
             {
-                DateOnly tradeDate = DateOnly.FromDateTime(DateTime.Today);
+                // Весь московский торговый день целиком: диагностика должна видеть все страницы,
+                // включая утреннюю и вечернюю сессии.
+                DateOnly tradeDate = MoexTime.Today;
+                DateTime from = tradeDate.ToDateTime(TimeOnly.MinValue);
+                DateTime till = tradeDate.ToDateTime(new TimeOnly(23, 59, 59));
+
                 var result = await client.GetCandlesTodayStockAsync(
                     ticker,
-                    tradeDate,
+                    from,
+                    till,
                     interval: 1,
                     cancellationToken: ct);
                 return Results.Ok(result);
@@ -78,10 +85,16 @@ namespace ProjectTraiding.Moex.Endpoints
                 MoexRealtimeRestClient client,
                 CancellationToken ct) =>
             {
-                DateOnly tradeDate = DateOnly.FromDateTime(DateTime.Today);
+                // Весь московский торговый день целиком: диагностика должна видеть все страницы,
+                // включая утреннюю и вечернюю сессии.
+                DateOnly tradeDate = MoexTime.Today;
+                DateTime from = tradeDate.ToDateTime(TimeOnly.MinValue);
+                DateTime till = tradeDate.ToDateTime(new TimeOnly(23, 59, 59));
+
                 var result = await client.GetCandlesTodayFuturesAsync(
                     ticker,
-                    tradeDate,
+                    from,
+                    till,
                     interval: 1,
                     cancellationToken: ct);
                 return Results.Ok(result);
