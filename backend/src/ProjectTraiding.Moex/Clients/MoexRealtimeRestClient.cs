@@ -60,26 +60,46 @@ namespace ProjectTraiding.Moex.Clients
             string ticker,
             CancellationToken cancellationToken = default)
         {
+            Dictionary<string, string> queryParams = new Dictionary<string, string>
+            {
+                ["iss.meta"] = "off",
+                ["iss.only"] = "orderbook,dataversion",
+                ["orderbook.columns"] =
+                    ColumnAndNumbersForParsing.RealtimeOrderbookSchema.BuildColumnsParam(),
+                ["dataversion.columns"] =
+                    ColumnAndNumbersForParsing.RealtimeDataVersionSchema.BuildColumnsParam(),
+            };
+
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
             activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest);
             activity?.SetTag(MoexTelemetryAttributes.DataKind, "orderbook");
             activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Stock);
 
             string endpoint = $"/engines/stock/markets/shares/boards/TQBR/securities/{ticker}/orderbook.json";
-            return await GetOrderbookAsync(endpoint, cancellationToken);
+            return await GetOrderbookAsync(endpoint, queryParams, cancellationToken);
         }
 
         public async Task<RealtimeOrderbookParseResult> GetOrderbookFuturesAsync(
             string ticker,
             CancellationToken cancellationToken = default)
         {
+            Dictionary<string, string> queryParams = new Dictionary<string, string>
+            {
+                ["iss.meta"] = "off",
+                ["iss.only"] = "orderbook,dataversion",
+                ["orderbook.columns"] =
+                    ColumnAndNumbersForParsing.RealtimeOrderbookSchema.BuildColumnsParam(),
+                ["dataversion.columns"] =
+                    ColumnAndNumbersForParsing.RealtimeDataVersionSchema.BuildColumnsParam(),
+            };
+
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
             activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest);
             activity?.SetTag(MoexTelemetryAttributes.DataKind, "orderbook");
             activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Futures);
 
             string endpoint = $"/engines/futures/markets/forts/boards/RFUD/securities/{ticker}/orderbook.json";
-            return await GetOrderbookAsync(endpoint, cancellationToken);
+            return await GetOrderbookAsync(endpoint, queryParams, cancellationToken);
         }
 
         // ═══════════════════════════════════════════════════════════
@@ -91,6 +111,16 @@ namespace ProjectTraiding.Moex.Clients
             Dictionary<string, string>? queryParams = null,
             CancellationToken cancellationToken = default)
         {
+            queryParams ??= new Dictionary<string, string>();
+            queryParams.TryAdd("iss.meta", "off");
+            queryParams.TryAdd("iss.only", "trades,dataversion,trades_yields");
+            queryParams.TryAdd(
+                "trades.columns",
+                ColumnAndNumbersForParsing.RealtimeTradesStockSchema.BuildColumnsParam());
+            queryParams.TryAdd(
+                "dataversion.columns",
+                ColumnAndNumbersForParsing.RealtimeDataVersionSchema.BuildColumnsParam());
+
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
             activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest);
             activity?.SetTag(MoexTelemetryAttributes.DataKind, "trades");
@@ -131,6 +161,16 @@ namespace ProjectTraiding.Moex.Clients
             Dictionary<string, string>? queryParams = null,
             CancellationToken cancellationToken = default)
         {
+            queryParams ??= new Dictionary<string, string>();
+            queryParams.TryAdd("iss.meta", "off");
+            queryParams.TryAdd("iss.only", "trades,dataversion,trades_yields");
+            queryParams.TryAdd(
+                "trades.columns",
+                ColumnAndNumbersForParsing.RealtimeTradesFuturesSchema.BuildColumnsParam());
+            queryParams.TryAdd(
+                "dataversion.columns",
+                ColumnAndNumbersForParsing.RealtimeDataVersionSchema.BuildColumnsParam());
+
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
             activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest);
             activity?.SetTag(MoexTelemetryAttributes.DataKind, "trades");
@@ -184,6 +224,10 @@ namespace ProjectTraiding.Moex.Clients
             string endpoint = $"/engines/stock/markets/shares/boards/TQBR/securities/{ticker}/candles.json";
             Dictionary<string, string> queryParams = new Dictionary<string, string>
             {
+                ["iss.meta"] = "off",
+                ["iss.only"] = "candles",
+                ["candles.columns"] =
+                    ColumnAndNumbersForParsing.AlgCandlesSchema.BuildColumnsParam(),
                 ["interval"] = interval.ToString(),
                 ["from"] = tradeDate.ToString("yyyy-MM-dd"),
                 ["till"] = tradeDate.ToString("yyyy-MM-dd"),
@@ -205,6 +249,10 @@ namespace ProjectTraiding.Moex.Clients
             string endpoint = $"/engines/futures/markets/forts/boards/RFUD/securities/{ticker}/candles.json";
             Dictionary<string, string> queryParams = new Dictionary<string, string>
             {
+                ["iss.meta"] = "off",
+                ["iss.only"] = "candles",
+                ["candles.columns"] =
+                    ColumnAndNumbersForParsing.AlgCandlesSchema.BuildColumnsParam(),
                 ["interval"] = interval.ToString(),
                 ["from"] = tradeDate.ToString("yyyy-MM-dd"),
                 ["till"] = tradeDate.ToString("yyyy-MM-dd"),
@@ -238,10 +286,11 @@ namespace ProjectTraiding.Moex.Clients
 
         private async Task<RealtimeOrderbookParseResult> GetOrderbookAsync(
             string endpoint,
+            Dictionary<string, string> queryParams,
             CancellationToken cancellationToken)
         {
             long startTimestamp = Stopwatch.GetTimestamp();
-            using var response = await SendRequestAsync(endpoint, queryParams: null, cancellationToken);
+            using var response = await SendRequestAsync(endpoint, queryParams, cancellationToken);
             int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
             using var rentedArr = await RentedBuffer.RentFromStreamAsync(
                         await response.Content.ReadAsStreamAsync(cancellationToken),
