@@ -47,6 +47,9 @@ namespace ProjectTraiding.Moex.Options
             if (options.MaxPagesPerLoad <= 0)
                 throw new InvalidOperationException("Moex:MaxPagesPerLoad должен быть положительным.");
 
+            if (options.TradesPageLimit <= 0)
+                throw new InvalidOperationException("Moex:TradesPageLimit должен быть положительным.");
+
             if (options.PollIntervalSeconds <= 0)
                 throw new InvalidOperationException("Moex:PollIntervalSeconds должен быть положительным.");
 

@@ -53,6 +53,9 @@ namespace ProjectTraiding.Moex.Options
         public int MaxConnectionsPerServer { get; set; } = 10;
         public int MaxPagesPerLoad { get; set; } = 10_000;
 
+        /// <summary>Максимальное число сделок в одной странице real-time REST. Default: 5000.</summary>
+        public int TradesPageLimit { get; set; } = 5_000;
+
         // ── Rate Limiter ────────────────────────────────────
 
         /// <summary>
