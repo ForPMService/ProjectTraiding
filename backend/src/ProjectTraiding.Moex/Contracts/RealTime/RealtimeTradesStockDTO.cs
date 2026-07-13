@@ -7,10 +7,10 @@ namespace ProjectTraiding.Moex.Contracts.Dto.Realtime
     ///   /engines/stock/markets/shares/boards/TQBR/securities/{ticker}/trades.json
     /// 
     /// Root key: "trades"
-    /// Колонок: 15
+    /// Колонок: 14
     /// 
     /// Важно: набор колонок отличается от фьючерсов.
-    /// Stock имеет: VALUE, PERIOD, TRADETIME_GRP, DECIMALS, TRADINGSESSION, BOARDID.
+    /// Stock имеет: VALUE, PERIOD, DECIMALS, TRADINGSESSION, BOARDID.
     /// Futures имеет: BOARDNAME, RECNO, OPENPOSITION, OFFMARKETDEAL.
     /// Общий DTO невозможен без потери контракта.
     /// 
@@ -101,17 +101,6 @@ namespace ProjectTraiding.Moex.Contracts.Dto.Realtime
         /// "C" — закрытие.
         /// </summary>
         public string? Period { get; init; }
-
-        /// <summary>
-        /// Группа времени сделки (минуты от начала дня, усечённые).
-        /// 
-        /// MOEX столбец: TRADETIME_GRP
-        /// MOEX тип: int32
-        /// 
-        /// Пример: 659 ≈ 06:59.
-        /// Присутствует только в stock trades.
-        /// </summary>
-        public int? TradeTimeGrp { get; init; }
 
         /// <summary>
         /// Системное время записи сделки.

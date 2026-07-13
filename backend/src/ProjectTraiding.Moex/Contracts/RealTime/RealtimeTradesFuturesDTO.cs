@@ -11,7 +11,7 @@ namespace ProjectTraiding.Moex.Contracts.Dto.Realtime
     /// 
     /// Важно: набор колонок отличается от акций.
     /// Futures имеет: BOARDNAME (не BOARDID), RECNO, OPENPOSITION, OFFMARKETDEAL.
-    /// Futures не имеет: VALUE, PERIOD, TRADETIME_GRP, DECIMALS, TRADINGSESSION.
+    /// Futures не имеет: VALUE, PERIOD, DECIMALS, TRADINGSESSION.
     /// 
     /// Ответ содержит до 5000 строк (лимит MOEX).
     /// Для догрузки: RECNO или TRADENO — Шаг 9 покажет, что надёжнее.

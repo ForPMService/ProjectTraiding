@@ -15,7 +15,7 @@ namespace ProjectTraiding.Moex.Contracts.Dto.Realtime
     /// Результат парсинга ответа trades endpoint-а MOEX real-time REST.
     /// 
     /// Типизирован по виду сделки:
-    ///   RealtimeTradesStockDTO для акций (15 колонок);
+    ///   RealtimeTradesStockDTO для акций (14 колонок);
     ///   RealtimeTradesFuturesDTO для фьючерсов (13 колонок).
     /// 
     /// Содержит:

@@ -45,14 +45,14 @@ namespace ProjectTraiding.Moex.Parsing
         }
 
         // ═══════════════════════════════════════════════════════════
-        // ParseTradesStock — trades(15) + dataversion + trades_yields (3 прохода)
+        // ParseTradesStock — trades(14) + dataversion + trades_yields (3 прохода)
         // ═══════════════════════════════════════════════════════════
 
         /// <summary>
         /// Парсит ответ trades endpoint-а MOEX real-time REST для акций.
         /// 
         /// JSON содержит три root-блока:
-        ///   "trades"        → строки сделок (15 колонок);
+        ///   "trades"        → строки сделок (14 колонок);
         ///   "dataversion"   → версия данных (4 колонки, ровно 1 строка);
         ///   "trades_yields" → блок доходности (2 колонки, может быть пустым).
         /// 
@@ -60,7 +60,7 @@ namespace ProjectTraiding.Moex.Parsing
         /// </summary>
         public static RealtimeTradesParseResult<RealtimeTradesStockDTO> ParseTradesStock(ReadOnlySpan<byte> jsonBytes)
         {
-            // Проход 1: trades (stock schema, 15 колонок)
+            // Проход 1: trades (stock schema, 14 колонок)
             var rows = ParseTradesStockBlock(jsonBytes);
 
             // Проход 2: dataversion
@@ -266,7 +266,7 @@ namespace ProjectTraiding.Moex.Parsing
         }
 
         /// <summary>
-        /// Проход по блоку "trades" с stock schema (15 колонок).
+        /// Проход по блоку "trades" с stock schema (14 колонок).
         /// </summary>
         private static List<RealtimeTradesStockDTO> ParseTradesStockBlock(ReadOnlySpan<byte> jsonBytes)
         {
@@ -515,7 +515,7 @@ namespace ProjectTraiding.Moex.Parsing
         }
 
         // ═══════════════════════════════════════════════════════════
-        // ReadTradesStockData — 15 колонок
+        // ReadTradesStockData — 14 колонок
         // ═══════════════════════════════════════════════════════════
 
         private static void ReadTradesStockData(
@@ -533,14 +533,13 @@ namespace ProjectTraiding.Moex.Parsing
                 double? price = null, value = null;
                 long? quantity = null;
                 string? period = null;
-                int? tradeTimeGrp = null;
                 string? sysTime = null, buySell = null;
                 int? decimals = null;
                 string? tradingSession = null, tradeDate = null, tradeSessionDate = null;
 
                 {
                     int expectedIdx = 0;
-                    // 0=TRADENO 1=TRADETIME 2=BOARDID 3=SECID 4=PRICE 5=QUANTITY 6=VALUE 7=PERIOD 8=TRADETIME_GRP 9=SYSTIME 10=BUYSELL 11=DECIMALS 12=TRADINGSESSION 13=TRADEDATE 14=TRADE_SESSION_DATE
+                    // 0=TRADENO 1=TRADETIME 2=SECID 3=PRICE 4=QUANTITY 5=PERIOD 6=VALUE 7=BOARDID 8=SYSTIME 9=BUYSELL 10=DECIMALS 11=TRADINGSESSION 12=TRADEDATE 13=TRADE_SESSION_DATE
                     for (int pos = 0; pos < schema.TotalColumns; pos++)
                     {
                         if (!reader.Read())
@@ -562,19 +561,18 @@ namespace ProjectTraiding.Moex.Parsing
                                 {
                                     case 0: tradeNo = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
                                     case 1: tradeTime = ParseHelpersUtf8.ReadString(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
-                                    case 2: boardId = ParseHelpersUtf8.ReadString(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
-                                    case 3: secId = ParseHelpersUtf8.ReadString(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
-                                    case 4: price = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
-                                    case 5: quantity = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
+                                    case 2: secId = ParseHelpersUtf8.ReadString(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
+                                    case 3: price = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
+                                    case 4: quantity = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
+                                    case 5: period = ParseHelpersUtf8.ReadString(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
                                     case 6: value = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
-                                    case 7: period = ParseHelpersUtf8.ReadString(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
-                                    case 8: tradeTimeGrp = ParseHelpersUtf8.ReadInt(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
-                                    case 9: sysTime = ParseHelpersUtf8.ReadString(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
-                                    case 10: buySell = ParseHelpersUtf8.ReadString(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
-                                    case 11: decimals = ParseHelpersUtf8.ReadInt(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
-                                    case 12: tradingSession = ParseHelpersUtf8.ReadString(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
-                                    case 13: tradeDate = ParseHelpersUtf8.ReadString(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
-                                    case 14: tradeSessionDate = ParseHelpersUtf8.ReadString(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
+                                    case 7: boardId = ParseHelpersUtf8.ReadString(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
+                                    case 8: sysTime = ParseHelpersUtf8.ReadString(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
+                                    case 9: buySell = ParseHelpersUtf8.ReadString(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
+                                    case 10: decimals = ParseHelpersUtf8.ReadInt(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
+                                    case 11: tradingSession = ParseHelpersUtf8.ReadString(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
+                                    case 12: tradeDate = ParseHelpersUtf8.ReadString(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
+                                    case 13: tradeSessionDate = ParseHelpersUtf8.ReadString(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
                                 }
                             }
 
@@ -597,7 +595,6 @@ namespace ProjectTraiding.Moex.Parsing
                     Quantity         = quantity,
                     Value            = value,
                     Period           = period,
-                    TradeTimeGrp     = tradeTimeGrp,
                     SysTime          = sysTime,
                     BuySell          = buySell,
                     Decimals         = decimals,

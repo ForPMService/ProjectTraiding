@@ -472,34 +472,40 @@ namespace ProjectTraiding.Moex.Parsing
 
         // ═══════════════════════════════════════════════════════════
         // Real-time — Trades Stock (сделки по акциям)
-        // Источник: raw fixture trades-stock-raw.json
-        // rootKey: "trades", columnCount: 15, используем: все 15
         //
-        // Внимание: rootKey совпадает с futures ("trades"),
-        // но набор и количество колонок разные.
-        // Парсер выбирает схему по контексту вызова (stock vs futures endpoint).
+        // ВНИМАНИЕ: контракт источника изменён биржей. Проверено живым ответом 2026-07-13:
+        //   /engines/stock/markets/shares/boards/tqbr/securities/SBER/trades.json
+        //
+        // Было 15 колонок, стало 14:
+        //   — колонка TRADETIME_GRP убрана;
+        //   — BOARDID переехал с позиции 2 на позицию 7;
+        //   — PERIOD и VALUE поменялись местами.
+        // Биржа об изменении не предупреждала.
+        //
+        // После включения явного списка колонок (trades.columns) порядок ниже становится
+        // ЗАПРОШЕННЫМ, а не полученным: биржа возвращает колонки в том порядке, в каком мы их
+        // перечислили. Схема одновременно строит запрос и проверяет ответ.
         // ═══════════════════════════════════════════════════════════
 
         public static readonly ExpectedSchema RealtimeTradesStockSchema = new(
-            TotalColumns: 15,
+            TotalColumns: 14,
             RootKey: "trades",
             Columns: new ExpectedColumn[]
             {
                 new(0,  "TRADENO"u8.ToArray()),
                 new(1,  "TRADETIME"u8.ToArray()),
-                new(2,  "BOARDID"u8.ToArray()),
-                new(3,  "SECID"u8.ToArray()),
-                new(4,  "PRICE"u8.ToArray()),
-                new(5,  "QUANTITY"u8.ToArray()),
+                new(2,  "SECID"u8.ToArray()),
+                new(3,  "PRICE"u8.ToArray()),
+                new(4,  "QUANTITY"u8.ToArray()),
+                new(5,  "PERIOD"u8.ToArray()),
                 new(6,  "VALUE"u8.ToArray()),
-                new(7,  "PERIOD"u8.ToArray()),
-                new(8,  "TRADETIME_GRP"u8.ToArray()),
-                new(9,  "SYSTIME"u8.ToArray()),
-                new(10, "BUYSELL"u8.ToArray()),
-                new(11, "DECIMALS"u8.ToArray()),
-                new(12, "TRADINGSESSION"u8.ToArray()),
-                new(13, "TRADEDATE"u8.ToArray()),
-                new(14, "TRADE_SESSION_DATE"u8.ToArray()),
+                new(7,  "BOARDID"u8.ToArray()),
+                new(8,  "SYSTIME"u8.ToArray()),
+                new(9,  "BUYSELL"u8.ToArray()),
+                new(10, "DECIMALS"u8.ToArray()),
+                new(11, "TRADINGSESSION"u8.ToArray()),
+                new(12, "TRADEDATE"u8.ToArray()),
+                new(13, "TRADE_SESSION_DATE"u8.ToArray()),
             });
 
         // ═══════════════════════════════════════════════════════════
