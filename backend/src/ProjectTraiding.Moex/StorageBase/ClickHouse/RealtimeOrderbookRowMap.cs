@@ -5,7 +5,7 @@ using System.Collections.Generic;
 namespace ProjectTraiding.Moex.StorageBase.ClickHouse
 {
     /// <summary>
-    /// Карта формы вставки стакана в moex_orderbook (V014). Одна карта на оба рынка: структура
+    /// Карта формы вставки стакана в moex_orderbook (V014 + V016). Одна карта на оба рынка: структура
     /// акций и фьючерсов совпадает, различает их board_id.
     ///
     /// Ключ сортировки secid + source_time + buy_sell + price. Проверено живым ответом: SEQNUM
@@ -24,7 +24,7 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
         public IReadOnlyList<string> Columns { get; } = new[]
         {
             "secid", "source_time", "buy_sell", "price", "board_id", "quantity", "decimals",
-            "ingest_priority"
+            "trade_session_date", "ingest_priority"
         };
 
         public IReadOnlyDictionary<string, string> ColumnTypes { get; } =
@@ -37,6 +37,7 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 ["board_id"] = "LowCardinality(Nullable(String))",
                 ["quantity"] = "Nullable(Int64)",
                 ["decimals"] = "Nullable(Int64)",
+                ["trade_session_date"] = "Nullable(Date)",
                 ["ingest_priority"] = "UInt8",
             };
 
@@ -66,6 +67,7 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 item.BoardId,
                 item.Quantity,
                 item.Decimals,
+                MoexClickHouseTime.ParseDate(item.TradeSessionDate),
                 (byte)0,
             };
 
