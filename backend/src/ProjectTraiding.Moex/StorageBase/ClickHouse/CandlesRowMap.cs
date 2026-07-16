@@ -16,7 +16,11 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
 
         public string TokenPrefix { get; }
 
-        public CandlesRowMap(string table, string tokenPrefix)
+        // Версия схлопывания ReplacingMergeTree: 1 у исторической загрузки (перекрывает),
+        // 0 у приёмника реального времени. При равном ключе (secid, begin) побеждает бо́льшая.
+        private readonly byte _ingestPriority;
+
+        public CandlesRowMap(string table, string tokenPrefix, byte ingestPriority)
         {
             if (string.IsNullOrWhiteSpace(table))
                 throw new ArgumentException("Имя таблицы свечей обязательно.", nameof(table));
@@ -25,11 +29,13 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
 
             Table = table;
             TokenPrefix = tokenPrefix;
+            _ingestPriority = ingestPriority;
         }
 
         public IReadOnlyList<string> Columns { get; } = new[]
         {
-            "secid", "open", "close", "high", "low", "value", "volume", "begin", "end"
+            "secid", "open", "close", "high", "low", "value", "volume", "begin", "end",
+            "ingest_priority"
         };
 
         public IReadOnlyDictionary<string, string> ColumnTypes { get; } =
@@ -44,6 +50,7 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 ["volume"] = "Nullable(Float64)",
                 ["begin"] = "DateTime64(3, 'Europe/Moscow')",
                 ["end"] = "Nullable(DateTime64(3, 'Europe/Moscow'))",
+                ["ingest_priority"] = "UInt8",
             };
 
         public void EnsureRangeValid(string secid)
@@ -69,7 +76,8 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 candle.Value,
                 candle.Volume,
                 MoexClickHouseTime.AsWallClock(candle.Begin),
-                MoexClickHouseTime.AsWallClock(candle.End)
+                MoexClickHouseTime.AsWallClock(candle.End),
+                _ingestPriority
             };
 
             return (row, DateTime.SpecifyKind(begin, DateTimeKind.Unspecified));

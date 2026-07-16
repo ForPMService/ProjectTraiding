@@ -20,7 +20,8 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
         public IReadOnlyList<string> Columns { get; } = new[]
         {
             "secid", "source_time", "trade_no", "board_id", "price", "quantity", "value",
-            "period", "buy_sell", "decimals", "trading_session", "trade_session_date", "systime"
+            "period", "buy_sell", "decimals", "trading_session", "trade_session_date", "systime",
+            "ingest_priority"
         };
 
         public IReadOnlyDictionary<string, string> ColumnTypes { get; } =
@@ -39,6 +40,7 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 ["trading_session"] = "LowCardinality(Nullable(String))",
                 ["trade_session_date"] = "Nullable(Date)",
                 ["systime"] = "Nullable(DateTime64(3, 'Europe/Moscow'))",
+                ["ingest_priority"] = "UInt8",
             };
 
         public void EnsureRangeValid(string secid)
@@ -72,6 +74,7 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 item.TradingSession,
                 MoexClickHouseTime.ParseDate(item.TradeSessionDate),
                 MoexClickHouseTime.ParseWallClock(item.SysTime),
+                (byte)0,
             };
 
             return (row, sourceTime);

@@ -37,7 +37,8 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
                 ILogger<RowWriter<CandlesDTO>> logger = sp.GetRequiredService<ILogger<RowWriter<CandlesDTO>>>();
 
                 RowWriter<CandlesDTO> Make(string table, string tokenPrefix) =>
-                    new RowWriter<CandlesDTO>(executor, new CandlesRowMap(table, tokenPrefix), logger, batchSize);
+                    new RowWriter<CandlesDTO>(
+                        executor, new CandlesRowMap(table, tokenPrefix, ingestPriority: 1), logger, batchSize);
 
                 return new Dictionary<int, RowWriter<CandlesDTO>>
                 {
