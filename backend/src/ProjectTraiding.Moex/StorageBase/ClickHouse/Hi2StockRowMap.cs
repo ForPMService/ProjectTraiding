@@ -38,7 +38,8 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 throw new InvalidOperationException("Загрузка концентрации отвергнута: secid пустой.");
         }
 
-        public (object?[] Row, DateTime Time) ToRow(Hi2AssetDTO item, string secid)
+        public (object?[] Row, DateTime Time) ToRow(
+            Hi2AssetDTO item, string secid, string? tradeSessionDate)
         {
             // source_time — ключевой not-null столбец (ORDER BY), собирается построчно из
             // даты и времени торгов. Пустые дата/время — отвергаем строку.

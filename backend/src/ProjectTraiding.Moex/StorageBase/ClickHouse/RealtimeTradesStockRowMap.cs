@@ -49,7 +49,8 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 throw new InvalidOperationException("Запись сделок отвергнута: secid пустой.");
         }
 
-        public (object?[] Row, DateTime Time) ToRow(RealtimeTradesStockDTO item, string secid)
+        public (object?[] Row, DateTime Time) ToRow(
+            RealtimeTradesStockDTO item, string secid, string? tradeSessionDate)
         {
             // source_time — ключевой not-null столбец: фактический момент сделки.
             DateTime sourceTime = MoexClickHouseTime.BuildSourceTime(item.TradeDate, item.TradeTime);
@@ -72,7 +73,7 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 item.BuySell,
                 item.Decimals,
                 item.TradingSession,
-                MoexClickHouseTime.ParseDate(item.TradeSessionDate),
+                MoexClickHouseTime.ParseDate(tradeSessionDate),
                 MoexClickHouseTime.ParseWallClock(item.SysTime),
                 (byte)0,
             };

@@ -101,11 +101,5 @@ namespace ProjectTraiding.Moex.Contracts.Dto.Realtime
         /// Храним как long?, чтобы DTO покрывал оба metadata-варианта без приведения типа.
         /// </summary>
         public long? Decimals { get; init; }
-
-        /// <summary>
-        /// Дата торговой сессии снимка. Приходит не из строки orderbook, а из соседнего блока
-        /// dataversion и проставляется приёмником перед записью снимка.
-        /// </summary>
-        public string? TradeSessionDate { get; init; }
     }
 }

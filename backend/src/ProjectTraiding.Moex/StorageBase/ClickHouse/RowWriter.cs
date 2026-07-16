@@ -64,7 +64,7 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
             {
                 foreach (T item in page)
                 {
-                    (object?[] row, DateTime time) = _map.ToRow(item, secid);
+                    (object?[] row, DateTime time) = _map.ToRow(item, secid, null);
 
                     if (batch.Count == 0)
                         batchFirstTime = time;

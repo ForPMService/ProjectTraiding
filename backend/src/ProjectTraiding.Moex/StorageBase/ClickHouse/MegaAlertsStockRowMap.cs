@@ -39,7 +39,8 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 throw new InvalidOperationException("Загрузка мегаалёртов отвергнута: secid пустой.");
         }
 
-        public (object?[] Row, DateTime Time) ToRow(MegaAlertsAssetsDTO item, string secid)
+        public (object?[] Row, DateTime Time) ToRow(
+            MegaAlertsAssetsDTO item, string secid, string? tradeSessionDate)
         {
             // source_time — ключевой not-null столбец (ORDER BY), собирается построчно из
             // даты и времени торгов. Пустые дата/время — отвергаем строку.

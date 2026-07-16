@@ -33,7 +33,11 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
         /// <summary>
         /// Строка источника и secid в строку вставки по позициям. Вызывает построчные стражи.
         /// Возвращает строку и её метку времени (для границ пачки в токене).
+        ///
+        /// tradeSessionDate — дата торговой сессии из блока dataversion, общая для всех строк
+        /// одного ответа реального времени. У исторических карт не используется: их дата лежит
+        /// в самой строке. Пустая строка или null — столбец останется NULL.
         /// </summary>
-        (object?[] Row, DateTime Time) ToRow(T item, string secid);
+        (object?[] Row, DateTime Time) ToRow(T item, string secid, string? tradeSessionDate);
     }
 }

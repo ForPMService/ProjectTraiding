@@ -33,10 +33,14 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
         /// <summary>
         /// Пишет готовый список строк одним INSERT. Пустой список — ноль вставок, не ошибка.
         /// Возвращает число строк, отданных на вставку (для сердцебиения покрытия).
+        ///
+        /// tradeSessionDate — дата торговой сессии из блока dataversion ответа, общая для всех
+        /// строк пачки. Проставляется каждой строке через карту. null — столбец останется NULL.
         /// </summary>
         public async Task<long> WriteAsync(
             string secid,
             IReadOnlyList<T> items,
+            string? tradeSessionDate,
             CancellationToken ct)
         {
             if (items.Count == 0)
@@ -50,7 +54,8 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
 
             for (int i = 0; i < items.Count; i++)
             {
-                (object?[] row, DateTime time) = _map.ToRow(items[i], secid);
+                (object?[] row, DateTime time) = _map.ToRow(
+                    items[i], secid, tradeSessionDate);
                 if (i == 0)
                     firstTime = time;
                 lastTime = time;

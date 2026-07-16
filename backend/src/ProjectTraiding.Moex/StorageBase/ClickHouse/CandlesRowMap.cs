@@ -59,7 +59,8 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 throw new InvalidOperationException("Загрузка свечей отвергнута: secid пустой.");
         }
 
-        public (object?[] Row, DateTime Time) ToRow(CandlesDTO candle, string secid)
+        public (object?[] Row, DateTime Time) ToRow(
+            CandlesDTO candle, string secid, string? tradeSessionDate)
         {
             if (candle.Begin is null)
                 throw new InvalidOperationException("Свеча отвергнута: begin пустой.");
