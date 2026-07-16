@@ -4,6 +4,7 @@ using StackExchange.Redis;
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 
 namespace ProjectTraiding.Moex.StorageBase.Redis
 {
@@ -31,37 +32,43 @@ namespace ProjectTraiding.Moex.StorageBase.Redis
             _logger = logger;
         }
 
-        public async Task WriteLatestStockTradeAsync(
+        public Task WriteLatestStockTradeAsync(
             string secid, RealtimeTradesStockDTO trade, CancellationToken ct)
         {
-            await WriteJsonAsync(
+            return WriteLatestAsync(
                 StockTradeKeyPrefix + secid,
-                JsonSerializer.Serialize(trade, AppJsonContext.Default.RealtimeTradesStockDTO),
-                secid);
+                trade,
+                AppJsonContext.Default.RealtimeTradesStockDTO);
         }
 
-        public async Task WriteLatestFuturesTradeAsync(
+        public Task WriteLatestFuturesTradeAsync(
             string secid, RealtimeTradesFuturesDTO trade, CancellationToken ct)
         {
-            await WriteJsonAsync(
+            return WriteLatestAsync(
                 FuturesTradeKeyPrefix + secid,
-                JsonSerializer.Serialize(trade, AppJsonContext.Default.RealtimeTradesFuturesDTO),
-                secid);
+                trade,
+                AppJsonContext.Default.RealtimeTradesFuturesDTO);
         }
 
-        public async Task WriteLatestOrderbookAsync(
+        public Task WriteLatestOrderbookAsync(
             string secid, List<RealtimeOrderbookRowDTO> snapshot, CancellationToken ct)
         {
-            await WriteJsonAsync(
+            return WriteLatestAsync(
                 OrderbookKeyPrefix + secid,
-                JsonSerializer.Serialize(snapshot, AppJsonContext.Default.ListRealtimeOrderbookRowDTO),
-                secid);
+                snapshot,
+                AppJsonContext.Default.ListRealtimeOrderbookRowDTO);
         }
 
-        private async Task WriteJsonAsync(string key, string json, string secid)
+        // Сериализация внутри перехвата — так контракт «сбой записи не роняет приём» держится
+        // и для сбоя сериализации, а не только сетевой записи. Прежняя версия сериализовала в
+        // аргументе WriteJsonAsync, вне try, и сбой сериализации проходил мимо перехвата.
+        // JsonTypeInfo<T> берётся из генератора кода (AppJsonContext) — без рефлексии, пригодно
+        // для нативной AOT-компиляции.
+        private async Task WriteLatestAsync<T>(string key, T value, JsonTypeInfo<T> typeInfo)
         {
             try
             {
+                string json = JsonSerializer.Serialize(value, typeInfo);
                 IDatabase db = _redis.GetDatabase();
                 await db.StringSetAsync(key, json);
                 MoexRealtimeLatestLogMessages.LatestWritten(_logger, key);
