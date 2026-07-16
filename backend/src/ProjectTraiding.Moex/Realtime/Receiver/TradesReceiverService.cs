@@ -87,6 +87,9 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             StreamCoverageWriter coverageWriter =
                 scope.ServiceProvider.GetRequiredService<StreamCoverageWriter>();
 
+            MoexRealtimeRestClient client =
+                scope.ServiceProvider.GetRequiredService<MoexRealtimeRestClient>();
+
             IReadOnlyList<ReceiverInstrument> instruments = await instrumentReader.GetAllAsync(ct);
             if (!_initialized)
             {
@@ -94,16 +97,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     MoexRealtimeReceiverLogMessages.TradesCatalogEmpty(_logger);
 
                 await PrepareInitialInstrumentsAsync(
-                    instruments, cursorWriter, coverageWriter, ct);
+                    instruments, cursorWriter, coverageWriter, client, ct);
                 _initialized = true;
             }
             else
             {
-                await AddNewInstrumentsAsync(instruments, cursorWriter, coverageWriter, ct);
+                await AddNewInstrumentsAsync(instruments, cursorWriter, coverageWriter, client, ct);
             }
 
-            MoexRealtimeRestClient client =
-                scope.ServiceProvider.GetRequiredService<MoexRealtimeRestClient>();
             RealtimeRowWriter<RealtimeTradesStockDTO> stockWriter =
                 scope.ServiceProvider.GetRequiredService<RealtimeRowWriter<RealtimeTradesStockDTO>>();
             RealtimeRowWriter<RealtimeTradesFuturesDTO> futuresWriter =
@@ -156,6 +157,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             IReadOnlyList<ReceiverInstrument> instruments,
             StreamCursorWriter cursorWriter,
             StreamCoverageWriter coverageWriter,
+            MoexRealtimeRestClient client,
             CancellationToken ct)
         {
             HashSet<string> crashedClosed = new HashSet<string>();
@@ -192,7 +194,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 try
                 {
                     string boardId = GetBoardId(instrument.Market);
-                    await OpenStateAsync(instrument, boardId, cursorWriter, coverageWriter, ct);
+                    await OpenStateAsync(instrument, boardId, cursorWriter, coverageWriter, client, ct);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
@@ -210,6 +212,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             IReadOnlyList<ReceiverInstrument> instruments,
             StreamCursorWriter cursorWriter,
             StreamCoverageWriter coverageWriter,
+            MoexRealtimeRestClient client,
             CancellationToken ct)
         {
             for (int i = 0; i < instruments.Count; i++)
@@ -223,7 +226,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     string boardId = GetBoardId(instrument.Market);
                     await coverageWriter.CloseCrashedAsync(
                         instrument.Secid, instrument.Market, boardId, DataKind, ct);
-                    await OpenStateAsync(instrument, boardId, cursorWriter, coverageWriter, ct);
+                    await OpenStateAsync(instrument, boardId, cursorWriter, coverageWriter, client, ct);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
@@ -242,6 +245,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             string boardId,
             StreamCursorWriter cursorWriter,
             StreamCoverageWriter coverageWriter,
+            MoexRealtimeRestClient client,
             CancellationToken ct)
         {
             StreamCursorState? cursor = await cursorWriter.TryGetAsync(
@@ -251,13 +255,40 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 DataKind,
                 null,
                 ct);
+
+            long? initialAfterTradeNo = cursor?.LastTradeNo;
+
+            // Холодный старт (курсора в PostgreSQL нет): встаём на текущий хвост одним обратным
+            // запросом (reversed=1) и фиксируем курсор, чтобы не переигрывать весь торговый день.
+            // Пропущенную историю догружает исторический загрузчик — это его зона ответственности.
+            if (initialAfterTradeNo is null)
+            {
+                (long TradeNo, DateTime SourceTime)? tail =
+                    await TrySeedTailAsync(instrument, client, ct);
+                if (tail is not null)
+                {
+                    await cursorWriter.UpsertAsync(
+                        instrument.Secid,
+                        instrument.Market,
+                        boardId,
+                        DataKind,
+                        null,
+                        tail.Value.SourceTime,
+                        tail.Value.TradeNo,
+                        ct);
+                    initialAfterTradeNo = tail.Value.TradeNo;
+                    MoexRealtimeReceiverLogMessages.TradesInstrumentSeeded(
+                        _logger, instrument.Secid, instrument.Market, tail.Value.TradeNo);
+                }
+            }
+
             long sessionId = await coverageWriter.OpenSessionAsync(
                 instrument.Secid, instrument.Market, boardId, DataKind, ct);
 
             _states.Add(
                 instrument.Secid,
                 new TradesInstrumentState(
-                    cursor?.LastTradeNo,
+                    initialAfterTradeNo,
                     sessionId,
                     instrument.Market,
                     boardId));
@@ -347,6 +378,68 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
             state.RowsTotal = rowsTotal;
             state.AfterTradeNo = lastTradeNo;
+        }
+
+        private static async Task<(long TradeNo, DateTime SourceTime)?> TrySeedTailAsync(
+            ReceiverInstrument instrument,
+            MoexRealtimeRestClient client,
+            CancellationToken ct)
+        {
+            Dictionary<string, string> reversedParams =
+                new Dictionary<string, string> { ["reversed"] = "1" };
+
+            if (instrument.Market == StockMarket)
+            {
+                RealtimeTradesParseResult<RealtimeTradesStockDTO> page =
+                    await client.GetTradesStockAsync(instrument.Secid, null, reversedParams, ct);
+                return PickTailStock(page.Rows);
+            }
+
+            RealtimeTradesParseResult<RealtimeTradesFuturesDTO> futuresPage =
+                await client.GetTradesFuturesAsync(instrument.Secid, null, reversedParams, ct);
+            return PickTailFutures(futuresPage.Rows);
+        }
+
+        private static (long TradeNo, DateTime SourceTime)? PickTailStock(
+            List<RealtimeTradesStockDTO> rows)
+        {
+            long maxTradeNo = long.MinValue;
+            RealtimeTradesStockDTO? tail = null;
+            for (int i = 0; i < rows.Count; i++)
+            {
+                long? tradeNo = rows[i].TradeNo;
+                if (tradeNo is not null && tradeNo.Value > maxTradeNo)
+                {
+                    maxTradeNo = tradeNo.Value;
+                    tail = rows[i];
+                }
+            }
+
+            if (tail is null)
+                return null;
+
+            return (maxTradeNo, MoexClickHouseTime.BuildSourceTime(tail.TradeDate, tail.TradeTime));
+        }
+
+        private static (long TradeNo, DateTime SourceTime)? PickTailFutures(
+            List<RealtimeTradesFuturesDTO> rows)
+        {
+            long maxTradeNo = long.MinValue;
+            RealtimeTradesFuturesDTO? tail = null;
+            for (int i = 0; i < rows.Count; i++)
+            {
+                long? tradeNo = rows[i].TradeNo;
+                if (tradeNo is not null && tradeNo.Value > maxTradeNo)
+                {
+                    maxTradeNo = tradeNo.Value;
+                    tail = rows[i];
+                }
+            }
+
+            if (tail is null)
+                return null;
+
+            return (maxTradeNo, MoexClickHouseTime.BuildSourceTime(tail.TradeDate, tail.TradeTime));
         }
 
         private async Task CloseSessionsAsync()

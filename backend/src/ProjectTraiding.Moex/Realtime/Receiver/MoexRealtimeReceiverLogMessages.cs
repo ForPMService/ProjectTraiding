@@ -45,6 +45,11 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             Message = "Trades receiver shutdown cleanup failed unexpectedly.")]
         public static partial void TradesShutdownFailed(ILogger logger, Exception exception);
 
+        [LoggerMessage(EventId = 459, EventName = "MoexTradesReceiverInstrumentSeeded", Level = LogLevel.Information,
+            Message = "Trades receiver instrument seeded to tail: secid={Secid}, market={Market}, tradeNo={TradeNo}.")]
+        public static partial void TradesInstrumentSeeded(
+            ILogger logger, string secid, string market, long tradeNo);
+
         [LoggerMessage(EventId = 460, EventName = "MoexOrderbookReceiverStarted", Level = LogLevel.Information,
             Message = "Orderbook receiver started: pollInterval={PollInterval}.")]
         public static partial void OrderbookStarted(ILogger logger, TimeSpan pollInterval);
