@@ -56,6 +56,12 @@ namespace ProjectTraiding.Moex.Options
             if (options.PollIntervalSeconds <= 0)
                 throw new InvalidOperationException("Moex:PollIntervalSeconds должен быть положительным.");
 
+            if (options.TradesPollSeconds <= 0)
+                throw new InvalidOperationException("Moex:TradesPollSeconds должен быть положительным.");
+
+            if (options.OrderbookPollSeconds <= 0)
+                throw new InvalidOperationException("Moex:OrderbookPollSeconds должен быть положительным.");
+
             if (options.LoadWorkerConcurrency <= 0)
                 throw new InvalidOperationException("Moex:LoadWorkerConcurrency должен быть положительным.");
 

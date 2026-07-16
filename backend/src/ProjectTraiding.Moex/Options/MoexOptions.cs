@@ -117,5 +117,11 @@ namespace ProjectTraiding.Moex.Options
         /// с этим интервалом; при наличии задач исполнитель берёт следующую сразу.
         /// </summary>
         public int PollIntervalSeconds { get; set; } = 5;
+
+        /// <summary>Интервал опроса ленты сделок, секунды. Раздельно со стаканом.</summary>
+        public int TradesPollSeconds { get; init; } = 5;
+
+        /// <summary>Интервал опроса стакана, секунды. Раздельно с лентой сделок.</summary>
+        public int OrderbookPollSeconds { get; init; } = 5;
     }
 }
