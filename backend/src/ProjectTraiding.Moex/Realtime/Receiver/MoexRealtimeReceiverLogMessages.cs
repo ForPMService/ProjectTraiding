@@ -13,9 +13,9 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             Message = "Trades receiver stopped.")]
         public static partial void TradesStopped(ILogger logger);
 
-        [LoggerMessage(EventId = 452, EventName = "MoexTradesReceiverCatalogEmpty", Level = LogLevel.Information,
-            Message = "Trades receiver instrument catalog is empty.")]
-        public static partial void TradesCatalogEmpty(ILogger logger);
+        [LoggerMessage(EventId = 452, EventName = "MoexTradesReceiverSubscriptionsEmpty", Level = LogLevel.Information,
+            Message = "Trades receiver subscription list is empty.")]
+        public static partial void TradesSubscriptionsEmpty(ILogger logger);
 
         [LoggerMessage(EventId = 453, EventName = "MoexTradesReceiverInstrumentPrepared", Level = LogLevel.Information,
             Message = "Trades receiver instrument prepared: secid={Secid}, market={Market}, sessionId={SessionId}.")]
@@ -63,9 +63,9 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             Message = "Orderbook receiver stopped.")]
         public static partial void OrderbookStopped(ILogger logger);
 
-        [LoggerMessage(EventId = 462, EventName = "MoexOrderbookReceiverCatalogEmpty", Level = LogLevel.Information,
-            Message = "Orderbook receiver instrument catalog is empty.")]
-        public static partial void OrderbookCatalogEmpty(ILogger logger);
+        [LoggerMessage(EventId = 462, EventName = "MoexOrderbookReceiverSubscriptionsEmpty", Level = LogLevel.Information,
+            Message = "Orderbook receiver subscription list is empty.")]
+        public static partial void OrderbookSubscriptionsEmpty(ILogger logger);
 
         [LoggerMessage(EventId = 463, EventName = "MoexOrderbookReceiverInstrumentPrepared", Level = LogLevel.Information,
             Message = "Orderbook receiver instrument prepared: secid={Secid}, market={Market}, sessionId={SessionId}.")]

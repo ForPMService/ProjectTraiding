@@ -88,11 +88,12 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             StreamCoverageWriter coverageWriter =
                 scope.ServiceProvider.GetRequiredService<StreamCoverageWriter>();
 
-            IReadOnlyList<ReceiverInstrument> instruments = await instrumentReader.GetAllAsync(ct);
+            IReadOnlyList<ReceiverInstrument> instruments =
+                await instrumentReader.GetEnabledForDataKindAsync(DataKind, ct);
             if (!_initialized)
             {
                 if (instruments.Count == 0)
-                    MoexRealtimeReceiverLogMessages.OrderbookCatalogEmpty(_logger);
+                    MoexRealtimeReceiverLogMessages.OrderbookSubscriptionsEmpty(_logger);
 
                 await PrepareInitialInstrumentsAsync(instruments, coverageWriter, ct);
                 _initialized = true;

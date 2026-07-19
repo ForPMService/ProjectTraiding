@@ -1,4 +1,5 @@
 using Npgsql;
+using NpgsqlTypes;
 using System;
 using System.Collections.Generic;
 
@@ -11,9 +12,11 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
     public readonly record struct ReceiverInstrument(string Secid, string Market);
 
     /// <summary>
-    /// Чтение полного списка инструментов для приёмника реального времени (контур Moex).
-    /// Отдельный от витринного InstrumentReadQuery: контуры не делят код (инвариант проекта).
-    /// Возвращает только то, что нужно приёмнику: код и рынок.
+    /// Чтение списка наблюдения приёмника реального времени (контур Moex): какие инструменты
+    /// и виды данных собирать. Читает moex_realtime_subscriptions, НЕ весь справочник —
+    /// справочник отвечает «что известно», подписки отвечают «что собирать». Рынок берётся
+    /// из moex_instruments соединением. Отдельный от витринного InstrumentReadQuery:
+    /// контуры не делят код (инвариант проекта).
     /// </summary>
     public sealed class MoexReceiverInstrumentReader
     {
@@ -24,14 +27,22 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             _dataSource = dataSource;
         }
 
-        public async Task<IReadOnlyList<ReceiverInstrument>> GetAllAsync(CancellationToken ct)
+        /// <summary>
+        /// Включённые подписки одного вида данных (trades или orderbook) с рынком инструмента.
+        /// Пустой результат означает, что собирать по этому виду нечего.
+        /// </summary>
+        public async Task<IReadOnlyList<ReceiverInstrument>> GetEnabledForDataKindAsync(
+            string dataKind, CancellationToken ct)
         {
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
             await using NpgsqlCommand cmd = new NpgsqlCommand("""
-                SELECT secid, instrument_type
-                FROM moex_instruments
-                ORDER BY secid
+                SELECT i.secid, i.instrument_type
+                FROM moex_realtime_subscriptions s
+                JOIN moex_instruments i ON i.secid = s.secid
+                WHERE s.data_kind = @data_kind AND s.enabled
+                ORDER BY i.secid
                 """, connection);
+            cmd.Parameters.Add("@data_kind", NpgsqlDbType.Text).Value = dataKind;
 
             List<ReceiverInstrument> result = new List<ReceiverInstrument>();
             await using NpgsqlDataReader reader = await cmd.ExecuteReaderAsync(ct);

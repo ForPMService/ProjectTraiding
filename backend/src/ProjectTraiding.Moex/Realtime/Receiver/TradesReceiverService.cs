@@ -93,11 +93,12 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             MoexRealtimeRestClient client =
                 scope.ServiceProvider.GetRequiredService<MoexRealtimeRestClient>();
 
-            IReadOnlyList<ReceiverInstrument> instruments = await instrumentReader.GetAllAsync(ct);
+            IReadOnlyList<ReceiverInstrument> instruments =
+                await instrumentReader.GetEnabledForDataKindAsync(DataKind, ct);
             if (!_initialized)
             {
                 if (instruments.Count == 0)
-                    MoexRealtimeReceiverLogMessages.TradesCatalogEmpty(_logger);
+                    MoexRealtimeReceiverLogMessages.TradesSubscriptionsEmpty(_logger);
 
                 await PrepareInitialInstrumentsAsync(
                     instruments, cursorWriter, coverageWriter, client, ct);
