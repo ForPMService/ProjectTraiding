@@ -123,5 +123,12 @@ namespace ProjectTraiding.Moex.Options
 
         /// <summary>Интервал опроса стакана, секунды. Раздельно с лентой сделок.</summary>
         public int OrderbookPollSeconds { get; init; } = 5;
+
+        /// <summary>
+        /// Включает фоновый приём реального времени — обе службы, сделки и стакан.
+        /// По умолчанию выключен: запуск API не должен начинать промышленный сбор без
+        /// явного разрешения оператора. Включение — осознанное действие через настройку.
+        /// </summary>
+        public bool RealtimeReceiverEnabled { get; init; } = false;
     }
 }

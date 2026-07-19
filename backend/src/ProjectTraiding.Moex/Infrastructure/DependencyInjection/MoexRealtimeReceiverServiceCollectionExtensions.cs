@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using ProjectTraiding.Moex.Contracts.Dto.Realtime;
 using ProjectTraiding.Moex.Options;
@@ -15,8 +16,19 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
     /// </summary>
     public static class MoexRealtimeReceiverServiceCollectionExtensions
     {
-        public static IServiceCollection AddMoexRealtimeReceiver(this IServiceCollection services)
+        public static IServiceCollection AddMoexRealtimeReceiver(
+            this IServiceCollection services,
+            IConfiguration configuration)
         {
+            // Приёмник по умолчанию выключен. При выключенном признаке фоновые службы и их
+            // писатели не регистрируются вовсе — запуск API не начинает сбор. Секция читается
+            // здесь тем же приёмом, что и в AddMoexClients (Get<MoexOptions>), потому что на
+            // этапе построения контейнера привязанные настройки ещё недоступны.
+            MoexOptions moexOptions =
+                configuration.GetSection("Moex").Get<MoexOptions>() ?? new MoexOptions();
+            if (!moexOptions.RealtimeReceiverEnabled)
+                return services;
+
             services.AddSingleton<MoexReceiverInstrumentReader>();
             services.AddSingleton<StreamCursorWriter>();
             services.AddSingleton<StreamCoverageWriter>();

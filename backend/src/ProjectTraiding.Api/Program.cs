@@ -37,7 +37,7 @@ builder.Services.AddVitrine(builder.Configuration);
 builder.Services.AddManagement();
 builder.Services.AddMoexLoading(builder.Configuration);
 builder.Services.AddMoexRealtimeStorage(builder.Configuration);
-builder.Services.AddMoexRealtimeReceiver();
+builder.Services.AddMoexRealtimeReceiver(builder.Configuration);
 
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
