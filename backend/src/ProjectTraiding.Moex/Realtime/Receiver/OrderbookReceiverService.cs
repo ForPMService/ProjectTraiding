@@ -24,6 +24,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<OrderbookReceiverService> _logger;
         private readonly TimeSpan _pollInterval;
+        private readonly TimeSpan _instrumentFetchTimeout;
         private readonly Dictionary<string, OrderbookInstrumentState> _states =
             new Dictionary<string, OrderbookInstrumentState>();
         private bool _initialized;
@@ -31,11 +32,13 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         public OrderbookReceiverService(
             IServiceScopeFactory scopeFactory,
             ILogger<OrderbookReceiverService> logger,
-            TimeSpan pollInterval)
+            TimeSpan pollInterval,
+            TimeSpan instrumentFetchTimeout)
         {
             _scopeFactory = scopeFactory;
             _logger = logger;
             _pollInterval = pollInterval;
+            _instrumentFetchTimeout = instrumentFetchTimeout;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -229,31 +232,55 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 _logger, instrument.Secid, instrument.Market, sessionId);
         }
 
-        private static async Task PollInstrumentAsync(
+        private async Task PollInstrumentAsync(
             string secid,
             OrderbookInstrumentState state,
             MoexRealtimeRestClient client,
             RealtimeRowWriter<RealtimeOrderbookRowDTO> writer,
             RealtimeLatestWriter latestWriter,
             StreamCoverageWriter coverageWriter,
-            CancellationToken ct)
+            CancellationToken commitCt)
         {
+            // Снимок стакана — под собственным бюджетом, живущим строго вокруг вызова клиента и
+            // уничтожаемым до фиксации. Причины те же, что в PollStockAsync.
             RealtimeOrderbookParseResult result;
-            if (state.Market == StockMarket)
-                result = await client.GetOrderbookStockAsync(secid, ct);
-            else
-                result = await client.GetOrderbookFuturesAsync(secid, ct);
+            using (CancellationTokenSource fetchCts =
+                   CancellationTokenSource.CreateLinkedTokenSource(commitCt))
+            {
+                fetchCts.CancelAfter(_instrumentFetchTimeout);
+                try
+                {
+                    if (state.Market == StockMarket)
+                        result = await client.GetOrderbookStockAsync(secid, fetchCts.Token);
+                    else
+                        result = await client.GetOrderbookFuturesAsync(secid, fetchCts.Token);
+                }
+                catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (OperationCanceledException) when (fetchCts.IsCancellationRequested)
+                {
+                    MoexRealtimeReceiverLogMessages.OrderbookInstrumentFetchTimedOut(
+                        _logger, secid, state.Market, _instrumentFetchTimeout);
+                    return;
+                }
+            }
 
             if (result.Rows.Count == 0)
                 return;
 
+            // Фиксация — под хостовым commitCt. У стакана курсора нет, durable-запись — только
+            // ClickHouse; за ней счётчик, сердцебиение, витрина последней (best-effort).
             string? sessionDate = result.DataVersion?.TradeSessionDate;
-            await writer.WriteAsync(secid, result.Rows, sessionDate, ct);
-            await latestWriter.WriteLatestOrderbookAsync(secid, result.Rows, ct);
+            await writer.WriteAsync(secid, result.Rows, sessionDate, commitCt);
 
             long rowsTotal = state.RowsTotal + result.Rows.Count;
-            await coverageWriter.HeartbeatAsync(state.SessionId, rowsTotal, ct);
             state.RowsTotal = rowsTotal;
+
+            await coverageWriter.HeartbeatAsync(state.SessionId, rowsTotal, commitCt);
+
+            await latestWriter.WriteLatestOrderbookAsync(secid, result.Rows, commitCt);
         }
 
         private async Task CloseSessionsAsync()

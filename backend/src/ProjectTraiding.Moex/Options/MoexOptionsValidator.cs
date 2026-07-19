@@ -47,9 +47,6 @@ namespace ProjectTraiding.Moex.Options
             if (options.MaxPagesPerLoad <= 0)
                 throw new InvalidOperationException("Moex:MaxPagesPerLoad должен быть положительным.");
 
-            if (options.TradesPageLimit <= 0)
-                throw new InvalidOperationException("Moex:TradesPageLimit должен быть положительным.");
-
             if (options.CandlesPageLimit <= 0)
                 throw new InvalidOperationException("Moex:CandlesPageLimit должен быть положительным.");
 
@@ -61,6 +58,9 @@ namespace ProjectTraiding.Moex.Options
 
             if (options.OrderbookPollSeconds <= 0)
                 throw new InvalidOperationException("Moex:OrderbookPollSeconds должен быть положительным.");
+
+            if (options.RealtimeInstrumentFetchTimeout <= TimeSpan.Zero)
+                throw new InvalidOperationException("Moex:RealtimeInstrumentFetchTimeout должен быть положительным.");
 
             if (options.LoadWorkerConcurrency <= 0)
                 throw new InvalidOperationException("Moex:LoadWorkerConcurrency должен быть положительным.");
@@ -105,6 +105,7 @@ namespace ProjectTraiding.Moex.Options
                 options.TotalRequestTimeout,
                 options.BodyReadTimeout,
                 options.PollIntervalSeconds,
+                options.RealtimeInstrumentFetchTimeout,
                 options.MaxRequestsPerSecond,
                 options.MaxConnectionsPerServer,
                 options.MaxPagesPerLoad,

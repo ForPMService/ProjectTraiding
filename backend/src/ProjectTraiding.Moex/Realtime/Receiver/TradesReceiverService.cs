@@ -24,6 +24,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<TradesReceiverService> _logger;
         private readonly TimeSpan _pollInterval;
+        private readonly TimeSpan _instrumentFetchTimeout;
         private readonly Dictionary<string, TradesInstrumentState> _states =
             new Dictionary<string, TradesInstrumentState>();
         private bool _initialized;
@@ -31,11 +32,13 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         public TradesReceiverService(
             IServiceScopeFactory scopeFactory,
             ILogger<TradesReceiverService> logger,
-            TimeSpan pollInterval)
+            TimeSpan pollInterval,
+            TimeSpan instrumentFetchTimeout)
         {
             _scopeFactory = scopeFactory;
             _logger = logger;
             _pollInterval = pollInterval;
+            _instrumentFetchTimeout = instrumentFetchTimeout;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -296,7 +299,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 _logger, instrument.Secid, instrument.Market, sessionId);
         }
 
-        private static async Task PollStockAsync(
+        private async Task PollStockAsync(
             string secid,
             TradesInstrumentState state,
             MoexRealtimeRestClient client,
@@ -304,20 +307,46 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             RealtimeLatestWriter latestWriter,
             StreamCursorWriter cursorWriter,
             StreamCoverageWriter coverageWriter,
-            CancellationToken ct)
+            CancellationToken commitCt)
         {
-            RealtimeTradesParseResult<RealtimeTradesStockDTO> result =
-                await client.GetTradesStockPagedAsync(
-                    secid, state.AfterTradeNo, cancellationToken: ct);
+            // Получение одной страницы — под собственным бюджетом, живущим строго вокруг вызова
+            // клиента. По истечении RealtimeInstrumentFetchTimeout получение отменяется, инструмент
+            // пропускается до следующего оборота. Бюджет уничтожается ЗДЕСЬ, до фиксации: иначе его
+            // таймер, сработав во время медленной записи, мог бы ошибочно попасть на исключение
+            // фазы фиксации и выдать сбой хранилища за тайм-аут получения.
+            RealtimeTradesParseResult<RealtimeTradesStockDTO> result;
+            using (CancellationTokenSource fetchCts =
+                   CancellationTokenSource.CreateLinkedTokenSource(commitCt))
+            {
+                fetchCts.CancelAfter(_instrumentFetchTimeout);
+                try
+                {
+                    result = await client.GetTradesStockAsync(
+                        secid, state.AfterTradeNo, cancellationToken: fetchCts.Token);
+                }
+                catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (OperationCanceledException) when (fetchCts.IsCancellationRequested)
+                {
+                    MoexRealtimeReceiverLogMessages.TradesInstrumentFetchTimedOut(
+                        _logger, secid, state.Market, _instrumentFetchTimeout);
+                    return;
+                }
+            }
+
             if (result.Rows.Count == 0)
                 return;
 
+            // Фиксация страницы — под хостовым commitCt. Обрыв бюджетом между записью и курсором
+            // недопустим (иначе следующий оборот со старым курсором получит РАСШИРЕННУЮ пачку с
+            // другим токеном, и MergeTree задублирует уже записанные строки). Порядок: durable-запись,
+            // затем сразу in-memory состояние, затем сердцебиение, витрина — последней.
             string? sessionDate = result.DataVersion?.TradeSessionDate;
-            await writer.WriteAsync(secid, result.Rows, sessionDate, ct);
+            await writer.WriteAsync(secid, result.Rows, sessionDate, commitCt);
 
             RealtimeTradesStockDTO last = result.Rows[^1];
-            await latestWriter.WriteLatestStockTradeAsync(secid, last, ct);
-
             long lastTradeNo = last.TradeNo!.Value;
             DateTime lastSourceTime =
                 MoexClickHouseTime.BuildSourceTime(last.TradeDate, last.TradeTime);
@@ -329,16 +358,21 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 null,
                 lastSourceTime,
                 lastTradeNo,
-                ct);
+                commitCt);
 
+            // In-memory состояние двигается сразу за durable-курсором — чтобы не разойтись с ним,
+            // если сердцебиение или витрина упадут.
             long rowsTotal = state.RowsTotal + result.Rows.Count;
-            await coverageWriter.HeartbeatAsync(state.SessionId, rowsTotal, ct);
-
             state.RowsTotal = rowsTotal;
             state.AfterTradeNo = lastTradeNo;
+
+            await coverageWriter.HeartbeatAsync(state.SessionId, rowsTotal, commitCt);
+
+            // Витрина последних значений — best-effort, последней: писатель сам проглатывает сбой.
+            await latestWriter.WriteLatestStockTradeAsync(secid, last, commitCt);
         }
 
-        private static async Task PollFuturesAsync(
+        private async Task PollFuturesAsync(
             string secid,
             TradesInstrumentState state,
             MoexRealtimeRestClient client,
@@ -346,20 +380,41 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             RealtimeLatestWriter latestWriter,
             StreamCursorWriter cursorWriter,
             StreamCoverageWriter coverageWriter,
-            CancellationToken ct)
+            CancellationToken commitCt)
         {
-            RealtimeTradesParseResult<RealtimeTradesFuturesDTO> result =
-                await client.GetTradesFuturesPagedAsync(
-                    secid, state.AfterTradeNo, cancellationToken: ct);
+            // Получение одной страницы — под собственным бюджетом, живущим строго вокруг вызова
+            // клиента и уничтожаемым до фиксации. Причины те же, что в PollStockAsync.
+            RealtimeTradesParseResult<RealtimeTradesFuturesDTO> result;
+            using (CancellationTokenSource fetchCts =
+                   CancellationTokenSource.CreateLinkedTokenSource(commitCt))
+            {
+                fetchCts.CancelAfter(_instrumentFetchTimeout);
+                try
+                {
+                    result = await client.GetTradesFuturesAsync(
+                        secid, state.AfterTradeNo, cancellationToken: fetchCts.Token);
+                }
+                catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (OperationCanceledException) when (fetchCts.IsCancellationRequested)
+                {
+                    MoexRealtimeReceiverLogMessages.TradesInstrumentFetchTimedOut(
+                        _logger, secid, state.Market, _instrumentFetchTimeout);
+                    return;
+                }
+            }
+
             if (result.Rows.Count == 0)
                 return;
 
+            // Фиксация — под хостовым commitCt. Порядок: durable-запись, in-memory состояние,
+            // сердцебиение, витрина — последней.
             string? sessionDate = result.DataVersion?.TradeSessionDate;
-            await writer.WriteAsync(secid, result.Rows, sessionDate, ct);
+            await writer.WriteAsync(secid, result.Rows, sessionDate, commitCt);
 
             RealtimeTradesFuturesDTO last = result.Rows[^1];
-            await latestWriter.WriteLatestFuturesTradeAsync(secid, last, ct);
-
             long lastTradeNo = last.TradeNo!.Value;
             DateTime lastSourceTime =
                 MoexClickHouseTime.BuildSourceTime(last.TradeDate, last.TradeTime);
@@ -371,13 +426,15 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 null,
                 lastSourceTime,
                 lastTradeNo,
-                ct);
+                commitCt);
 
             long rowsTotal = state.RowsTotal + result.Rows.Count;
-            await coverageWriter.HeartbeatAsync(state.SessionId, rowsTotal, ct);
-
             state.RowsTotal = rowsTotal;
             state.AfterTradeNo = lastTradeNo;
+
+            await coverageWriter.HeartbeatAsync(state.SessionId, rowsTotal, commitCt);
+
+            await latestWriter.WriteLatestFuturesTradeAsync(secid, last, commitCt);
         }
 
         private static async Task<(long TradeNo, DateTime SourceTime)?> TrySeedTailAsync(

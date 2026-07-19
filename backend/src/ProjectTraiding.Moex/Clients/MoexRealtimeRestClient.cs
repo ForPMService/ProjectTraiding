@@ -221,116 +221,6 @@ namespace ProjectTraiding.Moex.Clients
             }
         }
 
-        /// <summary>
-        /// Догружает все страницы сделок по акции после указанного номера сделки.
-        /// Обычный GetTradesStockAsync остаётся одно-запросным для периодического опроса.
-        /// </summary>
-        public async Task<RealtimeTradesParseResult<RealtimeTradesStockDTO>> GetTradesStockPagedAsync(
-            string ticker,
-            long? afterTradeNo = null,
-            Dictionary<string, string>? queryParams = null,
-            CancellationToken cancellationToken = default)
-        {
-            Dictionary<string, string> effectiveQueryParams = queryParams is null
-                ? new Dictionary<string, string>()
-                : new Dictionary<string, string>(queryParams);
-            List<RealtimeTradesStockDTO> rows = new List<RealtimeTradesStockDTO>();
-            long? currentAfterTradeNo = afterTradeNo;
-
-            for (int pageNumber = 1; pageNumber <= _options.MaxPagesPerLoad; pageNumber++)
-            {
-                RealtimeTradesParseResult<RealtimeTradesStockDTO> page =
-                    await GetTradesStockAsync(
-                        ticker,
-                        currentAfterTradeNo,
-                        effectiveQueryParams,
-                        cancellationToken);
-
-                rows.AddRange(page.Rows);
-                if (page.Rows.Count != _options.TradesPageLimit)
-                {
-                    return new RealtimeTradesParseResult<RealtimeTradesStockDTO>(
-                        rows,
-                        page.DataVersion,
-                        page.Yields);
-                }
-
-                if (pageNumber == _options.MaxPagesPerLoad)
-                {
-                    throw new InvalidOperationException(
-                        $"Догрузка сделок stock достигла защитного предела " +
-                        $"Moex:MaxPagesPerLoad={_options.MaxPagesPerLoad} на полной странице.");
-                }
-
-                long? nextAfterTradeNo = page.Rows[^1].TradeNo;
-                if (nextAfterTradeNo is null ||
-                    currentAfterTradeNo is not null && nextAfterTradeNo <= currentAfterTradeNo)
-                {
-                    throw new InvalidOperationException(
-                        "Догрузка сделок stock не может продвинуть курсор TRADENO.");
-                }
-
-                currentAfterTradeNo = nextAfterTradeNo;
-            }
-
-            throw new InvalidOperationException("Недостижимое состояние пагинации сделок stock.");
-        }
-
-        /// <summary>
-        /// Догружает все страницы сделок по фьючерсу после указанного номера сделки.
-        /// Обычный GetTradesFuturesAsync остаётся одно-запросным для периодического опроса.
-        /// </summary>
-        public async Task<RealtimeTradesParseResult<RealtimeTradesFuturesDTO>> GetTradesFuturesPagedAsync(
-            string ticker,
-            long? afterTradeNo = null,
-            Dictionary<string, string>? queryParams = null,
-            CancellationToken cancellationToken = default)
-        {
-            Dictionary<string, string> effectiveQueryParams = queryParams is null
-                ? new Dictionary<string, string>()
-                : new Dictionary<string, string>(queryParams);
-            List<RealtimeTradesFuturesDTO> rows = new List<RealtimeTradesFuturesDTO>();
-            long? currentAfterTradeNo = afterTradeNo;
-
-            for (int pageNumber = 1; pageNumber <= _options.MaxPagesPerLoad; pageNumber++)
-            {
-                RealtimeTradesParseResult<RealtimeTradesFuturesDTO> page =
-                    await GetTradesFuturesAsync(
-                        ticker,
-                        currentAfterTradeNo,
-                        effectiveQueryParams,
-                        cancellationToken);
-
-                rows.AddRange(page.Rows);
-                if (page.Rows.Count != _options.TradesPageLimit)
-                {
-                    return new RealtimeTradesParseResult<RealtimeTradesFuturesDTO>(
-                        rows,
-                        page.DataVersion,
-                        page.Yields);
-                }
-
-                if (pageNumber == _options.MaxPagesPerLoad)
-                {
-                    throw new InvalidOperationException(
-                        $"Догрузка сделок futures достигла защитного предела " +
-                        $"Moex:MaxPagesPerLoad={_options.MaxPagesPerLoad} на полной странице.");
-                }
-
-                long? nextAfterTradeNo = page.Rows[^1].TradeNo;
-                if (nextAfterTradeNo is null ||
-                    currentAfterTradeNo is not null && nextAfterTradeNo <= currentAfterTradeNo)
-                {
-                    throw new InvalidOperationException(
-                        "Догрузка сделок futures не может продвинуть курсор TRADENO.");
-                }
-
-                currentAfterTradeNo = nextAfterTradeNo;
-            }
-
-            throw new InvalidOperationException("Недостижимое состояние пагинации сделок futures.");
-        }
-
         // ═══════════════════════════════════════════════════════════
         // Candles Today
         // ═══════════════════════════════════════════════════════════
@@ -339,11 +229,9 @@ namespace ProjectTraiding.Moex.Clients
         /// Свечи торгового дня в окне [from, till]. Окно задаётся МОСКОВСКИМ временем: биржа
         /// отдаёт и принимает московское, часовой пояс машины к делу не относится.
         ///
-        /// Догружает все страницы окна. Одно-запросного варианта нет намеренно — в отличие от
-        /// сделок, где одностраничный метод оставлен ради дешёвого опроса. У сделок окно
-        /// двигает курсор TRADENO; у свечей курсора нет, и запрос без смещения всегда отдаёт
-        /// начало окна. Метод без догрузки после пятисотой свечи возвращал бы одно и то же
-        /// вечно — именно это и происходило до правки.
+        /// Догружает все страницы окна. Одно-запросного варианта нет намеренно: у свечей нет
+        /// курсора, запрос без смещения всегда отдаёт начало окна, и метод без догрузки после
+        /// пятисотой свечи возвращал бы одно и то же вечно — именно это и происходило до правки.
         ///
         /// Опасности всплеска у свечей нет: за минуту рождается ровно одна минутная свеча,
         /// поэтому окно опроса в одну-две минуты укладывается в одну страницу и цикл делает
@@ -369,11 +257,9 @@ namespace ProjectTraiding.Moex.Clients
         /// Свечи торгового дня в окне [from, till]. Окно задаётся МОСКОВСКИМ временем: биржа
         /// отдаёт и принимает московское, часовой пояс машины к делу не относится.
         ///
-        /// Догружает все страницы окна. Одно-запросного варианта нет намеренно — в отличие от
-        /// сделок, где одностраничный метод оставлен ради дешёвого опроса. У сделок окно
-        /// двигает курсор TRADENO; у свечей курсора нет, и запрос без смещения всегда отдаёт
-        /// начало окна. Метод без догрузки после пятисотой свечи возвращал бы одно и то же
-        /// вечно — именно это и происходило до правки.
+        /// Догружает все страницы окна. Одно-запросного варианта нет намеренно: у свечей нет
+        /// курсора, запрос без смещения всегда отдаёт начало окна, и метод без догрузки после
+        /// пятисотой свечи возвращал бы одно и то же вечно — именно это и происходило до правки.
         ///
         /// Опасности всплеска у свечей нет: за минуту рождается ровно одна минутная свеча,
         /// поэтому окно опроса в одну-две минуты укладывается в одну страницу и цикл делает

@@ -50,6 +50,11 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         public static partial void TradesInstrumentSeeded(
             ILogger logger, string secid, string market, long tradeNo);
 
+        [LoggerMessage(EventId = 470, EventName = "MoexTradesReceiverInstrumentFetchTimedOut", Level = LogLevel.Warning,
+            Message = "Trades receiver instrument fetch timed out: secid={Secid}, market={Market}, budget={Budget}.")]
+        public static partial void TradesInstrumentFetchTimedOut(
+            ILogger logger, string secid, string market, TimeSpan budget);
+
         [LoggerMessage(EventId = 460, EventName = "MoexOrderbookReceiverStarted", Level = LogLevel.Information,
             Message = "Orderbook receiver started: pollInterval={PollInterval}.")]
         public static partial void OrderbookStarted(ILogger logger, TimeSpan pollInterval);
@@ -89,5 +94,10 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         [LoggerMessage(EventId = 468, EventName = "MoexOrderbookReceiverShutdownFailed", Level = LogLevel.Error,
             Message = "Orderbook receiver shutdown cleanup failed unexpectedly.")]
         public static partial void OrderbookShutdownFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 469, EventName = "MoexOrderbookReceiverInstrumentFetchTimedOut", Level = LogLevel.Warning,
+            Message = "Orderbook receiver instrument fetch timed out: secid={Secid}, market={Market}, budget={Budget}.")]
+        public static partial void OrderbookInstrumentFetchTimedOut(
+            ILogger logger, string secid, string market, TimeSpan budget);
     }
 }
