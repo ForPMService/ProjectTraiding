@@ -163,35 +163,19 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             MoexRealtimeRestClient client,
             CancellationToken ct)
         {
-            HashSet<string> crashedClosed = new HashSet<string>();
+            // Один запрос закрывает ВСЕ осиротевшие 'open'-сеансы сделок прошлого запуска —
+            // независимо от инструмента. Точечное закрытие по списку пропускает осиротевший сеанс
+            // инструмента вне списка; предстоящий переход на подписки (правка C) расширит это на
+            // отключённые подписки. Глобальное закрытие снимает щель заранее и опирается на
+            // единственного писателя этого вида данных.
+            await coverageWriter.MarkOrphanedOpenAsCrashedAsync(DataKind, ct);
 
-            // Первый проход закрывает все осиротевшие сеансы до открытия хотя бы одного нового.
+            // Открываем сеанс каждому инструменту из читаемого списка. Прежнего гейта по crashedClosed
+            // нет — все старые 'open'-строки закрыты выше, поверх ничего не наслоится.
             for (int i = 0; i < instruments.Count; i++)
             {
                 ReceiverInstrument instrument = instruments[i];
-                try
-                {
-                    string boardId = GetBoardId(instrument.Market);
-                    await coverageWriter.CloseCrashedAsync(
-                        instrument.Secid, instrument.Market, boardId, DataKind, ct);
-                    crashedClosed.Add(instrument.Secid);
-                }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    MoexRealtimeReceiverLogMessages.TradesInstrumentPreparationFailed(
-                        _logger, ex, instrument.Secid);
-                }
-            }
-
-            // Второй проход читает курсоры и открывает новые сеансы только после первого.
-            for (int i = 0; i < instruments.Count; i++)
-            {
-                ReceiverInstrument instrument = instruments[i];
-                if (!crashedClosed.Contains(instrument.Secid) || _states.ContainsKey(instrument.Secid))
+                if (_states.ContainsKey(instrument.Secid))
                     continue;
 
                 try

@@ -61,6 +61,36 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         }
 
         /// <summary>
+        /// Закрывает в 'crashed' ВСЕ строки этого вида данных, оставшиеся 'open' от прошлого
+        /// запуска, независимо от инструмента. Вызывается один раз при старте приёма вида данных
+        /// ДО открытия сеансов. Точечный CloseCrashedAsync по списку инструментов недостаточен:
+        /// он пропускает осиротевший сеанс инструмента ВНЕ читаемого списка — удалённого из
+        /// справочника, а после перехода на подписки (правка C) ещё и отключённой подписки.
+        /// Глобальное закрытие опирается на инвариант единственного писателя: другой процесс не
+        /// держит 'open'-сеансы этого вида одновременно.
+        /// time_till не трогаем: он достоверен с точностью до последнего сердцебиения (V023).
+        /// </summary>
+        public async Task MarkOrphanedOpenAsCrashedAsync(string dataKind, CancellationToken ct)
+        {
+            await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
+            await using NpgsqlCommand cmd = new NpgsqlCommand("""
+                UPDATE moex_loaded_ranges
+                SET status = 'crashed'
+                WHERE data_kind = @data_kind
+                  AND candle_interval IS NULL
+                  AND storage_target = @storage_target
+                  AND status = 'open'
+                """, connection);
+
+            cmd.Parameters.Add("@data_kind", NpgsqlDbType.Text).Value = dataKind;
+            cmd.Parameters.Add("@storage_target", NpgsqlDbType.Text).Value = StorageTarget;
+
+            int marked = await cmd.ExecuteNonQueryAsync(ct);
+            if (marked > 0)
+                MoexStreamCoverageLogMessages.OrphanedMarkedCrashed(_logger, dataKind, marked);
+        }
+
+        /// <summary>
         /// Открывает новый сеанс приёма ряда: одна строка status='open', границы времени = сейчас.
         /// Возвращает id строки — им двигают сердцебиение и его же закрывают.
         /// </summary>

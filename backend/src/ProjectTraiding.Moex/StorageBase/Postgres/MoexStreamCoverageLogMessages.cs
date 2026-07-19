@@ -18,5 +18,9 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         [LoggerMessage(EventId = 242, EventName = "MoexStreamSessionClosed", Level = LogLevel.Information,
             Message = "Stream session closed: sessionId={SessionId}.")]
         public static partial void SessionClosed(ILogger logger, long sessionId);
+
+        [LoggerMessage(EventId = 243, EventName = "MoexStreamOrphanedSessionsMarkedCrashed", Level = LogLevel.Warning,
+            Message = "Orphaned open stream sessions marked crashed at startup: dataKind={DataKind}, count={Count}.")]
+        public static partial void OrphanedMarkedCrashed(ILogger logger, string dataKind, int count);
     }
 }

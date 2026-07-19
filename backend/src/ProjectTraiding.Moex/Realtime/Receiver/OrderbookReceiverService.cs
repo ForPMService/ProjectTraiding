@@ -139,35 +139,17 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             StreamCoverageWriter coverageWriter,
             CancellationToken ct)
         {
-            HashSet<string> crashedClosed = new HashSet<string>();
+            // Один запрос закрывает ВСЕ осиротевшие 'open'-сеансы стакана прошлого запуска —
+            // независимо от инструмента. Причина та же, что у сделок: точечное закрытие пропускает
+            // осиротевший сеанс инструмента вне списка, а предстоящий переход на подписки (C) добавит
+            // к ним отключённые подписки. Опирается на единственного писателя этого вида данных.
+            await coverageWriter.MarkOrphanedOpenAsCrashedAsync(DataKind, ct);
 
-            // Сначала закрываются все осиротевшие сеансы прошлого запуска.
+            // Открываем сеанс каждому инструменту из читаемого списка. Гейт по crashedClosed не нужен.
             for (int i = 0; i < instruments.Count; i++)
             {
                 ReceiverInstrument instrument = instruments[i];
-                try
-                {
-                    string boardId = GetBoardId(instrument.Market);
-                    await coverageWriter.CloseCrashedAsync(
-                        instrument.Secid, instrument.Market, boardId, DataKind, ct);
-                    crashedClosed.Add(instrument.Secid);
-                }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    MoexRealtimeReceiverLogMessages.OrderbookInstrumentPreparationFailed(
-                        _logger, ex, instrument.Secid);
-                }
-            }
-
-            // Новые сеансы открываются только после полного прохода закрытия.
-            for (int i = 0; i < instruments.Count; i++)
-            {
-                ReceiverInstrument instrument = instruments[i];
-                if (!crashedClosed.Contains(instrument.Secid) || _states.ContainsKey(instrument.Secid))
+                if (_states.ContainsKey(instrument.Secid))
                     continue;
 
                 try
