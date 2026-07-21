@@ -135,11 +135,12 @@ namespace ProjectTraiding.Moex.Clients
         [LoggerMessage(
           EventId = 152,
           EventName = "MoexOptionsApplied", Level = LogLevel.Information,
-          Message = "MOEX options applied: attemptTimeout={AttemptTimeout}, totalTimeout={TotalTimeout}, bodyReadTimeout={BodyReadTimeout}, pollIntervalSeconds={PollIntervalSeconds}, instrumentFetchTimeout={InstrumentFetchTimeout}, maxRps={MaxRps}, maxConns={MaxConns}, maxPages={MaxPages}, workers={Workers}, algKeyConfigured={AlgKeyConfigured}.")]
+          Message = "MOEX options applied: attemptTimeout={AttemptTimeout}, totalTimeout={TotalTimeout}, bodyReadTimeout={BodyReadTimeout}, pollIntervalSeconds={PollIntervalSeconds}, instrumentFetchTimeout={InstrumentFetchTimeout}, heartbeatMinIntervalSeconds={HeartbeatMinIntervalSeconds}, maxRps={MaxRps}, maxConns={MaxConns}, maxPages={MaxPages}, workers={Workers}, algKeyConfigured={AlgKeyConfigured}.")]
         public static partial void OptionsApplied(
           ILogger logger,
           TimeSpan attemptTimeout, TimeSpan totalTimeout, TimeSpan bodyReadTimeout,
           int pollIntervalSeconds, TimeSpan instrumentFetchTimeout,
+          int heartbeatMinIntervalSeconds,
           int maxRps, int maxConns, int maxPages, int workers, bool algKeyConfigured);
 
     }

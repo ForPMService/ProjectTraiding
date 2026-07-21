@@ -64,8 +64,8 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         /// Закрывает в 'crashed' ВСЕ строки этого вида данных, оставшиеся 'open' от прошлого
         /// запуска, независимо от инструмента. Вызывается один раз при старте приёма вида данных
         /// ДО открытия сеансов. Точечный CloseCrashedAsync по списку инструментов недостаточен:
-        /// он пропускает осиротевший сеанс инструмента ВНЕ читаемого списка — удалённого из
-        /// справочника, а после перехода на подписки (правка C) ещё и отключённой подписки.
+        /// приёмник читает только включённые подписки, поэтому точечное закрытие пропустило бы
+        /// осиротевший сеанс отключённой или удалённой подписки вне читаемого списка.
         /// Глобальное закрытие опирается на инвариант единственного писателя: другой процесс не
         /// держит 'open'-сеансы этого вида одновременно.
         /// time_till не трогаем: он достоверен с точностью до последнего сердцебиения (V023).
@@ -151,17 +151,19 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         /// <summary>
         /// Штатное закрытие сеанса: остановка службы, конец торгов, разрыв соединения.
         /// </summary>
-        public async Task CloseSessionAsync(long sessionId, CancellationToken ct)
+        public async Task CloseSessionAsync(
+            long sessionId, long rowsTotal, CancellationToken ct)
         {
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
             await using NpgsqlCommand cmd = new NpgsqlCommand("""
                 UPDATE moex_loaded_ranges
-                SET status = 'closed', time_till = @now
+                SET status = 'closed', time_till = @now, rows_total = @rows
                 WHERE id = @id AND status = 'open'
                 """, connection);
 
             cmd.Parameters.Add("@id", NpgsqlDbType.Bigint).Value = sessionId;
             cmd.Parameters.Add("@now", NpgsqlDbType.TimestampTz).Value = ToUtc(MoexTime.Now);
+            cmd.Parameters.Add("@rows", NpgsqlDbType.Bigint).Value = rowsTotal;
 
             await cmd.ExecuteNonQueryAsync(ct);
             MoexStreamCoverageLogMessages.SessionClosed(_logger, sessionId);

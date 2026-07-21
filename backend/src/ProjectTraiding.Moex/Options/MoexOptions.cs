@@ -3,14 +3,15 @@ namespace ProjectTraiding.Moex.Options
     /// <summary>
     /// Все настройки MOEX-источника в одном месте.
     /// ISS = публичный API (iss.moex.com), без ключа.
-    /// APIM = платный API (apim.moex.com), с Bearer-токеном. Используется ALGOPACK и Calendar.
+    /// APIM = платный API (apim.moex.com), с Bearer-токеном. Используется ALGOPACK, Calendar
+    /// и Realtime REST.
     /// </summary>
     public class MoexOptions
     {
         /// <summary>Base URL для ISS (без ключа). Default: https://iss.moex.com/iss</summary>
         public string IssBaseUrl { get; set; } = "https://iss.moex.com/iss";
 
-        /// <summary>Base URL для APIM (ALGOPACK + Calendar). Default: https://apim.moex.com/iss</summary>
+        /// <summary>Base URL для APIM: ALGOPACK, Calendar и Realtime REST. Default: https://apim.moex.com/iss</summary>
         public string ApimBaseUrl { get; set; } = "https://apim.moex.com/iss";
 
         /// <summary>Bearer-токен для APIM. Через user-secrets или переменные окружения.</summary>
@@ -52,14 +53,6 @@ namespace ProjectTraiding.Moex.Options
 
         public int MaxConnectionsPerServer { get; set; } = 10;
         public int MaxPagesPerLoad { get; set; } = 10_000;
-
-        /// <summary>
-        /// Размер страницы свечей у источника: 500 строк.
-        ///
-        /// Проверено живым ответом 13.07.2026: полный день минутных свечей SBER — 1009 строк,
-        /// то есть 500 + 500 + 9. Страница меньше предела означает конец выборки.
-        /// </summary>
-        public int CandlesPageLimit { get; init; } = 500;
 
         // ── Rate Limiter ────────────────────────────────────
 
@@ -140,5 +133,8 @@ namespace ProjectTraiding.Moex.Options
         /// прежний и здесь не участвует.
         /// </summary>
         public TimeSpan RealtimeInstrumentFetchTimeout { get; init; } = TimeSpan.FromSeconds(10);
+
+        /// <summary>Минимальный интервал между сердцебиениями покрытия на сеанс, секунды.</summary>
+        public int HeartbeatMinIntervalSeconds { get; init; } = 30;
     }
 }

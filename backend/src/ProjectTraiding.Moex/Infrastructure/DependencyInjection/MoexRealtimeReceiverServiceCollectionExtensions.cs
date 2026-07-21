@@ -58,7 +58,8 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
                     sp.GetRequiredService<IServiceScopeFactory>(),
                     sp.GetRequiredService<ILogger<TradesReceiverService>>(),
                     TimeSpan.FromSeconds(opt.TradesPollSeconds),
-                    opt.RealtimeInstrumentFetchTimeout);
+                    opt.RealtimeInstrumentFetchTimeout,
+                    TimeSpan.FromSeconds(opt.HeartbeatMinIntervalSeconds));
             });
 
             services.AddHostedService(sp =>
@@ -68,7 +69,8 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
                     sp.GetRequiredService<IServiceScopeFactory>(),
                     sp.GetRequiredService<ILogger<OrderbookReceiverService>>(),
                     TimeSpan.FromSeconds(opt.OrderbookPollSeconds),
-                    opt.RealtimeInstrumentFetchTimeout);
+                    opt.RealtimeInstrumentFetchTimeout,
+                    TimeSpan.FromSeconds(opt.HeartbeatMinIntervalSeconds));
             });
 
             return services;

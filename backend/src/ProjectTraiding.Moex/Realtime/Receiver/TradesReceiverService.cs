@@ -6,6 +6,7 @@ using ProjectTraiding.Moex.StorageBase.Postgres;
 using ProjectTraiding.Moex.StorageBase.Redis;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace ProjectTraiding.Moex.Realtime.Receiver
 {
@@ -25,6 +26,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         private readonly ILogger<TradesReceiverService> _logger;
         private readonly TimeSpan _pollInterval;
         private readonly TimeSpan _instrumentFetchTimeout;
+        private readonly TimeSpan _heartbeatMinInterval;
         private readonly Dictionary<string, TradesInstrumentState> _states =
             new Dictionary<string, TradesInstrumentState>();
         private bool _initialized;
@@ -33,12 +35,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             IServiceScopeFactory scopeFactory,
             ILogger<TradesReceiverService> logger,
             TimeSpan pollInterval,
-            TimeSpan instrumentFetchTimeout)
+            TimeSpan instrumentFetchTimeout,
+            TimeSpan heartbeatMinInterval)
         {
             _scopeFactory = scopeFactory;
             _logger = logger;
             _pollInterval = pollInterval;
             _instrumentFetchTimeout = instrumentFetchTimeout;
+            _heartbeatMinInterval = heartbeatMinInterval;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -165,10 +169,10 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             CancellationToken ct)
         {
             // Один запрос закрывает ВСЕ осиротевшие 'open'-сеансы сделок прошлого запуска —
-            // независимо от инструмента. Точечное закрытие по списку пропускает осиротевший сеанс
-            // инструмента вне списка; предстоящий переход на подписки (правка C) расширит это на
-            // отключённые подписки. Глобальное закрытие снимает щель заранее и опирается на
-            // единственного писателя этого вида данных.
+            // независимо от инструмента. Приёмник читает только включённые подписки, поэтому
+            // точечное закрытие по этому списку пропустило бы осиротевший сеанс отключённой или
+            // удалённой подписки. Глобальное закрытие опирается на единственного писателя этого
+            // вида данных.
             await coverageWriter.MarkOrphanedOpenAsCrashedAsync(DataKind, ct);
 
             // Открываем сеанс каждому инструменту из читаемого списка. Прежнего гейта по crashedClosed
@@ -272,6 +276,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
             long sessionId = await coverageWriter.OpenSessionAsync(
                 instrument.Secid, instrument.Market, boardId, DataKind, ct);
+            long heartbeatTimestamp = Stopwatch.GetTimestamp();
 
             _states.Add(
                 instrument.Secid,
@@ -279,7 +284,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     initialAfterTradeNo,
                     sessionId,
                     instrument.Market,
-                    boardId));
+                    boardId,
+                    heartbeatTimestamp));
             MoexRealtimeReceiverLogMessages.TradesInstrumentPrepared(
                 _logger, instrument.Secid, instrument.Market, sessionId);
         }
@@ -321,40 +327,42 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 }
             }
 
-            if (result.Rows.Count == 0)
-                return;
+            RealtimeTradesStockDTO? last = null;
+            if (result.Rows.Count > 0)
+            {
+                // Фиксация страницы — под хостовым commitCt. Обрыв бюджетом между записью и курсором
+                // недопустим: следующий оборот со старым курсором получит расширенную пачку с другим
+                // токеном, insert-дедупликация её примет, и до фонового слияния будут видны лишние
+                // физические версии. ReplacingMergeTree схлопнет их по ключу при слиянии; чтение до
+                // этого требует FINAL. Порядок: durable-запись, затем сразу in-memory состояние.
+                string? sessionDate = result.DataVersion?.TradeSessionDate;
+                await writer.WriteAsync(secid, result.Rows, sessionDate, commitCt);
 
-            // Фиксация страницы — под хостовым commitCt. Обрыв бюджетом между записью и курсором
-            // недопустим (иначе следующий оборот со старым курсором получит РАСШИРЕННУЮ пачку с
-            // другим токеном, и MergeTree задублирует уже записанные строки). Порядок: durable-запись,
-            // затем сразу in-memory состояние, затем сердцебиение, витрина — последней.
-            string? sessionDate = result.DataVersion?.TradeSessionDate;
-            await writer.WriteAsync(secid, result.Rows, sessionDate, commitCt);
+                last = result.Rows[^1];
+                long lastTradeNo = last.TradeNo!.Value;
+                DateTime lastSourceTime =
+                    MoexClickHouseTime.BuildSourceTime(last.TradeDate, last.TradeTime);
+                await cursorWriter.UpsertAsync(
+                    secid,
+                    state.Market,
+                    state.BoardId,
+                    DataKind,
+                    null,
+                    lastSourceTime,
+                    lastTradeNo,
+                    commitCt);
 
-            RealtimeTradesStockDTO last = result.Rows[^1];
-            long lastTradeNo = last.TradeNo!.Value;
-            DateTime lastSourceTime =
-                MoexClickHouseTime.BuildSourceTime(last.TradeDate, last.TradeTime);
-            await cursorWriter.UpsertAsync(
-                secid,
-                state.Market,
-                state.BoardId,
-                DataKind,
-                null,
-                lastSourceTime,
-                lastTradeNo,
-                commitCt);
+                // In-memory состояние двигается сразу за durable-курсором — чтобы не разойтись с ним,
+                // если сердцебиение или витрина упадут.
+                state.RowsTotal += result.Rows.Count;
+                state.AfterTradeNo = lastTradeNo;
+            }
 
-            // In-memory состояние двигается сразу за durable-курсором — чтобы не разойтись с ним,
-            // если сердцебиение или витрина упадут.
-            long rowsTotal = state.RowsTotal + result.Rows.Count;
-            state.RowsTotal = rowsTotal;
-            state.AfterTradeNo = lastTradeNo;
-
-            await coverageWriter.HeartbeatAsync(state.SessionId, rowsTotal, commitCt);
+            await HeartbeatIfDueAsync(state, coverageWriter, commitCt);
 
             // Витрина последних значений — best-effort, последней: писатель сам проглатывает сбой.
-            await latestWriter.WriteLatestStockTradeAsync(secid, last, commitCt);
+            if (last is not null)
+                await latestWriter.WriteLatestStockTradeAsync(secid, last, commitCt);
         }
 
         private async Task PollFuturesAsync(
@@ -391,35 +399,47 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 }
             }
 
-            if (result.Rows.Count == 0)
+            RealtimeTradesFuturesDTO? last = null;
+            if (result.Rows.Count > 0)
+            {
+                // Фиксация — под хостовым commitCt. Порядок: durable-запись и in-memory состояние.
+                string? sessionDate = result.DataVersion?.TradeSessionDate;
+                await writer.WriteAsync(secid, result.Rows, sessionDate, commitCt);
+
+                last = result.Rows[^1];
+                long lastTradeNo = last.TradeNo!.Value;
+                DateTime lastSourceTime =
+                    MoexClickHouseTime.BuildSourceTime(last.TradeDate, last.TradeTime);
+                await cursorWriter.UpsertAsync(
+                    secid,
+                    state.Market,
+                    state.BoardId,
+                    DataKind,
+                    null,
+                    lastSourceTime,
+                    lastTradeNo,
+                    commitCt);
+
+                state.RowsTotal += result.Rows.Count;
+                state.AfterTradeNo = lastTradeNo;
+            }
+
+            await HeartbeatIfDueAsync(state, coverageWriter, commitCt);
+
+            if (last is not null)
+                await latestWriter.WriteLatestFuturesTradeAsync(secid, last, commitCt);
+        }
+
+        private async Task HeartbeatIfDueAsync(
+            TradesInstrumentState state,
+            StreamCoverageWriter coverageWriter,
+            CancellationToken ct)
+        {
+            if (Stopwatch.GetElapsedTime(state.LastHeartbeatTimestamp) < _heartbeatMinInterval)
                 return;
 
-            // Фиксация — под хостовым commitCt. Порядок: durable-запись, in-memory состояние,
-            // сердцебиение, витрина — последней.
-            string? sessionDate = result.DataVersion?.TradeSessionDate;
-            await writer.WriteAsync(secid, result.Rows, sessionDate, commitCt);
-
-            RealtimeTradesFuturesDTO last = result.Rows[^1];
-            long lastTradeNo = last.TradeNo!.Value;
-            DateTime lastSourceTime =
-                MoexClickHouseTime.BuildSourceTime(last.TradeDate, last.TradeTime);
-            await cursorWriter.UpsertAsync(
-                secid,
-                state.Market,
-                state.BoardId,
-                DataKind,
-                null,
-                lastSourceTime,
-                lastTradeNo,
-                commitCt);
-
-            long rowsTotal = state.RowsTotal + result.Rows.Count;
-            state.RowsTotal = rowsTotal;
-            state.AfterTradeNo = lastTradeNo;
-
-            await coverageWriter.HeartbeatAsync(state.SessionId, rowsTotal, commitCt);
-
-            await latestWriter.WriteLatestFuturesTradeAsync(secid, last, commitCt);
+            await coverageWriter.HeartbeatAsync(state.SessionId, state.RowsTotal, ct);
+            state.LastHeartbeatTimestamp = Stopwatch.GetTimestamp();
         }
 
         private static async Task<(long TradeNo, DateTime SourceTime)?> TrySeedTailAsync(
@@ -497,7 +517,9 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     try
                     {
                         await coverageWriter.CloseSessionAsync(
-                            pair.Value.SessionId, CancellationToken.None);
+                            pair.Value.SessionId,
+                            pair.Value.RowsTotal,
+                            CancellationToken.None);
                     }
                     catch (Exception ex)
                     {
@@ -530,12 +552,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             long? afterTradeNo,
             long sessionId,
             string market,
-            string boardId)
+            string boardId,
+            long lastHeartbeatTimestamp)
         {
             AfterTradeNo = afterTradeNo;
             SessionId = sessionId;
             Market = market;
             BoardId = boardId;
+            LastHeartbeatTimestamp = lastHeartbeatTimestamp;
         }
 
         public long? AfterTradeNo { get; set; }
@@ -543,5 +567,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         public string Market { get; }
         public string BoardId { get; }
         public long RowsTotal { get; set; }
+        public long LastHeartbeatTimestamp { get; set; }
     }
 }

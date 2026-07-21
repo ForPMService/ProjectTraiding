@@ -173,12 +173,7 @@ public static class MoexClientServiceCollectionExtensions
 
         // ══════════════════════════════════════════════
         // Realtime REST Client
-        // ISS base URL (публичный, без API-ключа).
-        // Общий rate limiter, logging handler, Polly resilience.
-        // ══════════════════════════════════════════════
-        // ══════════════════════════════════════════════
-        // Realtime REST Client
-        // ISS base URL (публичный, без API-ключа).
+        // APIM base URL (платный, Authorization: Bearer из Moex:AlgKey).
         // Порядок: журналирование → устойчивость → ограничитель → сокет (правка Г3).
         // ══════════════════════════════════════════════
         IHttpClientBuilder realtimeClientBuilder = services.AddHttpClient<MoexRealtimeRestClient>((sp, client) =>

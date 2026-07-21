@@ -31,18 +31,17 @@ namespace ProjectTraiding.Moex.Parsing
             string RootKey)
         {
             /// <summary>
-            /// Генерирует значение параметра data.columns для запроса к MOEX.
+            /// Генерирует значение параметра *.columns для запроса к MOEX.
             /// Возвращает имена колонок через запятую в порядке Columns[].
             /// 
             /// Пример: "tradedate,tradetime,secid,pr_open,pr_high,..."
             /// 
-            /// Используется только для datashop-эндпоинтов (rootKey = "data"),
-            /// где MOEX принимает параметр data.columns и возвращает только
-            /// запрошенные колонки. Это делает схему единым источником правды:
-            /// она одновременно определяет что запросить и что валидировать.
+            /// Применим к плотным схемам, где все колонки перечислены явно и SourceIndex идёт
+            /// без пропусков: datashop, realtime-сделки, стакан, свечи и dataversion. Это делает
+            /// схему единым источником правды: она одновременно определяет, что запросить и что
+            /// валидировать.
             /// 
-            /// Не использовать для: candles (rootKey "candles"), futoi (rootKey "futoi"),
-            /// ISS securities (SourceIndex с пропусками), cursor (rootKey "data.cursor").
+            /// Неприменим к схемам с пропусками в SourceIndex, например ISS securities.
             /// </summary>
             public string BuildColumnsParam()
             {

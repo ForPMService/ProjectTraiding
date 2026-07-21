@@ -6,6 +6,7 @@ using ProjectTraiding.Moex.StorageBase.Postgres;
 using ProjectTraiding.Moex.StorageBase.Redis;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace ProjectTraiding.Moex.Realtime.Receiver
 {
@@ -25,6 +26,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         private readonly ILogger<OrderbookReceiverService> _logger;
         private readonly TimeSpan _pollInterval;
         private readonly TimeSpan _instrumentFetchTimeout;
+        private readonly TimeSpan _heartbeatMinInterval;
         private readonly Dictionary<string, OrderbookInstrumentState> _states =
             new Dictionary<string, OrderbookInstrumentState>();
         private bool _initialized;
@@ -33,12 +35,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             IServiceScopeFactory scopeFactory,
             ILogger<OrderbookReceiverService> logger,
             TimeSpan pollInterval,
-            TimeSpan instrumentFetchTimeout)
+            TimeSpan instrumentFetchTimeout,
+            TimeSpan heartbeatMinInterval)
         {
             _scopeFactory = scopeFactory;
             _logger = logger;
             _pollInterval = pollInterval;
             _instrumentFetchTimeout = instrumentFetchTimeout;
+            _heartbeatMinInterval = heartbeatMinInterval;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -141,9 +145,10 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             CancellationToken ct)
         {
             // Один запрос закрывает ВСЕ осиротевшие 'open'-сеансы стакана прошлого запуска —
-            // независимо от инструмента. Причина та же, что у сделок: точечное закрытие пропускает
-            // осиротевший сеанс инструмента вне списка, а предстоящий переход на подписки (C) добавит
-            // к ним отключённые подписки. Опирается на единственного писателя этого вида данных.
+            // независимо от инструмента. Приёмник читает только включённые подписки, поэтому
+            // точечное закрытие по этому списку пропустило бы осиротевший сеанс отключённой или
+            // удалённой подписки. Глобальное закрытие опирается на единственного писателя этого
+            // вида данных.
             await coverageWriter.MarkOrphanedOpenAsCrashedAsync(DataKind, ct);
 
             // Открываем сеанс каждому инструменту из читаемого списка. Гейт по crashedClosed не нужен.
@@ -208,9 +213,11 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         {
             long sessionId = await coverageWriter.OpenSessionAsync(
                 instrument.Secid, instrument.Market, boardId, DataKind, ct);
+            long heartbeatTimestamp = Stopwatch.GetTimestamp();
             _states.Add(
                 instrument.Secid,
-                new OrderbookInstrumentState(sessionId, instrument.Market, boardId));
+                new OrderbookInstrumentState(
+                    sessionId, instrument.Market, boardId, heartbeatTimestamp));
             MoexRealtimeReceiverLogMessages.OrderbookInstrumentPrepared(
                 _logger, instrument.Secid, instrument.Market, sessionId);
         }
@@ -250,20 +257,33 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 }
             }
 
-            if (result.Rows.Count == 0)
+            if (result.Rows.Count > 0)
+            {
+                // Фиксация — под хостовым commitCt. У стакана курсора нет, durable-запись — только
+                // ClickHouse; за ней сразу двигается накопленный счётчик состояния.
+                string? sessionDate = result.DataVersion?.TradeSessionDate;
+                await writer.WriteAsync(secid, result.Rows, sessionDate, commitCt);
+
+                state.RowsTotal += result.Rows.Count;
+            }
+
+            await HeartbeatIfDueAsync(state, coverageWriter, commitCt);
+
+            // Витрина — best-effort и выполняется последней только для непустого ответа.
+            if (result.Rows.Count > 0)
+                await latestWriter.WriteLatestOrderbookAsync(secid, result.Rows, commitCt);
+        }
+
+        private async Task HeartbeatIfDueAsync(
+            OrderbookInstrumentState state,
+            StreamCoverageWriter coverageWriter,
+            CancellationToken ct)
+        {
+            if (Stopwatch.GetElapsedTime(state.LastHeartbeatTimestamp) < _heartbeatMinInterval)
                 return;
 
-            // Фиксация — под хостовым commitCt. У стакана курсора нет, durable-запись — только
-            // ClickHouse; за ней счётчик, сердцебиение, витрина последней (best-effort).
-            string? sessionDate = result.DataVersion?.TradeSessionDate;
-            await writer.WriteAsync(secid, result.Rows, sessionDate, commitCt);
-
-            long rowsTotal = state.RowsTotal + result.Rows.Count;
-            state.RowsTotal = rowsTotal;
-
-            await coverageWriter.HeartbeatAsync(state.SessionId, rowsTotal, commitCt);
-
-            await latestWriter.WriteLatestOrderbookAsync(secid, result.Rows, commitCt);
+            await coverageWriter.HeartbeatAsync(state.SessionId, state.RowsTotal, ct);
+            state.LastHeartbeatTimestamp = Stopwatch.GetTimestamp();
         }
 
         private async Task CloseSessionsAsync()
@@ -279,7 +299,9 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     try
                     {
                         await coverageWriter.CloseSessionAsync(
-                            pair.Value.SessionId, CancellationToken.None);
+                            pair.Value.SessionId,
+                            pair.Value.RowsTotal,
+                            CancellationToken.None);
                     }
                     catch (Exception ex)
                     {
@@ -308,16 +330,22 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
     internal sealed class OrderbookInstrumentState
     {
-        public OrderbookInstrumentState(long sessionId, string market, string boardId)
+        public OrderbookInstrumentState(
+            long sessionId,
+            string market,
+            string boardId,
+            long lastHeartbeatTimestamp)
         {
             SessionId = sessionId;
             Market = market;
             BoardId = boardId;
+            LastHeartbeatTimestamp = lastHeartbeatTimestamp;
         }
 
         public long SessionId { get; }
         public string Market { get; }
         public string BoardId { get; }
         public long RowsTotal { get; set; }
+        public long LastHeartbeatTimestamp { get; set; }
     }
 }

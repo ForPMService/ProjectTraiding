@@ -339,9 +339,12 @@ namespace ProjectTraiding.Moex.Clients
             }
         }
 
+        private const int CandlesPageLimit = 500;
+
         /// <summary>
         /// Догрузка страниц свечей внутри окна. Признак последней страницы — строк меньше
-        /// Moex:CandlesPageLimit. Правило то же, что в MoexHttpAlgClient.GetCandles.
+        /// контрактного размера страницы CandlesPageLimit. Правило то же, что в
+        /// MoexHttpAlgClient.GetCandles.
         /// </summary>
         private async Task<List<CandlesDTO>> GetCandlesWindowPagedAsync(
             string endpoint,
@@ -384,7 +387,7 @@ namespace ProjectTraiding.Moex.Clients
 
                 rows.AddRange(page);
 
-                if (page.Count != _options.CandlesPageLimit)
+                if (page.Count != CandlesPageLimit)
                 {
                     return rows;
                 }
@@ -396,7 +399,7 @@ namespace ProjectTraiding.Moex.Clients
                         $"Moex:MaxPagesPerLoad={_options.MaxPagesPerLoad} на полной странице.");
                 }
 
-                start += _options.CandlesPageLimit;
+                start += CandlesPageLimit;
             }
 
             throw new InvalidOperationException("Недостижимое состояние пагинации свечей.");
