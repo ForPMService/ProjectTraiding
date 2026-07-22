@@ -26,6 +26,7 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
             // этапе построения контейнера привязанные настройки ещё недоступны.
             MoexOptions moexOptions =
                 configuration.GetSection("Moex").Get<MoexOptions>() ?? new MoexOptions();
+                Console.WriteLine($"[DIAG] RealtimeReceiverEnabled = {moexOptions.RealtimeReceiverEnabled}");  // временно
             if (!moexOptions.RealtimeReceiverEnabled)
                 return services;
 

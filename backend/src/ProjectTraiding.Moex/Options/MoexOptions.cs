@@ -109,17 +109,17 @@ namespace ProjectTraiding.Moex.Options
         public int PollIntervalSeconds { get; set; } = 5;
 
         /// <summary>Интервал опроса ленты сделок, секунды. Раздельно со стаканом.</summary>
-        public int TradesPollSeconds { get; init; } = 5;
+        public int TradesPollSeconds { get; set; } = 5;
 
         /// <summary>Интервал опроса стакана, секунды. Раздельно с лентой сделок.</summary>
-        public int OrderbookPollSeconds { get; init; } = 5;
+        public int OrderbookPollSeconds { get; set; } = 5;
 
         /// <summary>
         /// Включает фоновый приём реального времени — обе службы, сделки и стакан.
         /// По умолчанию выключен: запуск API не должен начинать промышленный сбор без
         /// явного разрешения оператора. Включение — осознанное действие через настройку.
         /// </summary>
-        public bool RealtimeReceiverEnabled { get; init; } = false;
+        public bool RealtimeReceiverEnabled { get; set; } = false;
 
         /// <summary>
         /// Бюджет времени на получение ОДНОЙ страницы инструмента за оборот: ожидание жетона
@@ -132,9 +132,9 @@ namespace ProjectTraiding.Moex.Options
         /// Это также НЕ тайм-аут HTTP-попытки — профиль устойчивости общего клиента (Polly)
         /// прежний и здесь не участвует.
         /// </summary>
-        public TimeSpan RealtimeInstrumentFetchTimeout { get; init; } = TimeSpan.FromSeconds(10);
+        public TimeSpan RealtimeInstrumentFetchTimeout { get; set; } = TimeSpan.FromSeconds(10);
 
         /// <summary>Минимальный интервал между сердцебиениями покрытия на сеанс, секунды.</summary>
-        public int HeartbeatMinIntervalSeconds { get; init; } = 30;
+        public int HeartbeatMinIntervalSeconds { get; set; } = 30;
     }
 }
