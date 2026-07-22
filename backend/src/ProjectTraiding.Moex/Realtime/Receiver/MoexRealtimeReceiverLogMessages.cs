@@ -2,7 +2,7 @@ using System;
 
 namespace ProjectTraiding.Moex.Realtime.Receiver
 {
-    /// <summary>Лог-события фоновых служб приёма сделок и стакана.</summary>
+    /// <summary>Лог-события фоновых служб приёма сделок, стакана и свечей.</summary>
     public static partial class MoexRealtimeReceiverLogMessages
     {
         [LoggerMessage(EventId = 450, EventName = "MoexTradesReceiverStarted", Level = LogLevel.Information,
@@ -98,6 +98,51 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         [LoggerMessage(EventId = 469, EventName = "MoexOrderbookReceiverInstrumentFetchTimedOut", Level = LogLevel.Warning,
             Message = "Orderbook receiver instrument fetch timed out: secid={Secid}, market={Market}, budget={Budget}.")]
         public static partial void OrderbookInstrumentFetchTimedOut(
+            ILogger logger, string secid, string market, TimeSpan budget);
+
+        [LoggerMessage(EventId = 471, EventName = "MoexCandlesReceiverStarted", Level = LogLevel.Information,
+            Message = "Candles receiver started: pollInterval={PollInterval}.")]
+        public static partial void CandlesStarted(ILogger logger, TimeSpan pollInterval);
+
+        [LoggerMessage(EventId = 472, EventName = "MoexCandlesReceiverStopped", Level = LogLevel.Information,
+            Message = "Candles receiver stopped.")]
+        public static partial void CandlesStopped(ILogger logger);
+
+        [LoggerMessage(EventId = 473, EventName = "MoexCandlesReceiverSubscriptionsEmpty", Level = LogLevel.Information,
+            Message = "Candles receiver subscription list is empty.")]
+        public static partial void CandlesSubscriptionsEmpty(ILogger logger);
+
+        [LoggerMessage(EventId = 474, EventName = "MoexCandlesReceiverInstrumentPrepared", Level = LogLevel.Information,
+            Message = "Candles receiver instrument prepared: secid={Secid}, market={Market}, sessionId={SessionId}.")]
+        public static partial void CandlesInstrumentPrepared(
+            ILogger logger, string secid, string market, long sessionId);
+
+        [LoggerMessage(EventId = 475, EventName = "MoexCandlesReceiverInstrumentPreparationFailed", Level = LogLevel.Warning,
+            Message = "Candles receiver instrument preparation failed: secid={Secid}.")]
+        public static partial void CandlesInstrumentPreparationFailed(
+            ILogger logger, Exception exception, string secid);
+
+        [LoggerMessage(EventId = 476, EventName = "MoexCandlesReceiverInstrumentPollFailed", Level = LogLevel.Warning,
+            Message = "Candles receiver instrument poll failed: secid={Secid}, market={Market}.")]
+        public static partial void CandlesInstrumentPollFailed(
+            ILogger logger, Exception exception, string secid, string market);
+
+        [LoggerMessage(EventId = 477, EventName = "MoexCandlesReceiverTurnFailed", Level = LogLevel.Error,
+            Message = "Candles receiver turn failed unexpectedly.")]
+        public static partial void CandlesTurnFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 478, EventName = "MoexCandlesReceiverSessionCloseFailed", Level = LogLevel.Warning,
+            Message = "Candles receiver session close failed: secid={Secid}, sessionId={SessionId}.")]
+        public static partial void CandlesSessionCloseFailed(
+            ILogger logger, Exception exception, string secid, long sessionId);
+
+        [LoggerMessage(EventId = 479, EventName = "MoexCandlesReceiverShutdownFailed", Level = LogLevel.Error,
+            Message = "Candles receiver shutdown cleanup failed unexpectedly.")]
+        public static partial void CandlesShutdownFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 480, EventName = "MoexCandlesReceiverInstrumentFetchTimedOut", Level = LogLevel.Warning,
+            Message = "Candles receiver instrument fetch timed out: secid={Secid}, market={Market}, budget={Budget}.")]
+        public static partial void CandlesInstrumentFetchTimedOut(
             ILogger logger, string secid, string market, TimeSpan budget);
     }
 }

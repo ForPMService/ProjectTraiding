@@ -1,3 +1,4 @@
+using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using ProjectTraiding.Moex.Contracts.Dto.Realtime;
 using ProjectTraiding.Moex.Contracts.Serialization;
 using StackExchange.Redis;
@@ -22,6 +23,7 @@ namespace ProjectTraiding.Moex.StorageBase.Redis
         private const string StockTradeKeyPrefix = "moex:latest:trade:stock:v1:";
         private const string FuturesTradeKeyPrefix = "moex:latest:trade:futures:v1:";
         private const string OrderbookKeyPrefix = "moex:latest:orderbook:v1:";
+        private const string CandleKeyPrefix = "moex:latest:candle:1m:v1:";
 
         private readonly IConnectionMultiplexer _redis;
         private readonly ILogger<RealtimeLatestWriter> _logger;
@@ -57,6 +59,19 @@ namespace ProjectTraiding.Moex.StorageBase.Redis
                 OrderbookKeyPrefix + secid,
                 snapshot,
                 AppJsonContext.Default.ListRealtimeOrderbookRowDTO);
+        }
+
+        // Ключ — последняя известная свеча ответа: пока минута растёт, это её текущий снимок;
+        // когда минута закрылась, а следующая ещё не началась, это её же окончательная версия из
+        // ответа. Служба пишет сюда последнюю по Begin свечу каждого ответа, закрытую или растущую.
+        // Срока жизни и удаления нет (как у сделок и стакана); потребитель различает минуты по Begin.
+        public Task WriteLatestCandleAsync(
+            string secid, CandlesDTO candle, CancellationToken ct)
+        {
+            return WriteLatestAsync(
+                CandleKeyPrefix + secid,
+                candle,
+                AppJsonContext.Default.CandlesDTO);
         }
 
         // Сериализация внутри перехвата — так контракт «сбой записи не роняет приём» держится

@@ -34,7 +34,8 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         /// time_till не трогаем: он достоверен с точностью до последнего сердцебиения (V023).
         /// </summary>
         public async Task CloseCrashedAsync(
-            string secid, string market, string boardid, string dataKind, CancellationToken ct)
+            string secid, string market, string boardid, string dataKind,
+            int? candleInterval, CancellationToken ct)
         {
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
             await using NpgsqlCommand cmd = new NpgsqlCommand("""
@@ -44,7 +45,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                   AND market = @market
                   AND boardid = @boardid
                   AND data_kind = @data_kind
-                  AND candle_interval IS NULL
+                  AND candle_interval IS NOT DISTINCT FROM @candle_interval
                   AND storage_target = @storage_target
                   AND status = 'open'
                 """, connection);
@@ -53,6 +54,8 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             cmd.Parameters.Add("@market", NpgsqlDbType.Text).Value = market;
             cmd.Parameters.Add("@boardid", NpgsqlDbType.Text).Value = boardid;
             cmd.Parameters.Add("@data_kind", NpgsqlDbType.Text).Value = dataKind;
+            cmd.Parameters.Add("@candle_interval", NpgsqlDbType.Integer).Value =
+                (object?)candleInterval ?? DBNull.Value;
             cmd.Parameters.Add("@storage_target", NpgsqlDbType.Text).Value = StorageTarget;
 
             int closed = await cmd.ExecuteNonQueryAsync(ct);
@@ -70,19 +73,22 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         /// держит 'open'-сеансы этого вида одновременно.
         /// time_till не трогаем: он достоверен с точностью до последнего сердцебиения (V023).
         /// </summary>
-        public async Task MarkOrphanedOpenAsCrashedAsync(string dataKind, CancellationToken ct)
+        public async Task MarkOrphanedOpenAsCrashedAsync(
+            string dataKind, int? candleInterval, CancellationToken ct)
         {
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
             await using NpgsqlCommand cmd = new NpgsqlCommand("""
                 UPDATE moex_loaded_ranges
                 SET status = 'crashed'
                 WHERE data_kind = @data_kind
-                  AND candle_interval IS NULL
+                  AND candle_interval IS NOT DISTINCT FROM @candle_interval
                   AND storage_target = @storage_target
                   AND status = 'open'
                 """, connection);
 
             cmd.Parameters.Add("@data_kind", NpgsqlDbType.Text).Value = dataKind;
+            cmd.Parameters.Add("@candle_interval", NpgsqlDbType.Integer).Value =
+                (object?)candleInterval ?? DBNull.Value;
             cmd.Parameters.Add("@storage_target", NpgsqlDbType.Text).Value = StorageTarget;
 
             int marked = await cmd.ExecuteNonQueryAsync(ct);
@@ -95,7 +101,8 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         /// Возвращает id строки — им двигают сердцебиение и его же закрывают.
         /// </summary>
         public async Task<long> OpenSessionAsync(
-            string secid, string market, string boardid, string dataKind, CancellationToken ct)
+            string secid, string market, string boardid, string dataKind,
+            int? candleInterval, CancellationToken ct)
         {
             DateOnly today = MoexTime.Today;
             DateTime now = ToUtc(MoexTime.Now);
@@ -108,7 +115,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                      rows_total, storage_target, status,
                      source_contract_version, writer_version)
                 VALUES
-                    (@secid, @market, @boardid, @data_kind, NULL,
+                    (@secid, @market, @boardid, @data_kind, @candle_interval,
                      @date, @date, @now, @now,
                      0, @storage_target, 'open',
                      'moex_realtime_v1', 'clickhouse_receiver_v1')
@@ -119,6 +126,8 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             cmd.Parameters.Add("@market", NpgsqlDbType.Text).Value = market;
             cmd.Parameters.Add("@boardid", NpgsqlDbType.Text).Value = boardid;
             cmd.Parameters.Add("@data_kind", NpgsqlDbType.Text).Value = dataKind;
+            cmd.Parameters.Add("@candle_interval", NpgsqlDbType.Integer).Value =
+                (object?)candleInterval ?? DBNull.Value;
             cmd.Parameters.Add("@date", NpgsqlDbType.Date).Value = today;
             cmd.Parameters.Add("@now", NpgsqlDbType.TimestampTz).Value = now;
             cmd.Parameters.Add("@storage_target", NpgsqlDbType.Text).Value = StorageTarget;

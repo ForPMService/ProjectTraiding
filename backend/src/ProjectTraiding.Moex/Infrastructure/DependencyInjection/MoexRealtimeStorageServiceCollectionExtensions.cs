@@ -5,7 +5,8 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
 {
     /// <summary>
     /// Регистрация слоя записи контура реального времени: карты столбцов и писатели ленты сделок
-    /// и стакана. Свечи реального времени идут в существующий свечной писатель — здесь их нет.
+    /// и стакана. Свечной писатель приёма (RealtimeRowWriter<CandlesDTO>, приоритет 0)
+    /// регистрируется в MoexRealtimeReceiverServiceCollectionExtensions — здесь его нет.
     /// Размер пачки берётся из той же настройки, что у исторической загрузки.
     /// </summary>
     public static class MoexRealtimeStorageServiceCollectionExtensions

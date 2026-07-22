@@ -56,6 +56,9 @@ namespace ProjectTraiding.Moex.Options
             if (options.OrderbookPollSeconds <= 0)
                 throw new InvalidOperationException("Moex:OrderbookPollSeconds должен быть положительным.");
 
+            if (options.CandlesPollSeconds <= 0)
+                throw new InvalidOperationException("Moex:CandlesPollSeconds должен быть положительным.");
+
             if (options.RealtimeInstrumentFetchTimeout <= TimeSpan.Zero)
                 throw new InvalidOperationException("Moex:RealtimeInstrumentFetchTimeout должен быть положительным.");
 

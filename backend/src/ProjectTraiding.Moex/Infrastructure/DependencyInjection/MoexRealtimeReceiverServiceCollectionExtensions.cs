@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
+using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using ProjectTraiding.Moex.Contracts.Dto.Realtime;
 using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Realtime.Receiver;
@@ -11,7 +12,7 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
 {
     /// <summary>
     /// Регистрация приёмника реального времени: читатель инструментов, писатели курсора,
-    /// покрытия, ClickHouse и Redis, а также независимые фоновые службы сделок и стакана.
+    /// покрытия, ClickHouse и Redis, а также независимые фоновые службы сделок, стакана и свечей.
     /// Отдельно от AddMoexRealtimeStorage намеренно — порядок наведём при ревизии.
     /// </summary>
     public static class MoexRealtimeReceiverServiceCollectionExtensions
@@ -26,7 +27,6 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
             // этапе построения контейнера привязанные настройки ещё недоступны.
             MoexOptions moexOptions =
                 configuration.GetSection("Moex").Get<MoexOptions>() ?? new MoexOptions();
-                Console.WriteLine($"[DIAG] RealtimeReceiverEnabled = {moexOptions.RealtimeReceiverEnabled}");  // временно
             if (!moexOptions.RealtimeReceiverEnabled)
                 return services;
 
@@ -52,6 +52,13 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
                 sp.GetRequiredService<RealtimeOrderbookRowMap>(),
                 sp.GetRequiredService<ILogger<RealtimeRowWriter<RealtimeOrderbookRowDTO>>>()));
 
+            // Свечной писатель приёма: та же карта, что у истории, но приоритет 0 —
+            // историческая загрузка (приоритет 1) перекрывает при слиянии по ключу (secid, begin).
+            services.AddTransient(sp => new RealtimeRowWriter<CandlesDTO>(
+                sp.GetRequiredService<ClickHouseInsertExecutor>(),
+                new CandlesRowMap("moex_candles_1m", "candles:1m", ingestPriority: 0),
+                sp.GetRequiredService<ILogger<RealtimeRowWriter<CandlesDTO>>>()));
+
             services.AddHostedService(sp =>
             {
                 MoexOptions opt = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
@@ -70,6 +77,17 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
                     sp.GetRequiredService<IServiceScopeFactory>(),
                     sp.GetRequiredService<ILogger<OrderbookReceiverService>>(),
                     TimeSpan.FromSeconds(opt.OrderbookPollSeconds),
+                    opt.RealtimeInstrumentFetchTimeout,
+                    TimeSpan.FromSeconds(opt.HeartbeatMinIntervalSeconds));
+            });
+
+            services.AddHostedService(sp =>
+            {
+                MoexOptions opt = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
+                return new CandlesReceiverService(
+                    sp.GetRequiredService<IServiceScopeFactory>(),
+                    sp.GetRequiredService<ILogger<CandlesReceiverService>>(),
+                    TimeSpan.FromSeconds(opt.CandlesPollSeconds),
                     opt.RealtimeInstrumentFetchTimeout,
                     TimeSpan.FromSeconds(opt.HeartbeatMinIntervalSeconds));
             });

@@ -149,7 +149,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             // точечное закрытие по этому списку пропустило бы осиротевший сеанс отключённой или
             // удалённой подписки. Глобальное закрытие опирается на единственного писателя этого
             // вида данных.
-            await coverageWriter.MarkOrphanedOpenAsCrashedAsync(DataKind, ct);
+            await coverageWriter.MarkOrphanedOpenAsCrashedAsync(DataKind, null, ct);
 
             // Открываем сеанс каждому инструменту из читаемого списка. Гейт по crashedClosed не нужен.
             for (int i = 0; i < instruments.Count; i++)
@@ -190,7 +190,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 {
                     string boardId = GetBoardId(instrument.Market);
                     await coverageWriter.CloseCrashedAsync(
-                        instrument.Secid, instrument.Market, boardId, DataKind, ct);
+                        instrument.Secid, instrument.Market, boardId, DataKind, null, ct);
                     await OpenStateAsync(instrument, boardId, coverageWriter, ct);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -212,7 +212,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             CancellationToken ct)
         {
             long sessionId = await coverageWriter.OpenSessionAsync(
-                instrument.Secid, instrument.Market, boardId, DataKind, ct);
+                instrument.Secid, instrument.Market, boardId, DataKind, null, ct);
             long heartbeatTimestamp = Stopwatch.GetTimestamp();
             _states.Add(
                 instrument.Secid,
