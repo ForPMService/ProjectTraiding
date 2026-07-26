@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Options;
 using ProjectTraiding.Api.Infrastructure;
+using ProjectTraiding.Diagnostics.Contracts;
+using ProjectTraiding.Diagnostics.DependencyInjection;
 using ProjectTraiding.Management.Contracts;
 using ProjectTraiding.Management.DependencyInjection;
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
@@ -39,11 +41,22 @@ builder.Services.AddMoexLoading(builder.Configuration);
 builder.Services.AddMoexRealtimeStorage(builder.Configuration);
 builder.Services.AddMoexRealtimeReceiver(builder.Configuration);
 
+if (builder.Environment.IsDevelopment())
+    builder.Services.AddProjectTraidingDiagnostics(builder.Configuration);
+
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default);
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, VitrineJsonContext.Default);
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, ManagementJsonContext.Default);
+
+    // Диагностический контекст добавляется В КОНЕЦ цепочки, а не в начало. Общие типы
+    // (например CandlesDTO) объявлены в обоих контекстах; при вставке в начало
+    // диагностический перехватывал бы их в среде разработки, и поведение сериализации
+    // расходилось бы со средой боевой работы. В конце цепочки он закрывает только те типы,
+    // которых в боевых контекстах нет.
+    if (builder.Environment.IsDevelopment())
+        options.SerializerOptions.TypeInfoResolverChain.Add(DiagnosticsJsonContext.Default);
 });
 builder.Services.AddOpenApi();
 builder.Services.AddProjectTraidingRateLimiter();
@@ -78,7 +91,12 @@ app.MapGroup(string.Empty)
 
 if (app.Environment.IsDevelopment())
 {
-    app.MapMoexDiagnosticEndpoints();
+    // Проверка среды не убирает сборку Diagnostics из поставки: ссылка Api → Diagnostics
+    // безусловна, и сборка попадает в публикацию. Проверка гарантирует другое —
+    // диагностические службы не регистрируются, маршруты не отображаются,
+    // диагностический контекст не участвует в разрешении типов.
+    app.MapMoexDiagnosticEndpoints();   // остался только календарь
+    app.MapDiagnosticsEndpoints();
     app.MapOpenApi();
 }
 

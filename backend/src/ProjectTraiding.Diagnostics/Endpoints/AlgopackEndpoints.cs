@@ -1,11 +1,11 @@
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
-using ProjectTraiding.Moex.Contracts.Serialization;
+using ProjectTraiding.Diagnostics.Contracts;
 using ProjectTraiding.Moex.Infrastructure.RawCapture;
 using System.Text.Json.Serialization.Metadata;
 
 
-namespace ProjectTraiding.Moex.Endpoints
+namespace ProjectTraiding.Diagnostics.Endpoints
 {
     /// <summary>
     /// Diagnostic raw/parsed endpoint-ы ALGOPACK для ручной проверки рыночных контрактов.
@@ -291,7 +291,7 @@ namespace ProjectTraiding.Moex.Endpoints
                         secid: ticker,
                         cancellationToken: cancellationToken),
                     cancellationToken),
-                AppJsonContext.Default.ListCandlesDTO,
+                DiagnosticsJsonContext.Default.ListCandlesDTO,
                 ct);
         }
 
@@ -323,7 +323,7 @@ namespace ProjectTraiding.Moex.Endpoints
                         secid: ticker,
                         cancellationToken: cancellationToken),
                     cancellationToken),
-                AppJsonContext.Default.ListCandlesDTO,
+                DiagnosticsJsonContext.Default.ListCandlesDTO,
                 ct);
         }
 
@@ -348,7 +348,7 @@ namespace ProjectTraiding.Moex.Endpoints
                 cancellationToken => CollectAsync(
                     client.GetSuperCandlesTradeStats5m(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
                     cancellationToken),
-                AppJsonContext.Default.ListSuperCandlesTradeStats5mDTO,
+                DiagnosticsJsonContext.Default.ListSuperCandlesTradeStats5mDTO,
                 ct);
         }
 
@@ -373,7 +373,7 @@ namespace ProjectTraiding.Moex.Endpoints
                 cancellationToken => CollectAsync(
                     client.GetSuperCandlesFuturesTradeStats5m(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
                     cancellationToken),
-                AppJsonContext.Default.ListSuperCandlesFuturesTradeStats5mDTO,
+                DiagnosticsJsonContext.Default.ListSuperCandlesFuturesTradeStats5mDTO,
                 ct);
         }
 
@@ -398,7 +398,7 @@ namespace ProjectTraiding.Moex.Endpoints
                 cancellationToken => CollectAsync(
                     client.GetSuperCandlesOrderBookStats5m(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
                     cancellationToken),
-                AppJsonContext.Default.ListSuperCandlesOrderBookStats5mDTO,
+                DiagnosticsJsonContext.Default.ListSuperCandlesOrderBookStats5mDTO,
                 ct);
         }
 
@@ -423,7 +423,7 @@ namespace ProjectTraiding.Moex.Endpoints
                 cancellationToken => CollectAsync(
                     client.GetSuperCandlesFuturesOrderBookStats5m(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
                     cancellationToken),
-                AppJsonContext.Default.ListSuperCandlesFuturesOrderBookStats5mDTO,
+                DiagnosticsJsonContext.Default.ListSuperCandlesFuturesOrderBookStats5mDTO,
                 ct);
         }
 
@@ -448,7 +448,7 @@ namespace ProjectTraiding.Moex.Endpoints
                 cancellationToken => CollectAsync(
                     client.GetSuperCandlesOrderStats5m(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
                     cancellationToken),
-                AppJsonContext.Default.ListSuperCandlesOrderStats5mDTO,
+                DiagnosticsJsonContext.Default.ListSuperCandlesOrderStats5mDTO,
                 ct);
         }
 
@@ -473,7 +473,7 @@ namespace ProjectTraiding.Moex.Endpoints
                 cancellationToken => CollectAsync(
                     client.StreamFutoi(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
                     cancellationToken),
-                AppJsonContext.Default.ListFutoiDTO,
+                DiagnosticsJsonContext.Default.ListFutoiDTO,
                 ct);
         }
 
@@ -498,7 +498,7 @@ namespace ProjectTraiding.Moex.Endpoints
                 cancellationToken => CollectAsync(
                     client.GetHi2Asset5m(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
                     cancellationToken),
-                AppJsonContext.Default.ListHi2AssetDTO,
+                DiagnosticsJsonContext.Default.ListHi2AssetDTO,
                 ct);
         }
 
@@ -523,7 +523,7 @@ namespace ProjectTraiding.Moex.Endpoints
                 cancellationToken => CollectAsync(
                     client.GetHi2Futures5m(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
                     cancellationToken),
-                AppJsonContext.Default.ListHi2FuturesDTO,
+                DiagnosticsJsonContext.Default.ListHi2FuturesDTO,
                 ct);
         }
 
@@ -548,7 +548,7 @@ namespace ProjectTraiding.Moex.Endpoints
                 cancellationToken => CollectAsync(
                     client.GetMegaAlerts(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
                     cancellationToken),
-                AppJsonContext.Default.ListMegaAlertsAssetsDTO,
+                DiagnosticsJsonContext.Default.ListMegaAlertsAssetsDTO,
                 ct);
         }
 
@@ -573,7 +573,7 @@ namespace ProjectTraiding.Moex.Endpoints
                 cancellationToken => CollectAsync(
                     client.GetMegaAlertsFutures(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
                     cancellationToken),
-                AppJsonContext.Default.ListMegaAlertsFuturesDTO,
+                DiagnosticsJsonContext.Default.ListMegaAlertsFuturesDTO,
                 ct);
         }
 

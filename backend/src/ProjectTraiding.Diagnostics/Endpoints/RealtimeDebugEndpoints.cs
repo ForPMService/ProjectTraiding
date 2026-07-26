@@ -1,7 +1,7 @@
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Infrastructure;
 
-namespace ProjectTraiding.Moex.Endpoints
+namespace ProjectTraiding.Diagnostics.Endpoints
 {
     /// <summary>
     /// Диагностические endpoint-ы для real-time REST MOEX.

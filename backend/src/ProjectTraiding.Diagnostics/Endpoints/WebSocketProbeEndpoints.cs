@@ -1,6 +1,6 @@
-using ProjectTraiding.Moex.Realtime;
+using ProjectTraiding.Diagnostics.Probe;
 
-namespace ProjectTraiding.Moex.Endpoints;
+namespace ProjectTraiding.Diagnostics.Endpoints;
 
 /// <summary>
 /// Отладочная точка пробника потокового соединения. Временная: ручная разведка контракта

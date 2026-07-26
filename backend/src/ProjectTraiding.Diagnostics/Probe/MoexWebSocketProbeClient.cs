@@ -1,11 +1,10 @@
 using Microsoft.Extensions.Options;
-using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Options;
 using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Text;
 
-namespace ProjectTraiding.Moex.Realtime;
+namespace ProjectTraiding.Diagnostics.Probe;
 
 /// <summary>
 /// Пробник потокового соединения биржи. Отладочная точка: подключается, аутентифицируется,
@@ -71,7 +70,7 @@ public sealed class MoexWebSocketProbeClient
             handshakeCts.CancelAfter(OperationTimeout);
 
             MoexWebSocketLogMessages.Connecting(
-                _logger, MoexLogSources.WebSocket, _options.WebSocketUrl, _options.WebSocketDomain);
+                _logger, DiagnosticsLogSources.WebSocket, _options.WebSocketUrl, _options.WebSocketDomain);
 
             long handshakeBytes = 0;
             ReceiveOutcome handshake;
@@ -100,7 +99,7 @@ public sealed class MoexWebSocketProbeClient
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
                 MoexWebSocketLogMessages.Failed(
-                    _logger, MoexLogSources.WebSocket, _options.WebSocketUrl,
+                    _logger, DiagnosticsLogSources.WebSocket, _options.WebSocketUrl,
                     "handshake_timeout", "Биржа не ответила на CONNECT в отведённое время.");
 
                 return new WebSocketProbeReport
@@ -138,7 +137,7 @@ public sealed class MoexWebSocketProbeClient
             catch (FormatException exception)
             {
                 MoexWebSocketLogMessages.Failed(
-                    _logger, MoexLogSources.WebSocket, _options.WebSocketUrl,
+                    _logger, DiagnosticsLogSources.WebSocket, _options.WebSocketUrl,
                     nameof(FormatException), exception.Message);
 
                 return FailedHandshake(
@@ -151,7 +150,7 @@ public sealed class MoexWebSocketProbeClient
             if (!string.Equals(handshakeFrame.Command, "CONNECTED", StringComparison.Ordinal))
             {
                 MoexWebSocketLogMessages.ConnectRejected(
-                    _logger, MoexLogSources.WebSocket, _options.WebSocketUrl, handshakeFrame.Command);
+                    _logger, DiagnosticsLogSources.WebSocket, _options.WebSocketUrl, handshakeFrame.Command);
 
                 bool isError = string.Equals(
                     handshakeFrame.Command, "ERROR", StringComparison.Ordinal);
@@ -166,7 +165,7 @@ public sealed class MoexWebSocketProbeClient
             }
 
             MoexWebSocketLogMessages.Connected(
-                _logger, MoexLogSources.WebSocket, _options.WebSocketUrl,
+                _logger, DiagnosticsLogSources.WebSocket, _options.WebSocketUrl,
                 Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
 
             string subscriptionId = Guid.NewGuid().ToString("N");
@@ -183,7 +182,7 @@ public sealed class MoexWebSocketProbeClient
             }
 
             MoexWebSocketLogMessages.Subscribed(
-                _logger, MoexLogSources.WebSocket, destination, selector);
+                _logger, DiagnosticsLogSources.WebSocket, destination, selector);
 
             return await CollectAsync(
                 socket,
@@ -203,7 +202,7 @@ public sealed class MoexWebSocketProbeClient
         catch (Exception exception)
         {
             MoexWebSocketLogMessages.Failed(
-                _logger, MoexLogSources.WebSocket, _options.WebSocketUrl,
+                _logger, DiagnosticsLogSources.WebSocket, _options.WebSocketUrl,
                 exception.GetType().Name, exception.Message);
             throw;
         }
@@ -289,7 +288,7 @@ public sealed class MoexWebSocketProbeClient
 
                 rawFrames.Add(raw);
                 MoexWebSocketLogMessages.FrameReceived(
-                    _logger, MoexLogSources.WebSocket, PeekCommand(raw), outcome.Bytes);
+                    _logger, DiagnosticsLogSources.WebSocket, PeekCommand(raw), outcome.Bytes);
 
                 StompFrame frame;
                 try
@@ -342,7 +341,7 @@ public sealed class MoexWebSocketProbeClient
         TimeSpan elapsed = Stopwatch.GetElapsedTime(startedAt);
 
         MoexWebSocketLogMessages.ProbeCompleted(
-            _logger, MoexLogSources.WebSocket, destination,
+            _logger, DiagnosticsLogSources.WebSocket, destination,
             rawFrames.Count, capturedBytes, truncated, elapsed.TotalMilliseconds);
 
         return new WebSocketProbeReport
@@ -529,7 +528,7 @@ public sealed class MoexWebSocketProbeClient
         catch (Exception exception)
         {
             MoexWebSocketLogMessages.Failed(
-                _logger, MoexLogSources.WebSocket, _options.WebSocketUrl,
+                _logger, DiagnosticsLogSources.WebSocket, _options.WebSocketUrl,
                 exception.GetType().Name, "Ошибка при закрытии соединения, подавлена.");
         }
     }

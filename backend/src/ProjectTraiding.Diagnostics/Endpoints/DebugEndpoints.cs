@@ -1,12 +1,6 @@
-using Amazon.S3;
-using Amazon.S3.Model;
-using Microsoft.Extensions.Options;
 using ProjectTraiding.Moex.Clients;
-using ProjectTraiding.Moex.Infrastructure.RawCapture;
-using ProjectTraiding.Moex.Options;
-using System.Text.Json;
 
-namespace ProjectTraiding.Moex.Endpoints
+namespace ProjectTraiding.Diagnostics.Endpoints
 {
     /// <summary>
     /// Диагностические точки исходного ответа рыночной статистики MOEX.

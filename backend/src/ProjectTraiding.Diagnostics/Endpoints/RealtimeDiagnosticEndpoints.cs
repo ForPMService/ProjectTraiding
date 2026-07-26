@@ -3,7 +3,7 @@ using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using ProjectTraiding.Moex.Contracts.Dto.Realtime;
 using ProjectTraiding.Moex.Infrastructure;
 
-namespace ProjectTraiding.Moex.Endpoints
+namespace ProjectTraiding.Diagnostics.Endpoints
 {
     /// <summary>
     /// Диагностические endpoint-ы ручной проверки real-time REST MOEX (Шаг 9).

@@ -11,14 +11,12 @@ public static class MoexEndpointRouteBuilderExtensions
         return routes;
     }
 
+    // Остался только календарь: по отдельному решению владельца он не переносится
+    // в отладочный проект. Остальные диагностические точки вызова живут
+    // в диагностическом проекте.
     public static IEndpointRouteBuilder MapMoexDiagnosticEndpoints(this IEndpointRouteBuilder routes)
     {
-        routes.MapAlgopackEndpoints();
         routes.MapCalendarEndpoints();
-        routes.MapRealtimeDebugEndpoints();
-        routes.MapRealtimeDiagnosticEndpoints();
-        routes.MapDiagnosticDebugEndpoints();
-        routes.MapWebSocketProbeEndpoints();
         return routes;
     }
 

@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace ProjectTraiding.Moex.Realtime;
+namespace ProjectTraiding.Diagnostics.Probe;
 
 /// <summary>
 /// Минимальный поднабор кадрирования STOMP, достаточный для потока Московской биржи.

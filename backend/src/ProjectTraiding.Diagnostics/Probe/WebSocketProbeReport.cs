@@ -1,4 +1,4 @@
-namespace ProjectTraiding.Moex.Realtime;
+namespace ProjectTraiding.Diagnostics.Probe;
 
 /// <summary>
 /// Отчёт пробника. Служебные кадры сохраняются ПОЛНЫМ СЫРЫМ ТЕКСТОМ. CONNECTED от биржи
