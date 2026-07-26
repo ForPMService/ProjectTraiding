@@ -92,6 +92,21 @@ namespace ProjectTraiding.Management.Endpoints
                 int? normalizedSliceWeeks = request.SliceWeeks.HasValue
                    ? (request.SliceWeeks.Value < 1 ? 1 : request.SliceWeeks.Value)
                    : (int?)null;
+
+                // Зрелая дата — по московскому торговому дню, а не по часовому поясу процесса:
+                // приложение западнее Москвы в первый час московских суток отрезало бы лишний
+                // день молча, без единой ошибки в журнале.
+                //
+                // Смещение продублировано намеренно. В контуре Moex тот же расчёт живёт в
+                // MoexTime, но ссылка Management → Moex запрещена: контуры связаны только
+                // данными. Дублирование трёх часов дешевле сцепления контуров (правило 13).
+                // Вернут перевод часов — править в обоих местах.
+                //
+                // Вычисляется один раз до цикла: весь пакет задач одной постановки оперирует
+                // одной зрелой датой, даже если исполнение цикла пересечёт московскую полночь.
+                DateOnly lastMatureDate =
+                    DateOnly.FromDateTime(DateTime.UtcNow + TimeSpan.FromHours(3)).AddDays(-1);
+
                 List<LoadTaskCreateRequest> tasks = new();
                 for (int instrumentIndex = 0; instrumentIndex < request.Instruments.Count; instrumentIndex++)
                 {
@@ -100,16 +115,6 @@ namespace ProjectTraiding.Management.Endpoints
                         ? request.StockDataKinds
                         : request.FuturesDataKinds;
 
-                     // Зрелая дата — по московскому торговому дню, а не по часовому поясу процесса:
-                    // приложение западнее Москвы в первый час московских суток отрезало бы лишний
-                    // день молча, без единой ошибки в журнале.
-                    //
-                    // Смещение продублировано намеренно. В контуре Moex тот же расчёт живёт в
-                    // MoexTime, но ссылка Management → Moex запрещена: контуры связаны только
-                    // данными. Дублирование трёх часов дешевле сцепления контуров (правило 13).
-                    // Вернут перевод часов — править в обоих местах.
-                    DateOnly lastMatureDate =
-                        DateOnly.FromDateTime(DateTime.UtcNow + TimeSpan.FromHours(3)).AddDays(-1);
                     DateOnly effectiveFrom = instrument.DateFrom;
                     DateOnly effectiveTill = instrument.DateTill < lastMatureDate
                         ? instrument.DateTill
