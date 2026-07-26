@@ -10,7 +10,7 @@ public static class WebSocketProbeEndpoints
 {
     public static IEndpointRouteBuilder MapWebSocketProbeEndpoints(this IEndpointRouteBuilder routes)
     {
-        RouteGroupBuilder group = routes.MapGroup("/debug/realtime/ws");
+        RouteGroupBuilder group = routes.MapGroup("/realtime/ws");
 
         group.MapGet("/probe", async (
             string destination,

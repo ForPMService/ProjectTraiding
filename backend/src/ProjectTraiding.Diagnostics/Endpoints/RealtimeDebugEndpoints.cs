@@ -16,7 +16,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
     {
         public static IEndpointRouteBuilder MapRealtimeDebugEndpoints(this IEndpointRouteBuilder routes)
         {
-            var group = routes.MapGroup("/debug/realtime");
+            var group = routes.MapGroup("/realtime");
 
             // ═══════════════════════════════════════════════════════════
             // Parsed endpoints

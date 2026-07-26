@@ -16,7 +16,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
 
         public static IEndpointRouteBuilder MapAlgopackEndpoints(this IEndpointRouteBuilder routes)
         {
-            RouteGroupBuilder diagnosticsGroup = routes.MapGroup("/diagnostics/moex");
+            RouteGroupBuilder diagnosticsGroup = routes.MapGroup("/moex");
 
             diagnosticsGroup.MapGet("/raw/market/stock/candles/{ticker}", async (
                 string ticker,

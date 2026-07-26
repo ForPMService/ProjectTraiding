@@ -82,7 +82,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
 
         public static IEndpointRouteBuilder MapRealtimeDiagnosticEndpoints(this IEndpointRouteBuilder routes)
         {
-            RouteGroupBuilder group = routes.MapGroup("/debug/realtime/poll");
+            RouteGroupBuilder group = routes.MapGroup("/realtime/poll");
 
             group.MapGet("/{scenario}/{ticker}", PollRealtimeAsync);
 

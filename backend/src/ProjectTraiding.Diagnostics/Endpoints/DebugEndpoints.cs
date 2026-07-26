@@ -10,7 +10,9 @@ namespace ProjectTraiding.Diagnostics.Endpoints
     {
         public static IEndpointRouteBuilder MapDiagnosticDebugEndpoints(this IEndpointRouteBuilder routes)
         {
-            routes.MapGet("/raw/market-statistics-marketdata-stock/{ticker}", async (
+            RouteGroupBuilder group = routes.MapGroup("/raw");
+
+            group.MapGet("/market-statistics-marketdata-stock/{ticker}", async (
                 string ticker,
                 MoexRealtimeRestClient client,
                 CancellationToken ct) =>
@@ -25,7 +27,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 return Results.Text(raw, "application/json");
             });
 
-            routes.MapGet("/raw/market-statistics-marketdata-futures/{ticker}", async (
+            group.MapGet("/market-statistics-marketdata-futures/{ticker}", async (
                 string ticker,
                 MoexRealtimeRestClient client,
                 CancellationToken ct) =>
