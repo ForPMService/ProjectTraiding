@@ -43,8 +43,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                      @date_from, @date_till, now(), @last_task_id,
                      @rows_total, @storage_target, 'ok',
                      @scv, @wv, @token)
-                ON CONFLICT (secid, market, boardid, data_kind, candle_interval,
-                             date_from, date_till, storage_target)
+                ON CONFLICT ON CONSTRAINT uq_moex_loaded_ranges_span
                 DO UPDATE SET
                      last_success_at = now(),
                      last_task_id = @last_task_id,
