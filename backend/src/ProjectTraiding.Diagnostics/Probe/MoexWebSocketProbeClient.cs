@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Options;
-using ProjectTraiding.Moex.Options;
+using ProjectTraiding.Diagnostics.Options;
 using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Text;
@@ -22,11 +22,11 @@ public sealed class MoexWebSocketProbeClient
     private const int ReceiveChunkSize = 16 * 1024;
     private const int UnreadablePreviewBytes = 256;
 
-    private readonly MoexOptions _options;
+    private readonly WebSocketProbeOptions _options;
     private readonly ILogger<MoexWebSocketProbeClient> _logger;
 
     public MoexWebSocketProbeClient(
-        IOptions<MoexOptions> options,
+        IOptions<WebSocketProbeOptions> options,
         ILogger<MoexWebSocketProbeClient> logger)
     {
         _options = options.Value;
@@ -40,9 +40,9 @@ public sealed class MoexWebSocketProbeClient
         CancellationToken cancellationToken)
     {
         EnsureCredentialsConfigured();
-        EnsureSafeHeaderValue(_options.WebSocketDomain, "Moex:WebSocketDomain");
-        EnsureSafeHeaderValue(_options.WebSocketLogin, "Moex:WebSocketLogin");
-        EnsureSafeHeaderValue(_options.WebSocketPasscode, "Moex:WebSocketPasscode");
+        EnsureSafeHeaderValue(_options.Domain, "Diagnostics:WebSocketProbe:Domain");
+        EnsureSafeHeaderValue(_options.Login, "Diagnostics:WebSocketProbe:Login");
+        EnsureSafeHeaderValue(_options.Passcode, "Diagnostics:WebSocketProbe:Passcode");
 
         if (string.IsNullOrWhiteSpace(destination))
         {
@@ -70,20 +70,20 @@ public sealed class MoexWebSocketProbeClient
             handshakeCts.CancelAfter(OperationTimeout);
 
             MoexWebSocketLogMessages.Connecting(
-                _logger, DiagnosticsLogSources.WebSocket, _options.WebSocketUrl, _options.WebSocketDomain);
+                _logger, DiagnosticsLogSources.WebSocket, _options.Url, _options.Domain);
 
             long handshakeBytes = 0;
             ReceiveOutcome handshake;
             try
             {
-                await socket.ConnectAsync(new Uri(_options.WebSocketUrl), handshakeCts.Token);
+                await socket.ConnectAsync(new Uri(_options.Url), handshakeCts.Token);
                 await SendFrameAsync(socket, BuildConnectFrame(), handshakeCts.Token);
 
                 while (true)
                 {
                     handshake = await ReceiveMessageAsync(
                         socket,
-                        _options.WebSocketProbeMaxCapturedBytes - handshakeBytes,
+                        _options.MaxCapturedBytes - handshakeBytes,
                         handshakeCts.Token);
 
                     handshakeBytes += handshake.Bytes;
@@ -99,7 +99,7 @@ public sealed class MoexWebSocketProbeClient
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
                 MoexWebSocketLogMessages.Failed(
-                    _logger, DiagnosticsLogSources.WebSocket, _options.WebSocketUrl,
+                    _logger, DiagnosticsLogSources.WebSocket, _options.Url,
                     "handshake_timeout", "Биржа не ответила на CONNECT в отведённое время.");
 
                 return new WebSocketProbeReport
@@ -137,7 +137,7 @@ public sealed class MoexWebSocketProbeClient
             catch (FormatException exception)
             {
                 MoexWebSocketLogMessages.Failed(
-                    _logger, DiagnosticsLogSources.WebSocket, _options.WebSocketUrl,
+                    _logger, DiagnosticsLogSources.WebSocket, _options.Url,
                     nameof(FormatException), exception.Message);
 
                 return FailedHandshake(
@@ -150,7 +150,7 @@ public sealed class MoexWebSocketProbeClient
             if (!string.Equals(handshakeFrame.Command, "CONNECTED", StringComparison.Ordinal))
             {
                 MoexWebSocketLogMessages.ConnectRejected(
-                    _logger, DiagnosticsLogSources.WebSocket, _options.WebSocketUrl, handshakeFrame.Command);
+                    _logger, DiagnosticsLogSources.WebSocket, _options.Url, handshakeFrame.Command);
 
                 bool isError = string.Equals(
                     handshakeFrame.Command, "ERROR", StringComparison.Ordinal);
@@ -165,7 +165,7 @@ public sealed class MoexWebSocketProbeClient
             }
 
             MoexWebSocketLogMessages.Connected(
-                _logger, DiagnosticsLogSources.WebSocket, _options.WebSocketUrl,
+                _logger, DiagnosticsLogSources.WebSocket, _options.Url,
                 Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
 
             string subscriptionId = Guid.NewGuid().ToString("N");
@@ -202,7 +202,7 @@ public sealed class MoexWebSocketProbeClient
         catch (Exception exception)
         {
             MoexWebSocketLogMessages.Failed(
-                _logger, DiagnosticsLogSources.WebSocket, _options.WebSocketUrl,
+                _logger, DiagnosticsLogSources.WebSocket, _options.Url,
                 exception.GetType().Name, exception.Message);
             throw;
         }
@@ -245,7 +245,7 @@ public sealed class MoexWebSocketProbeClient
         {
             while (true)
             {
-                long remainingBytes = _options.WebSocketProbeMaxCapturedBytes - capturedBytes;
+                long remainingBytes = _options.MaxCapturedBytes - capturedBytes;
                 ReceiveOutcome outcome =
                     await ReceiveMessageAsync(socket, remainingBytes, collectCts.Token);
 
@@ -299,7 +299,7 @@ public sealed class MoexWebSocketProbeClient
                 {
                     unparsedFrames++;
 
-                    if (rawFrames.Count >= _options.WebSocketProbeMaxFrames)
+                    if (rawFrames.Count >= _options.MaxFrames)
                     {
                         truncated = true;
                         terminationReason = "frame_limit";
@@ -321,7 +321,7 @@ public sealed class MoexWebSocketProbeClient
                     break;
                 }
 
-                if (rawFrames.Count >= _options.WebSocketProbeMaxFrames)
+                if (rawFrames.Count >= _options.MaxFrames)
                 {
                     truncated = true;
                     terminationReason = "frame_limit";
@@ -475,9 +475,9 @@ public sealed class MoexWebSocketProbeClient
     {
         Dictionary<string, string> headers = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["domain"] = _options.WebSocketDomain,
-            ["login"] = _options.WebSocketLogin,
-            ["passcode"] = _options.WebSocketPasscode,
+            ["domain"] = _options.Domain,
+            ["login"] = _options.Login,
+            ["passcode"] = _options.Passcode,
         };
 
         return new StompFrame("CONNECT", headers, string.Empty);
@@ -528,7 +528,7 @@ public sealed class MoexWebSocketProbeClient
         catch (Exception exception)
         {
             MoexWebSocketLogMessages.Failed(
-                _logger, DiagnosticsLogSources.WebSocket, _options.WebSocketUrl,
+                _logger, DiagnosticsLogSources.WebSocket, _options.Url,
                 exception.GetType().Name, "Ошибка при закрытии соединения, подавлена.");
         }
     }
@@ -546,19 +546,19 @@ public sealed class MoexWebSocketProbeClient
             return MinimumDuration;
         }
 
-        return requested > _options.WebSocketProbeMaxDuration
-            ? _options.WebSocketProbeMaxDuration
+        return requested > _options.MaxDuration
+            ? _options.MaxDuration
             : requested;
     }
 
     private void EnsureCredentialsConfigured()
     {
-        if (string.IsNullOrWhiteSpace(_options.WebSocketLogin)
-            || string.IsNullOrWhiteSpace(_options.WebSocketPasscode))
+        if (string.IsNullOrWhiteSpace(_options.Login)
+            || string.IsNullOrWhiteSpace(_options.Passcode))
         {
             throw new InvalidOperationException(
-                "Moex:WebSocketLogin и Moex:WebSocketPasscode не заданы. " +
-                "Положите их в пользовательские секреты, как AlgKey.");
+                "Diagnostics:WebSocketProbe:Login и Diagnostics:WebSocketProbe:Passcode не заданы. " +
+                "Положите их в пользовательские секреты, как Moex:AlgKey.");
         }
     }
 }

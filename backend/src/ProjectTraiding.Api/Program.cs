@@ -2,6 +2,7 @@ using Microsoft.Extensions.Options;
 using ProjectTraiding.Api.Infrastructure;
 using ProjectTraiding.Diagnostics.Contracts;
 using ProjectTraiding.Diagnostics.DependencyInjection;
+using ProjectTraiding.Diagnostics.Options;
 using ProjectTraiding.Management.Contracts;
 using ProjectTraiding.Management.DependencyInjection;
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
@@ -74,6 +75,13 @@ using (IServiceScope startupScope = app.Services.CreateScope())
     RawCaptureOptions rawCaptureOptions = startupScope.ServiceProvider
         .GetRequiredService<IOptions<RawCaptureOptions>>().Value;
     RawCaptureOptionsValidator.Validate(rawCaptureOptions);
+
+    if (app.Environment.IsDevelopment())
+    {
+        WebSocketProbeOptions probeOptions = startupScope.ServiceProvider
+            .GetRequiredService<IOptions<WebSocketProbeOptions>>().Value;
+        WebSocketProbeOptionsValidator.Validate(probeOptions);
+    }
 }
 app.MapObservabilityEndpoints();
 app.MapMoexSyncEndpoints();
