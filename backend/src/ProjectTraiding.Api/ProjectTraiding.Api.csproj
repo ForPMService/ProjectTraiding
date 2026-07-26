@@ -13,16 +13,18 @@
     <ProjectReference Include="..\ProjectTraiding.Observability\ProjectTraiding.Observability.csproj" />
     <ProjectReference Include="..\ProjectTraiding.Management\ProjectTraiding.Management.csproj" />
     <ProjectReference Include="..\ProjectTraiding.Vitrine\ProjectTraiding.Vitrine.csproj" />
+    <ProjectReference Include="..\ProjectTraiding.Diagnostics\ProjectTraiding.Diagnostics.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="AWSSDK.S3" Version="4.0.23.4" />
-    <PackageReference Include="ClickHouse.Driver" Version="1.2.0" />
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.7" />
-    <PackageReference Include="Microsoft.Extensions.ApiDescription.Server" Version="10.0.7">
+    <PackageReference Include="AWSSDK.S3" Version="4.0.101.4" />
+    <PackageReference Include="ClickHouse.Driver" Version="1.3.0" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.ApiDescription.Server" Version="10.0.10">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <PackageReference Include="Microsoft.OpenApi" Version="2.11.0" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
-    <PackageReference Include="StackExchange.Redis" Version="3.0.11" />
+    <PackageReference Include="StackExchange.Redis" Version="3.0.17" />
   </ItemGroup>
 </Project>
