@@ -144,5 +144,35 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             Message = "Candles receiver instrument fetch timed out: secid={Secid}, market={Market}, budget={Budget}.")]
         public static partial void CandlesInstrumentFetchTimedOut(
             ILogger logger, string secid, string market, TimeSpan budget);
+
+        [LoggerMessage(EventId = 481, EventName = "MoexTradesReceiverInstrumentStopping", Level = LogLevel.Information,
+            Message = "Trades receiver instrument stopping: secid={Secid}, sessionId={SessionId}.")]
+        public static partial void TradesInstrumentStopping(
+            ILogger logger, string secid, long sessionId);
+
+        [LoggerMessage(EventId = 482, EventName = "MoexTradesReceiverInstrumentStopped", Level = LogLevel.Information,
+            Message = "Trades receiver instrument stopped: secid={Secid}, sessionId={SessionId}, rows={RowsTotal}.")]
+        public static partial void TradesInstrumentStopped(
+            ILogger logger, string secid, long sessionId, long rowsTotal);
+
+        [LoggerMessage(EventId = 483, EventName = "MoexOrderbookReceiverInstrumentStopping", Level = LogLevel.Information,
+            Message = "Orderbook receiver instrument stopping: secid={Secid}, sessionId={SessionId}.")]
+        public static partial void OrderbookInstrumentStopping(
+            ILogger logger, string secid, long sessionId);
+
+        [LoggerMessage(EventId = 484, EventName = "MoexOrderbookReceiverInstrumentStopped", Level = LogLevel.Information,
+            Message = "Orderbook receiver instrument stopped: secid={Secid}, sessionId={SessionId}, rows={RowsTotal}.")]
+        public static partial void OrderbookInstrumentStopped(
+            ILogger logger, string secid, long sessionId, long rowsTotal);
+
+        [LoggerMessage(EventId = 485, EventName = "MoexCandlesReceiverInstrumentStopping", Level = LogLevel.Information,
+            Message = "Candles receiver instrument stopping: secid={Secid}, sessionId={SessionId}.")]
+        public static partial void CandlesInstrumentStopping(
+            ILogger logger, string secid, long sessionId);
+
+        [LoggerMessage(EventId = 486, EventName = "MoexCandlesReceiverInstrumentStopped", Level = LogLevel.Information,
+            Message = "Candles receiver instrument stopped: secid={Secid}, sessionId={SessionId}, rows={RowsTotal}.")]
+        public static partial void CandlesInstrumentStopped(
+            ILogger logger, string secid, long sessionId, long rowsTotal);
     }
 }

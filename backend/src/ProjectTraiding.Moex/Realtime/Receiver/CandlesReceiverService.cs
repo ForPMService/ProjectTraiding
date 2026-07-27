@@ -20,8 +20,9 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
     /// перекрывает при слиянии); текущая незакрытая минута идёт только в оперативное хранилище —
     /// в ClickHouse её писать нельзя, она ещё меняется. Курсора у свечей в базе нет; повтор записи
     /// закрытых минут в пределах запуска отсекает граница LastClosedBegin в состоянии.
-    /// Новые подписки подхватываются каждым оборотом; снятие подписки на лету не реализуется —
-    /// enabled = false применяется после перезапуска приёмника (как у сделок и стакана).
+    /// Желаемый список подписок сверяется на каждом обороте: снятые инструменты исключаются
+    /// из опроса немедленно, а их сеансы покрытия закрываются штатно без перезапуска процесса —
+    /// так же, как у сделок и стакана.
     /// </summary>
     public sealed class CandlesReceiverService : BackgroundService
     {
@@ -122,7 +123,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             }
             else
             {
-                await AddNewInstrumentsAsync(instruments, coverageWriter, ct);
+                await ReconcileStatesAsync(instruments, coverageWriter, ct);
             }
 
             MoexRealtimeRestClient client =
@@ -134,6 +135,9 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
             foreach (KeyValuePair<string, CandleInstrumentState> pair in _states)
             {
+                if (pair.Value.IsStopping)
+                    continue;
+
                 try
                 {
                     await PollInstrumentAsync(
@@ -181,6 +185,68 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         _logger, ex, instrument.Secid);
                 }
             }
+        }
+
+        /// <summary>
+        /// Приводит словарь состояний к желаемому списку подписок. Снятые инструменты
+        /// помечаются к остановке, исключаются из опроса и закрываются штатно; состояние
+        /// удаляется только после успешного закрытия, при отказе закрытие повторяется на
+        /// следующем обороте. Затем добавляются новые. Пустой желаемый список означает
+        /// остановку всех состояний этого вида — это законное состояние, а не сбой.
+        /// </summary>
+        private async Task ReconcileStatesAsync(
+            IReadOnlyList<ReceiverInstrument> instruments,
+            StreamCoverageWriter coverageWriter,
+            CancellationToken ct)
+        {
+            HashSet<string> desired = new(StringComparer.Ordinal);
+            for (int i = 0; i < instruments.Count; i++)
+                desired.Add(instruments[i].Secid);
+
+            // Пометка. Изменяем только значения, ключи словаря не трогаем — перечисление безопасно.
+            foreach (KeyValuePair<string, CandleInstrumentState> pair in _states)
+            {
+                if (desired.Contains(pair.Key) || pair.Value.IsStopping)
+                    continue;
+
+                pair.Value.IsStopping = true;
+                MoexRealtimeReceiverLogMessages.CandlesInstrumentStopping(
+                    _logger, pair.Key, pair.Value.SessionId);
+            }
+
+            // Ключи собираем заранее: удалять из словаря во время перечисления нельзя.
+            List<string> stopping = new();
+            foreach (KeyValuePair<string, CandleInstrumentState> pair in _states)
+            {
+                if (pair.Value.IsStopping)
+                    stopping.Add(pair.Key);
+            }
+
+            for (int i = 0; i < stopping.Count; i++)
+            {
+                string secid = stopping[i];
+                CandleInstrumentState state = _states[secid];
+                try
+                {
+                    await coverageWriter.CloseSessionAsync(state.SessionId, state.RowsTotal, ct);
+                    _states.Remove(secid);
+                    MoexRealtimeReceiverLogMessages.CandlesInstrumentStopped(
+                        _logger, secid, state.SessionId, state.RowsTotal);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    // Состояние остаётся с признаком остановки: в опрос не попадёт,
+                    // закрытие повторится на следующем обороте.
+                    MoexRealtimeReceiverLogMessages.CandlesSessionCloseFailed(
+                        _logger, ex, secid, state.SessionId);
+                }
+            }
+
+            await AddNewInstrumentsAsync(instruments, coverageWriter, ct);
         }
 
         private async Task AddNewInstrumentsAsync(
@@ -398,5 +464,12 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         public long RowsTotal { get; set; }
         public long LastHeartbeatTimestamp { get; set; }
         public DateTime? LastClosedBegin { get; set; }
+
+        /// <summary>
+        /// Подписка снята оператором: инструмент исключён из опроса, сеанс покрытия ждёт
+        /// штатного закрытия. Состояние удаляется из словаря только после успешного закрытия.
+        /// Обратно в активное не возвращается — иначе сеанс перекрыл бы период отключения.
+        /// </summary>
+        public bool IsStopping { get; set; }
     }
 }
