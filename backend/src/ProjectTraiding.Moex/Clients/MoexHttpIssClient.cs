@@ -35,26 +35,6 @@ namespace ProjectTraiding.Moex.Clients
         }
 
         /// <summary>
-        /// Diagnostic only. Does not use typed error handling (no MoexHttpException hierarchy,
-        /// no EnsureSuccessOrThrow, no structured logging).
-        /// Do NOT use for production raw capture. Phase 8 uses SendRequestAsync-based path
-        /// in GetInfoTradedStockAssetsRaw / GetInfoTradedFuturesAssetsRaw (added in Phase 8-C).
-        /// Used by DebugEndpoints only. Reliability fix: separate cleanup task after Phase 8-D.
-        /// Lock §12.
-        /// </summary>
-        public async Task<string> GetRaw(
-            string method,
-            CancellationToken cancellationToken = default)
-        {
-            string requestUrl = _options.IssBaseUrl + method;
-            var request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
-            var response = await _httpClient.SendAsync(request, cancellationToken);
-
-            return await response.Content.ReadAsStringAsync(cancellationToken);
-        }
-
-        
-        /// <summary>
         /// Карточки всех акций TQBR — securities + marketdata одним запросом.
         ///
         /// Источник: /engines/stock/markets/shares/boards/tqbr/securities.json?iss.meta=off
