@@ -144,7 +144,7 @@ namespace ProjectTraiding.Moex.Clients
         }
 
         // ═══════════════════════════════════════════════════════════
-        // SuperCandles — cursor-пагинация
+        // ALGOPACK — cursor-пагинация
         // ═══════════════════════════════════════════════════════════
 
         public async IAsyncEnumerable<List<TRow>> GetCursorPages<TKind, TRow>(
@@ -220,43 +220,6 @@ namespace ProjectTraiding.Moex.Clients
             activity?.SetTag("total_rows", totalRows);
 
         }
-
-        public IAsyncEnumerable<List<SuperCandlesTradeStats5mDTO>> GetSuperCandlesTradeStats5m(
-          string method,
-          Dictionary<string, string>? queryParams = null,
-          LoadStopOutcome? stopOutcome = null,
-          CancellationToken cancellationToken = default)
-            => GetCursorPages<TradeStatsStockCursorKind, SuperCandlesTradeStats5mDTO>(
-                method, queryParams, stopOutcome, cancellationToken);
-
-        public IAsyncEnumerable<List<SuperCandlesFuturesTradeStats5mDTO>> GetSuperCandlesFuturesTradeStats5m(
-            string method,
-            Dictionary<string, string>? queryParams = null,
-            LoadStopOutcome? stopOutcome = null,
-            CancellationToken cancellationToken = default)
-            => GetCursorPages<TradeStatsFuturesCursorKind, SuperCandlesFuturesTradeStats5mDTO>(
-                method, queryParams, stopOutcome, cancellationToken);
-
-        public IAsyncEnumerable<List<SuperCandlesOrderBookStats5mDTO>> GetSuperCandlesOrderBookStats5m(
-            string method, Dictionary<string, string>? queryParams = null,
-            LoadStopOutcome? stopOutcome = null,
-            CancellationToken cancellationToken = default)
-            => GetCursorPages<ObStatsStockCursorKind, SuperCandlesOrderBookStats5mDTO>(
-                method, queryParams, stopOutcome, cancellationToken);
-
-        public IAsyncEnumerable<List<SuperCandlesFuturesOrderBookStats5mDTO>> GetSuperCandlesFuturesOrderBookStats5m(
-            string method, Dictionary<string, string>? queryParams = null,
-            LoadStopOutcome? stopOutcome = null,
-            CancellationToken cancellationToken = default)
-            => GetCursorPages<ObStatsFuturesCursorKind, SuperCandlesFuturesOrderBookStats5mDTO>(
-                method, queryParams, stopOutcome, cancellationToken);
-
-        public IAsyncEnumerable<List<SuperCandlesOrderStats5mDTO>> GetSuperCandlesOrderStats5m(
-            string method, Dictionary<string, string>? queryParams = null,
-            LoadStopOutcome? stopOutcome = null,
-            CancellationToken cancellationToken = default)
-            => GetCursorPages<OrderStatsStockCursorKind, SuperCandlesOrderStats5mDTO>(
-                method, queryParams, stopOutcome, cancellationToken);
 
         // ═══════════════════════════════════════════════════════════
         // FUTOI — day-split пагинация
@@ -362,42 +325,6 @@ namespace ProjectTraiding.Moex.Clients
             activity?.SetTag("total_rows", totalRows);
 
         }
-
-        // ═══════════════════════════════════════════════════════════
-        // HI2 — cursor-пагинация
-        // ═══════════════════════════════════════════════════════════
-
-        public IAsyncEnumerable<List<Hi2AssetDTO>> GetHi2Asset5m(
-            string method, Dictionary<string, string>? queryParams = null,
-            LoadStopOutcome? stopOutcome = null,
-            CancellationToken cancellationToken = default)
-            => GetCursorPages<Hi2StockCursorKind, Hi2AssetDTO>(
-                method, queryParams, stopOutcome, cancellationToken);
-
-        public IAsyncEnumerable<List<Hi2FuturesDTO>> GetHi2Futures5m(
-            string method, Dictionary<string, string>? queryParams = null,
-            LoadStopOutcome? stopOutcome = null,
-            CancellationToken cancellationToken = default)
-            => GetCursorPages<Hi2FuturesCursorKind, Hi2FuturesDTO>(
-                method, queryParams, stopOutcome, cancellationToken);
-
-        // ═══════════════════════════════════════════════════════════
-        // MegaAlerts — cursor-пагинация
-        // ═══════════════════════════════════════════════════════════
-
-        public IAsyncEnumerable<List<MegaAlertsAssetsDTO>> GetMegaAlerts(
-            string method, Dictionary<string, string>? queryParams = null,
-            LoadStopOutcome? stopOutcome = null,
-            CancellationToken cancellationToken = default)
-            => GetCursorPages<MegaAlertsStockCursorKind, MegaAlertsAssetsDTO>(
-                method, queryParams, stopOutcome, cancellationToken);
-
-        public IAsyncEnumerable<List<MegaAlertsFuturesDTO>> GetMegaAlertsFutures(
-            string method, Dictionary<string, string>? queryParams = null,
-            LoadStopOutcome? stopOutcome = null,
-            CancellationToken cancellationToken = default)
-            => GetCursorPages<MegaAlertsFuturesCursorKind, MegaAlertsFuturesDTO>(
-                method, queryParams, stopOutcome, cancellationToken);
 
         // <summary>
         /// Карточки всех фьючерсов RFUD — securities + marketdata одним запросом.
