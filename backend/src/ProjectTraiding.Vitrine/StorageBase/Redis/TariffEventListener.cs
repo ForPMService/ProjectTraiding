@@ -34,7 +34,7 @@ namespace ProjectTraiding.Vitrine.StorageBase.Redis
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            VitrineTariffReaderLogMessages.ListenerStarted(_logger, _pollInterval);
+            VitrineStreamLogMessages.ListenerStarted(_logger, "tariffs:changed", _pollInterval);
 
             // Однократная подготовка группы. При недоступности хранилища повторяем,
             // не роняя службу: без группы читать нечего.
@@ -54,7 +54,7 @@ namespace ProjectTraiding.Vitrine.StorageBase.Redis
                 catch (Exception ex)
                 {
                     // Сбой опроса (например, хранилище недоступно) не валит службу.
-                    VitrineTariffReaderLogMessages.PollFailed(_logger, ex, ex.GetType().Name);
+                    VitrineStreamLogMessages.PollFailed(_logger, ex, "tariffs:changed", ex.GetType().Name);
                 }
 
                 if (!worked)
@@ -70,7 +70,7 @@ namespace ProjectTraiding.Vitrine.StorageBase.Redis
                 }
             }
 
-            VitrineTariffReaderLogMessages.ListenerStopped(_logger);
+            VitrineStreamLogMessages.ListenerStopped(_logger, "tariffs:changed");
         }
 
         // true — были события и кеш сброшен; false — новых событий нет.
@@ -80,7 +80,7 @@ namespace ProjectTraiding.Vitrine.StorageBase.Redis
             if (entries.Length == 0)
                 return false;
 
-            VitrineTariffReaderLogMessages.EventsReceived(_logger, "tariffs:changed", entries.Length);
+            VitrineStreamLogMessages.EventsReceived(_logger, "tariffs:changed", entries.Length);
 
             // Несколько событий приводят к одному сбросу кеша — схлопывание.
             await using AsyncServiceScope scope = _scopeFactory.CreateAsyncScope();
@@ -107,7 +107,7 @@ namespace ProjectTraiding.Vitrine.StorageBase.Redis
                 }
                 catch (Exception ex)
                 {
-                    VitrineTariffReaderLogMessages.PollFailed(_logger, ex, ex.GetType().Name);
+                    VitrineStreamLogMessages.PollFailed(_logger, ex, "tariffs:changed", ex.GetType().Name);
                     try
                     {
                         await Task.Delay(_pollInterval, ct);

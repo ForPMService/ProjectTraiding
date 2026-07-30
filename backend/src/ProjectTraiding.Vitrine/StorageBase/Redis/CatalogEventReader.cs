@@ -38,12 +38,12 @@ namespace ProjectTraiding.Vitrine.StorageBase.Redis
                 // createStream: true — если потока ещё нет, он будет создан заодно с группой.
                 // Позиция "0" не важна: событие несёт лишь факт, читаем только новые записи.
                 await db.StreamCreateConsumerGroupAsync(StreamKey, GroupName, position: "$", createStream: true);
-                VitrineCatalogReaderLogMessages.GroupEnsured(_logger, StreamKey, GroupName);
+                VitrineStreamLogMessages.GroupEnsured(_logger, StreamKey, GroupName);
             }
             catch (RedisServerException ex) when (ex.Message.Contains("BUSYGROUP"))
             {
                 // Группа уже существует — это не ошибка, а обычное состояние после первого запуска.
-                VitrineCatalogReaderLogMessages.GroupAlreadyExists(_logger, StreamKey, GroupName);
+                VitrineStreamLogMessages.GroupAlreadyExists(_logger, StreamKey, GroupName);
             }
         }
 

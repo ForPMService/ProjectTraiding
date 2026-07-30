@@ -35,7 +35,7 @@ namespace ProjectTraiding.Vitrine.StorageBase.Redis
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            VitrineLoadedRangeReaderLogMessages.ListenerStarted(_logger, _pollInterval);
+            VitrineStreamLogMessages.ListenerStarted(_logger, "loaded-ranges:changed", _pollInterval);
 
             // Однократная подготовка группы. При недоступности хранилища повторяем,
             // не роняя службу: без группы читать нечего.
@@ -55,7 +55,8 @@ namespace ProjectTraiding.Vitrine.StorageBase.Redis
                 catch (Exception ex)
                 {
                     // Сбой опроса (например, хранилище недоступно) не валит службу.
-                    VitrineLoadedRangeReaderLogMessages.PollFailed(_logger, ex, ex.GetType().Name);
+                    VitrineStreamLogMessages.PollFailed(
+                        _logger, ex, "loaded-ranges:changed", ex.GetType().Name);
                 }
 
                 if (!worked)
@@ -71,7 +72,7 @@ namespace ProjectTraiding.Vitrine.StorageBase.Redis
                 }
             }
 
-            VitrineLoadedRangeReaderLogMessages.ListenerStopped(_logger);
+            VitrineStreamLogMessages.ListenerStopped(_logger, "loaded-ranges:changed");
         }
 
         // true — были события и адресные ключи сброшены; false — новых событий нет.
@@ -81,7 +82,7 @@ namespace ProjectTraiding.Vitrine.StorageBase.Redis
             if (entries.Length == 0)
                 return false;
 
-            VitrineLoadedRangeReaderLogMessages.EventsReceived(_logger, "loaded-ranges:changed", entries.Length);
+            VitrineStreamLogMessages.EventsReceived(_logger, "loaded-ranges:changed", entries.Length);
 
             // Схлопывание: собираем уникальные коды инструментов из пачки, каждый ключ
             // сбрасываем один раз, даже если событий по инструменту пришло несколько.
@@ -128,7 +129,8 @@ namespace ProjectTraiding.Vitrine.StorageBase.Redis
                 }
                 catch (Exception ex)
                 {
-                    VitrineLoadedRangeReaderLogMessages.PollFailed(_logger, ex, ex.GetType().Name);
+                    VitrineStreamLogMessages.PollFailed(
+                        _logger, ex, "loaded-ranges:changed", ex.GetType().Name);
                     try
                     {
                         await Task.Delay(_pollInterval, ct);

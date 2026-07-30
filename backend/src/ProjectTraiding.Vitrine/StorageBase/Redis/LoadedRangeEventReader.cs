@@ -32,11 +32,11 @@ namespace ProjectTraiding.Vitrine.StorageBase.Redis
             {
                 IDatabase db = _redis.GetDatabase();
                 await db.StreamCreateConsumerGroupAsync(StreamKey, GroupName, position: "$", createStream: true);
-                VitrineLoadedRangeReaderLogMessages.GroupEnsured(_logger, StreamKey, GroupName);
+                VitrineStreamLogMessages.GroupEnsured(_logger, StreamKey, GroupName);
             }
             catch (RedisServerException ex) when (ex.Message.Contains("BUSYGROUP"))
             {
-                VitrineLoadedRangeReaderLogMessages.GroupAlreadyExists(_logger, StreamKey, GroupName);
+                VitrineStreamLogMessages.GroupAlreadyExists(_logger, StreamKey, GroupName);
             }
         }
 
