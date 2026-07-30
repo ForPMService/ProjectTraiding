@@ -86,76 +86,14 @@
     },
     {
       "type": "row",
-      "title": "Raw-capture (S3)",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 },
-      "collapsed": false
-    },
-    {
-      "type": "timeseries",
-      "title": "Raw-capture записей / сек",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 18 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [
-        {
-          "expr": "sum(rate(moex_rawcapture_writes_total[5m]))",
-          "legendFormat": "writes/s",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": { "defaults": { "unit": "wps", "min": 0 }, "overrides": [] }
-    },
-    {
-      "type": "timeseries",
-      "title": "Raw-capture байтов / сек",
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 18 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [
-        {
-          "expr": "sum(rate(moex_rawcapture_bytes_total[5m]))",
-          "legendFormat": "bytes/s",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": { "defaults": { "unit": "Bps", "min": 0 }, "overrides": [] }
-    },
-    {
-      "type": "timeseries",
-      "title": "Raw-capture ошибки / сек",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 18 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [
-        {
-          "expr": "sum(rate(moex_rawcapture_errors_total[5m]))",
-          "legendFormat": "errors/s",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "reqps",
-          "min": 0,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "red", "value": 0.01 }
-            ]
-          },
-          "custom": { "thresholdsStyle": { "mode": "line" } }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "row",
       "title": "Логи загрузок",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 },
       "collapsed": false
     },
     {
       "type": "logs",
       "title": "Остановки пагинации и завершения загрузок",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 27 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 18 },
       "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {

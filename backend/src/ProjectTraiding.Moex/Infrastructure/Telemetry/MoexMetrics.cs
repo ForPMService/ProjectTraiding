@@ -8,7 +8,6 @@ namespace ProjectTraiding.Moex.Infrastructure.Telemetry;
 /// Используются в местах действия:
 ///   MoexHttpLoggingHandler — HTTP-запросы к MOEX.
 ///   MoexRateLimitHandler   — rate limiter.
-///   MoexRawCaptureWriter   — raw-capture в S3.
 ///   MOEX-клиенты           — пагинация (страницы, строки).
 ///
 /// Атрибуты метрик: MoexTelemetryAttributes.Source, .DataKind, .StatusCode, .ErrorType.
@@ -65,20 +64,4 @@ public static class MoexMetrics
     /// <summary>Количество загруженных строк.</summary>
     public static readonly Counter<long> RowsTotal =
         Meter.CreateCounter<long>("moex.rows.total", description: "MOEX rows loaded total");
-
-    // ══════════════════════════════════════════════
-    // Raw-capture (S3)
-    // ══════════════════════════════════════════════
-
-    /// <summary>Количество записей в S3.</summary>
-    public static readonly Counter<long> RawCaptureWrites =
-        Meter.CreateCounter<long>("moex.rawcapture.writes", description: "MOEX raw capture writes total");
-
-    /// <summary>Количество ошибок записи в S3.</summary>
-    public static readonly Counter<long> RawCaptureErrors =
-        Meter.CreateCounter<long>("moex.rawcapture.errors", description: "MOEX raw capture errors total");
-
-    /// <summary>Объём записанных байтов в S3.</summary>
-    public static readonly Counter<long> RawCaptureBytes =
-        Meter.CreateCounter<long>("moex.rawcapture.bytes", unit: "By", description: "MOEX raw capture bytes written");
 }
