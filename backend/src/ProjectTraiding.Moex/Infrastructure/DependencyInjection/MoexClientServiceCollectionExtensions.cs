@@ -4,6 +4,7 @@ using ProjectTraiding.Moex.Options;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Options;
 using Polly.Timeout;
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Threading.RateLimiting;
 namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection;
@@ -37,184 +38,68 @@ public static class MoexClientServiceCollectionExtensions
             });
         });
 
-        // ══════════════════════════════════════════════
-        // ISS Client
-        // ══════════════════════════════════════════════
-        // ══════════════════════════════════════════════
-        // ISS Client
-        // Порядок обработчиков: журналирование → устойчивость → ограничитель → сокет.
-        // Ограничитель ниже слоя устойчивости, поэтому каждая повторная попытка проходит
-        // через него и расходует жетон (правка Г3, соответствие контракту 6.2).
-        // ══════════════════════════════════════════════
-        IHttpClientBuilder issClientBuilder = services.AddHttpClient<MoexHttpIssClient>((sp, client) =>
-        {
-            MoexOptions options = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
-            client.Timeout = Timeout.InfiniteTimeSpan;
-        }).ConfigurePrimaryHttpMessageHandler(sp =>
-        {
-            var options = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
-            return new SocketsHttpHandler
-            {
-                AutomaticDecompression = DecompressionMethods.All,
-                PooledConnectionLifetime = TimeSpan.FromMinutes(10),
-                PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
-                MaxConnectionsPerServer = options.MaxConnectionsPerServer,
-            };
-        });
-
-        issClientBuilder.AddHttpMessageHandler(sp => new MoexHttpLoggingHandler(
-            sp.GetRequiredService<ILogger<MoexHttpLoggingHandler>>(),
-            MoexLogSources.Iss));
-
-        issClientBuilder.AddStandardResilienceHandler(options =>
-        {
-            ConfigureStandardResilience(options, moexOptions);
-        })
-        .Configure((options, sp) =>
-        {
-            var logger = sp.GetRequiredService<ILoggerFactory>()
-                .CreateLogger($"{typeof(MoexHttpIssClient).FullName}.MoexRetryPolicy");
-            options.Retry.OnRetry = args => OnRetryHandler(args, logger, MoexLogSources.Iss);
-        });
-
-        issClientBuilder.AddHttpMessageHandler(sp => new MoexRateLimitHandler(
-            sp.GetRequiredService<RateLimiter>(),
-            sp.GetRequiredService<IOptions<MoexOptions>>().Value,
-            sp.GetRequiredService<ILogger<MoexRateLimitHandler>>()));
-
-
-
-        // ══════════════════════════════════════════════
-        // Algopack Client
-        // ══════════════════════════════════════════════
-        // ══════════════════════════════════════════════
-        // Algopack Client
-        // Порядок: журналирование → устойчивость → ограничитель → сокет (правка Г3).
-        // ══════════════════════════════════════════════
-        IHttpClientBuilder algClientBuilder = services.AddHttpClient<MoexHttpAlgClient>((sp, client) =>
-        {
-            MoexOptions options = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
-            client.Timeout = Timeout.InfiniteTimeSpan;
-        }).ConfigurePrimaryHttpMessageHandler(sp =>
-        {
-            var options = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
-            return new SocketsHttpHandler
-            {
-                AutomaticDecompression = DecompressionMethods.All,
-                PooledConnectionLifetime = TimeSpan.FromMinutes(10),
-                PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
-                MaxConnectionsPerServer = options.MaxConnectionsPerServer,
-            };
-        });
-
-        algClientBuilder.AddHttpMessageHandler(sp => new MoexHttpLoggingHandler(
-            sp.GetRequiredService<ILogger<MoexHttpLoggingHandler>>(),
-            MoexLogSources.Algopack));
-
-        algClientBuilder.AddStandardResilienceHandler(options =>
-        {
-            ConfigureStandardResilience(options, moexOptions);
-        })
-        .Configure((options, sp) =>
-        {
-            var logger = sp.GetRequiredService<ILoggerFactory>()
-                .CreateLogger($"{typeof(MoexHttpAlgClient).FullName}.MoexRetryPolicy");
-            options.Retry.OnRetry = args => OnRetryHandler(args, logger, MoexLogSources.Algopack);
-        });
-
-        algClientBuilder.AddHttpMessageHandler(sp => new MoexRateLimitHandler(
-            sp.GetRequiredService<RateLimiter>(),
-            sp.GetRequiredService<IOptions<MoexOptions>>().Value,
-            sp.GetRequiredService<ILogger<MoexRateLimitHandler>>()));
-
-        // ══════════════════════════════════════════════
-        // Calendar Client
-        // ══════════════════════════════════════════════
-        // ══════════════════════════════════════════════
-        // Calendar Client
-        // Порядок: журналирование → устойчивость → ограничитель → сокет (правка Г3).
-        // ══════════════════════════════════════════════
-        IHttpClientBuilder calendarClientBuilder = services.AddHttpClient<MoexHttpCalendarClient>((sp, client) =>
-        {
-            MoexOptions options = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
-            client.Timeout = Timeout.InfiniteTimeSpan;
-        }).ConfigurePrimaryHttpMessageHandler(sp =>
-        {
-            var options = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
-            return new SocketsHttpHandler
-            {
-                AutomaticDecompression = DecompressionMethods.All,
-                PooledConnectionLifetime = TimeSpan.FromMinutes(10),
-                PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
-                MaxConnectionsPerServer = options.MaxConnectionsPerServer,
-            };
-        });
-
-        calendarClientBuilder.AddHttpMessageHandler(sp => new MoexHttpLoggingHandler(
-            sp.GetRequiredService<ILogger<MoexHttpLoggingHandler>>(),
-            MoexLogSources.Calendar));
-
-        calendarClientBuilder.AddStandardResilienceHandler(options =>
-        {
-            ConfigureStandardResilience(options, moexOptions);
-        })
-        .Configure((options, sp) =>
-        {
-            var logger = sp.GetRequiredService<ILoggerFactory>()
-                .CreateLogger($"{typeof(MoexHttpCalendarClient).FullName}.MoexRetryPolicy");
-            options.Retry.OnRetry = args => OnRetryHandler(args, logger, MoexLogSources.Calendar);
-        });
-
-        calendarClientBuilder.AddHttpMessageHandler(sp => new MoexRateLimitHandler(
-            sp.GetRequiredService<RateLimiter>(),
-            sp.GetRequiredService<IOptions<MoexOptions>>().Value,
-            sp.GetRequiredService<ILogger<MoexRateLimitHandler>>()));
-        // ─────────────────────────────────────────────────────────────────
-
-        // ══════════════════════════════════════════════
-        // Realtime REST Client
-        // APIM base URL (платный, Authorization: Bearer из Moex:AlgKey).
-        // Порядок: журналирование → устойчивость → ограничитель → сокет (правка Г3).
-        // ══════════════════════════════════════════════
-        IHttpClientBuilder realtimeClientBuilder = services.AddHttpClient<MoexRealtimeRestClient>((sp, client) =>
-        {
-            MoexOptions options = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
-            client.Timeout = Timeout.InfiniteTimeSpan;
-        }).ConfigurePrimaryHttpMessageHandler(sp =>
-        {
-            var options = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
-            return new SocketsHttpHandler
-            {
-                AutomaticDecompression = DecompressionMethods.All,
-                PooledConnectionLifetime = TimeSpan.FromMinutes(10),
-                PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
-                MaxConnectionsPerServer = options.MaxConnectionsPerServer,
-            };
-        });
-
-        realtimeClientBuilder.AddHttpMessageHandler(sp => new MoexHttpLoggingHandler(
-            sp.GetRequiredService<ILogger<MoexHttpLoggingHandler>>(),
-            MoexLogSources.RealtimeRest));
-
-        realtimeClientBuilder.AddStandardResilienceHandler(options =>
-        {
-            ConfigureStandardResilience(options, moexOptions);
-        })
-        .Configure((options, sp) =>
-        {
-            var logger = sp.GetRequiredService<ILoggerFactory>()
-                .CreateLogger($"{typeof(MoexRealtimeRestClient).FullName}.MoexRetryPolicy");
-            options.Retry.OnRetry = args => OnRetryHandler(args, logger, MoexLogSources.RealtimeRest);
-        });
-
-        realtimeClientBuilder.AddHttpMessageHandler(sp => new MoexRateLimitHandler(
-            sp.GetRequiredService<RateLimiter>(),
-            sp.GetRequiredService<IOptions<MoexOptions>>().Value,
-            sp.GetRequiredService<ILogger<MoexRateLimitHandler>>()));
+        AddMoexHttpClient<MoexHttpIssClient>(services, moexOptions, MoexLogSources.Iss);
+        AddMoexHttpClient<MoexHttpAlgClient>(services, moexOptions, MoexLogSources.Algopack);
+        AddMoexHttpClient<MoexHttpCalendarClient>(services, moexOptions, MoexLogSources.Calendar);
+        AddMoexHttpClient<MoexRealtimeRestClient>(services, moexOptions, MoexLogSources.RealtimeRest);
 
         return services;
 
 
+    }
+
+    /// <summary>
+    /// Регистрация одного клиента Московской биржи: транспорт и общий конвейер обработчиков.
+    /// Порядок от внешнего к транспорту: устойчивость → общий ограничитель источника →
+    /// журналирование → сокет. Устойчивость сверху, потому что она владеет операцией целиком;
+    /// ограничитель под ней, потому что жетон обязана тратить каждая фактическая попытка, а не
+    /// логическая операция; журналирование под ограничителем, потому что в журнал должна попадать
+    /// только та попытка, которая допущена ограничителем и передана транспорту.
+    /// Обобщение закрывается четырьмя известными типами клиентов — отражения нет.
+    /// </summary>
+    private static void AddMoexHttpClient<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TClient>(
+        IServiceCollection services,
+        MoexOptions moexOptions,
+        string logSource)
+        where TClient : class
+    {
+        IHttpClientBuilder builder = services.AddHttpClient<TClient>(client =>
+        {
+            // Общий предел клиента снят намеренно: бюджетами владеет слой устойчивости
+            // (TotalRequestTimeout и AttemptTimeout), фазу чтения тела охраняет BodyReadTimeout.
+            client.Timeout = Timeout.InfiniteTimeSpan;
+        }).ConfigurePrimaryHttpMessageHandler(sp =>
+        {
+            MoexOptions options = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
+            return new SocketsHttpHandler
+            {
+                AutomaticDecompression = DecompressionMethods.All,
+                PooledConnectionLifetime = TimeSpan.FromMinutes(10),
+                PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
+                MaxConnectionsPerServer = options.MaxConnectionsPerServer,
+            };
+        });
+
+        builder.AddStandardResilienceHandler(options =>
+        {
+            ConfigureStandardResilience(options, moexOptions);
+        })
+        .Configure((options, sp) =>
+        {
+            ILogger logger = sp.GetRequiredService<ILoggerFactory>()
+                .CreateLogger($"{typeof(TClient).FullName}.MoexRetryPolicy");
+            options.Retry.OnRetry = args => OnRetryHandler(args, logger, logSource);
+        });
+
+        builder.AddHttpMessageHandler(sp => new MoexRateLimitHandler(
+            sp.GetRequiredService<RateLimiter>(),
+            sp.GetRequiredService<IOptions<MoexOptions>>().Value,
+            sp.GetRequiredService<ILogger<MoexRateLimitHandler>>()));
+
+        builder.AddHttpMessageHandler(sp => new MoexHttpLoggingHandler(
+            sp.GetRequiredService<ILogger<MoexHttpLoggingHandler>>(),
+            logSource));
     }
 
     // ══════════════════════════════════════════════
