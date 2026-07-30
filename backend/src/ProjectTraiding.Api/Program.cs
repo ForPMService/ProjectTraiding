@@ -35,7 +35,6 @@ builder.Services.AddRedis(builder.Configuration);
 builder.Services.AddTransient<MoexInstrumentWriter>();
 builder.Services.AddTransient<CatalogEventPublisher>();
 builder.Services.AddTransient<MoexCalendarWriter>();
-builder.Services.AddRawCapture(builder.Configuration);
 builder.Services.AddVitrine(builder.Configuration);
 builder.Services.AddManagement();
 builder.Services.AddMoexLoading(builder.Configuration);
@@ -70,10 +69,6 @@ using (IServiceScope startupScope = app.Services.CreateScope())
     ILogger<Program> startupLogger = startupScope.ServiceProvider
         .GetRequiredService<ILogger<Program>>();
     MoexOptionsValidator.ValidateAndLog(moexOptions, startupLogger);
-
-    RawCaptureOptions rawCaptureOptions = startupScope.ServiceProvider
-        .GetRequiredService<IOptions<RawCaptureOptions>>().Value;
-    RawCaptureOptionsValidator.Validate(rawCaptureOptions);
 
     if (app.Environment.IsDevelopment())
     {
