@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace ProjectTraiding.Moex.Parsing
 {
-    public class ParsingAlgUtf8
+    public static class ParsingAlgUtf8
     {
         public static List<CandlesDTO> ParseAlgCandles(ReadOnlySpan<byte> jsonBytes)
         {

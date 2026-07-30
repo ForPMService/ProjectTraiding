@@ -9,7 +9,7 @@ using System.Text.Json;
 
 namespace ProjectTraiding.Moex.Parsing
 {
-    public class ParseHelpersUtf8
+    public static class ParseHelpersUtf8
     {
         private static readonly ColumnAndNumbersForParsing.ExpectedSchema CursorSchema = new(
             TotalColumns: 3,

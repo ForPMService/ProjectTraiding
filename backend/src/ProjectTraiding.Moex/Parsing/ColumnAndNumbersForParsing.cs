@@ -1,6 +1,6 @@
 namespace ProjectTraiding.Moex.Parsing
 {
-    public class ColumnAndNumbersForParsing
+    public static class ColumnAndNumbersForParsing
     {
         /// <summary>
         /// Одна ожидаемая колонка в ответе MOEX.
