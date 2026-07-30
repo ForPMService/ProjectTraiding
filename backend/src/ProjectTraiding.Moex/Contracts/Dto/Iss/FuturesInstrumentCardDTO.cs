@@ -10,11 +10,11 @@ namespace ProjectTraiding.Moex.Contracts.Dto.Iss
     /// Карточка конкретного инструмента = строка из списочного ответа по SECID.
     /// Отдельный пер-тикерный вызов не нужен (решение из MOEX_Cards_Handoff_v0_1).
     ///
-    /// Probe: probe-14, 2026-06-01. Securities 15 из 26 колонок, marketdata 14 из 37.
+    /// Probe: probe-14, 2026-06-01. Securities 16 из 26 колонок, marketdata 14 из 37.
     /// </summary>
     public record FuturesInstrumentCardDTO
     {
-        // ── securities (15 полей) ──────────────────────────────
+        // ── securities (16 полей) ──────────────────────────────
 
         /// <summary>Код инструмента. MOEX: SECID [0]. Пример: "SiM6".</summary>
         public string? SecId { get; init; }
@@ -39,6 +39,15 @@ namespace ProjectTraiding.Moex.Contracts.Dto.Iss
 
         /// <summary>Дата исполнения. MOEX: LASTDELDATE [8]. Пример: "2026-06-18".</summary>
         public string? LastDelDate { get; init; }
+
+        /// <summary>
+        /// Код серии контракта. MOEX: SECTYPE [9].
+        /// Примеры: "SR" у SRU6, "Si" у SiU6.
+        /// Используется как ключ запроса открытого интереса.
+        /// Не равен коду базового актива: у SRU6 SECTYPE = "SR",
+        /// тогда как ASSETCODE = "SBRF".
+        /// </summary>
+        public string? SecType { get; init; }
 
         /// <summary>Код базового актива. MOEX: ASSETCODE [11]. Пример: "Si".</summary>
         public string? AssetCode { get; init; }

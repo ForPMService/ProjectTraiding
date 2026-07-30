@@ -45,7 +45,7 @@ namespace ProjectTraiding.Moex.Endpoints
         }
         public static IEndpointRouteBuilder MapCalendarLoadEndpoints(this IEndpointRouteBuilder routes)
         {
-            routes.MapGet("/operations/moex/sync/calendar/stock", async (
+            routes.MapPost("/management/moex/sync/calendar/stock", async (
                 HttpContext httpContext,
                 MoexHttpCalendarClient client,
                 MoexCalendarWriter writer,
@@ -56,7 +56,7 @@ namespace ProjectTraiding.Moex.Endpoints
                 return Results.Json(result, AppJsonContext.Default.LoadResultDto);
             });
 
-            routes.MapGet("/operations/moex/sync/calendar/futures", async (
+            routes.MapPost("/management/moex/sync/calendar/futures", async (
                 HttpContext httpContext,
                 MoexHttpCalendarClient client,
                 MoexCalendarWriter writer,

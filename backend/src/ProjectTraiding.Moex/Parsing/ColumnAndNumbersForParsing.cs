@@ -614,7 +614,7 @@ namespace ProjectTraiding.Moex.Parsing
         // Карточка фьючерса — securities
         // Источник: /engines/futures/markets/forts/boards/RFUD/securities.json
         // Probe: probe-14, 2026-06-01
-        // rootKey: "securities", columnCount: 26, используем: 15
+        // rootKey: "securities", columnCount: 26, используем: 16
         // ═══════════════════════════════════════════════════════════
  
         public static readonly ExpectedSchema FuturesCardSecuritiesSchema = new(
@@ -630,13 +630,14 @@ namespace ProjectTraiding.Moex.Parsing
                 new(6,  "MINSTEP"u8.ToArray()),        // case 5
                 new(7,  "LASTTRADEDATE"u8.ToArray()),  // case 6
                 new(8,  "LASTDELDATE"u8.ToArray()),    // case 7
-                new(11, "ASSETCODE"u8.ToArray()),      // case 8
-                new(13, "LOTVOLUME"u8.ToArray()),      // case 9
-                new(14, "INITIALMARGIN"u8.ToArray()),  // case 10
-                new(15, "HIGHLIMIT"u8.ToArray()),      // case 11
-                new(16, "LOWLIMIT"u8.ToArray()),       // case 12
-                new(17, "STEPPRICE"u8.ToArray()),      // case 13
-                new(21, "BUYSELLFEE"u8.ToArray()),     // case 14
+                new(9,  "SECTYPE"u8.ToArray()),        // case 8
+                new(11, "ASSETCODE"u8.ToArray()),      // case 9
+                new(13, "LOTVOLUME"u8.ToArray()),      // case 10
+                new(14, "INITIALMARGIN"u8.ToArray()),  // case 11
+                new(15, "HIGHLIMIT"u8.ToArray()),      // case 12
+                new(16, "LOWLIMIT"u8.ToArray()),       // case 13
+                new(17, "STEPPRICE"u8.ToArray()),      // case 14
+                new(21, "BUYSELLFEE"u8.ToArray()),     // case 15
             });
  
         // ═══════════════════════════════════════════════════════════

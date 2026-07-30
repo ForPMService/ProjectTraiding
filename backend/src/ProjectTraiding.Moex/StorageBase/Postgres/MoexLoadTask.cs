@@ -20,5 +20,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         string StorageTarget,
         string SourceContractVersion,
         string WriterVersion,
-        string Status);
+        string Status,
+        string? SecType);
 }

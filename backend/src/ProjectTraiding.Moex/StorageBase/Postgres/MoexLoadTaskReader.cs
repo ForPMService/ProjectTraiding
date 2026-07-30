@@ -22,11 +22,23 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         {
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
             await using NpgsqlCommand cmd = new NpgsqlCommand("""
-                SELECT id, secid, market, boardid, data_kind, candle_interval,
-                       date_from, date_till, storage_target,
-                       source_contract_version, writer_version, status
-                FROM moex_load_tasks
-                WHERE id = @id
+                SELECT t.id,
+                       t.secid,
+                       t.market,
+                       t.boardid,
+                       t.data_kind,
+                       t.candle_interval,
+                       t.date_from,
+                       t.date_till,
+                       t.storage_target,
+                       t.source_contract_version,
+                       t.writer_version,
+                       t.status,
+                       f.sectype
+                FROM moex_load_tasks t
+                LEFT JOIN moex_futures_details f
+                    ON f.secid = t.secid
+                WHERE t.id = @id
                 """, connection);
             cmd.Parameters.Add("@id", NpgsqlDbType.Uuid).Value = taskId;
 
@@ -46,7 +58,10 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 StorageTarget: reader.GetString(8),
                 SourceContractVersion: reader.GetString(9),
                 WriterVersion: reader.GetString(10),
-                Status: reader.GetString(11));
+                Status: reader.GetString(11),
+                SecType: reader.IsDBNull(12)
+                    ? null
+                    : reader.GetString(12));
         }
 
         /// <summary>

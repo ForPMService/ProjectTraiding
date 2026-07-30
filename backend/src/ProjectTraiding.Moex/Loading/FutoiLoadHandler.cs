@@ -25,10 +25,39 @@ namespace ProjectTraiding.Moex.Loading
         public bool CanHandle(MoexLoadTask task) =>
             task.DataKind == "futoi" && task.Market == "futures";
 
+        private static bool IsPerpetual(string secid)
+        {
+            return secid is "USDRUBF"
+                or "EURRUBF"
+                or "CNYRUBF"
+                or "IMOEXF"
+                or "GLDRUBF"
+                or "SBERF"
+                or "GAZPF";
+        }
+
+        private static string ResolveRequestKey(MoexLoadTask task)
+        {
+            if (IsPerpetual(task.Secid))
+                return task.Secid;
+
+            if (string.IsNullOrWhiteSpace(task.SecType))
+            {
+                throw new InvalidOperationException(
+                    $"Открытый интерес требует код серии контракта; " +
+                    $"у инструмента {task.Secid} SECTYPE не заполнен.");
+            }
+
+            return task.SecType;
+        }
+
         public async Task<RowWriteSummary> LoadAsync(
             MoexLoadTask task, LoadStopOutcome stopOutcome, ILoadProgressReporter progress, CancellationToken ct)
         {
-            string method = $"/analyticalproducts/futoi/securities/{task.Secid}.json";
+            string requestKey = ResolveRequestKey(task);
+
+            string method =
+                $"/analyticalproducts/futoi/securities/{requestKey}.json";
             Dictionary<string, string> query = new Dictionary<string, string>
             {
                 ["from"] = task.DateFrom.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),

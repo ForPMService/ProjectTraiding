@@ -15,7 +15,6 @@ namespace ProjectTraiding.Management.DependencyInjection
             services.AddTransient<LoadTaskWriter>();
             services.AddTransient<LoadedRangeCoverageReader>();
             services.AddTransient<RealtimeSubscriptionWriter>();
-            services.AddTransient<RealtimeSubscriptionReader>();
             services.AddTransient<TariffEventPublisher>();
             return services;
         }

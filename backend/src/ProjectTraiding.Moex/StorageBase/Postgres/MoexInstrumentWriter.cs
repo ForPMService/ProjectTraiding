@@ -180,17 +180,18 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                     // ── UPSERT 2: детали moex_futures_details ──
                     await using NpgsqlCommand detailsCommand = new NpgsqlCommand("""
                         INSERT INTO moex_futures_details
-                            (secid, boardid, shortname, secname, asset_code, initial_margin, minstep,
+                            (secid, boardid, shortname, secname, sectype, asset_code, initial_margin, minstep,
                              stepprice, lotvolume, decimals, last_trade_date, last_del_date,
                              high_limit, low_limit, buysell_fee, updated_at)
                         VALUES
-                            (@secid, @boardid, @shortname, @secname, @asset_code, @initial_margin, @minstep,
+                            (@secid, @boardid, @shortname, @secname, @sectype, @asset_code, @initial_margin, @minstep,
                              @stepprice, @lotvolume, @decimals, @last_trade_date, @last_del_date,
                              @high_limit, @low_limit, @buysell_fee, now())
                         ON CONFLICT (secid) DO UPDATE SET
                             boardid         = EXCLUDED.boardid,
                             shortname       = EXCLUDED.shortname,
                             secname         = EXCLUDED.secname,
+                            sectype         = EXCLUDED.sectype,
                             asset_code      = EXCLUDED.asset_code,
                             initial_margin  = EXCLUDED.initial_margin,
                             minstep         = EXCLUDED.minstep,
@@ -209,6 +210,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                     detailsCommand.Parameters.Add("@boardid", NpgsqlDbType.Text).Value = future.BoardId;
                     detailsCommand.Parameters.Add("@shortname", NpgsqlDbType.Text).Value = (object?)future.ShortName ?? DBNull.Value;
                     detailsCommand.Parameters.Add("@secname", NpgsqlDbType.Text).Value = (object?)future.SecName ?? DBNull.Value;
+                    detailsCommand.Parameters.Add("@sectype", NpgsqlDbType.Text).Value = (object?)future.SecType ?? DBNull.Value;
                     detailsCommand.Parameters.Add("@asset_code", NpgsqlDbType.Text).Value = (object?)future.AssetCode ?? DBNull.Value;
                     detailsCommand.Parameters.Add("@initial_margin", NpgsqlDbType.Numeric).Value = (object?)future.InitialMargin ?? DBNull.Value;
                     detailsCommand.Parameters.Add("@minstep", NpgsqlDbType.Numeric).Value = (object?)future.MinStep ?? DBNull.Value;

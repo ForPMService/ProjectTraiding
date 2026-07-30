@@ -57,9 +57,15 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
             if (string.IsNullOrWhiteSpace(item.ClGroup))
                 throw new InvalidOperationException("Строка открытого интереса отвергнута: clgroup пустой.");
 
+            if (string.IsNullOrWhiteSpace(item.Ticker))
+            {
+                throw new InvalidOperationException(
+                    "Строка открытого интереса отвергнута: ticker пустой.");
+            }
+
             object?[] row =
             {
-                secid,
+                item.Ticker,
                 sourceTime,
                 item.ClGroup,
                 item.SessId,

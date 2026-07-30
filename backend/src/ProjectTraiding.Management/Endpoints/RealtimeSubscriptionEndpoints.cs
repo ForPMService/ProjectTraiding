@@ -11,20 +11,6 @@ namespace ProjectTraiding.Management.Endpoints
     {
         public static IEndpointRouteBuilder MapRealtimeSubscriptionEndpoints(this IEndpointRouteBuilder routes)
         {
-            routes.MapGet("/management/realtime-subscriptions/{secid}", async (
-                string secid,
-                RealtimeSubscriptionReader reader,
-                ILogger<RealtimeSubscriptionEndpointsLog> logger,
-                CancellationToken ct) =>
-            {
-                const string route = "GET /management/realtime-subscriptions/{secid}";
-                ManagementEndpointLogMessages.OperationStarted(logger, route);
-
-                string[] dataKinds = await reader.GetEnabledDataKindsAsync(secid, ct);
-                RealtimeSubscriptionConfigurationDto dto = new(secid, dataKinds);
-                return Results.Json(dto, ManagementJsonContext.Default.RealtimeSubscriptionConfigurationDto);
-            });
-
             routes.MapGet("/management/realtime-subscriptions/{secid}/trades/enable", async (
                 string secid,
                 RealtimeSubscriptionWriter writer,

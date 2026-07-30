@@ -78,13 +78,15 @@ using (IServiceScope startupScope = app.Services.CreateScope())
     }
 }
 app.MapObservabilityEndpoints();
-app.MapMoexSyncEndpoints();
 app.MapMoexLoadRunEndpoints();
 
 // Управление — под ведро управления (редкие команды оператора, 1 в 30 с).
-app.MapGroup(string.Empty)
-    .RequireRateLimiting(RateLimiting.ManagementPolicy)
-    .MapManagementEndpoints();
+RouteGroupBuilder managementRoutes = app
+    .MapGroup(string.Empty)
+    .RequireRateLimiting(RateLimiting.ManagementPolicy);
+
+managementRoutes.MapManagementEndpoints();
+managementRoutes.MapMoexSyncEndpoints();
 
 // Витрина — под ведро витрины (частый публичный поток, 1 в 2 с, ёмкость под всплеск).
 app.MapGroup(string.Empty)

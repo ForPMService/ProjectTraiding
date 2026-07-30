@@ -8,7 +8,7 @@ using ProjectTraiding.Moex.StorageBase.Redis;
 namespace ProjectTraiding.Moex.Endpoints
 {
     /// <summary>
-    /// Операционные sync endpoint-ы для карточек инструментов.
+    /// Management sync endpoint-ы для карточек инструментов.
     /// По запросу идут в MOEX, парсят ответ и синхронизируют данные в PostgreSQL.
     /// </summary>
     public static class InstrumentCardEndpoints
@@ -16,7 +16,7 @@ namespace ProjectTraiding.Moex.Endpoints
 
         public static IEndpointRouteBuilder MapInstrumentCardLoadEndpoints(this IEndpointRouteBuilder routes)
         {
-            routes.MapGet("/operations/moex/sync/instruments/stock", async (
+            routes.MapPost("/management/moex/sync/instruments/stock", async (
                 HttpContext httpContext,
                 MoexHttpIssClient client,
                 MoexInstrumentWriter writer,
@@ -27,7 +27,7 @@ namespace ProjectTraiding.Moex.Endpoints
                 return Results.Json(result, AppJsonContext.Default.LoadResultDto);
             });
 
-            routes.MapGet("/operations/moex/sync/instruments/futures", async (
+            routes.MapPost("/management/moex/sync/instruments/futures", async (
                 HttpContext httpContext,
                 MoexHttpAlgClient client,
                 MoexInstrumentWriter writer,
@@ -38,7 +38,7 @@ namespace ProjectTraiding.Moex.Endpoints
                 return Results.Json(result, AppJsonContext.Default.LoadResultDto);
             });
 
-            routes.MapGet("/operations/moex/sync/bootstrap", async (
+            routes.MapPost("/management/moex/sync/bootstrap", async (
                 HttpContext httpContext,
                 MoexHttpIssClient issClient,
                 MoexHttpAlgClient algClient,
