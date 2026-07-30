@@ -104,13 +104,14 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
                 sp.GetRequiredService<ILogger<RowWriter<MegaAlertsFuturesDTO>>>(), batchSize));
 
             // Обработчики видов — диспетчер соберёт их все через IEnumerable<ILoadHandler>.
-            // Десять видов одной формы закрыты обобщённым обработчиком парой «паспорт × строка».
+            // Девять курсорных видов закрыты обобщённым обработчиком парой «паспорт × строка»;
+            // FUTOI и свечи остаются отдельными обработчиками из-за иной формы загрузки.
             services.AddScoped<ILoadHandler, SeriesLoadHandler<TradeStatsStockKind, SuperCandlesTradeStats5mDTO>>();
             services.AddScoped<ILoadHandler, SeriesLoadHandler<TradeStatsFuturesKind, SuperCandlesFuturesTradeStats5mDTO>>();
             services.AddScoped<ILoadHandler, SeriesLoadHandler<ObStatsStockKind, SuperCandlesOrderBookStats5mDTO>>();
             services.AddScoped<ILoadHandler, SeriesLoadHandler<ObStatsFuturesKind, SuperCandlesFuturesOrderBookStats5mDTO>>();
             services.AddScoped<ILoadHandler, SeriesLoadHandler<OrderStatsStockKind, SuperCandlesOrderStats5mDTO>>();
-            services.AddScoped<ILoadHandler, SeriesLoadHandler<FutoiKind, FutoiDTO>>();
+            services.AddScoped<ILoadHandler, FutoiLoadHandler>();
             services.AddScoped<ILoadHandler, SeriesLoadHandler<Hi2StockKind, Hi2AssetDTO>>();
             services.AddScoped<ILoadHandler, SeriesLoadHandler<Hi2FuturesKind, Hi2FuturesDTO>>();
             services.AddScoped<ILoadHandler, SeriesLoadHandler<MegaAlertsStockKind, MegaAlertsAssetsDTO>>();

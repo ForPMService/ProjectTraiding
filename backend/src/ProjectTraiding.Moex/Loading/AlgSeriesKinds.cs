@@ -90,22 +90,6 @@ namespace ProjectTraiding.Moex.Loading
                 stopOutcome: stopOutcome, cancellationToken: ct);
     }
 
-    public readonly struct FutoiKind : ILoadKind<FutoiDTO>
-    {
-        public static string DataKind => "futoi";
-        public static string Market => "futures";
-
-        public static string BuildMethod(string secid) =>
-            $"/analyticalproducts/futoi/securities/{secid}.json";
-
-        public static IAsyncEnumerable<List<FutoiDTO>> GetPages(
-            MoexHttpAlgClient client, string method, Dictionary<string, string> query,
-            LoadStopOutcome stopOutcome, CancellationToken ct)
-            => client.StreamFutoi(
-                method, query,
-                stopOutcome: stopOutcome, cancellationToken: ct);
-    }
-
     public readonly struct Hi2StockKind : ILoadKind<Hi2AssetDTO>
     {
         public static string DataKind => "hi2";
