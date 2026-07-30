@@ -18,7 +18,9 @@ namespace ProjectTraiding.Moex.Clients
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
-            string endpoint = request.RequestUri?.ToString() ?? "unknown";
+            // Без схемы и узла: базовый адрес постоянен и не несёт сведений, а полный адрес
+            // рискует вынести в журнал то, что в него попадать не должно. Параметры запроса сохраняются.
+            string endpoint = request.RequestUri?.PathAndQuery ?? "unknown";
 
             MoexLogMessages.HttpRequestSent(_logger, _source, request.Method.Method, endpoint);
             MoexMetrics.HttpRequests.Add(1,

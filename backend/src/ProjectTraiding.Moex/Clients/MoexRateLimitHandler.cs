@@ -10,12 +10,13 @@ namespace ProjectTraiding.Moex.Clients
     /// DelegatingHandler, который запрашивает permit у rate limiter
     /// перед каждым HTTP-запросом к MOEX.
     ///
-    /// Один экземпляр RateLimiter делится между всеми клиентами (ISS, ALGOPACK, Calendar),
+    /// Один экземпляр RateLimiter делится между всеми клиентами
+    /// (ISS, ALGOPACK, Calendar, Realtime REST),
     /// потому что лимит MOEX — на IP, а не на endpoint.
     ///
-    /// Стоит в pipeline перед Polly: retry-попытки тоже проходят через limiter
-    /// и расходуют permit, потому что с точки зрения MOEX каждый retry —
-    /// полноценный HTTP-запрос.
+    /// Стоит после слоя устойчивости и перед журналированием: слой устойчивости передаёт
+    /// сюда каждую фактическую попытку отдельно, поэтому каждый повтор получает собственный
+    /// жетон общего ограничения частоты.
     ///
     /// Если permit не получен — бросается MoexRateLimitRejectedException,
     /// запрос не уходит в сеть.
@@ -112,8 +113,9 @@ namespace ProjectTraiding.Moex.Clients
                     MoexMetrics.RateLimitQueued.Add(1);
                 }
 
-                // Передаём запрос дальше по цепочке handler'ов.
-                // Дальше пойдёт MoexHttpLoggingHandler → Polly → SocketsHttpHandler → сеть.
+                // Жетон получен — ниже по цепи остаются журналирование и транспорт.
+                // Слой устойчивости находится выше: повторы приходят сюда поодиночке, каждая
+                // попытка со своим жетоном.
                 return await base.SendAsync(request, cancellationToken);
             }
         }
