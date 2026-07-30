@@ -69,6 +69,38 @@
       "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
     },
+     {
+      "type": "stat",
+      "title": "Страниц за выбранный период (по data_kind)",
+      "description": "Прирост счётчика за диапазон, выбранный в timepicker. Для пакетных загрузок это осмысленнее скорости в секунду",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 13 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (data_kind) (increase(moex_pages_total[$__range]))",
+          "legendFormat": "{{ data_kind }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "stat",
+      "title": "Строк за выбранный период (по data_kind)",
+      "description": "Сколько строк отдал источник за диапазон. Сверяется с числом строк в ClickHouse после загрузки",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 13 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (data_kind) (increase(moex_rows_total[$__range]))",
+          "legendFormat": "{{ data_kind }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
     {
       "type": "timeseries",
       "title": "Страниц / сек по источнику",
