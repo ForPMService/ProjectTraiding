@@ -11,9 +11,9 @@ using ProjectTraiding.Moex.StorageBase.Redis;
 namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
 {
     /// <summary>
-    /// Регистрация приёмника реального времени: читатель инструментов, писатели курсора,
-    /// покрытия, ClickHouse и Redis, а также независимые фоновые службы сделок, стакана и свечей.
-    /// Отдельно от AddMoexRealtimeStorage намеренно — порядок наведём при ревизии.
+    /// Регистрация включаемого контура реального времени: карты столбцов, читатель инструментов,
+    /// писатели курсора, покрытия, ClickHouse и Redis, а также независимые фоновые службы
+    /// сделок, стакана и свечей.
     /// </summary>
     public static class MoexRealtimeReceiverServiceCollectionExtensions
     {
@@ -30,13 +30,17 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
             if (!moexOptions.RealtimeReceiverEnabled)
                 return services;
 
+            services.AddSingleton<RealtimeTradesStockRowMap>();
+            services.AddSingleton<RealtimeTradesFuturesRowMap>();
+            services.AddSingleton<RealtimeOrderbookRowMap>();
+
             services.AddSingleton<MoexReceiverInstrumentReader>();
             services.AddSingleton<StreamCursorWriter>();
             services.AddSingleton<StreamCoverageWriter>();
             services.AddSingleton<RealtimeLatestWriter>();
 
-            // Прямые писатели ClickHouse: один на вид строки. Исполнитель и карты уже
-            // зарегистрированы (AddMoexLoading / AddMoexRealtimeStorage).
+            // Прямые писатели ClickHouse: один на вид строки. Исполнитель зарегистрирован
+            // исторической загрузкой, карты — выше в этой включённой ветви.
             services.AddTransient(sp => new RealtimeRowWriter<RealtimeTradesStockDTO>(
                 sp.GetRequiredService<ClickHouseInsertExecutor>(),
                 sp.GetRequiredService<RealtimeTradesStockRowMap>(),
