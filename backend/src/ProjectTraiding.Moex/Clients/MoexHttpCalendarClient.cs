@@ -44,8 +44,8 @@ namespace ProjectTraiding.Moex.Clients
         {
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
             activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Calendar);
-            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OffDays);
-            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Stock);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, MoexDataKinds.OffDays);
+            activity?.SetTag(MoexTelemetryAttributes.Market, MoexMarkets.Stock);
 
             const string endpoint = "/calendars/stock.json";
             string effectiveRunId = runId
@@ -68,16 +68,16 @@ namespace ProjectTraiding.Moex.Clients
                     MoexMetrics.PagesTotal.Add(
                         1,
                         new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
-                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OffDays));
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.OffDays));
                     MoexMetrics.RowsTotal.Add(
                         result.Count,
                         new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
-                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OffDays));
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.OffDays));
                     await RawCaptureHelper.CaptureSingleAsync(
                         _captureWriter,
                         RawCaptureClients.Calendar,
-                        RawCaptureDataTypes.OffDays,
-                        RawCaptureMarkets.Stock,
+                        MoexDataKinds.OffDays,
+                        MoexMarkets.Stock,
                         null,
                         effectiveRunId,
                         rentedArr.Memory,
@@ -92,8 +92,8 @@ namespace ProjectTraiding.Moex.Clients
                         string key = RawCaptureKeyBuilder.BuildErrorKey(
                             RawCaptureErrorTypes.SchemaMismatch,
                             RawCaptureClients.Calendar,
-                            RawCaptureDataTypes.OffDays,
-                            RawCaptureMarkets.Stock,
+                            MoexDataKinds.OffDays,
+                            MoexMarkets.Stock,
                             null,
                             DateOnly.FromDateTime(DateTime.UtcNow),
                             effectiveRunId,
@@ -110,8 +110,8 @@ namespace ProjectTraiding.Moex.Clients
                     string key = RawCaptureKeyBuilder.BuildErrorKey(
                         RawCaptureErrorTypes.HttpError,
                         RawCaptureClients.Calendar,
-                        RawCaptureDataTypes.OffDays,
-                        RawCaptureMarkets.Stock,
+                        MoexDataKinds.OffDays,
+                        MoexMarkets.Stock,
                         null,
                         DateOnly.FromDateTime(DateTime.UtcNow),
                         effectiveRunId,
@@ -128,8 +128,8 @@ namespace ProjectTraiding.Moex.Clients
         {
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
             activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Calendar);
-            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OffDays);
-            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Futures);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, MoexDataKinds.OffDays);
+            activity?.SetTag(MoexTelemetryAttributes.Market, MoexMarkets.Futures);
 
             const string endpoint = "/calendars/futures.json";
             string effectiveRunId = runId
@@ -152,16 +152,16 @@ namespace ProjectTraiding.Moex.Clients
                     MoexMetrics.PagesTotal.Add(
                         1,
                         new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
-                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OffDays));
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.OffDays));
                     MoexMetrics.RowsTotal.Add(
                         result.Count,
                         new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
-                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.OffDays));
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.OffDays));
                     await RawCaptureHelper.CaptureSingleAsync(
                         _captureWriter,
                         RawCaptureClients.Calendar,
-                        RawCaptureDataTypes.OffDays,
-                        RawCaptureMarkets.Futures,
+                        MoexDataKinds.OffDays,
+                        MoexMarkets.Futures,
                         null,
                         effectiveRunId,
                         rentedArr.Memory,
@@ -176,8 +176,8 @@ namespace ProjectTraiding.Moex.Clients
                         string key = RawCaptureKeyBuilder.BuildErrorKey(
                             RawCaptureErrorTypes.SchemaMismatch,
                             RawCaptureClients.Calendar,
-                            RawCaptureDataTypes.OffDays,
-                            RawCaptureMarkets.Futures,
+                            MoexDataKinds.OffDays,
+                            MoexMarkets.Futures,
                             null,
                             DateOnly.FromDateTime(DateTime.UtcNow),
                             effectiveRunId,
@@ -194,8 +194,8 @@ namespace ProjectTraiding.Moex.Clients
                     string key = RawCaptureKeyBuilder.BuildErrorKey(
                         RawCaptureErrorTypes.HttpError,
                         RawCaptureClients.Calendar,
-                        RawCaptureDataTypes.OffDays,
-                        RawCaptureMarkets.Futures,
+                        MoexDataKinds.OffDays,
+                        MoexMarkets.Futures,
                         null,
                         DateOnly.FromDateTime(DateTime.UtcNow),
                         effectiveRunId,

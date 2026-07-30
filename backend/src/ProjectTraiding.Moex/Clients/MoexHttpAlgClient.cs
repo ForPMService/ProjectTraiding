@@ -72,7 +72,7 @@ namespace ProjectTraiding.Moex.Clients
         {
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
             activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
-            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Candles);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, MoexDataKinds.Candles);
             if (!string.IsNullOrWhiteSpace(captureMarket))
             {
                 activity?.SetTag(MoexTelemetryAttributes.Market, captureMarket);
@@ -95,7 +95,7 @@ namespace ProjectTraiding.Moex.Clients
             var accumulator = new RawCaptureAccumulator(
                 _captureWriter,
                 RawCaptureClients.Alg,
-                RawCaptureDataTypes.Candles,
+                MoexDataKinds.Candles,
                 captureMarket,
                 secid,
                 effectiveRunId);
@@ -119,7 +119,7 @@ namespace ProjectTraiding.Moex.Clients
                         string key = RawCaptureKeyBuilder.BuildErrorKey(
                             RawCaptureErrorTypes.HttpError,
                             RawCaptureClients.Alg,
-                            RawCaptureDataTypes.Candles,
+                            MoexDataKinds.Candles,
                             captureMarket, secid,
                             DateOnly.FromDateTime(DateTime.UtcNow),
                             effectiveRunId,
@@ -151,7 +151,7 @@ namespace ProjectTraiding.Moex.Clients
                             string key = RawCaptureKeyBuilder.BuildErrorKey(
                                 RawCaptureErrorTypes.SchemaMismatch,
                                 RawCaptureClients.Alg,
-                                RawCaptureDataTypes.Candles,
+                                MoexDataKinds.Candles,
                                 captureMarket, secid,
                                 DateOnly.FromDateTime(DateTime.UtcNow),
                                 effectiveRunId,
@@ -168,11 +168,11 @@ namespace ProjectTraiding.Moex.Clients
                 MoexMetrics.PagesTotal.Add(
                     1,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Candles));
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Candles));
                 MoexMetrics.RowsTotal.Add(
                     candlesList.Count,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Candles));
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Candles));
                 yield return candlesList;
                 if (candlesList.Count >= 500)
                 {
@@ -207,8 +207,8 @@ namespace ProjectTraiding.Moex.Clients
         {
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
             activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
-            activity?.SetTag(MoexTelemetryAttributes.DataKind, TKind.CaptureDataType);
-            activity?.SetTag(MoexTelemetryAttributes.Market, TKind.CaptureMarket);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, TKind.TelemetryDataKind);
+            activity?.SetTag(MoexTelemetryAttributes.Market, TKind.TelemetryMarket);
 
             queryParams ??= new Dictionary<string, string>();
             queryParams["iss.meta"] = "off";
@@ -221,8 +221,8 @@ namespace ProjectTraiding.Moex.Clients
             var accumulator = new RawCaptureAccumulator(
                 _captureWriter,
                 RawCaptureClients.Alg,
-                TKind.CaptureDataType,
-                TKind.CaptureMarket,
+                TKind.TelemetryDataKind,
+                TKind.TelemetryMarket,
                 secid,
                 effectiveRunId);
             int pagesElapsed = 0;
@@ -244,8 +244,8 @@ namespace ProjectTraiding.Moex.Clients
                         string key = RawCaptureKeyBuilder.BuildErrorKey(
                             RawCaptureErrorTypes.HttpError,
                             RawCaptureClients.Alg,
-                            TKind.CaptureDataType,
-                            TKind.CaptureMarket, secid,
+                            TKind.TelemetryDataKind,
+                            TKind.TelemetryMarket, secid,
                             DateOnly.FromDateTime(DateTime.UtcNow),
                             effectiveRunId,
                             RawCaptureKeyBuilder.PageFileName(pagesElapsed + 1));
@@ -277,8 +277,8 @@ namespace ProjectTraiding.Moex.Clients
                             string key = RawCaptureKeyBuilder.BuildErrorKey(
                                 RawCaptureErrorTypes.SchemaMismatch,
                                 RawCaptureClients.Alg,
-                                TKind.CaptureDataType,
-                                TKind.CaptureMarket, secid,
+                                TKind.TelemetryDataKind,
+                                TKind.TelemetryMarket, secid,
                                 DateOnly.FromDateTime(DateTime.UtcNow),
                                 effectiveRunId,
                                 RawCaptureKeyBuilder.PageFileName(pagesElapsed + 1));
@@ -294,11 +294,11 @@ namespace ProjectTraiding.Moex.Clients
                 MoexMetrics.PagesTotal.Add(
                     1,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, TKind.CaptureDataType));
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, TKind.TelemetryDataKind));
                 MoexMetrics.RowsTotal.Add(
                     rows.Count,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, TKind.CaptureDataType));
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, TKind.TelemetryDataKind));
                 yield return rows;
                 PaginationStep step = MoexCursorPagination.Next(cursor, pagesElapsed, _options.MaxPagesPerLoad);
                 if (step.IsStop)
@@ -373,8 +373,8 @@ namespace ProjectTraiding.Moex.Clients
         {
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
             activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
-            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Futoi);
-            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Futures);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, MoexDataKinds.Futoi);
+            activity?.SetTag(MoexTelemetryAttributes.Market, MoexMarkets.Futures);
 
             queryParams ??= new Dictionary<string, string>();
             queryParams["iss.meta"] = "off";
@@ -410,8 +410,8 @@ namespace ProjectTraiding.Moex.Clients
             var accumulator = new RawCaptureAccumulator(
                 _captureWriter,
                 RawCaptureClients.Alg,
-                RawCaptureDataTypes.Futoi,
-                RawCaptureMarkets.Futures,
+                MoexDataKinds.Futoi,
+                MoexMarkets.Futures,
                 secid,
                 effectiveRunId);
             int dayIndex = 0;
@@ -438,8 +438,8 @@ namespace ProjectTraiding.Moex.Clients
                         string key = RawCaptureKeyBuilder.BuildErrorKey(
                             RawCaptureErrorTypes.HttpError,
                             RawCaptureClients.Alg,
-                            RawCaptureDataTypes.Futoi,
-                            RawCaptureMarkets.Futures, secid,
+                            MoexDataKinds.Futoi,
+                            MoexMarkets.Futures, secid,
                             DateOnly.FromDateTime(DateTime.UtcNow),
                             effectiveRunId,
                             RawCaptureKeyBuilder.DateFileName(DateOnly.FromDateTime(date)));
@@ -470,8 +470,8 @@ namespace ProjectTraiding.Moex.Clients
                             string key = RawCaptureKeyBuilder.BuildErrorKey(
                                 RawCaptureErrorTypes.SchemaMismatch,
                                 RawCaptureClients.Alg,
-                                RawCaptureDataTypes.Futoi,
-                                RawCaptureMarkets.Futures, secid,
+                                MoexDataKinds.Futoi,
+                                MoexMarkets.Futures, secid,
                                 DateOnly.FromDateTime(DateTime.UtcNow),
                                 effectiveRunId,
                                 RawCaptureKeyBuilder.DateFileName(DateOnly.FromDateTime(date)));
@@ -487,11 +487,11 @@ namespace ProjectTraiding.Moex.Clients
                 MoexMetrics.PagesTotal.Add(
                     1,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Futoi));
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Futoi));
                 MoexMetrics.RowsTotal.Add(
                     page.Count,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Futoi));
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Futoi));
 
                 if (page.Count > 0)
                 {

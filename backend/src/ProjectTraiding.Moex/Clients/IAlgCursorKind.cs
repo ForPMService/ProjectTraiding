@@ -5,8 +5,8 @@ using ProjectTraiding.Moex.Parsing;
 namespace ProjectTraiding.Moex.Clients
 {
     /// <summary>
-    /// Паспорт разбора одного курсорного вида данных ALGOPACK: метки телеметрии и сырого
-    /// снимка, ожидаемая схема колонок и привязка к разборщику. Все члены статические и
+    /// Паспорт разбора одного курсорного вида данных ALGOPACK: метки телеметрии,
+    /// ожидаемая схема колонок и привязка к разборщику. Все члены статические и
     /// разрешаются на этапе компиляции: обобщённый метод клиента, закрытый структурой-паспортом,
     /// при нативной компиляции мономорфизируется — вызовы прямые, без делегатов, отражения
     /// и виртуальности.
@@ -14,11 +14,11 @@ namespace ProjectTraiding.Moex.Clients
     /// <typeparam name="TRow">Тип объекта передачи данных одной строки источника.</typeparam>
     public interface IAlgCursorKind<TRow>
     {
-        /// <summary>Метка вида данных для телеметрии и ключей сырого снимка (RawCaptureDataTypes).</summary>
-        static abstract string CaptureDataType { get; }
+        /// <summary>Метка вида данных для телеметрии.</summary>
+        static abstract string TelemetryDataKind { get; }
 
-        /// <summary>Метка рынка для телеметрии и ключей сырого снимка (RawCaptureMarkets).</summary>
-        static abstract string CaptureMarket { get; }
+        /// <summary>Метка рынка для телеметрии.</summary>
+        static abstract string TelemetryMarket { get; }
 
         /// <summary>Ожидаемая схема колонок; одновременно источник параметра data.columns.</summary>
         static abstract ColumnAndNumbersForParsing.ExpectedSchema Schema { get; }

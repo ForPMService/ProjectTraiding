@@ -1,7 +1,7 @@
 ﻿using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using ProjectTraiding.Moex.Contracts.Pagination;
-using ProjectTraiding.Moex.Infrastructure.RawCapture;
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using System.Collections.Generic;
@@ -41,8 +41,8 @@ namespace ProjectTraiding.Moex.Loading
             string method = BuildMethod(task);
             Dictionary<string, string> query = BuildQuery(task);
             string captureMarket = task.Market == "stock"
-                ? RawCaptureMarkets.Stock
-                : RawCaptureMarkets.Futures;
+                ? MoexMarkets.Stock
+                : MoexMarkets.Futures;
 
             IAsyncEnumerable<List<CandlesDTO>> pages = _client.GetCandles(
                 method, query, runId: task.Id.ToString("N"), captureMarket: captureMarket, secid: task.Secid,

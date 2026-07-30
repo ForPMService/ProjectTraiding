@@ -1,7 +1,7 @@
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using ProjectTraiding.Diagnostics.Contracts;
-using ProjectTraiding.Moex.Infrastructure.RawCapture;
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using System.Text.Json.Serialization.Metadata;
 
 
@@ -287,7 +287,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                     client.GetCandles(
                         method,
                         CreateParsedCandlesQuery(from!, till!, effectiveInterval),
-                        captureMarket: RawCaptureMarkets.Stock,
+                        captureMarket: MoexMarkets.Stock,
                         secid: ticker,
                         cancellationToken: cancellationToken),
                     cancellationToken),
@@ -319,7 +319,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                     client.GetCandles(
                         method,
                         CreateParsedCandlesQuery(from!, till!, effectiveInterval),
-                        captureMarket: RawCaptureMarkets.Futures,
+                        captureMarket: MoexMarkets.Futures,
                         secid: ticker,
                         cancellationToken: cancellationToken),
                     cancellationToken),

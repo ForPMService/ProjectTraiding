@@ -74,7 +74,7 @@ namespace ProjectTraiding.Moex.Clients
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
             activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest);
             activity?.SetTag(MoexTelemetryAttributes.DataKind, "orderbook");
-            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Stock);
+            activity?.SetTag(MoexTelemetryAttributes.Market, MoexMarkets.Stock);
 
             string endpoint = $"/engines/stock/markets/shares/boards/TQBR/securities/{ticker}/orderbook.json";
             return await GetOrderbookAsync(endpoint, queryParams, cancellationToken);
@@ -97,7 +97,7 @@ namespace ProjectTraiding.Moex.Clients
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
             activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest);
             activity?.SetTag(MoexTelemetryAttributes.DataKind, "orderbook");
-            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Futures);
+            activity?.SetTag(MoexTelemetryAttributes.Market, MoexMarkets.Futures);
 
             string endpoint = $"/engines/futures/markets/forts/boards/RFUD/securities/{ticker}/orderbook.json";
             return await GetOrderbookAsync(endpoint, queryParams, cancellationToken);
@@ -132,7 +132,7 @@ namespace ProjectTraiding.Moex.Clients
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
             activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest);
             activity?.SetTag(MoexTelemetryAttributes.DataKind, "trades");
-            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Stock);
+            activity?.SetTag(MoexTelemetryAttributes.Market, MoexMarkets.Stock);
 
             string endpoint = $"/engines/stock/markets/shares/boards/TQBR/securities/{ticker}/trades.json";
             long startTimestamp = Stopwatch.GetTimestamp();
@@ -189,7 +189,7 @@ namespace ProjectTraiding.Moex.Clients
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
             activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest);
             activity?.SetTag(MoexTelemetryAttributes.DataKind, "trades");
-            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Futures);
+            activity?.SetTag(MoexTelemetryAttributes.Market, MoexMarkets.Futures);
 
             string endpoint = $"/engines/futures/markets/forts/boards/RFUD/securities/{ticker}/trades.json";
             long startTimestamp = Stopwatch.GetTimestamp();
@@ -246,8 +246,8 @@ namespace ProjectTraiding.Moex.Clients
         {
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
             activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest);
-            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Candles);
-            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Stock);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, MoexDataKinds.Candles);
+            activity?.SetTag(MoexTelemetryAttributes.Market, MoexMarkets.Stock);
 
             string endpoint = $"/engines/stock/markets/shares/boards/TQBR/securities/{ticker}/candles.json";
             return await GetCandlesWindowPagedAsync(endpoint, from, till, interval, cancellationToken);
@@ -274,8 +274,8 @@ namespace ProjectTraiding.Moex.Clients
         {
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
             activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest);
-            activity?.SetTag(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Candles);
-            activity?.SetTag(MoexTelemetryAttributes.Market, RawCaptureMarkets.Futures);
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, MoexDataKinds.Candles);
+            activity?.SetTag(MoexTelemetryAttributes.Market, MoexMarkets.Futures);
 
             string endpoint = $"/engines/futures/markets/forts/boards/RFUD/securities/{ticker}/candles.json";
             return await GetCandlesWindowPagedAsync(endpoint, from, till, interval, cancellationToken);
@@ -425,11 +425,11 @@ namespace ProjectTraiding.Moex.Clients
                 MoexMetrics.PagesTotal.Add(
                     1,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Candles));
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Candles));
                 MoexMetrics.RowsTotal.Add(
                     result.Count,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, RawCaptureDataTypes.Candles));
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Candles));
                 return result;
             }
             catch (MoexSchemaMismatchException ex)

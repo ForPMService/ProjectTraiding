@@ -13,7 +13,7 @@ public static class MoexTelemetryAttributes
     /// <summary>Источник: MOEX_ISS, MOEX_ALGOPACK, MOEX_CALENDAR, MOEX_REALTIME_REST.</summary>
     public const string Source = "source";
 
-    /// <summary>Тип данных: candles, tradestats, obstats, orderstats, futoi, hi2, mega_alerts.
+    /// <summary>Тип данных: candles, tradestats, obstats, orderstats, futoi, hi2, alerts.
     /// Обязателен для рыночных данных. Для справочников и календаря допускается отсутствие.</summary>
     public const string DataKind = "data_kind";
 
