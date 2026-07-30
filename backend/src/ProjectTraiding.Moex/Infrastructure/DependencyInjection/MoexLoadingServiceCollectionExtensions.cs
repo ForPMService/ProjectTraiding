@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Options;
+using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using ProjectTraiding.Moex.Loading;
 using ProjectTraiding.Moex.Options;
@@ -106,16 +107,16 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
             // Обработчики видов — диспетчер соберёт их все через IEnumerable<ILoadHandler>.
             // Девять курсорных видов закрыты обобщённым обработчиком парой «паспорт × строка»;
             // FUTOI и свечи остаются отдельными обработчиками из-за иной формы загрузки.
-            services.AddScoped<ILoadHandler, SeriesLoadHandler<TradeStatsStockKind, SuperCandlesTradeStats5mDTO>>();
-            services.AddScoped<ILoadHandler, SeriesLoadHandler<TradeStatsFuturesKind, SuperCandlesFuturesTradeStats5mDTO>>();
-            services.AddScoped<ILoadHandler, SeriesLoadHandler<ObStatsStockKind, SuperCandlesOrderBookStats5mDTO>>();
-            services.AddScoped<ILoadHandler, SeriesLoadHandler<ObStatsFuturesKind, SuperCandlesFuturesOrderBookStats5mDTO>>();
-            services.AddScoped<ILoadHandler, SeriesLoadHandler<OrderStatsStockKind, SuperCandlesOrderStats5mDTO>>();
+            services.AddScoped<ILoadHandler, SeriesLoadHandler<TradeStatsStockCursorKind, SuperCandlesTradeStats5mDTO>>();
+            services.AddScoped<ILoadHandler, SeriesLoadHandler<TradeStatsFuturesCursorKind, SuperCandlesFuturesTradeStats5mDTO>>();
+            services.AddScoped<ILoadHandler, SeriesLoadHandler<ObStatsStockCursorKind, SuperCandlesOrderBookStats5mDTO>>();
+            services.AddScoped<ILoadHandler, SeriesLoadHandler<ObStatsFuturesCursorKind, SuperCandlesFuturesOrderBookStats5mDTO>>();
+            services.AddScoped<ILoadHandler, SeriesLoadHandler<OrderStatsStockCursorKind, SuperCandlesOrderStats5mDTO>>();
             services.AddScoped<ILoadHandler, FutoiLoadHandler>();
-            services.AddScoped<ILoadHandler, SeriesLoadHandler<Hi2StockKind, Hi2AssetDTO>>();
-            services.AddScoped<ILoadHandler, SeriesLoadHandler<Hi2FuturesKind, Hi2FuturesDTO>>();
-            services.AddScoped<ILoadHandler, SeriesLoadHandler<MegaAlertsStockKind, MegaAlertsAssetsDTO>>();
-            services.AddScoped<ILoadHandler, SeriesLoadHandler<MegaAlertsFuturesKind, MegaAlertsFuturesDTO>>();
+            services.AddScoped<ILoadHandler, SeriesLoadHandler<Hi2StockCursorKind, Hi2AssetDTO>>();
+            services.AddScoped<ILoadHandler, SeriesLoadHandler<Hi2FuturesCursorKind, Hi2FuturesDTO>>();
+            services.AddScoped<ILoadHandler, SeriesLoadHandler<MegaAlertsStockCursorKind, MegaAlertsAssetsDTO>>();
+            services.AddScoped<ILoadHandler, SeriesLoadHandler<MegaAlertsFuturesCursorKind, MegaAlertsFuturesDTO>>();
             services.AddScoped<ILoadHandler, CandlesLoadHandler>();
 
             // Читатель и писатели задач, диспетчер и координатор.

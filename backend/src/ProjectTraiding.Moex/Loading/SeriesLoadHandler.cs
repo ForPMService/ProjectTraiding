@@ -11,10 +11,10 @@ namespace ProjectTraiding.Moex.Loading
     /// Закрывается парой «паспорт × тип строки»; ограничение по структуре гарантирует, что при
     /// нативной компиляции каждая пара порождает собственную специализацию с прямыми
     /// статическими вызовами — машинный код эквивалентен прежним штучным обработчикам.
-    /// Свечи остаются штучным обработчиком: у них выбор писателя по интервалу и иная форма.
+    /// Свечи и FUTOI остаются отдельными обработчиками: у них иная форма загрузки.
     /// </summary>
     public sealed class SeriesLoadHandler<TKind, TRow> : ILoadHandler
-        where TKind : struct, ILoadKind<TRow>
+        where TKind : struct, IAlgCursorKind<TRow>
     {
         private readonly MoexHttpAlgClient _client;
         private readonly RowWriter<TRow> _writer;
@@ -34,9 +34,9 @@ namespace ProjectTraiding.Moex.Loading
             string method = TKind.BuildMethod(task.Secid);
             Dictionary<string, string> query = BuildQuery(task);
 
-            IAsyncEnumerable<List<TRow>> pages = TKind.GetPages(
-                _client, method, query,
-                stopOutcome: stopOutcome, ct: ct);
+            IAsyncEnumerable<List<TRow>> pages = _client.GetCursorPages<TKind, TRow>(
+                method, query,
+                stopOutcome: stopOutcome, cancellationToken: ct);
 
             return await _writer.WriteRangeAsync(
                 task.Id, task.Secid, task.SourceContractVersion, task.WriterVersion, pages, progress, ct);

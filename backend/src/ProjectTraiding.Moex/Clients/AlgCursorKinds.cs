@@ -7,13 +7,18 @@ using ProjectTraiding.Moex.Parsing;
 namespace ProjectTraiding.Moex.Clients
 {
     /// <summary>
-    /// Паспорта девяти курсорных видов данных ALGOPACK. Каждый паспорт — структура без
-    /// состояния и без экземпляров: она существует только как параметр типа обобщённого
-    /// метода клиента. Метки, схемы и привязки к разборщикам перенесены из заменяемых
-    /// методов клиента дословно.
+    /// Полные паспорта девяти курсорных видов данных ALGOPACK. Каждый паспорт — структура
+    /// без состояния и без экземпляров: она существует только как параметр типа обобщённых
+    /// клиента и загрузочного обработчика.
     /// </summary>
     public readonly struct TradeStatsStockCursorKind : IAlgCursorKind<SuperCandlesTradeStats5mDTO>
     {
+        public static string DataKind => "tradestats";
+        public static string Market => "stock";
+
+        public static string BuildMethod(string secid) =>
+            $"/datashop/algopack/eq/tradestats/{secid}.json";
+
         public static string TelemetryDataKind => MoexDataKinds.TradeStats;
         public static string TelemetryMarket => MoexMarkets.Stock;
         public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
@@ -26,6 +31,12 @@ namespace ProjectTraiding.Moex.Clients
 
     public readonly struct TradeStatsFuturesCursorKind : IAlgCursorKind<SuperCandlesFuturesTradeStats5mDTO>
     {
+        public static string DataKind => "tradestats";
+        public static string Market => "futures";
+
+        public static string BuildMethod(string secid) =>
+            $"/datashop/algopack/fo/tradestats/{secid}.json";
+
         public static string TelemetryDataKind => MoexDataKinds.TradeStats;
         public static string TelemetryMarket => MoexMarkets.Futures;
         public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
@@ -38,6 +49,12 @@ namespace ProjectTraiding.Moex.Clients
 
     public readonly struct ObStatsStockCursorKind : IAlgCursorKind<SuperCandlesOrderBookStats5mDTO>
     {
+        public static string DataKind => "obstats";
+        public static string Market => "stock";
+
+        public static string BuildMethod(string secid) =>
+            $"/datashop/algopack/eq/obstats/{secid}.json";
+
         public static string TelemetryDataKind => MoexDataKinds.OBStats;
         public static string TelemetryMarket => MoexMarkets.Stock;
         public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
@@ -50,6 +67,12 @@ namespace ProjectTraiding.Moex.Clients
 
     public readonly struct ObStatsFuturesCursorKind : IAlgCursorKind<SuperCandlesFuturesOrderBookStats5mDTO>
     {
+        public static string DataKind => "obstats";
+        public static string Market => "futures";
+
+        public static string BuildMethod(string secid) =>
+            $"/datashop/algopack/fo/obstats/{secid}.json";
+
         public static string TelemetryDataKind => MoexDataKinds.OBStats;
         public static string TelemetryMarket => MoexMarkets.Futures;
         public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
@@ -62,6 +85,12 @@ namespace ProjectTraiding.Moex.Clients
 
     public readonly struct OrderStatsStockCursorKind : IAlgCursorKind<SuperCandlesOrderStats5mDTO>
     {
+        public static string DataKind => "orderstats";
+        public static string Market => "stock";
+
+        public static string BuildMethod(string secid) =>
+            $"/datashop/algopack/eq/orderstats/{secid}.json";
+
         public static string TelemetryDataKind => MoexDataKinds.OrderStats;
         public static string TelemetryMarket => MoexMarkets.Stock;
         public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
@@ -74,6 +103,12 @@ namespace ProjectTraiding.Moex.Clients
 
     public readonly struct Hi2StockCursorKind : IAlgCursorKind<Hi2AssetDTO>
     {
+        public static string DataKind => "hi2";
+        public static string Market => "stock";
+
+        public static string BuildMethod(string secid) =>
+            $"/datashop/algopack/eq/hi2/{secid}.json";
+
         public static string TelemetryDataKind => MoexDataKinds.Hi2;
         public static string TelemetryMarket => MoexMarkets.Stock;
         public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
@@ -86,6 +121,12 @@ namespace ProjectTraiding.Moex.Clients
 
     public readonly struct Hi2FuturesCursorKind : IAlgCursorKind<Hi2FuturesDTO>
     {
+        public static string DataKind => "hi2";
+        public static string Market => "futures";
+
+        public static string BuildMethod(string secid) =>
+            $"/datashop/algopack/fo/hi2/{secid}.json";
+
         public static string TelemetryDataKind => MoexDataKinds.Hi2;
         public static string TelemetryMarket => MoexMarkets.Futures;
         public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
@@ -98,6 +139,14 @@ namespace ProjectTraiding.Moex.Clients
 
     public readonly struct MegaAlertsStockCursorKind : IAlgCursorKind<MegaAlertsAssetsDTO>
     {
+        // Вид задачи и метка телеметрии намеренно различаются: столбец data_kind хранит
+        // "mega_alerts", в телеметрию уходит "alerts".
+        public static string DataKind => "mega_alerts";
+        public static string Market => "stock";
+
+        public static string BuildMethod(string secid) =>
+            $"/datashop/algopack/eq/alerts/{secid}.json";
+
         public static string TelemetryDataKind => MoexDataKinds.MegaAlerts;
         public static string TelemetryMarket => MoexMarkets.Stock;
         public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
@@ -110,6 +159,14 @@ namespace ProjectTraiding.Moex.Clients
 
     public readonly struct MegaAlertsFuturesCursorKind : IAlgCursorKind<MegaAlertsFuturesDTO>
     {
+        // Вид задачи и метка телеметрии намеренно различаются: столбец data_kind хранит
+        // "mega_alerts", в телеметрию уходит "alerts".
+        public static string DataKind => "mega_alerts";
+        public static string Market => "futures";
+
+        public static string BuildMethod(string secid) =>
+            $"/datashop/algopack/fo/alerts/{secid}.json";
+
         public static string TelemetryDataKind => MoexDataKinds.MegaAlerts;
         public static string TelemetryMarket => MoexMarkets.Futures;
         public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
