@@ -17,22 +17,6 @@ services:
       timeout: 5s
       retries: 5
 
-  garage:
-    image: dxflrs/garage:v2.3.0
-    container_name: projecttraiding-garage
-    restart: unless-stopped
-    command: /garage server --single-node --default-bucket
-    environment:
-      GARAGE_DEFAULT_ACCESS_KEY: ${GARAGE_ACCESS_KEY:-GK00000000000000000000000000000001}
-      GARAGE_DEFAULT_SECRET_KEY: ${GARAGE_SECRET_KEY:-0000000000000000000000000000000000000000000000000000000000000001}
-      GARAGE_DEFAULT_BUCKET: ${GARAGE_BUCKET:-projecttraiding-raw}
-    ports:
-      - "127.0.0.1:${GARAGE_S3_PORT:-3900}:3900"
-      - "127.0.0.1:${GARAGE_ADMIN_PORT:-3903}:3903"
-    volumes:
-      - ./garage/garage.toml:/etc/garage.toml:ro
-      - garagedata:/var/lib/garage
-
   # ══════════════════════════════════════════════
   # OpenTelemetry Collector
   # Принимает OTLP от приложения, маршрутизирует в LGTM.
@@ -169,7 +153,6 @@ services:
 
 volumes:
   pgdata:
-  garagedata:
   lokidata:
   prometheusdata:
   tempodata:

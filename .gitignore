@@ -83,7 +83,6 @@ stats.json
 # Docker / runtime data (bind-mounts)
 # ─────────────────────────────────────────────────────────────
 **/pgdata/
-**/garagedata/
 .env
 .env.local
 .env.*
