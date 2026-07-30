@@ -31,7 +31,6 @@ public abstract class MoexHttpException : Exception
     /// </summary>
     public abstract string ErrorCategory { get; }
 
-    public byte[]? ErrorBody { get; init; }
     /// <summary>
     /// Инициализирует новый экземпляр с сообщением и опциональным внутренним исключением.
     /// </summary>
