@@ -20,9 +20,9 @@ namespace ProjectTraiding.Moex.Loading
 
         public static IAsyncEnumerable<List<SuperCandlesTradeStats5mDTO>> GetPages(
             MoexHttpAlgClient client, string method, Dictionary<string, string> query,
-            string runId, string secid, LoadStopOutcome stopOutcome, CancellationToken ct)
+            LoadStopOutcome stopOutcome, CancellationToken ct)
             => client.GetSuperCandlesTradeStats5m(
-                method, query, runId: runId, secid: secid,
+                method, query,
                 stopOutcome: stopOutcome, cancellationToken: ct);
     }
 
@@ -36,9 +36,9 @@ namespace ProjectTraiding.Moex.Loading
 
         public static IAsyncEnumerable<List<SuperCandlesFuturesTradeStats5mDTO>> GetPages(
             MoexHttpAlgClient client, string method, Dictionary<string, string> query,
-            string runId, string secid, LoadStopOutcome stopOutcome, CancellationToken ct)
+            LoadStopOutcome stopOutcome, CancellationToken ct)
             => client.GetSuperCandlesFuturesTradeStats5m(
-                method, query, runId: runId, secid: secid,
+                method, query,
                 stopOutcome: stopOutcome, cancellationToken: ct);
     }
 
@@ -52,9 +52,9 @@ namespace ProjectTraiding.Moex.Loading
 
         public static IAsyncEnumerable<List<SuperCandlesOrderBookStats5mDTO>> GetPages(
             MoexHttpAlgClient client, string method, Dictionary<string, string> query,
-            string runId, string secid, LoadStopOutcome stopOutcome, CancellationToken ct)
+            LoadStopOutcome stopOutcome, CancellationToken ct)
             => client.GetSuperCandlesOrderBookStats5m(
-                method, query, runId: runId, secid: secid,
+                method, query,
                 stopOutcome: stopOutcome, cancellationToken: ct);
     }
 
@@ -68,9 +68,9 @@ namespace ProjectTraiding.Moex.Loading
 
         public static IAsyncEnumerable<List<SuperCandlesFuturesOrderBookStats5mDTO>> GetPages(
             MoexHttpAlgClient client, string method, Dictionary<string, string> query,
-            string runId, string secid, LoadStopOutcome stopOutcome, CancellationToken ct)
+            LoadStopOutcome stopOutcome, CancellationToken ct)
             => client.GetSuperCandlesFuturesOrderBookStats5m(
-                method, query, runId: runId, secid: secid,
+                method, query,
                 stopOutcome: stopOutcome, cancellationToken: ct);
     }
 
@@ -84,9 +84,9 @@ namespace ProjectTraiding.Moex.Loading
 
         public static IAsyncEnumerable<List<SuperCandlesOrderStats5mDTO>> GetPages(
             MoexHttpAlgClient client, string method, Dictionary<string, string> query,
-            string runId, string secid, LoadStopOutcome stopOutcome, CancellationToken ct)
+            LoadStopOutcome stopOutcome, CancellationToken ct)
             => client.GetSuperCandlesOrderStats5m(
-                method, query, runId: runId, secid: secid,
+                method, query,
                 stopOutcome: stopOutcome, cancellationToken: ct);
     }
 
@@ -100,9 +100,9 @@ namespace ProjectTraiding.Moex.Loading
 
         public static IAsyncEnumerable<List<FutoiDTO>> GetPages(
             MoexHttpAlgClient client, string method, Dictionary<string, string> query,
-            string runId, string secid, LoadStopOutcome stopOutcome, CancellationToken ct)
+            LoadStopOutcome stopOutcome, CancellationToken ct)
             => client.StreamFutoi(
-                method, query, runId: runId, secid: secid,
+                method, query,
                 stopOutcome: stopOutcome, cancellationToken: ct);
     }
 
@@ -116,9 +116,9 @@ namespace ProjectTraiding.Moex.Loading
 
         public static IAsyncEnumerable<List<Hi2AssetDTO>> GetPages(
             MoexHttpAlgClient client, string method, Dictionary<string, string> query,
-            string runId, string secid, LoadStopOutcome stopOutcome, CancellationToken ct)
+            LoadStopOutcome stopOutcome, CancellationToken ct)
             => client.GetHi2Asset5m(
-                method, query, runId: runId, secid: secid,
+                method, query,
                 stopOutcome: stopOutcome, cancellationToken: ct);
     }
 
@@ -132,9 +132,9 @@ namespace ProjectTraiding.Moex.Loading
 
         public static IAsyncEnumerable<List<Hi2FuturesDTO>> GetPages(
             MoexHttpAlgClient client, string method, Dictionary<string, string> query,
-            string runId, string secid, LoadStopOutcome stopOutcome, CancellationToken ct)
+            LoadStopOutcome stopOutcome, CancellationToken ct)
             => client.GetHi2Futures5m(
-                method, query, runId: runId, secid: secid,
+                method, query,
                 stopOutcome: stopOutcome, cancellationToken: ct);
     }
 
@@ -148,9 +148,9 @@ namespace ProjectTraiding.Moex.Loading
 
         public static IAsyncEnumerable<List<MegaAlertsAssetsDTO>> GetPages(
             MoexHttpAlgClient client, string method, Dictionary<string, string> query,
-            string runId, string secid, LoadStopOutcome stopOutcome, CancellationToken ct)
+            LoadStopOutcome stopOutcome, CancellationToken ct)
             => client.GetMegaAlerts(
-                method, query, runId: runId, secid: secid,
+                method, query,
                 stopOutcome: stopOutcome, cancellationToken: ct);
     }
 
@@ -164,9 +164,9 @@ namespace ProjectTraiding.Moex.Loading
 
         public static IAsyncEnumerable<List<MegaAlertsFuturesDTO>> GetPages(
             MoexHttpAlgClient client, string method, Dictionary<string, string> query,
-            string runId, string secid, LoadStopOutcome stopOutcome, CancellationToken ct)
+            LoadStopOutcome stopOutcome, CancellationToken ct)
             => client.GetMegaAlertsFutures(
-                method, query, runId: runId, secid: secid,
+                method, query,
                 stopOutcome: stopOutcome, cancellationToken: ct);
     }
 }

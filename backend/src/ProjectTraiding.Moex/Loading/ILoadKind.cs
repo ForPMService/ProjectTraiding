@@ -30,8 +30,6 @@ namespace ProjectTraiding.Moex.Loading
             MoexHttpAlgClient client,
             string method,
             Dictionary<string, string> query,
-            string runId,
-            string secid,
             LoadStopOutcome stopOutcome,
             CancellationToken ct);
     }

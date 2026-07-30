@@ -4,7 +4,6 @@ using Polly.Timeout;
 using ProjectTraiding.Moex.Clients.Errors;
 using ProjectTraiding.Moex.Contracts.Dto.Iss;
 using ProjectTraiding.Moex.Infrastructure.Buffers;
-using ProjectTraiding.Moex.Infrastructure.RawCapture;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Parsing;
@@ -20,18 +19,15 @@ namespace ProjectTraiding.Moex.Clients
         private readonly MoexOptions _options;
         private readonly HttpClient _httpClient;
         private readonly ILogger<MoexHttpIssClient> _logger;
-        private readonly MoexRawCaptureWriter _captureWriter;
 
         public MoexHttpIssClient(
             IOptions<MoexOptions> options,
             HttpClient httpClient,
-            ILogger<MoexHttpIssClient> logger,
-            MoexRawCaptureWriter captureWriter)
+            ILogger<MoexHttpIssClient> logger)
         {
             _options = options.Value;
             _httpClient = httpClient;
             _logger = logger;
-            _captureWriter = captureWriter;
         }
 
         /// <summary>

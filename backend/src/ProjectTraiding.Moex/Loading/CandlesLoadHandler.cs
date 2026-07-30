@@ -40,12 +40,12 @@ namespace ProjectTraiding.Moex.Loading
 
             string method = BuildMethod(task);
             Dictionary<string, string> query = BuildQuery(task);
-            string captureMarket = task.Market == "stock"
+            string telemetryMarket = task.Market == "stock"
                 ? MoexMarkets.Stock
                 : MoexMarkets.Futures;
 
             IAsyncEnumerable<List<CandlesDTO>> pages = _client.GetCandles(
-                method, query, runId: task.Id.ToString("N"), captureMarket: captureMarket, secid: task.Secid,
+                method, query, telemetryMarket: telemetryMarket,
                 stopOutcome: stopOutcome, cancellationToken: ct);
 
             return await writer.WriteRangeAsync(

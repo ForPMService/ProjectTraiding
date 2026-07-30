@@ -36,7 +36,6 @@ namespace ProjectTraiding.Moex.Loading
 
             IAsyncEnumerable<List<TRow>> pages = TKind.GetPages(
                 _client, method, query,
-                runId: task.Id.ToString("N"), secid: task.Secid,
                 stopOutcome: stopOutcome, ct: ct);
 
             return await _writer.WriteRangeAsync(

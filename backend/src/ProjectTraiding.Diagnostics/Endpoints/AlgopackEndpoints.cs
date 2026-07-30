@@ -287,8 +287,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                     client.GetCandles(
                         method,
                         CreateParsedCandlesQuery(from!, till!, effectiveInterval),
-                        captureMarket: MoexMarkets.Stock,
-                        secid: ticker,
+                        telemetryMarket: MoexMarkets.Stock,
                         cancellationToken: cancellationToken),
                     cancellationToken),
                 DiagnosticsJsonContext.Default.ListCandlesDTO,
@@ -319,8 +318,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                     client.GetCandles(
                         method,
                         CreateParsedCandlesQuery(from!, till!, effectiveInterval),
-                        captureMarket: MoexMarkets.Futures,
-                        secid: ticker,
+                        telemetryMarket: MoexMarkets.Futures,
                         cancellationToken: cancellationToken),
                     cancellationToken),
                 DiagnosticsJsonContext.Default.ListCandlesDTO,
@@ -346,7 +344,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 "stock",
                 ticker,
                 cancellationToken => CollectAsync(
-                    client.GetSuperCandlesTradeStats5m(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
+                    client.GetSuperCandlesTradeStats5m(method, CreateParsedRangeQuery(from!, till!), cancellationToken: cancellationToken),
                     cancellationToken),
                 DiagnosticsJsonContext.Default.ListSuperCandlesTradeStats5mDTO,
                 ct);
@@ -371,7 +369,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 "futures",
                 ticker,
                 cancellationToken => CollectAsync(
-                    client.GetSuperCandlesFuturesTradeStats5m(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
+                    client.GetSuperCandlesFuturesTradeStats5m(method, CreateParsedRangeQuery(from!, till!), cancellationToken: cancellationToken),
                     cancellationToken),
                 DiagnosticsJsonContext.Default.ListSuperCandlesFuturesTradeStats5mDTO,
                 ct);
@@ -396,7 +394,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 "stock",
                 ticker,
                 cancellationToken => CollectAsync(
-                    client.GetSuperCandlesOrderBookStats5m(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
+                    client.GetSuperCandlesOrderBookStats5m(method, CreateParsedRangeQuery(from!, till!), cancellationToken: cancellationToken),
                     cancellationToken),
                 DiagnosticsJsonContext.Default.ListSuperCandlesOrderBookStats5mDTO,
                 ct);
@@ -421,7 +419,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 "futures",
                 ticker,
                 cancellationToken => CollectAsync(
-                    client.GetSuperCandlesFuturesOrderBookStats5m(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
+                    client.GetSuperCandlesFuturesOrderBookStats5m(method, CreateParsedRangeQuery(from!, till!), cancellationToken: cancellationToken),
                     cancellationToken),
                 DiagnosticsJsonContext.Default.ListSuperCandlesFuturesOrderBookStats5mDTO,
                 ct);
@@ -446,7 +444,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 "stock",
                 ticker,
                 cancellationToken => CollectAsync(
-                    client.GetSuperCandlesOrderStats5m(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
+                    client.GetSuperCandlesOrderStats5m(method, CreateParsedRangeQuery(from!, till!), cancellationToken: cancellationToken),
                     cancellationToken),
                 DiagnosticsJsonContext.Default.ListSuperCandlesOrderStats5mDTO,
                 ct);
@@ -471,7 +469,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 "futures",
                 ticker,
                 cancellationToken => CollectAsync(
-                    client.StreamFutoi(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
+                    client.StreamFutoi(method, CreateParsedRangeQuery(from!, till!), cancellationToken: cancellationToken),
                     cancellationToken),
                 DiagnosticsJsonContext.Default.ListFutoiDTO,
                 ct);
@@ -496,7 +494,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 "stock",
                 ticker,
                 cancellationToken => CollectAsync(
-                    client.GetHi2Asset5m(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
+                    client.GetHi2Asset5m(method, CreateParsedRangeQuery(from!, till!), cancellationToken: cancellationToken),
                     cancellationToken),
                 DiagnosticsJsonContext.Default.ListHi2AssetDTO,
                 ct);
@@ -521,7 +519,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 "futures",
                 ticker,
                 cancellationToken => CollectAsync(
-                    client.GetHi2Futures5m(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
+                    client.GetHi2Futures5m(method, CreateParsedRangeQuery(from!, till!), cancellationToken: cancellationToken),
                     cancellationToken),
                 DiagnosticsJsonContext.Default.ListHi2FuturesDTO,
                 ct);
@@ -546,7 +544,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 "stock",
                 ticker,
                 cancellationToken => CollectAsync(
-                    client.GetMegaAlerts(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
+                    client.GetMegaAlerts(method, CreateParsedRangeQuery(from!, till!), cancellationToken: cancellationToken),
                     cancellationToken),
                 DiagnosticsJsonContext.Default.ListMegaAlertsAssetsDTO,
                 ct);
@@ -571,7 +569,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 "futures",
                 ticker,
                 cancellationToken => CollectAsync(
-                    client.GetMegaAlertsFutures(method, CreateParsedRangeQuery(from!, till!), secid: ticker, cancellationToken: cancellationToken),
+                    client.GetMegaAlertsFutures(method, CreateParsedRangeQuery(from!, till!), cancellationToken: cancellationToken),
                     cancellationToken),
                 DiagnosticsJsonContext.Default.ListMegaAlertsFuturesDTO,
                 ct);

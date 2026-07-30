@@ -4,7 +4,6 @@ using ProjectTraiding.Moex.Clients.Errors;
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using ProjectTraiding.Moex.Contracts.Dto.Realtime;
 using ProjectTraiding.Moex.Infrastructure.Buffers;
-using ProjectTraiding.Moex.Infrastructure.RawCapture;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Parsing;
@@ -39,18 +38,15 @@ namespace ProjectTraiding.Moex.Clients
         private readonly MoexOptions _options;
         private readonly HttpClient _httpClient;
         private readonly ILogger<MoexRealtimeRestClient> _logger;
-        private readonly MoexRawCaptureWriter _captureWriter;
 
         public MoexRealtimeRestClient(
             IOptions<MoexOptions> options,
             HttpClient httpClient,
-            ILogger<MoexRealtimeRestClient> logger,
-            MoexRawCaptureWriter captureWriter)
+            ILogger<MoexRealtimeRestClient> logger)
         {
             _options = options.Value;
             _httpClient = httpClient;
             _logger = logger;
-            _captureWriter = captureWriter;
         }
 
         // ═══════════════════════════════════════════════════════════
