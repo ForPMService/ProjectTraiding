@@ -109,6 +109,20 @@ public static class MoexClientServiceCollectionExtensions
         HttpStandardResilienceOptions options,
         MoexOptions moexOptions)
     {
+        // Встроенный ограничитель стандартного конвейера ограничивает конкурентность, а не
+        // частоту. Он свой у каждого клиента, стоит выше повторов и выдаёт разрешение один раз
+        // на логическую операцию. Частоту обращений к MOEX держит общий TokenBucketRateLimiter
+        // ниже слоя устойчивости: он выдаёт жетон на каждую фактическую попытку.
+        // Значения совпадают с умолчаниями Microsoft.Extensions.Http.Resilience 10.8.0;
+        // фиксируем их явно, не меняя прежнее поведение.
+        options.RateLimiter.DefaultRateLimiterOptions =
+            new ConcurrencyLimiterOptions
+            {
+                PermitLimit = 1_000,
+                QueueLimit = 0,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            };
+
         // ── Timeout budget (значения по замеру, участок Г2) ──
         // TotalRequestTimeout = 5 мин (весь запрос включая все retry).
         // AttemptTimeout = 30 с (одна попытка до заголовков; тело охраняет BodyReadTimeout 30 с).
