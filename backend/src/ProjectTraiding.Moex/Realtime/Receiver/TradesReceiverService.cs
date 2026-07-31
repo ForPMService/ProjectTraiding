@@ -14,7 +14,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
     /// Периодический приём ленты сделок по всем инструментам. Курсор TRADENO и покрытие
     /// ведутся отдельно по каждому инструменту; сбой одного инструмента не отменяет оборот.
     /// </summary>
-    public sealed class TradesReceiverService : BackgroundService
+    public sealed class TradesReceiverService : RealtimeReceiverServiceBase
     {
         private const string StockMarket = "stock";
         private const string FuturesMarket = "futures";
@@ -24,7 +24,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<TradesReceiverService> _logger;
-        private readonly TimeSpan _pollInterval;
         private readonly TimeSpan _instrumentFetchTimeout;
         private readonly TimeSpan _heartbeatMinInterval;
         private readonly Dictionary<string, TradesInstrumentState> _states =
@@ -37,53 +36,24 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             TimeSpan pollInterval,
             TimeSpan instrumentFetchTimeout,
             TimeSpan heartbeatMinInterval)
+            : base(pollInterval)
         {
             _scopeFactory = scopeFactory;
             _logger = logger;
-            _pollInterval = pollInterval;
             _instrumentFetchTimeout = instrumentFetchTimeout;
             _heartbeatMinInterval = heartbeatMinInterval;
         }
 
-        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-        {
-            MoexRealtimeReceiverLogMessages.TradesStarted(_logger, _pollInterval);
+        protected override void LogStarted(TimeSpan pollInterval)
+            => MoexRealtimeReceiverLogMessages.TradesStarted(_logger, pollInterval);
 
-            try
-            {
-                while (!stoppingToken.IsCancellationRequested)
-                {
-                    try
-                    {
-                        await RunTurnAsync(stoppingToken);
-                    }
-                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                    {
-                        break;
-                    }
-                    catch (Exception ex)
-                    {
-                        MoexRealtimeReceiverLogMessages.TradesTurnFailed(_logger, ex);
-                    }
+        protected override void LogTurnFailed(Exception exception)
+            => MoexRealtimeReceiverLogMessages.TradesTurnFailed(_logger, exception);
 
-                    try
-                    {
-                        await Task.Delay(_pollInterval, stoppingToken);
-                    }
-                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                    {
-                        break;
-                    }
-                }
-            }
-            finally
-            {
-                await CloseSessionsAsync();
-                MoexRealtimeReceiverLogMessages.TradesStopped(_logger);
-            }
-        }
+        protected override void LogStopped()
+            => MoexRealtimeReceiverLogMessages.TradesStopped(_logger);
 
-        private async Task RunTurnAsync(CancellationToken ct)
+        protected override async Task RunTurnAsync(CancellationToken ct)
         {
             await using AsyncServiceScope scope = _scopeFactory.CreateAsyncScope();
 
@@ -573,7 +543,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             return (maxTradeNo, MoexClickHouseTime.BuildSourceTime(tail.TradeDate, tail.TradeTime));
         }
 
-        private async Task CloseSessionsAsync()
+        protected override async Task CloseSessionsAsync()
         {
             try
             {

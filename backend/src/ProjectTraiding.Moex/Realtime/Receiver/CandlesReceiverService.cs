@@ -24,7 +24,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
     /// из опроса немедленно, а их сеансы покрытия закрываются штатно без перезапуска процесса —
     /// так же, как у сделок и стакана.
     /// </summary>
-    public sealed class CandlesReceiverService : BackgroundService
+    public sealed class CandlesReceiverService : RealtimeReceiverServiceBase
     {
         private const string StockMarket = "stock";
         private const string FuturesMarket = "futures";
@@ -42,7 +42,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<CandlesReceiverService> _logger;
-        private readonly TimeSpan _pollInterval;
         private readonly TimeSpan _instrumentFetchTimeout;
         private readonly TimeSpan _heartbeatMinInterval;
         private readonly Dictionary<string, CandleInstrumentState> _states =
@@ -55,53 +54,24 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             TimeSpan pollInterval,
             TimeSpan instrumentFetchTimeout,
             TimeSpan heartbeatMinInterval)
+            : base(pollInterval)
         {
             _scopeFactory = scopeFactory;
             _logger = logger;
-            _pollInterval = pollInterval;
             _instrumentFetchTimeout = instrumentFetchTimeout;
             _heartbeatMinInterval = heartbeatMinInterval;
         }
 
-        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-        {
-            MoexRealtimeReceiverLogMessages.CandlesStarted(_logger, _pollInterval);
+        protected override void LogStarted(TimeSpan pollInterval)
+            => MoexRealtimeReceiverLogMessages.CandlesStarted(_logger, pollInterval);
 
-            try
-            {
-                while (!stoppingToken.IsCancellationRequested)
-                {
-                    try
-                    {
-                        await RunTurnAsync(stoppingToken);
-                    }
-                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                    {
-                        break;
-                    }
-                    catch (Exception ex)
-                    {
-                        MoexRealtimeReceiverLogMessages.CandlesTurnFailed(_logger, ex);
-                    }
+        protected override void LogTurnFailed(Exception exception)
+            => MoexRealtimeReceiverLogMessages.CandlesTurnFailed(_logger, exception);
 
-                    try
-                    {
-                        await Task.Delay(_pollInterval, stoppingToken);
-                    }
-                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                    {
-                        break;
-                    }
-                }
-            }
-            finally
-            {
-                await CloseSessionsAsync();
-                MoexRealtimeReceiverLogMessages.CandlesStopped(_logger);
-            }
-        }
+        protected override void LogStopped()
+            => MoexRealtimeReceiverLogMessages.CandlesStopped(_logger);
 
-        private async Task RunTurnAsync(CancellationToken ct)
+        protected override async Task RunTurnAsync(CancellationToken ct)
         {
             await using AsyncServiceScope scope = _scopeFactory.CreateAsyncScope();
 
@@ -407,7 +377,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             state.LastHeartbeatTimestamp = Stopwatch.GetTimestamp();
         }
 
-        private async Task CloseSessionsAsync()
+        protected override async Task CloseSessionsAsync()
         {
             try
             {

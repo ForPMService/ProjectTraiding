@@ -14,7 +14,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
     /// Периодический приём полных снимков стакана по всем инструментам. Стакан ведёт только
     /// покрытие: курсора у полного снимка нет и в moex_stream_cursors он не записывается.
     /// </summary>
-    public sealed class OrderbookReceiverService : BackgroundService
+    public sealed class OrderbookReceiverService : RealtimeReceiverServiceBase
     {
         private const string StockMarket = "stock";
         private const string FuturesMarket = "futures";
@@ -24,7 +24,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<OrderbookReceiverService> _logger;
-        private readonly TimeSpan _pollInterval;
         private readonly TimeSpan _instrumentFetchTimeout;
         private readonly TimeSpan _heartbeatMinInterval;
         private readonly Dictionary<string, OrderbookInstrumentState> _states =
@@ -37,53 +36,24 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             TimeSpan pollInterval,
             TimeSpan instrumentFetchTimeout,
             TimeSpan heartbeatMinInterval)
+            : base(pollInterval)
         {
             _scopeFactory = scopeFactory;
             _logger = logger;
-            _pollInterval = pollInterval;
             _instrumentFetchTimeout = instrumentFetchTimeout;
             _heartbeatMinInterval = heartbeatMinInterval;
         }
 
-        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-        {
-            MoexRealtimeReceiverLogMessages.OrderbookStarted(_logger, _pollInterval);
+        protected override void LogStarted(TimeSpan pollInterval)
+            => MoexRealtimeReceiverLogMessages.OrderbookStarted(_logger, pollInterval);
 
-            try
-            {
-                while (!stoppingToken.IsCancellationRequested)
-                {
-                    try
-                    {
-                        await RunTurnAsync(stoppingToken);
-                    }
-                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                    {
-                        break;
-                    }
-                    catch (Exception ex)
-                    {
-                        MoexRealtimeReceiverLogMessages.OrderbookTurnFailed(_logger, ex);
-                    }
+        protected override void LogTurnFailed(Exception exception)
+            => MoexRealtimeReceiverLogMessages.OrderbookTurnFailed(_logger, exception);
 
-                    try
-                    {
-                        await Task.Delay(_pollInterval, stoppingToken);
-                    }
-                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                    {
-                        break;
-                    }
-                }
-            }
-            finally
-            {
-                await CloseSessionsAsync();
-                MoexRealtimeReceiverLogMessages.OrderbookStopped(_logger);
-            }
-        }
+        protected override void LogStopped()
+            => MoexRealtimeReceiverLogMessages.OrderbookStopped(_logger);
 
-        private async Task RunTurnAsync(CancellationToken ct)
+        protected override async Task RunTurnAsync(CancellationToken ct)
         {
             await using AsyncServiceScope scope = _scopeFactory.CreateAsyncScope();
 
@@ -351,7 +321,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             state.LastHeartbeatTimestamp = Stopwatch.GetTimestamp();
         }
 
-        private async Task CloseSessionsAsync()
+        protected override async Task CloseSessionsAsync()
         {
             try
             {
