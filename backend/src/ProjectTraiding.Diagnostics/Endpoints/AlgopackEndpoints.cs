@@ -60,6 +60,9 @@ namespace ProjectTraiding.Diagnostics.Endpoints
 
             diagnosticsGroup.MapGet("/parsed/market/futures/candles/{ticker}", GetParsedFuturesCandlesAsync);
 
+            // Колонки сырых точек курсорных видов берутся из паспорта, а не из константы схемы:
+            // сырая и разобранная точки обязаны запрашивать одно и то же, иначе сверка исходного
+            // ответа с разобранным перестаёт быть сверкой.
             diagnosticsGroup.MapGet("/raw/market/stock/tradestats/{ticker}", async (
                 string ticker,
                 string? from,
@@ -74,7 +77,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/eq/tradestats/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, ProjectTraiding.Moex.Parsing.ColumnAndNumbersForParsing.AlgCandlesTradeStatSchema.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, TradeStatsStockCursorKind.Schema.BuildColumnsParam());
                 return await ExecuteRawAsync("tradestats", "stock", ticker, client, method, queryParams, ct);
             });
 
@@ -94,7 +97,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/fo/tradestats/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, ProjectTraiding.Moex.Parsing.ColumnAndNumbersForParsing.FuturesTradeStatsSchema.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, TradeStatsFuturesCursorKind.Schema.BuildColumnsParam());
                 return await ExecuteRawAsync("tradestats", "futures", ticker, client, method, queryParams, ct);
             });
 
@@ -114,7 +117,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/eq/obstats/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, ProjectTraiding.Moex.Parsing.ColumnAndNumbersForParsing.AlgOrderBookStats5mSchema.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, ObStatsStockCursorKind.Schema.BuildColumnsParam());
                 return await ExecuteRawAsync("obstats", "stock", ticker, client, method, queryParams, ct);
             });
 
@@ -134,7 +137,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/fo/obstats/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, ProjectTraiding.Moex.Parsing.ColumnAndNumbersForParsing.AlgFuturesOrderBookSchema.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, ObStatsFuturesCursorKind.Schema.BuildColumnsParam());
                 return await ExecuteRawAsync("obstats", "futures", ticker, client, method, queryParams, ct);
             });
 
@@ -154,7 +157,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/eq/orderstats/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, ProjectTraiding.Moex.Parsing.ColumnAndNumbersForParsing.AlgOrderStats5mSchema.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, OrderStatsStockCursorKind.Schema.BuildColumnsParam());
                 return await ExecuteRawAsync("orderstats", "stock", ticker, client, method, queryParams, ct);
             });
 
@@ -194,7 +197,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/eq/hi2/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, ProjectTraiding.Moex.Parsing.ColumnAndNumbersForParsing.Hi2AssetSchema.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, Hi2StockCursorKind.Schema.BuildColumnsParam());
                 return await ExecuteRawAsync("hi2", "stock", ticker, client, method, queryParams, ct);
             });
 
@@ -214,7 +217,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/fo/hi2/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, ProjectTraiding.Moex.Parsing.ColumnAndNumbersForParsing.Hi2FuturesSchema.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, Hi2FuturesCursorKind.Schema.BuildColumnsParam());
                 return await ExecuteRawAsync("hi2", "futures", ticker, client, method, queryParams, ct);
             });
 
@@ -234,7 +237,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/eq/alerts/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, ProjectTraiding.Moex.Parsing.ColumnAndNumbersForParsing.MegaAlertsAssetSchema.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MegaAlertsStockCursorKind.Schema.BuildColumnsParam());
                 return await ExecuteRawAsync("alerts", "stock", ticker, client, method, queryParams, ct);
             });
 
@@ -254,7 +257,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/fo/alerts/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, ProjectTraiding.Moex.Parsing.ColumnAndNumbersForParsing.MegaAlertsFuturesSchema.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MegaAlertsFuturesCursorKind.Schema.BuildColumnsParam());
                 return await ExecuteRawAsync("alerts", "futures", ticker, client, method, queryParams, ct);
             });
 

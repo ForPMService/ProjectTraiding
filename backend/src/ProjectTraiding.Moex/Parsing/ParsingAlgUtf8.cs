@@ -140,15 +140,21 @@ namespace ProjectTraiding.Moex.Parsing
         }
 
         // ═══════════════════════════════════════════════════════════
-        // TradeStats Stock (акции) — 27 колонок (B2)
+        // Общий каркас разбора курсорной страницы ALGOPACK
         // ═══════════════════════════════════════════════════════════
 
+        /// <summary>
+        /// Общий каркас разбора курсорной страницы ALGOPACK. Схему передаёт вызывающий
+        /// паспорт вида: одна и та же схема управляет и параметром data.columns запроса,
+        /// и проверкой колонок ответа, и индексами чтения строк. Второго выбора схемы
+        /// внутри разбора нет по построению.
+        /// </summary>
         public static List<TRow> ParseCursorBlock<TReader, TRow>(
             ReadOnlySpan<byte> jsonBytes,
+            ColumnAndNumbersForParsing.ExpectedSchema schema,
             out PaginationCursorDTO cursor)
             where TReader : struct, ICursorRowReader<TRow>
         {
-            var schema = TReader.Schema;
             var list = new List<TRow>();
             var reader = new Utf8JsonReader(jsonBytes);
 
@@ -206,15 +212,9 @@ namespace ProjectTraiding.Moex.Parsing
             return list;
         }
 
-        public static List<SuperCandlesTradeStats5mDTO> ParseTradeStatsStock(ReadOnlySpan<byte> jsonBytes)
-        {
-            return ParseTradeStatsStock(jsonBytes, out _);
-        }
-
-        public static List<SuperCandlesTradeStats5mDTO> ParseTradeStatsStock(
-            ReadOnlySpan<byte> jsonBytes,
-            out PaginationCursorDTO cursor)
-            => ParseCursorBlock<TradeStatsStockRowReader, SuperCandlesTradeStats5mDTO>(jsonBytes, out cursor);
+        // ═══════════════════════════════════════════════════════════
+        // TradeStats Stock (акции) — 27 колонок (B2)
+        // ═══════════════════════════════════════════════════════════
 
         private static void ReadTradeStatsStockData(
             ref Utf8JsonReader reader,
@@ -338,16 +338,6 @@ namespace ProjectTraiding.Moex.Parsing
         // ═══════════════════════════════════════════════════════════
         // TradeStats Futures (фьючерсы) — 33 колонки (B2)
         // ═══════════════════════════════════════════════════════════
-
-        public static List<SuperCandlesFuturesTradeStats5mDTO> ParseTradeStatsFutures(ReadOnlySpan<byte> jsonBytes)
-        {
-            return ParseTradeStatsFutures(jsonBytes, out _);
-        }
-
-        public static List<SuperCandlesFuturesTradeStats5mDTO> ParseTradeStatsFutures(
-            ReadOnlySpan<byte> jsonBytes,
-            out PaginationCursorDTO cursor)
-            => ParseCursorBlock<TradeStatsFuturesRowReader, SuperCandlesFuturesTradeStats5mDTO>(jsonBytes, out cursor);
 
         private static void ReadTradeStatsFuturesData(
             ref Utf8JsonReader reader,
@@ -484,16 +474,6 @@ namespace ProjectTraiding.Moex.Parsing
         // OBStats Stock (акции) — 21 колонка (B3)
         // ═══════════════════════════════════════════════════════════
 
-        public static List<SuperCandlesOrderBookStats5mDTO> ParseOBStatsStock(ReadOnlySpan<byte> jsonBytes)
-        {
-            return ParseOBStatsStock(jsonBytes, out _);
-        }
-
-        public static List<SuperCandlesOrderBookStats5mDTO> ParseOBStatsStock(
-            ReadOnlySpan<byte> jsonBytes,
-            out PaginationCursorDTO cursor)
-            => ParseCursorBlock<ObStatsStockRowReader, SuperCandlesOrderBookStats5mDTO>(jsonBytes, out cursor);
-
         private static void ReadOBStatsStockData(
             ref Utf8JsonReader reader,
             List<SuperCandlesOrderBookStats5mDTO> list,
@@ -600,16 +580,6 @@ namespace ProjectTraiding.Moex.Parsing
         // ═══════════════════════════════════════════════════════════
         // OBStats Futures (фьючерсы) — 35 колонок (B3)
         // ═══════════════════════════════════════════════════════════
-
-        public static List<SuperCandlesFuturesOrderBookStats5mDTO> ParseOBStatsFutures(ReadOnlySpan<byte> jsonBytes)
-        {
-            return ParseOBStatsFutures(jsonBytes, out _);
-        }
-
-        public static List<SuperCandlesFuturesOrderBookStats5mDTO> ParseOBStatsFutures(
-            ReadOnlySpan<byte> jsonBytes,
-            out PaginationCursorDTO cursor)
-            => ParseCursorBlock<ObStatsFuturesRowReader, SuperCandlesFuturesOrderBookStats5mDTO>(jsonBytes, out cursor);
 
         private static void ReadOBStatsFuturesData(
             ref Utf8JsonReader reader,
@@ -750,16 +720,6 @@ namespace ProjectTraiding.Moex.Parsing
         // OrderStats Stock (акции) — 26 колонок (B4)
         // ═══════════════════════════════════════════════════════════
 
-        public static List<SuperCandlesOrderStats5mDTO> ParseOrderStatsStock(ReadOnlySpan<byte> jsonBytes)
-        {
-            return ParseOrderStatsStock(jsonBytes, out _);
-        }
-
-        public static List<SuperCandlesOrderStats5mDTO> ParseOrderStatsStock(
-            ReadOnlySpan<byte> jsonBytes,
-            out PaginationCursorDTO cursor)
-            => ParseCursorBlock<OrderStatsStockRowReader, SuperCandlesOrderStats5mDTO>(jsonBytes, out cursor);
-
         private static void ReadOrderStatsStockData(
             ref Utf8JsonReader reader,
             List<SuperCandlesOrderStats5mDTO> list,
@@ -886,16 +846,6 @@ namespace ProjectTraiding.Moex.Parsing
         // HI2 Stock (акции) — 7 колонок (B5)
         // ═══════════════════════════════════════════════════════════
 
-        public static List<Hi2AssetDTO> ParseHi2Stock(ReadOnlySpan<byte> jsonBytes)
-        {
-            return ParseHi2Stock(jsonBytes, out _);
-        }
-
-        public static List<Hi2AssetDTO> ParseHi2Stock(
-            ReadOnlySpan<byte> jsonBytes,
-            out PaginationCursorDTO cursor)
-            => ParseCursorBlock<Hi2StockRowReader, Hi2AssetDTO>(jsonBytes, out cursor);
-
         private static void ReadHi2StockData(
             ref Utf8JsonReader reader,
             List<Hi2AssetDTO> list,
@@ -968,16 +918,6 @@ namespace ProjectTraiding.Moex.Parsing
         // ═══════════════════════════════════════════════════════════
         // HI2 Futures (фьючерсы) — 8 колонок (B5)
         // ═══════════════════════════════════════════════════════════
-
-        public static List<Hi2FuturesDTO> ParseHi2Futures(ReadOnlySpan<byte> jsonBytes)
-        {
-            return ParseHi2Futures(jsonBytes, out _);
-        }
-
-        public static List<Hi2FuturesDTO> ParseHi2Futures(
-            ReadOnlySpan<byte> jsonBytes,
-            out PaginationCursorDTO cursor)
-            => ParseCursorBlock<Hi2FuturesRowReader, Hi2FuturesDTO>(jsonBytes, out cursor);
 
         private static void ReadHi2FuturesData(
             ref Utf8JsonReader reader,
@@ -1055,16 +995,6 @@ namespace ProjectTraiding.Moex.Parsing
         // MegaAlerts Stock (акции) — 8 колонок (B5)
         // ═══════════════════════════════════════════════════════════
 
-        public static List<MegaAlertsAssetsDTO> ParseMegaAlertsStock(ReadOnlySpan<byte> jsonBytes)
-        {
-            return ParseMegaAlertsStock(jsonBytes, out _);
-        }
-
-        public static List<MegaAlertsAssetsDTO> ParseMegaAlertsStock(
-            ReadOnlySpan<byte> jsonBytes,
-            out PaginationCursorDTO cursor)
-            => ParseCursorBlock<MegaAlertsStockRowReader, MegaAlertsAssetsDTO>(jsonBytes, out cursor);
-
         private static void ReadMegaAlertsStockData(
             ref Utf8JsonReader reader,
             List<MegaAlertsAssetsDTO> list,
@@ -1139,16 +1069,6 @@ namespace ProjectTraiding.Moex.Parsing
         // ═══════════════════════════════════════════════════════════
         // MegaAlerts Futures (фьючерсы) — 9 колонок (B5)
         // ═══════════════════════════════════════════════════════════
-
-        public static List<MegaAlertsFuturesDTO> ParseMegaAlertsFutures(ReadOnlySpan<byte> jsonBytes)
-        {
-            return ParseMegaAlertsFutures(jsonBytes, out _);
-        }
-
-        public static List<MegaAlertsFuturesDTO> ParseMegaAlertsFutures(
-            ReadOnlySpan<byte> jsonBytes,
-            out PaginationCursorDTO cursor)
-            => ParseCursorBlock<MegaAlertsFuturesRowReader, MegaAlertsFuturesDTO>(jsonBytes, out cursor);
 
         private static void ReadMegaAlertsFuturesData(
             ref Utf8JsonReader reader,
@@ -1350,7 +1270,7 @@ namespace ProjectTraiding.Moex.Parsing
         }
 
         // ═══════════════════════════════════════════════════════════
-        // Читатели строк курсорных видов: пара «схема + приватный метод чтения».
+        // Читатели строк курсорных видов: привязка типа строки к приватному методу чтения.
         // Структуры без состояния и без экземпляров — существуют только как
         // параметр типа обобщённого каркаса ParseCursorBlock. Вложены в класс,
         // чтобы иметь доступ к приватным методам чтения без расширения видимости.
@@ -1358,9 +1278,6 @@ namespace ProjectTraiding.Moex.Parsing
 
         public readonly struct TradeStatsStockRowReader : ICursorRowReader<SuperCandlesTradeStats5mDTO>
         {
-            public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
-                ColumnAndNumbersForParsing.AlgCandlesTradeStatSchema;
-
             public static void ReadRows(
                 ref Utf8JsonReader reader,
                 List<SuperCandlesTradeStats5mDTO> list,
@@ -1370,9 +1287,6 @@ namespace ProjectTraiding.Moex.Parsing
 
         public readonly struct TradeStatsFuturesRowReader : ICursorRowReader<SuperCandlesFuturesTradeStats5mDTO>
         {
-            public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
-                ColumnAndNumbersForParsing.FuturesTradeStatsSchema;
-
             public static void ReadRows(
                 ref Utf8JsonReader reader,
                 List<SuperCandlesFuturesTradeStats5mDTO> list,
@@ -1382,9 +1296,6 @@ namespace ProjectTraiding.Moex.Parsing
 
         public readonly struct ObStatsStockRowReader : ICursorRowReader<SuperCandlesOrderBookStats5mDTO>
         {
-            public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
-                ColumnAndNumbersForParsing.AlgOrderBookStats5mSchema;
-
             public static void ReadRows(
                 ref Utf8JsonReader reader,
                 List<SuperCandlesOrderBookStats5mDTO> list,
@@ -1394,9 +1305,6 @@ namespace ProjectTraiding.Moex.Parsing
 
         public readonly struct ObStatsFuturesRowReader : ICursorRowReader<SuperCandlesFuturesOrderBookStats5mDTO>
         {
-            public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
-                ColumnAndNumbersForParsing.AlgFuturesOrderBookSchema;
-
             public static void ReadRows(
                 ref Utf8JsonReader reader,
                 List<SuperCandlesFuturesOrderBookStats5mDTO> list,
@@ -1406,9 +1314,6 @@ namespace ProjectTraiding.Moex.Parsing
 
         public readonly struct OrderStatsStockRowReader : ICursorRowReader<SuperCandlesOrderStats5mDTO>
         {
-            public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
-                ColumnAndNumbersForParsing.AlgOrderStats5mSchema;
-
             public static void ReadRows(
                 ref Utf8JsonReader reader,
                 List<SuperCandlesOrderStats5mDTO> list,
@@ -1418,9 +1323,6 @@ namespace ProjectTraiding.Moex.Parsing
 
         public readonly struct Hi2StockRowReader : ICursorRowReader<Hi2AssetDTO>
         {
-            public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
-                ColumnAndNumbersForParsing.Hi2AssetSchema;
-
             public static void ReadRows(
                 ref Utf8JsonReader reader,
                 List<Hi2AssetDTO> list,
@@ -1430,9 +1332,6 @@ namespace ProjectTraiding.Moex.Parsing
 
         public readonly struct Hi2FuturesRowReader : ICursorRowReader<Hi2FuturesDTO>
         {
-            public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
-                ColumnAndNumbersForParsing.Hi2FuturesSchema;
-
             public static void ReadRows(
                 ref Utf8JsonReader reader,
                 List<Hi2FuturesDTO> list,
@@ -1442,9 +1341,6 @@ namespace ProjectTraiding.Moex.Parsing
 
         public readonly struct MegaAlertsStockRowReader : ICursorRowReader<MegaAlertsAssetsDTO>
         {
-            public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
-                ColumnAndNumbersForParsing.MegaAlertsAssetSchema;
-
             public static void ReadRows(
                 ref Utf8JsonReader reader,
                 List<MegaAlertsAssetsDTO> list,
@@ -1454,9 +1350,6 @@ namespace ProjectTraiding.Moex.Parsing
 
         public readonly struct MegaAlertsFuturesRowReader : ICursorRowReader<MegaAlertsFuturesDTO>
         {
-            public static ColumnAndNumbersForParsing.ExpectedSchema Schema =>
-                ColumnAndNumbersForParsing.MegaAlertsFuturesSchema;
-
             public static void ReadRows(
                 ref Utf8JsonReader reader,
                 List<MegaAlertsFuturesDTO> list,

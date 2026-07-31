@@ -26,7 +26,8 @@ namespace ProjectTraiding.Moex.Clients
 
         public static List<SuperCandlesTradeStats5mDTO> Parse(
             ReadOnlySpan<byte> body, out PaginationCursorDTO cursor)
-            => ParsingAlgUtf8.ParseTradeStatsStock(body, out cursor);
+            => ParsingAlgUtf8.ParseCursorBlock<ParsingAlgUtf8.TradeStatsStockRowReader, SuperCandlesTradeStats5mDTO>(
+                body, Schema, out cursor);
     }
 
     public readonly struct TradeStatsFuturesCursorKind : IAlgCursorKind<SuperCandlesFuturesTradeStats5mDTO>
@@ -44,7 +45,8 @@ namespace ProjectTraiding.Moex.Clients
 
         public static List<SuperCandlesFuturesTradeStats5mDTO> Parse(
             ReadOnlySpan<byte> body, out PaginationCursorDTO cursor)
-            => ParsingAlgUtf8.ParseTradeStatsFutures(body, out cursor);
+            => ParsingAlgUtf8.ParseCursorBlock<ParsingAlgUtf8.TradeStatsFuturesRowReader, SuperCandlesFuturesTradeStats5mDTO>(
+                body, Schema, out cursor);
     }
 
     public readonly struct ObStatsStockCursorKind : IAlgCursorKind<SuperCandlesOrderBookStats5mDTO>
@@ -62,7 +64,8 @@ namespace ProjectTraiding.Moex.Clients
 
         public static List<SuperCandlesOrderBookStats5mDTO> Parse(
             ReadOnlySpan<byte> body, out PaginationCursorDTO cursor)
-            => ParsingAlgUtf8.ParseOBStatsStock(body, out cursor);
+            => ParsingAlgUtf8.ParseCursorBlock<ParsingAlgUtf8.ObStatsStockRowReader, SuperCandlesOrderBookStats5mDTO>(
+                body, Schema, out cursor);
     }
 
     public readonly struct ObStatsFuturesCursorKind : IAlgCursorKind<SuperCandlesFuturesOrderBookStats5mDTO>
@@ -80,7 +83,8 @@ namespace ProjectTraiding.Moex.Clients
 
         public static List<SuperCandlesFuturesOrderBookStats5mDTO> Parse(
             ReadOnlySpan<byte> body, out PaginationCursorDTO cursor)
-            => ParsingAlgUtf8.ParseOBStatsFutures(body, out cursor);
+            => ParsingAlgUtf8.ParseCursorBlock<ParsingAlgUtf8.ObStatsFuturesRowReader, SuperCandlesFuturesOrderBookStats5mDTO>(
+                body, Schema, out cursor);
     }
 
     public readonly struct OrderStatsStockCursorKind : IAlgCursorKind<SuperCandlesOrderStats5mDTO>
@@ -98,7 +102,8 @@ namespace ProjectTraiding.Moex.Clients
 
         public static List<SuperCandlesOrderStats5mDTO> Parse(
             ReadOnlySpan<byte> body, out PaginationCursorDTO cursor)
-            => ParsingAlgUtf8.ParseOrderStatsStock(body, out cursor);
+            => ParsingAlgUtf8.ParseCursorBlock<ParsingAlgUtf8.OrderStatsStockRowReader, SuperCandlesOrderStats5mDTO>(
+                body, Schema, out cursor);
     }
 
     public readonly struct Hi2StockCursorKind : IAlgCursorKind<Hi2AssetDTO>
@@ -116,7 +121,8 @@ namespace ProjectTraiding.Moex.Clients
 
         public static List<Hi2AssetDTO> Parse(
             ReadOnlySpan<byte> body, out PaginationCursorDTO cursor)
-            => ParsingAlgUtf8.ParseHi2Stock(body, out cursor);
+            => ParsingAlgUtf8.ParseCursorBlock<ParsingAlgUtf8.Hi2StockRowReader, Hi2AssetDTO>(
+                body, Schema, out cursor);
     }
 
     public readonly struct Hi2FuturesCursorKind : IAlgCursorKind<Hi2FuturesDTO>
@@ -134,7 +140,8 @@ namespace ProjectTraiding.Moex.Clients
 
         public static List<Hi2FuturesDTO> Parse(
             ReadOnlySpan<byte> body, out PaginationCursorDTO cursor)
-            => ParsingAlgUtf8.ParseHi2Futures(body, out cursor);
+            => ParsingAlgUtf8.ParseCursorBlock<ParsingAlgUtf8.Hi2FuturesRowReader, Hi2FuturesDTO>(
+                body, Schema, out cursor);
     }
 
     public readonly struct MegaAlertsStockCursorKind : IAlgCursorKind<MegaAlertsAssetsDTO>
@@ -154,7 +161,8 @@ namespace ProjectTraiding.Moex.Clients
 
         public static List<MegaAlertsAssetsDTO> Parse(
             ReadOnlySpan<byte> body, out PaginationCursorDTO cursor)
-            => ParsingAlgUtf8.ParseMegaAlertsStock(body, out cursor);
+            => ParsingAlgUtf8.ParseCursorBlock<ParsingAlgUtf8.MegaAlertsStockRowReader, MegaAlertsAssetsDTO>(
+                body, Schema, out cursor);
     }
 
     public readonly struct MegaAlertsFuturesCursorKind : IAlgCursorKind<MegaAlertsFuturesDTO>
@@ -174,6 +182,7 @@ namespace ProjectTraiding.Moex.Clients
 
         public static List<MegaAlertsFuturesDTO> Parse(
             ReadOnlySpan<byte> body, out PaginationCursorDTO cursor)
-            => ParsingAlgUtf8.ParseMegaAlertsFutures(body, out cursor);
+            => ParsingAlgUtf8.ParseCursorBlock<ParsingAlgUtf8.MegaAlertsFuturesRowReader, MegaAlertsFuturesDTO>(
+                body, Schema, out cursor);
     }
 }
