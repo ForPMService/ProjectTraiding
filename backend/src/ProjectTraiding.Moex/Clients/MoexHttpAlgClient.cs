@@ -33,6 +33,13 @@ namespace ProjectTraiding.Moex.Clients
             _logger = logger;
         }
 
+        /// <summary>
+        /// Диагностическое получение исходного тела ответа ALGOPACK. Успешность статуса
+        /// намеренно не проверяется: сырая точка существует ради того, чтобы увидеть тело
+        /// ошибки Московской биржи так же, как тело успешного ответа. Освобождение запроса
+        /// и ответа происходит после полного чтения тела — область using закрывается только
+        /// при выходе из метода, то есть после завершения чтения.
+        /// </summary>
         public async Task<string> GetRaw(
             string method,
             Dictionary<string, string>? queryParams = null,
@@ -46,10 +53,9 @@ namespace ProjectTraiding.Moex.Clients
                 requestUrl += queryString.ToString();
             }
             EnsureApiKeyConfigured();
-            var request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
+            using HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
             request.Headers.Add("Authorization", $"Bearer {_options.AlgKey}");
-            var response = await _httpClient.SendAsync(request, cancellationToken);
-            // Не бросаем — видим что MOEX ответил
+            using HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken);
             return await response.Content.ReadAsStringAsync(cancellationToken);
         }
 
