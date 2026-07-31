@@ -26,8 +26,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         private readonly ILogger<OrderbookReceiverService> _logger;
         private readonly TimeSpan _instrumentFetchTimeout;
         private readonly TimeSpan _heartbeatMinInterval;
-        private readonly Dictionary<string, OrderbookInstrumentState> _states =
-            new Dictionary<string, OrderbookInstrumentState>();
+        private readonly Dictionary<string, ReceiverInstrumentSessionState> _states =
+            new Dictionary<string, ReceiverInstrumentSessionState>();
         private bool _initialized;
 
         public OrderbookReceiverService(
@@ -84,7 +84,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             RealtimeLatestWriter latestWriter =
                 scope.ServiceProvider.GetRequiredService<RealtimeLatestWriter>();
 
-            foreach (KeyValuePair<string, OrderbookInstrumentState> pair in _states)
+            foreach (KeyValuePair<string, ReceiverInstrumentSessionState> pair in _states)
             {
                 if (pair.Value.IsStopping)
                     continue;
@@ -165,7 +165,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 desired.Add(instruments[i].Secid);
 
             // Пометка. Изменяем только значения, ключи словаря не трогаем — перечисление безопасно.
-            foreach (KeyValuePair<string, OrderbookInstrumentState> pair in _states)
+            foreach (KeyValuePair<string, ReceiverInstrumentSessionState> pair in _states)
             {
                 if (desired.Contains(pair.Key) || pair.Value.IsStopping)
                     continue;
@@ -177,7 +177,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
             // Ключи собираем заранее: удалять из словаря во время перечисления нельзя.
             List<string> stopping = new();
-            foreach (KeyValuePair<string, OrderbookInstrumentState> pair in _states)
+            foreach (KeyValuePair<string, ReceiverInstrumentSessionState> pair in _states)
             {
                 if (pair.Value.IsStopping)
                     stopping.Add(pair.Key);
@@ -186,7 +186,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             for (int i = 0; i < stopping.Count; i++)
             {
                 string secid = stopping[i];
-                OrderbookInstrumentState state = _states[secid];
+                ReceiverInstrumentSessionState state = _states[secid];
                 try
                 {
                     await coverageWriter.CloseSessionAsync(state.SessionId, state.RowsTotal, ct);
@@ -251,7 +251,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             long heartbeatTimestamp = Stopwatch.GetTimestamp();
             _states.Add(
                 instrument.Secid,
-                new OrderbookInstrumentState(
+                new ReceiverInstrumentSessionState(
                     sessionId, instrument.Market, boardId, heartbeatTimestamp));
             MoexRealtimeReceiverLogMessages.OrderbookInstrumentPrepared(
                 _logger, instrument.Secid, instrument.Market, sessionId);
@@ -259,7 +259,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
         private async Task PollInstrumentAsync(
             string secid,
-            OrderbookInstrumentState state,
+            ReceiverInstrumentSessionState state,
             MoexRealtimeRestClient client,
             RealtimeRowWriter<RealtimeOrderbookRowDTO> writer,
             RealtimeLatestWriter latestWriter,
@@ -302,23 +302,12 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 state.RowsTotal += result.Rows.Count;
             }
 
-            await HeartbeatIfDueAsync(state, coverageWriter, commitCt);
+            await ReceiverSessionHeartbeat.WriteIfDueAsync(
+                state, _heartbeatMinInterval, coverageWriter, commitCt);
 
             // Витрина — best-effort и выполняется последней только для непустого ответа.
             if (result.Rows.Count > 0)
                 await latestWriter.WriteLatestOrderbookAsync(secid, result.Rows, commitCt);
-        }
-
-        private async Task HeartbeatIfDueAsync(
-            OrderbookInstrumentState state,
-            StreamCoverageWriter coverageWriter,
-            CancellationToken ct)
-        {
-            if (Stopwatch.GetElapsedTime(state.LastHeartbeatTimestamp) < _heartbeatMinInterval)
-                return;
-
-            await coverageWriter.HeartbeatAsync(state.SessionId, state.RowsTotal, ct);
-            state.LastHeartbeatTimestamp = Stopwatch.GetTimestamp();
         }
 
         protected override async Task CloseSessionsAsync()
@@ -329,7 +318,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 StreamCoverageWriter coverageWriter =
                     scope.ServiceProvider.GetRequiredService<StreamCoverageWriter>();
 
-                foreach (KeyValuePair<string, OrderbookInstrumentState> pair in _states)
+                foreach (KeyValuePair<string, ReceiverInstrumentSessionState> pair in _states)
                 {
                     try
                     {
@@ -363,31 +352,4 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         }
     }
 
-    internal sealed class OrderbookInstrumentState
-    {
-        public OrderbookInstrumentState(
-            long sessionId,
-            string market,
-            string boardId,
-            long lastHeartbeatTimestamp)
-        {
-            SessionId = sessionId;
-            Market = market;
-            BoardId = boardId;
-            LastHeartbeatTimestamp = lastHeartbeatTimestamp;
-        }
-
-        public long SessionId { get; }
-        public string Market { get; }
-        public string BoardId { get; }
-        public long RowsTotal { get; set; }
-        public long LastHeartbeatTimestamp { get; set; }
-
-        /// <summary>
-        /// Подписка снята оператором: инструмент исключён из опроса, сеанс покрытия ждёт
-        /// штатного закрытия. Состояние удаляется из словаря только после успешного закрытия.
-        /// Обратно в активное не возвращается — иначе сеанс перекрыл бы период отключения.
-        /// </summary>
-        public bool IsStopping { get; set; }
-    }
 }

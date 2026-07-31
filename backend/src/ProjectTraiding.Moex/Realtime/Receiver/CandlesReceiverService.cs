@@ -357,24 +357,13 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 state.LastClosedBegin = maxClosedBegin;
             }
 
-            await HeartbeatIfDueAsync(state, coverageWriter, commitCt);
+            await ReceiverSessionHeartbeat.WriteIfDueAsync(
+                state, _heartbeatMinInterval, coverageWriter, commitCt);
 
             // Оперативное хранилище — best-effort, последним действием: в ключ кладётся последняя
             // известная свеча ответа (закрытая или растущая); писатель сам проглатывает сбой.
             if (latestKnown is not null)
                 await latestWriter.WriteLatestCandleAsync(secid, latestKnown, commitCt);
-        }
-
-        private async Task HeartbeatIfDueAsync(
-            CandleInstrumentState state,
-            StreamCoverageWriter coverageWriter,
-            CancellationToken ct)
-        {
-            if (Stopwatch.GetElapsedTime(state.LastHeartbeatTimestamp) < _heartbeatMinInterval)
-                return;
-
-            await coverageWriter.HeartbeatAsync(state.SessionId, state.RowsTotal, ct);
-            state.LastHeartbeatTimestamp = Stopwatch.GetTimestamp();
         }
 
         protected override async Task CloseSessionsAsync()
@@ -417,29 +406,18 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         }
     }
 
-    internal sealed class CandleInstrumentState
+    internal sealed class CandleInstrumentState : ReceiverInstrumentSessionState
     {
         public CandleInstrumentState(
             long sessionId, string market, string boardId, long lastHeartbeatTimestamp)
+            : base(sessionId, market, boardId, lastHeartbeatTimestamp)
         {
-            SessionId = sessionId;
-            Market = market;
-            BoardId = boardId;
-            LastHeartbeatTimestamp = lastHeartbeatTimestamp;
         }
 
-        public long SessionId { get; }
-        public string Market { get; }
-        public string BoardId { get; }
-        public long RowsTotal { get; set; }
-        public long LastHeartbeatTimestamp { get; set; }
-        public DateTime? LastClosedBegin { get; set; }
-
         /// <summary>
-        /// Подписка снята оператором: инструмент исключён из опроса, сеанс покрытия ждёт
-        /// штатного закрытия. Состояние удаляется из словаря только после успешного закрытия.
-        /// Обратно в активное не возвращается — иначе сеанс перекрыл бы период отключения.
+        /// Начало последней записанной закрытой минуты. Хранится только в пределах
+        /// текущего запуска и отсекает повторную запись уже обработанных минут.
         /// </summary>
-        public bool IsStopping { get; set; }
+        public DateTime? LastClosedBegin { get; set; }
     }
 }

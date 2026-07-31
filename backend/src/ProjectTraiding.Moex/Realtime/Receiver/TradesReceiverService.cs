@@ -397,7 +397,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 state.AfterTradeNo = lastTradeNo;
             }
 
-            await HeartbeatIfDueAsync(state, coverageWriter, commitCt);
+            await ReceiverSessionHeartbeat.WriteIfDueAsync(
+                state, _heartbeatMinInterval, coverageWriter, commitCt);
 
             // Витрина последних значений — best-effort, последней: писатель сам проглатывает сбой.
             if (last is not null)
@@ -463,22 +464,11 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 state.AfterTradeNo = lastTradeNo;
             }
 
-            await HeartbeatIfDueAsync(state, coverageWriter, commitCt);
+            await ReceiverSessionHeartbeat.WriteIfDueAsync(
+                state, _heartbeatMinInterval, coverageWriter, commitCt);
 
             if (last is not null)
                 await latestWriter.WriteLatestFuturesTradeAsync(secid, last, commitCt);
-        }
-
-        private async Task HeartbeatIfDueAsync(
-            TradesInstrumentState state,
-            StreamCoverageWriter coverageWriter,
-            CancellationToken ct)
-        {
-            if (Stopwatch.GetElapsedTime(state.LastHeartbeatTimestamp) < _heartbeatMinInterval)
-                return;
-
-            await coverageWriter.HeartbeatAsync(state.SessionId, state.RowsTotal, ct);
-            state.LastHeartbeatTimestamp = Stopwatch.GetTimestamp();
         }
 
         private static async Task<(long TradeNo, DateTime SourceTime)?> TrySeedTailAsync(
@@ -585,7 +575,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         }
     }
 
-    internal sealed class TradesInstrumentState
+    internal sealed class TradesInstrumentState : ReceiverInstrumentSessionState
     {
         public TradesInstrumentState(
             long? afterTradeNo,
@@ -593,26 +583,16 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             string market,
             string boardId,
             long lastHeartbeatTimestamp)
+            : base(sessionId, market, boardId, lastHeartbeatTimestamp)
         {
             AfterTradeNo = afterTradeNo;
-            SessionId = sessionId;
-            Market = market;
-            BoardId = boardId;
-            LastHeartbeatTimestamp = lastHeartbeatTimestamp;
         }
 
-        public long? AfterTradeNo { get; set; }
-        public long SessionId { get; }
-        public string Market { get; }
-        public string BoardId { get; }
-        public long RowsTotal { get; set; }
-        public long LastHeartbeatTimestamp { get; set; }
-
         /// <summary>
-        /// Подписка снята оператором: инструмент исключён из опроса, сеанс покрытия ждёт
-        /// штатного закрытия. Состояние удаляется из словаря только после успешного закрытия.
-        /// Обратно в активное не возвращается — иначе сеанс перекрыл бы период отключения.
+        /// Номер сделки, после которого выполняется следующий запрос. Оперативная копия
+        /// внутри процесса: двигается сразу за постоянным курсором и только после
+        /// успешной записи страницы, чтобы не разойтись с ним при сбое.
         /// </summary>
-        public bool IsStopping { get; set; }
+        public long? AfterTradeNo { get; set; }
     }
 }
