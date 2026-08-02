@@ -1,3 +1,5 @@
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
+
 namespace ProjectTraiding.Moex.Clients.Errors;
 
 /// <summary>
@@ -20,5 +22,5 @@ public sealed class MoexUnexpectedStatusException : MoexHttpException
         IsRetryable = false;
     }
 
-    public override string ErrorCategory => "unexpected_status";
+    public override string ErrorCategory => MoexErrorTypes.UnexpectedStatus;
 }

@@ -1,3 +1,5 @@
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
+
 namespace ProjectTraiding.Moex.Clients.Errors;
 
 /// <summary>
@@ -33,5 +35,5 @@ public sealed class MoexTimeoutException : MoexHttpException
         TimeoutSource = timeoutSource;
     }
 
-    public override string ErrorCategory => "timeout";
+    public override string ErrorCategory => MoexErrorTypes.Timeout;
 }

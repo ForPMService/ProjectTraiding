@@ -167,15 +167,15 @@ public static class MoexClientServiceCollectionExtensions
 
         string errorType = statusCode switch
         {
-            HttpStatusCode.TooManyRequests => "rate_limit",
-            HttpStatusCode.InternalServerError => "server_error",
-            HttpStatusCode.BadGateway => "server_error",
-            HttpStatusCode.ServiceUnavailable => "server_error",
-            HttpStatusCode.GatewayTimeout => "server_error",
-            null when args.Outcome.Exception is TimeoutRejectedException => "timeout",
-            null when args.Outcome.Exception is TaskCanceledException => "timeout",
-            null when args.Outcome.Exception is HttpRequestException => "transport_error",
-            _ => "unknown"
+            HttpStatusCode.TooManyRequests => MoexErrorTypes.RateLimit,
+            HttpStatusCode.InternalServerError => MoexErrorTypes.ServerError,
+            HttpStatusCode.BadGateway => MoexErrorTypes.ServerError,
+            HttpStatusCode.ServiceUnavailable => MoexErrorTypes.ServerError,
+            HttpStatusCode.GatewayTimeout => MoexErrorTypes.ServerError,
+            null when args.Outcome.Exception is TimeoutRejectedException => MoexErrorTypes.Timeout,
+            null when args.Outcome.Exception is TaskCanceledException => MoexErrorTypes.Timeout,
+            null when args.Outcome.Exception is HttpRequestException => MoexErrorTypes.TransportError,
+            _ => MoexErrorTypes.Unknown
         };
 
         MoexLogMessages.RetryAttempt(

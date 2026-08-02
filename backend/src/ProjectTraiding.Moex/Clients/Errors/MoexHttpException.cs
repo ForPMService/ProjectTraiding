@@ -1,3 +1,5 @@
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
+
 namespace ProjectTraiding.Moex.Clients.Errors;
 
 /// <summary>
@@ -25,9 +27,9 @@ public abstract class MoexHttpException : Exception
     public TimeSpan? RetryAfter { get; init; }
 
     /// <summary>
-    /// Категория ошибки для структурированного логирования.
-    /// Возвращает стабильную строку-константу (например, "rate_limit", "server_error").
-    /// Не зависит от StatusCode и не меняется между версиями.
+    /// Стабильная категория ошибки для структурированного журналирования
+    /// и телеметрии. Значения определены в
+    /// <see cref="MoexErrorTypes"/>.
     /// </summary>
     public abstract string ErrorCategory { get; }
 

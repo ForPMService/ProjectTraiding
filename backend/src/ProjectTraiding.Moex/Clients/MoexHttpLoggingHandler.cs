@@ -43,7 +43,7 @@ namespace ProjectTraiding.Moex.Clients
                 // Метрика длительности не записывается — ответа нет.
                 MoexMetrics.HttpErrors.Add(1,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, _source),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.ErrorType, "transport_error"));
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.ErrorType, MoexErrorTypes.TransportError));
                 throw;
             }
 
@@ -64,7 +64,7 @@ namespace ProjectTraiding.Moex.Clients
             {
                 MoexMetrics.HttpErrors.Add(1,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, _source),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.ErrorType, "server_error"),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.ErrorType, MoexErrorTypes.ServerError),
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.StatusCode, (int)response.StatusCode));
             }
 

@@ -27,7 +27,10 @@ public static class MoexTelemetryAttributes
     /// В логах допустим полный endpoint; в метриках — только шаблон (кардинальность).</summary>
     public const string EndpointTemplate = "endpoint_template";
 
-    /// <summary>Тип ошибки: rate_limit, server_error, timeout, transport_error, schema_mismatch.</summary>
+    /// <summary>
+    /// Категория ошибки. Стабильные значения определены в
+    /// <see cref="MoexErrorTypes"/>.
+    /// </summary>
     public const string ErrorType = "error_type";
 
     /// <summary>HTTP status code.</summary>

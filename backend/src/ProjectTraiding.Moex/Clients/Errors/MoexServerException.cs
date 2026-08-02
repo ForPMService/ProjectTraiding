@@ -1,3 +1,5 @@
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
+
 namespace ProjectTraiding.Moex.Clients.Errors;
 
 /// <summary>
@@ -19,5 +21,5 @@ public sealed class MoexServerException : MoexHttpException
         IsRetryable = true;
     }
 
-    public override string ErrorCategory => "server_error";
+    public override string ErrorCategory => MoexErrorTypes.ServerError;
 }

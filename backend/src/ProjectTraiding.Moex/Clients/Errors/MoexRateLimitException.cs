@@ -1,3 +1,5 @@
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
+
 namespace ProjectTraiding.Moex.Clients.Errors;
 
 /// <summary>
@@ -37,5 +39,5 @@ public sealed class MoexRateLimitException : MoexHttpException
         RetryAfter = retryAfter;
     }
 
-    public override string ErrorCategory => "rate_limit";
+    public override string ErrorCategory => MoexErrorTypes.RateLimit;
 }

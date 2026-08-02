@@ -1,3 +1,5 @@
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
+
 namespace ProjectTraiding.Moex.Clients.Errors;
 
 /// <summary>
@@ -34,5 +36,5 @@ public sealed class MoexAuthException : MoexHttpException
         IsRetryable = false;
     }
 
-    public override string ErrorCategory => "auth";
+    public override string ErrorCategory => MoexErrorTypes.Auth;
 }

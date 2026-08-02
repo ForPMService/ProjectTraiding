@@ -67,7 +67,7 @@ namespace ProjectTraiding.Moex.Clients
             }
             catch (MoexSchemaMismatchException ex)
             {
-                MoexLogMessages.ParseFailed(_logger, ex, endpoint, "schema_mismatch", ex.Message);
+                MoexLogMessages.ParseFailed(_logger, ex, endpoint, MoexErrorTypes.SchemaMismatch, ex.Message);
                 throw;
             }
         }
@@ -105,7 +105,7 @@ namespace ProjectTraiding.Moex.Clients
             }
             catch (MoexSchemaMismatchException ex)
             {
-                MoexLogMessages.ParseFailed(_logger, ex, endpoint, "schema_mismatch", ex.Message);
+                MoexLogMessages.ParseFailed(_logger, ex, endpoint, MoexErrorTypes.SchemaMismatch, ex.Message);
                 throw;
             }
         }

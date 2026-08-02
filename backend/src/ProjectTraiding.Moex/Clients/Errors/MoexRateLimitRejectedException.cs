@@ -1,3 +1,5 @@
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
+
 namespace ProjectTraiding.Moex.Clients.Errors
 {
     /// <summary>
@@ -36,7 +38,7 @@ namespace ProjectTraiding.Moex.Clients.Errors
         /// "rate_limit_rejected" — отличается от "rate_limit" (429 от MOEX),
         /// чтобы в логах сразу видеть: проблема на нашей стороне, не на стороне MOEX.
         /// </summary>
-        public string ErrorCategory => "rate_limit_rejected";
+        public string ErrorCategory => MoexErrorTypes.RateLimitRejected;
 
         public MoexRateLimitRejectedException(string endpoint, string reason, TimeSpan? waitTime = null)
             : base($"Rate limit permit not acquired for {endpoint}: {reason}")

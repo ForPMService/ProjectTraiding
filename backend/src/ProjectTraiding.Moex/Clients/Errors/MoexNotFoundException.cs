@@ -1,3 +1,5 @@
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
+
 namespace ProjectTraiding.Moex.Clients.Errors;
 
 /// <summary>
@@ -18,5 +20,5 @@ public sealed class MoexNotFoundException : MoexHttpException
         IsRetryable = false;
     }
 
-    public override string ErrorCategory => "not_found";
+    public override string ErrorCategory => MoexErrorTypes.NotFound;
 }

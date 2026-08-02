@@ -1,3 +1,5 @@
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
+
 namespace ProjectTraiding.Moex.Clients.Errors;
 
 /// <summary>
@@ -18,5 +20,5 @@ public sealed class MoexBadRequestException : MoexHttpException
         IsRetryable = false;
     }
 
-    public override string ErrorCategory => "bad_request";
+    public override string ErrorCategory => MoexErrorTypes.BadRequest;
 }
