@@ -47,30 +47,34 @@ namespace ProjectTraiding.Moex.Loading
 
         public async Task<LoadOutcome> RunAsync(Guid taskId, CancellationToken ct, bool alreadyClaimed = false)
         {
-            MoexLoadTask? task = await _taskReader.GetByIdAsync(taskId, ct);
-            if (task is null)
-                return new LoadOutcome(LoadStatus.NotFound, 0);
-
-            if (task.StorageTarget != "clickhouse")
-                throw new InvalidOperationException(
-                    $"Задача {taskId} не нацелена на ClickHouse (storage_target={task.StorageTarget}).");
-
-            ILoadHandler? handler = _dispatcher.Resolve(task);
-            if (handler is null)
-                throw new InvalidOperationException(
-                    $"Нет обработчика для задачи {taskId} (data_kind={task.DataKind}, market={task.Market}, interval={task.CandleInterval}).");
-
-            // Фоновый подбор уже перевёл задачу в running одним атомарным запросом — повторный
-            // claim не нужен. Ручной запуск через операторскую точку приходит без захвата.
-            if (!alreadyClaimed)
-            {
-                bool claimed = await _taskWriter.MarkRunningAsync(taskId, ct);
-                if (!claimed)
-                    return new LoadOutcome(LoadStatus.NotClaimed, 0);
-            }
+            bool ownsRunningTask = alreadyClaimed;
 
             try
             {
+                MoexLoadTask? task = await _taskReader.GetByIdAsync(taskId, ct);
+                if (task is null)
+                    return new LoadOutcome(LoadStatus.NotFound, 0);
+
+                // Фоновый подбор уже перевёл задачу в running одним атомарным запросом — повторный
+                // claim не нужен. Ручной запуск через операторскую точку приходит без захвата.
+                if (!alreadyClaimed)
+                {
+                    bool claimed = await _taskWriter.MarkRunningAsync(taskId, ct);
+                    if (!claimed)
+                        return new LoadOutcome(LoadStatus.NotClaimed, 0);
+
+                    ownsRunningTask = true;
+                }
+
+                if (task.StorageTarget != "clickhouse")
+                    throw new InvalidOperationException(
+                        $"Задача {taskId} не нацелена на ClickHouse (storage_target={task.StorageTarget}).");
+
+                ILoadHandler? handler = _dispatcher.Resolve(task);
+                if (handler is null)
+                    throw new InvalidOperationException(
+                        $"Нет обработчика для задачи {taskId} (data_kind={task.DataKind}, market={task.Market}, interval={task.CandleInterval}).");
+
                 LoadStopOutcome stopOutcome = new LoadStopOutcome();
 
                 RowWriteSummary summary = await handler.LoadAsync(task, stopOutcome, _progress, ct);
@@ -105,12 +109,16 @@ namespace ProjectTraiding.Moex.Loading
                 // Остановка хоста, а не сбой задачи: возвращаем в очередь, а не в error.
                 // Иначе задача стала бы сиротой — автоподбор error не берёт (правка А2).
                 // CancellationToken.None: ct уже отменён, но статус закрыть обязаны.
-                await _taskWriter.RequeueAfterCancelAsync(taskId, CancellationToken.None);
+                if (ownsRunningTask)
+                    await _taskWriter.RequeueAfterCancelAsync(taskId, CancellationToken.None);
+
                 throw;
             }
             catch (Exception ex)
             {
-                await _taskWriter.MarkErrorAsync(taskId, ex.Message, null, CancellationToken.None);
+                if (ownsRunningTask)
+                    await _taskWriter.MarkErrorAsync(taskId, ex.Message, null, CancellationToken.None);
+
                 throw;
             }
         }
