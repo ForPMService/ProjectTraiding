@@ -39,14 +39,21 @@ namespace ProjectTraiding.Moex.Loading
                 MoexLogSources.Algopack,
                 MoexOperations.HistoryCursorFetch,
                 TKind.TelemetryDataKind,
-                TKind.TelemetryMarket);
+                TKind.TelemetryMarket,
+                MoexFlows.History);
 
             IAsyncEnumerable<List<TRow>> pages = _client.GetCursorPages<TKind, TRow>(
                 method, query,
                 stopOutcome: stopOutcome, operationTags: operationTags, cancellationToken: ct);
 
+            StorageInsertContext insertContext = new StorageInsertContext(
+                operationTags.DataKind,
+                operationTags.Market,
+                MoexFlows.History);
+
             return await _writer.WriteRangeAsync(
-                task.Id, task.Secid, task.SourceContractVersion, task.WriterVersion, pages, progress, ct);
+                task.Id, task.Secid, task.SourceContractVersion, task.WriterVersion,
+                pages, progress, insertContext, ct);
         }
 
         private static Dictionary<string, string> BuildQuery(MoexLoadTask task)

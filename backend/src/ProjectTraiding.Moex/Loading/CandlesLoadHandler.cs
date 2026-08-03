@@ -48,14 +48,21 @@ namespace ProjectTraiding.Moex.Loading
                 MoexLogSources.Algopack,
                 MoexOperations.HistoryCandlesFetch,
                 MoexDataKinds.Candles,
-                telemetryMarket);
+                telemetryMarket,
+                MoexFlows.History);
 
             IAsyncEnumerable<List<CandlesDTO>> pages = _client.GetCandles(
                 method, query, telemetryMarket: telemetryMarket,
                 stopOutcome: stopOutcome, operationTags: operationTags, cancellationToken: ct);
 
+            StorageInsertContext insertContext = new StorageInsertContext(
+                operationTags.DataKind,
+                operationTags.Market,
+                MoexFlows.History);
+
             return await writer.WriteRangeAsync(
-                task.Id, task.Secid, task.SourceContractVersion, task.WriterVersion, pages, progress, ct);
+                task.Id, task.Secid, task.SourceContractVersion, task.WriterVersion,
+                pages, progress, insertContext, ct);
         }
 
         // Доска в адресе в РАЗНОМ регистре: у акций строчными (boards/tqbr),

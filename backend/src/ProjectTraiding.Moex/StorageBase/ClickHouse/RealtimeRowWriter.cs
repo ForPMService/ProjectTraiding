@@ -49,6 +49,7 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
             string secid,
             IReadOnlyList<T> items,
             string? tradeSessionDate,
+            StorageInsertContext insertContext,
             CancellationToken ct)
         {
             if (items.Count == 0)
@@ -71,7 +72,8 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
             }
 
             string token = BuildToken(secid, firstTime, lastTime, rows.Count);
-            await _executor.InsertAsync(_map.Table, _map.Columns, _map.ColumnTypes, rows, token, ct);
+            await _executor.InsertAsync(
+                _map.Table, _map.Columns, _map.ColumnTypes, rows, token, insertContext, ct);
 
             return items.Count;
         }

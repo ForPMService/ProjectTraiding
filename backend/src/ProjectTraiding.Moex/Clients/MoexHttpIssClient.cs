@@ -44,7 +44,8 @@ namespace ProjectTraiding.Moex.Clients
                 MoexLogSources.Iss,
                 MoexOperations.ReferenceInstrumentsFetch,
                 MoexDataKinds.Instruments,
-                MoexMarkets.Stock);
+                MoexMarkets.Stock,
+                MoexFlows.History);
 
             long operationStart = Stopwatch.GetTimestamp();
             try

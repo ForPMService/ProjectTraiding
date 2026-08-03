@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
 
 namespace ProjectTraiding.Moex.StorageBase.ClickHouse
 {
@@ -33,6 +34,7 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
             IReadOnlyDictionary<string, string> columnTypes,
             IReadOnlyList<object?[]> rows,
             string deduplicationToken,
+            StorageInsertContext insertContext,
             CancellationToken ct)
         {
             if (rows.Count == 0)
@@ -62,13 +64,55 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
 
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
                 ClickHouseWriterLogMessages.WriteCompleted(_logger, table, inserted, elapsed);
+
+                RecordInsert(in insertContext, MoexOutcomes.Success, inserted, elapsed);
                 return inserted;
             }
             catch (Exception ex)
             {
                 ClickHouseWriterLogMessages.WriteFailed(_logger, ex, table, ex.GetType().Name);
+
+                // Обработчик остаётся один: разводить отмену в отдельный catch значило бы
+                // лишить её существующего события журнала. Различие видно по типу исключения,
+                // и на исход метрики оно влияет, а на журналирование — нет.
+                string outcome = ex is OperationCanceledException
+                    ? MoexOutcomes.Cancelled
+                    : MoexOutcomes.Error;
+
+                // Число вставленных строк не записывается: драйвер его не подтвердил.
+                RecordInsert(in insertContext, outcome, null, Stopwatch.GetElapsedTime(startTs));
+
                 throw;
             }
+        }
+
+        private static void RecordInsert(
+            in StorageInsertContext context,
+            string outcome,
+            long? insertedRows,
+            TimeSpan elapsed)
+        {
+            TagList operationTags = new TagList
+            {
+                { MoexTelemetryAttributes.DataKind, context.DataKind },
+                { MoexTelemetryAttributes.Market, context.Market },
+                { MoexTelemetryAttributes.Flow, context.Flow },
+                { MoexTelemetryAttributes.Outcome, outcome },
+            };
+
+            MoexMetrics.StorageInsertOperations.Add(1, operationTags);
+
+            if (insertedRows is long rows)
+                MoexMetrics.StorageInsertRows.Add(rows, operationTags);
+
+            TagList durationTags = new TagList
+            {
+                { MoexTelemetryAttributes.DataKind, context.DataKind },
+                { MoexTelemetryAttributes.Market, context.Market },
+                { MoexTelemetryAttributes.Flow, context.Flow },
+            };
+
+            MoexMetrics.StorageInsertDuration.Record(elapsed.TotalSeconds, durationTags);
         }
     }
 }

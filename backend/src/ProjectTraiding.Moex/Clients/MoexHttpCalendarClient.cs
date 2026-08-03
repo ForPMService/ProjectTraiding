@@ -41,7 +41,8 @@ namespace ProjectTraiding.Moex.Clients
                 MoexLogSources.Calendar,
                 MoexOperations.CalendarOffDaysFetch,
                 MoexDataKinds.OffDays,
-                MoexMarkets.Stock);
+                MoexMarkets.Stock,
+                MoexFlows.History);
 
             long operationStart = Stopwatch.GetTimestamp();
             try
@@ -104,7 +105,8 @@ namespace ProjectTraiding.Moex.Clients
                 MoexLogSources.Calendar,
                 MoexOperations.CalendarOffDaysFetch,
                 MoexDataKinds.OffDays,
-                MoexMarkets.Futures);
+                MoexMarkets.Futures,
+                MoexFlows.History);
 
             long operationStart = Stopwatch.GetTimestamp();
             try

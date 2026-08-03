@@ -287,7 +287,13 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 MoexLogSources.RealtimeRest,
                 MoexOperations.RealtimeCandlesPoll,
                 MoexDataKinds.Candles,
-                state.Market);
+                state.Market,
+                MoexFlows.Realtime);
+
+            StorageInsertContext insertContext = new StorageInsertContext(
+                operationTags.DataKind,
+                operationTags.Market,
+                MoexFlows.Realtime);
 
             long fetchStart = Stopwatch.GetTimestamp();
 
@@ -305,6 +311,13 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         candles = await client.GetCandlesTodayFuturesAsync(
                             secid, from, now, CandleInterval, fetchCts.Token);
 
+                    MoexMetrics.RowsReceived.Add(
+                        candles.Count,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, operationTags.Source),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, operationTags.DataKind),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, operationTags.Market),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Flow, operationTags.Flow));
+
                     MoexMetrics.RecordOperationSuccess(
                         in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                 }
@@ -312,6 +325,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 {
                     MoexMetrics.RecordOperationCancelled(
                         in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                    MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Cancelled);
                     throw;
                 }
                 catch (OperationCanceledException) when (fetchCts.IsCancellationRequested)
@@ -320,12 +334,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         _logger, secid, state.Market, _instrumentFetchTimeout);
                     MoexMetrics.RecordOperationTimeout(
                         in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                    MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
                     return;
                 }
                 catch (Exception ex)
                 {
                     MoexMetrics.RecordOperationError(
                         in operationTags, ex, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                    MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
                     throw;
                 }
             }
@@ -340,43 +356,58 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             DateTime latestKnownBegin = DateTime.MinValue;
             DateTime maxClosedBegin = state.LastClosedBegin ?? DateTime.MinValue;
 
-            for (int i = 0; i < candles.Count; i++)
+            try
             {
-                CandlesDTO candle = candles[i];
-                if (candle.Begin is null)
-                    continue;
-
-                DateTime begin = candle.Begin.Value;
-
-                if (begin > latestKnownBegin)
+                for (int i = 0; i < candles.Count; i++)
                 {
-                    latestKnownBegin = begin;
-                    latestKnown = candle;
+                    CandlesDTO candle = candles[i];
+                    if (candle.Begin is null)
+                        continue;
+
+                    DateTime begin = candle.Begin.Value;
+
+                    if (begin > latestKnownBegin)
+                    {
+                        latestKnownBegin = begin;
+                        latestKnown = candle;
+                    }
+
+                    bool isClosed = begin.AddMinutes(CandleInterval) <= now;
+                    if (!isClosed)
+                        continue;
+
+                    if (state.LastClosedBegin is null || begin > state.LastClosedBegin.Value)
+                    {
+                        closed.Add(candle);
+                        if (begin > maxClosedBegin)
+                            maxClosedBegin = begin;
+                    }
                 }
 
-                bool isClosed = begin.AddMinutes(CandleInterval) <= now;
-                if (!isClosed)
-                    continue;
-
-                if (state.LastClosedBegin is null || begin > state.LastClosedBegin.Value)
+                if (closed.Count > 0)
                 {
-                    closed.Add(candle);
-                    if (begin > maxClosedBegin)
-                        maxClosedBegin = begin;
+                    // Фиксация — под хостовым commitCt. У свечей курсора в базе нет; durable-запись —
+                    // только ClickHouse, за ней сразу двигаются граница и счётчик состояния. Запись
+                    // предварительна (приоритет 0): источник истины — исторический загрузчик (приоритет 1),
+                    // он перекрывает минуту при слиянии. До планировщика догрузки текущего дня
+                    // предварительная версия может дожить до ручного прогона; точные расчёты обязаны
+                    // считать строки приёмника предварительными.
+                    await writer.WriteAsync(secid, closed, null, insertContext, commitCt);
+                    state.RowsTotal += closed.Count;
+                    state.LastClosedBegin = maxClosedBegin;
                 }
+
+                MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Success);
             }
-
-            if (closed.Count > 0)
+            catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
             {
-                // Фиксация — под хостовым commitCt. У свечей курсора в базе нет; durable-запись —
-                // только ClickHouse, за ней сразу двигаются граница и счётчик состояния. Запись
-                // предварительна (приоритет 0): источник истины — исторический загрузчик (приоритет 1),
-                // он перекрывает минуту при слиянии. До планировщика догрузки текущего дня
-                // предварительная версия может дожить до ручного прогона; точные расчёты обязаны
-                // считать строки приёмника предварительными.
-                await writer.WriteAsync(secid, closed, null, commitCt);
-                state.RowsTotal += closed.Count;
-                state.LastClosedBegin = maxClosedBegin;
+                MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Cancelled);
+                throw;
+            }
+            catch (Exception)
+            {
+                MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
+                throw;
             }
 
             await ReceiverSessionHeartbeat.WriteIfDueAsync(

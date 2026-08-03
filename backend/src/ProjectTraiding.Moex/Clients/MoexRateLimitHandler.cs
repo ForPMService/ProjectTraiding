@@ -26,6 +26,7 @@ namespace ProjectTraiding.Moex.Clients
         private readonly RateLimiter _limiter;
         private readonly MoexOptions _options;
         private readonly ILogger<MoexRateLimitHandler> _logger;
+        private readonly string _source;
 
         /// <summary>
         /// Порог ожидания в миллисекундах, после которого пишется лог RateLimitQueued.
@@ -37,11 +38,13 @@ namespace ProjectTraiding.Moex.Clients
         public MoexRateLimitHandler(
             RateLimiter limiter,
             MoexOptions options,
-            ILogger<MoexRateLimitHandler> logger)
+            ILogger<MoexRateLimitHandler> logger,
+            string source)
         {
             _limiter = limiter;
             _options = options;
             _logger = logger;
+            _source = source;
         }
 
         protected override async Task<HttpResponseMessage> SendAsync(
@@ -75,10 +78,17 @@ namespace ProjectTraiding.Moex.Clients
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
                 // Таймаут acquire (наш CTS сработал), а не отмена вызывающего кода.
+                TimeSpan waitTime = Stopwatch.GetElapsedTime(waitStart);
+                MoexMetrics.RateLimitRejected.Add(
+                    1,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, _source),
+                    new KeyValuePair<string, object?>("reason", "acquire_timeout"));
+                MoexLogMessages.RateLimitRejected(
+                    _logger, _source, endpoint, "acquire_timeout", waitTime.TotalMilliseconds);
                 throw new MoexRateLimitRejectedException(
                     endpoint,
                     reason: "acquire_timeout",
-                    waitTime: Stopwatch.GetElapsedTime(waitStart));
+                    waitTime: waitTime);
             }
             // Если cancellationToken отменён — OperationCanceledException пролетает наверх как есть.
             // Это правильно: вызывающий код сам отменил операцию.
@@ -90,6 +100,12 @@ namespace ProjectTraiding.Moex.Clients
             {
                 // Очередь переполнена — мгновенный отказ.
                 lease.Dispose();
+                MoexMetrics.RateLimitRejected.Add(
+                    1,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, _source),
+                    new KeyValuePair<string, object?>("reason", "queue_full"));
+                MoexLogMessages.RateLimitRejected(
+                    _logger, _source, endpoint, "queue_full", 0);
                 throw new MoexRateLimitRejectedException(
                     endpoint,
                     reason: "queue_full",
@@ -103,14 +119,20 @@ namespace ProjectTraiding.Moex.Clients
                 MoexLogMessages.RateLimitAcquired(_logger, endpoint, waitMs);
 
                 // Метрики: permit получен + время ожидания.
-                MoexMetrics.RateLimitAcquired.Add(1);
-                MoexMetrics.RateLimitWaitDuration.Record(waitMs);
+                MoexMetrics.RateLimitAcquired.Add(
+                    1,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, _source));
+                MoexMetrics.RateLimitWaitDuration.Record(
+                    waitMs,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, _source));
 
                 // Если ждали дольше порога — дополнительный Information-лог + метрика.
                 if (waitMs > QueuedThresholdMs)
                 {
                     MoexLogMessages.RateLimitQueued(_logger, endpoint, waitMs);
-                    MoexMetrics.RateLimitQueued.Add(1);
+                    MoexMetrics.RateLimitQueued.Add(
+                        1,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, _source));
                 }
 
                 // Жетон получен — ниже по цепи остаются журналирование и транспорт.

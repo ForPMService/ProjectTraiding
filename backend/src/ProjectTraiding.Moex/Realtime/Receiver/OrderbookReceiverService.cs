@@ -273,7 +273,13 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 MoexLogSources.RealtimeRest,
                 MoexOperations.RealtimeOrderbookPoll,
                 MoexDataKinds.Orderbook,
-                state.Market);
+                state.Market,
+                MoexFlows.Realtime);
+
+            StorageInsertContext insertContext = new StorageInsertContext(
+                operationTags.DataKind,
+                operationTags.Market,
+                MoexFlows.Realtime);
 
             long fetchStart = Stopwatch.GetTimestamp();
 
@@ -289,6 +295,13 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     else
                         result = await client.GetOrderbookFuturesAsync(secid, fetchCts.Token);
 
+                    MoexMetrics.RowsReceived.Add(
+                        result.Rows.Count,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, operationTags.Source),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, operationTags.DataKind),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, operationTags.Market),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Flow, operationTags.Flow));
+
                     MoexMetrics.RecordOperationSuccess(
                         in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                 }
@@ -297,6 +310,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     // Остановка хоста — не отказ источника.
                     MoexMetrics.RecordOperationCancelled(
                         in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                    MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Cancelled);
                     throw;
                 }
                 catch (OperationCanceledException) when (fetchCts.IsCancellationRequested)
@@ -307,24 +321,42 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         _logger, secid, state.Market, _instrumentFetchTimeout);
                     MoexMetrics.RecordOperationTimeout(
                         in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                    MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
                     return;
                 }
                 catch (Exception ex)
                 {
                     MoexMetrics.RecordOperationError(
                         in operationTags, ex, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                    MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
                     throw;
                 }
             }
 
-            if (result.Rows.Count > 0)
+            try
             {
-                // Фиксация — под хостовым commitCt. У стакана курсора нет, durable-запись — только
-                // ClickHouse; за ней сразу двигается накопленный счётчик состояния.
-                string? sessionDate = result.DataVersion?.TradeSessionDate;
-                await writer.WriteAsync(secid, result.Rows, sessionDate, commitCt);
+                if (result.Rows.Count > 0)
+                {
+                    // Фиксация — под хостовым commitCt. У стакана курсора нет, durable-запись — только
+                    // ClickHouse; за ней сразу двигается накопленный счётчик состояния.
+                    string? sessionDate = result.DataVersion?.TradeSessionDate;
+                    await writer.WriteAsync(
+                        secid, result.Rows, sessionDate, insertContext, commitCt);
 
-                state.RowsTotal += result.Rows.Count;
+                    state.RowsTotal += result.Rows.Count;
+                }
+
+                MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Success);
+            }
+            catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
+            {
+                MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Cancelled);
+                throw;
+            }
+            catch (Exception)
+            {
+                MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
+                throw;
             }
 
             await ReceiverSessionHeartbeat.WriteIfDueAsync(

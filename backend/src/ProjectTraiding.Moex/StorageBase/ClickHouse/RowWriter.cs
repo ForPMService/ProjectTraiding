@@ -49,6 +49,7 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
             string writerVersion,
             IAsyncEnumerable<List<T>> pages,
             ILoadProgressReporter progress,
+            StorageInsertContext insertContext,
             CancellationToken ct)
         {
             _map.EnsureRangeValid(secid);
@@ -77,7 +78,7 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                     {
                         (lastToken, long reported) = await FlushAsync(
                             secid, sourceContractVersion, writerVersion,
-                            batch, batchFirstTime, batchLastTime, ct);
+                            batch, batchFirstTime, batchLastTime, insertContext, ct);
                         rowsInsertedReported += reported;
                         batch.Clear();
 
@@ -90,7 +91,7 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
             {
                 (lastToken, long reported) = await FlushAsync(
                     secid, sourceContractVersion, writerVersion,
-                    batch, batchFirstTime, batchLastTime, ct);
+                    batch, batchFirstTime, batchLastTime, insertContext, ct);
                 rowsInsertedReported += reported;
 
                 await progress.ReportAsync(taskId, rowsRead, batchLastTime, ct);
@@ -103,12 +104,13 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
         private async Task<(string Token, long Reported)> FlushAsync(
             string secid, string sourceContractVersion, string writerVersion,
             IReadOnlyList<object?[]> batch, DateTime firstTime, DateTime lastTime,
+            StorageInsertContext insertContext,
             CancellationToken ct)
         {
             string token = BuildToken(
                 secid, firstTime, lastTime, batch.Count, sourceContractVersion, writerVersion);
             long reported = await _executor.InsertAsync(
-                _map.Table, _map.Columns, _map.ColumnTypes, batch, token, ct);
+                _map.Table, _map.Columns, _map.ColumnTypes, batch, token, insertContext, ct);
             return (token, reported);
         }
 

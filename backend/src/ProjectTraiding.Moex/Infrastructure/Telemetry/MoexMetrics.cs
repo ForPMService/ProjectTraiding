@@ -55,6 +55,15 @@ public static class MoexMetrics
     public static readonly Counter<long> RateLimitQueued =
         Meter.CreateCounter<long>("moex.ratelimit.queued", description: "MOEX rate limit queued requests");
 
+    /// <summary>
+    /// Количество отказов ограничителя: запрос не получил разрешение и в сеть не ушёл.
+    /// Причина различает мгновенный отказ переполненной очереди и истечение ожидания.
+    /// </summary>
+    public static readonly Counter<long> RateLimitRejected =
+        Meter.CreateCounter<long>(
+            "moex.ratelimit.rejected",
+            description: "MOEX rate limit rejections total");
+
     // ══════════════════════════════════════════════
     // Пагинация
     // ══════════════════════════════════════════════
@@ -66,6 +75,51 @@ public static class MoexMetrics
     /// <summary>Количество загруженных строк.</summary>
     public static readonly Counter<long> RowsTotal =
         Meter.CreateCounter<long>("moex.rows.total", description: "MOEX rows loaded total");
+
+    /// <summary>
+    /// Количество строк, полученных от источника и успешно разобранных.
+    /// Сравнивается с числом успешно вставленных строк того же разреза.
+    /// </summary>
+    public static readonly Counter<long> RowsReceived =
+        Meter.CreateCounter<long>(
+            "moex.rows.received",
+            description: "MOEX rows received and parsed total");
+
+    /// <summary>
+    /// Количество полученных страниц исторической пагинации.
+    /// Одностраничные методы страницами не считаются: у них нет пагинации,
+    /// и счёт таких вызовов дублировал бы счётчик операций.
+    /// </summary>
+    public static readonly Counter<long> PagesReceived =
+        Meter.CreateCounter<long>(
+            "moex.pages.received",
+            description: "MOEX history pages received total");
+
+    // ══════════════════════════════════════════════
+    // Текущий приём
+    // ══════════════════════════════════════════════
+
+    /// <summary>
+    /// Количество завершённых опросов одного инструмента текущего приёма.
+    /// Единица шире операции источника: опрос включает не только обращение к бирже,
+    /// но и обязательную постоянную запись с продвижением постоянного состояния.
+    /// Успешный пустой ответ — тоже завершённый опрос.
+    /// </summary>
+    public static readonly Counter<long> RealtimePollCompleted =
+        Meter.CreateCounter<long>(
+            "moex.realtime.poll.completed",
+            description: "MOEX realtime instrument polls completed total");
+
+    /// <summary>Записывает исход полного опроса текущего инструмента.</summary>
+    public static void RecordRealtimePoll(in MoexOperationTags tags, string outcome)
+    {
+        RealtimePollCompleted.Add(
+            1,
+            new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, tags.Source),
+            new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, tags.DataKind),
+            new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, tags.Market),
+            new KeyValuePair<string, object?>(MoexTelemetryAttributes.Outcome, outcome));
+    }
 
     // ══════════════════════════════════════════════
     // Производственные операции источника
@@ -99,6 +153,46 @@ public static class MoexMetrics
         Meter.CreateCounter<long>(
             "moex.operations.completed",
             description: "MOEX source operations completed total");
+
+    // ══════════════════════════════════════════════
+    // Вставки в ClickHouse
+    // ══════════════════════════════════════════════
+
+    /// <summary>Количество выполненных операций вставки. Одна операция — один фактический INSERT.</summary>
+    public static readonly Counter<long> StorageInsertOperations =
+        Meter.CreateCounter<long>(
+            "storage.insert.operations",
+            description: "ClickHouse insert operations total");
+
+    /// <summary>
+    /// Количество вставленных строк. При успехе записывается значение, подтверждённое
+    /// драйвером, а не размер отправленной пачки: расхождение между ними и есть то,
+    /// ради чего метрика существует.
+    /// </summary>
+    public static readonly Counter<long> StorageInsertRows =
+        Meter.CreateCounter<long>(
+            "storage.insert.rows",
+            description: "ClickHouse inserted rows total");
+
+    /// <summary>
+    /// Длительность одной вставки, в секундах. Собственного бюджета времени у вставки
+    /// нет: клиент хранилища создаётся из строки подключения без тайм-аута, и длительность
+    /// ограничена лишь токеном отмены вызывающей стороны. Поэтому верхняя граница взята
+    /// с запасом до пяти минут — иначе при деградации хранилища все наблюдения свалились бы
+    /// в переполнение, и процентиль потерял бы разрешение именно в аварийный период.
+    /// </summary>
+    public static readonly Histogram<double> StorageInsertDuration =
+        Meter.CreateHistogram<double>(
+            "storage.insert.duration",
+            unit: "s",
+            description: "ClickHouse insert duration",
+            advice: new InstrumentAdvice<double>
+            {
+                HistogramBucketBoundaries = new double[]
+                {
+                    0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 180, 300
+                }
+            });
 
     /// <summary>
     /// Записывает успешный исход операции. Пустой, но корректно разобранный ответ —

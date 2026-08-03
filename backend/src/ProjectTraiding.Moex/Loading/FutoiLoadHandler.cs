@@ -69,14 +69,21 @@ namespace ProjectTraiding.Moex.Loading
                 MoexLogSources.Algopack,
                 MoexOperations.HistoryFutoiFetch,
                 MoexDataKinds.Futoi,
-                MoexMarkets.Futures);
+                MoexMarkets.Futures,
+                MoexFlows.History);
 
             IAsyncEnumerable<List<FutoiDTO>> pages = _client.StreamFutoi(
                 method, query,
                 stopOutcome: stopOutcome, operationTags: operationTags, cancellationToken: ct);
 
+            StorageInsertContext insertContext = new StorageInsertContext(
+                operationTags.DataKind,
+                operationTags.Market,
+                MoexFlows.History);
+
             return await _writer.WriteRangeAsync(
-                task.Id, task.Secid, task.SourceContractVersion, task.WriterVersion, pages, progress, ct);
+                task.Id, task.Secid, task.SourceContractVersion, task.WriterVersion,
+                pages, progress, insertContext, ct);
         }
     }
 }

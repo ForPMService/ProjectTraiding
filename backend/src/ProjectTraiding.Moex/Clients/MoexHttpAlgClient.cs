@@ -169,6 +169,25 @@ namespace ProjectTraiding.Moex.Clients
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Candles));
 
+                // Новые метрики считаются только для производственного вызова: диагностика набора
+                // меток не передаёт, и её обращения в производственный счёт не попадают. Старые
+                // счётчики выше временно сохранены — их удаление идёт вместе с перестройкой панелей.
+                if (operationTags is MoexOperationTags receivedTags)
+                {
+                    MoexMetrics.PagesReceived.Add(
+                        1,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, receivedTags.Source),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, receivedTags.DataKind),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, receivedTags.Market));
+
+                    MoexMetrics.RowsReceived.Add(
+                        candlesList.Count,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, receivedTags.Source),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, receivedTags.DataKind),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, receivedTags.Market),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Flow, receivedTags.Flow));
+                }
+
                 // Операция страницы закончена: дальше управление уходит потребителю.
                 if (operationTags is MoexOperationTags successTags)
                 {
@@ -282,6 +301,22 @@ namespace ProjectTraiding.Moex.Clients
                     rows.Count,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, TKind.TelemetryDataKind));
+
+                if (operationTags is MoexOperationTags receivedTags)
+                {
+                    MoexMetrics.PagesReceived.Add(
+                        1,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, receivedTags.Source),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, receivedTags.DataKind),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, receivedTags.Market));
+
+                    MoexMetrics.RowsReceived.Add(
+                        rows.Count,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, receivedTags.Source),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, receivedTags.DataKind),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, receivedTags.Market),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Flow, receivedTags.Flow));
+                }
 
                 // Операция страницы закончена: дальше управление уходит потребителю.
                 if (operationTags is MoexOperationTags successTags)
@@ -420,6 +455,22 @@ namespace ProjectTraiding.Moex.Clients
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Futoi));
 
+                if (operationTags is MoexOperationTags receivedTags)
+                {
+                    MoexMetrics.PagesReceived.Add(
+                        1,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, receivedTags.Source),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, receivedTags.DataKind),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, receivedTags.Market));
+
+                    MoexMetrics.RowsReceived.Add(
+                        page.Count,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, receivedTags.Source),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, receivedTags.DataKind),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, receivedTags.Market),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Flow, receivedTags.Flow));
+                }
+
                 // Пустой день — успешная операция, даже если страница не передаётся потребителю.
                 if (operationTags is MoexOperationTags successTags)
                 {
@@ -457,7 +508,8 @@ namespace ProjectTraiding.Moex.Clients
                 MoexLogSources.Algopack,
                 MoexOperations.ReferenceInstrumentsFetch,
                 MoexDataKinds.Instruments,
-                MoexMarkets.Futures);
+                MoexMarkets.Futures,
+                MoexFlows.History);
 
             long operationStart = Stopwatch.GetTimestamp();
             try

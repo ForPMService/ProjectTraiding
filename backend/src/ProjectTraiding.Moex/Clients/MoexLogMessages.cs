@@ -143,6 +143,19 @@ namespace ProjectTraiding.Moex.Clients
           int heartbeatMinIntervalSeconds,
           int maxRps, int maxConns, int maxPages, int workers, bool algKeyConfigured);
 
+        /// <summary>
+        /// Логирует отказ ограничителя частоты: разрешение не получено, запрос в сеть не ушёл.
+        /// Уровень предупреждения: это не сбой источника, но и не нормальный режим —
+        /// повторяющиеся отказы означают, что темп обращений уперся в предел.
+        /// </summary>
+        [LoggerMessage(
+            EventId = 153,
+            EventName = "MoexRateLimitRejected",
+            Level = LogLevel.Warning,
+            Message = "MOEX rate limit rejected: source={Source}, endpoint={Endpoint}, reason={Reason}, waitMs={WaitMs}.")]
+        public static partial void RateLimitRejected(
+            ILogger logger, string source, string endpoint, string reason, double waitMs);
+
     }
 
     internal static class MoexLogSources

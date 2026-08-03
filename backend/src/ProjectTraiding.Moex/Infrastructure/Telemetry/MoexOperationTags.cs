@@ -12,4 +12,5 @@ public readonly record struct MoexOperationTags(
     string Source,
     string Operation,
     string DataKind,
-    string Market);
+    string Market,
+    string Flow);

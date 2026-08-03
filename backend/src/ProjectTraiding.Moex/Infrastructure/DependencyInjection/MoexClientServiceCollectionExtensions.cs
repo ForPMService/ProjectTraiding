@@ -95,7 +95,8 @@ public static class MoexClientServiceCollectionExtensions
         builder.AddHttpMessageHandler(sp => new MoexRateLimitHandler(
             sp.GetRequiredService<RateLimiter>(),
             sp.GetRequiredService<IOptions<MoexOptions>>().Value,
-            sp.GetRequiredService<ILogger<MoexRateLimitHandler>>()));
+            sp.GetRequiredService<ILogger<MoexRateLimitHandler>>(),
+            logSource));
 
         builder.AddHttpMessageHandler(sp => new MoexHttpLoggingHandler(
             sp.GetRequiredService<ILogger<MoexHttpLoggingHandler>>(),
