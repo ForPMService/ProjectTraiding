@@ -30,6 +30,7 @@ namespace ProjectTraiding.Moex.Loading
         private readonly LoadHandlerDispatcher _dispatcher;
         private readonly ILoadProgressReporter _progress;
         private readonly ProjectTraiding.Moex.StorageBase.Redis.LoadedRangeEventPublisher _rangeEventPublisher;
+        private readonly ILogger<LoadRunner> _logger;
 
         public LoadRunner(
             MoexLoadTaskReader taskReader,
@@ -37,7 +38,8 @@ namespace ProjectTraiding.Moex.Loading
             MoexLoadedRangeWriter rangeWriter,
             LoadHandlerDispatcher dispatcher,
             ILoadProgressReporter progress,
-            ProjectTraiding.Moex.StorageBase.Redis.LoadedRangeEventPublisher rangeEventPublisher)
+            ProjectTraiding.Moex.StorageBase.Redis.LoadedRangeEventPublisher rangeEventPublisher,
+            ILogger<LoadRunner> logger)
         {
             _taskReader = taskReader;
             _taskWriter = taskWriter;
@@ -45,6 +47,7 @@ namespace ProjectTraiding.Moex.Loading
             _dispatcher = dispatcher;
             _progress = progress;
             _rangeEventPublisher = rangeEventPublisher;
+            _logger = logger;
         }
 
         public async Task<LoadOutcome> RunAsync(Guid taskId, CancellationToken ct, bool alreadyClaimed = false)
@@ -57,12 +60,20 @@ namespace ProjectTraiding.Moex.Loading
             // строки с попыткой захвата в длительность задания не входят.
             long taskStart = Stopwatch.GetTimestamp();
 
-            // Метки известны только после чтения строки, поэтому счётчик заданий в работе
-            // увеличивается ниже — там же, где они становятся известны. Признак увеличения
-            // ведётся отдельно от владения задачей: владение наступает раньше, чем известны метки.
+            Activity? taskActivity = null;
+
+            bool metadataResolved = false;
             bool activeCounted = false;
+            bool completionRecorded = false;
+
             string dataKind = string.Empty;
             string market = string.Empty;
+            string outcome = MoexOutcomes.Error;
+
+            bool summaryAvailable = false;
+            long rowsForTelemetry = 0;
+            string? stopReasonForTelemetry = null;
+            string? errorTypeForTelemetry = null;
 
             try
             {
@@ -86,12 +97,41 @@ namespace ProjectTraiding.Moex.Loading
 
                 dataKind = MoexDataKinds.FromTaskDataKind(task.DataKind);
                 market = task.Market;
+                metadataResolved = true;
 
-                MoexMetrics.LoadTasksActive.Add(
-                    1,
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, dataKind),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, market));
-                activeCounted = true;
+                // Создание корня и начальные атрибуты защищены независимо: сбой поставщика
+                // телеметрии не имеет права отменить загрузку или помешать другим каналам.
+                try
+                {
+                    taskActivity = MoexTelemetry.ActivitySource.StartActivity("moex.history.task");
+                }
+                catch
+                {
+                }
+
+                try
+                {
+                    taskActivity?.SetTag(MoexTelemetryAttributes.TaskId, taskId);
+                    taskActivity?.SetTag(MoexTelemetryAttributes.DataKind, dataKind);
+                    taskActivity?.SetTag(MoexTelemetryAttributes.Market, market);
+                    taskActivity?.SetTag(MoexTelemetryAttributes.Secid, task.Secid);
+                }
+                catch
+                {
+                }
+
+                try
+                {
+                    MoexMetrics.LoadTasksActive.Add(
+                        1,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, dataKind),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, market));
+                    activeCounted = true;
+                }
+                catch
+                {
+                    // Признак остаётся ложным: уменьшать то, что не увеличилось, нельзя.
+                }
 
                 if (task.StorageTarget != "clickhouse")
                     throw new InvalidOperationException(
@@ -105,6 +145,8 @@ namespace ProjectTraiding.Moex.Loading
                 LoadStopOutcome stopOutcome = new LoadStopOutcome();
 
                 RowWriteSummary summary = await handler.LoadAsync(task, stopOutcome, _progress, ct);
+                summaryAvailable = true;
+                rowsForTelemetry = summary.RowsRead;
 
                 // Настоящая причина из потока; пустой держатель трактуем как штатное исчерпание.
                 string stopReason = stopOutcome.StopReason ?? "range_exhausted";
@@ -116,76 +158,189 @@ namespace ProjectTraiding.Moex.Loading
                 // в этом суть правки А1.
                 if (stopOutcome.IsPartial)
                 {
+                    outcome = MoexOutcomes.Error;
+                    stopReasonForTelemetry = stopReason;
+
                     await _taskWriter.MarkErrorAsync(
                         taskId,
                         "диапазон превышает предел страниц: пересоздайте задачи с меньшим окном",
                         stopReason,
                         ct);
-                    RecordTaskCompleted(dataKind, market, MoexOutcomes.Error, taskStart);
                     return new LoadOutcome(LoadStatus.Failed, summary.RowsRead);
                 }
+
+                outcome = MoexOutcomes.Success;
+                stopReasonForTelemetry = stopReason;
 
                 // Штатное полное покрытие: журнал результата, извещение витрины, закрытие успехом.
                 await _rangeWriter.UpsertAsync(task, summary.RowsRead, summary.LastToken, ct);
                 await _rangeEventPublisher.PublishChangedAsync(task.Secid);
                 await _taskWriter.MarkDoneAsync(taskId, summary.RowsRead, stopReason, summary.LastToken, ct);
 
-                RecordTaskCompleted(dataKind, market, MoexOutcomes.Success, taskStart);
                 return new LoadOutcome(LoadStatus.Done, summary.RowsRead);
             }
             catch (OperationCanceledException)
             {
+                outcome = MoexOutcomes.Cancelled;
+                stopReasonForTelemetry = null;
+                errorTypeForTelemetry = null;
+
                 // Остановка хоста, а не сбой задачи: возвращаем в очередь, а не в error.
                 // Иначе задача стала бы сиротой — автоподбор error не берёт (правка А2).
                 // CancellationToken.None: ct уже отменён, но статус закрыть обязаны.
                 if (ownsRunningTask)
-                    await _taskWriter.RequeueAfterCancelAsync(taskId, CancellationToken.None);
-
-                if (activeCounted)
-                    RecordTaskCompleted(dataKind, market, MoexOutcomes.Cancelled, taskStart);
+                {
+                    try
+                    {
+                        await _taskWriter.RequeueAfterCancelAsync(taskId, CancellationToken.None);
+                    }
+                    catch (Exception requeueException)
+                    {
+                        // Если возврат в очередь отказал, задача осталась running: это отказ,
+                        // а не благополучная отмена. Наружу выходит именно ошибка команды базы.
+                        outcome = MoexOutcomes.Error;
+                        errorTypeForTelemetry = MoexMetrics.ClassifyError(requeueException);
+                        throw;
+                    }
+                }
 
                 throw;
             }
             catch (Exception ex)
             {
+                outcome = MoexOutcomes.Error;
+                stopReasonForTelemetry = null;
+                errorTypeForTelemetry = MoexMetrics.ClassifyError(ex);
+
                 if (ownsRunningTask)
                     await _taskWriter.MarkErrorAsync(taskId, ex.Message, null, CancellationToken.None);
-
-                if (activeCounted)
-                    RecordTaskCompleted(dataKind, market, MoexOutcomes.Error, taskStart);
 
                 throw;
             }
             finally
             {
-                // Уменьшение строго парно увеличению: без признака счётчик уходил бы
-                // в минус на каждом раннем возврате.
+                if (metadataResolved && !completionRecorded)
+                {
+                    completionRecorded = true;
+                    CompleteTask(
+                        taskId,
+                        dataKind,
+                        market,
+                        outcome,
+                        summaryAvailable ? rowsForTelemetry : 0,
+                        taskStart,
+                        stopReasonForTelemetry,
+                        errorTypeForTelemetry,
+                        taskActivity);
+                }
+
+                try
+                {
+                    taskActivity?.Dispose();
+                }
+                catch
+                {
+                    // Завершение отрезка вызывает обработчики поставщика трасс и может отказать.
+                }
+
                 if (activeCounted)
                 {
-                    MoexMetrics.LoadTasksActive.Add(
-                        -1,
-                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, dataKind),
-                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, market));
+                    try
+                    {
+                        MoexMetrics.LoadTasksActive.Add(
+                            -1,
+                            new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, dataKind),
+                            new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, market));
+                    }
+                    catch
+                    {
+                    }
                 }
             }
         }
 
-        private static void RecordTaskCompleted(
-            string dataKind, string market, string outcome, long startTimestamp)
+        /// <summary>
+        /// Записывает итог задания по трём каналам. Каждый канал защищён отдельно:
+        /// метод вызывается из блока освобождения, и вышедшее отсюда исключение подменило бы
+        /// исходную ошибку загрузки, а успешное задание превратило бы в отказ.
+        ///
+        /// Порядок каналов выбран по вероятности отказа: счётчики и отрезок практически
+        /// не бросают, тогда как запись в журнал уходит во внешнего поставщика и отказать
+        /// может. Поэтому журнал идёт последним — его сбой не лишает нас двух других каналов.
+        ///
+        /// Проглатывание здесь молчаливое, и это осознанное исключение из общего запрета:
+        /// сообщить о сбое телеметрии можно было бы только через телеметрию, а она в этот
+        /// момент и отказала. Единственная альтернатива — уронить задание из-за неудачной
+        /// записи наблюдения, что заведомо хуже.
+        /// </summary>
+        private void CompleteTask(
+            Guid taskId,
+            string dataKind,
+            string market,
+            string outcome,
+            long rows,
+            long startTimestamp,
+            string? stopReason,
+            string? errorType,
+            Activity? taskActivity)
         {
-            double seconds = Stopwatch.GetElapsedTime(startTimestamp).TotalSeconds;
+            TimeSpan duration = Stopwatch.GetElapsedTime(startTimestamp);
 
-            MoexMetrics.LoadTasksCompleted.Add(
-                1,
-                new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, dataKind),
-                new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, market),
-                new KeyValuePair<string, object?>(MoexTelemetryAttributes.Outcome, outcome));
+            // 1. Метрики задания — прежние, разрез и значения не меняются.
+            try
+            {
+                MoexMetrics.LoadTasksCompleted.Add(
+                    1,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, dataKind),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, market),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Outcome, outcome));
 
-            MoexMetrics.LoadTaskDuration.Record(
-                seconds,
-                new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, dataKind),
-                new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, market),
-                new KeyValuePair<string, object?>(MoexTelemetryAttributes.Outcome, outcome));
+                MoexMetrics.LoadTaskDuration.Record(
+                    duration.TotalSeconds,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, dataKind),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, market),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Outcome, outcome));
+            }
+            catch
+            {
+            }
+
+            // 2. Итоговые атрибуты и состояние корня — до журнала.
+            try
+            {
+                taskActivity?.SetTag(MoexTelemetryAttributes.Outcome, outcome);
+                if (stopReason is not null)
+                    taskActivity?.SetTag(MoexTelemetryAttributes.StopReason, stopReason);
+                if (errorType is not null)
+                    taskActivity?.SetTag(MoexTelemetryAttributes.ErrorType, errorType);
+
+                taskActivity?.SetStatus(
+                    outcome == MoexOutcomes.Error
+                        ? ActivityStatusCode.Error
+                        : ActivityStatusCode.Ok);
+            }
+            catch
+            {
+            }
+
+            // 3. Итоговое событие журнала — последним.
+            try
+            {
+                MoexLoadTaskLogMessages.TaskCompleted(
+                    _logger,
+                    outcome == MoexOutcomes.Error ? LogLevel.Error : LogLevel.Information,
+                    taskId,
+                    dataKind,
+                    market,
+                    outcome,
+                    rows,
+                    duration,
+                    stopReason,
+                    errorType);
+            }
+            catch
+            {
+            }
         }
     }
 }

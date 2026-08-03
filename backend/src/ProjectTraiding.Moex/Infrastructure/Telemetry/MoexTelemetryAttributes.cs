@@ -42,6 +42,12 @@ public static class MoexTelemetryAttributes
     /// <summary>Исход работы. Значения — в <see cref="MoexOutcomes"/>.</summary>
     public const string Outcome = "outcome";
 
+    /// <summary>Идентификатор задачи загрузки. Допустим в журнале и трассах, запрещён в метриках.</summary>
+    public const string TaskId = "task.id";
+
+    /// <summary>Причина остановки пагинации. Значения задаёт механизм пагинации.</summary>
+    public const string StopReason = "stop_reason";
+
     /// <summary>Поток данных: история или текущий приём. Значения — в <see cref="MoexFlows"/>.</summary>
     public const string Flow = "flow";
 }

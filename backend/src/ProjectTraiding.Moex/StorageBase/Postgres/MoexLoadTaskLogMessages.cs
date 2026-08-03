@@ -4,22 +4,22 @@ using System.Text;
 
 namespace ProjectTraiding.Moex.StorageBase.Postgres
 {
-    /// <summary>EventId 190–199 и 220–229: жизненный цикл задачи загрузки и учёт диапазона.</summary>
+    /// <summary>EventId 190–200 и 220–229: жизненный цикл задачи загрузки и учёт диапазона.</summary>
     public static partial class MoexLoadTaskLogMessages
     {
         [LoggerMessage(
-            EventId = 190, EventName = "LoadTaskRunning", Level = LogLevel.Information,
-            Message = "Load task taken to work: id={TaskId}, time={Elapsed}.")]
+            EventId = 190, EventName = "LoadTaskRunning", Level = LogLevel.Debug,
+            Message = "Load task status set to running: id={TaskId}, sqlTime={Elapsed}.")]
         public static partial void TaskRunning(ILogger logger, Guid taskId, TimeSpan elapsed);
 
         [LoggerMessage(
-            EventId = 191, EventName = "LoadTaskDone", Level = LogLevel.Information,
-            Message = "Load task done: id={TaskId}, rows={RowsLoaded}, time={Elapsed}.")]
+            EventId = 191, EventName = "LoadTaskDone", Level = LogLevel.Debug,
+            Message = "Load task status set to done: id={TaskId}, rows={RowsLoaded}, sqlTime={Elapsed}.")]
         public static partial void TaskDone(ILogger logger, Guid taskId, long rowsLoaded, TimeSpan elapsed);
 
         [LoggerMessage(
-            EventId = 192, EventName = "LoadTaskError", Level = LogLevel.Error,
-            Message = "Load task failed: id={TaskId}, time={Elapsed}.")]
+            EventId = 192, EventName = "LoadTaskError", Level = LogLevel.Debug,
+            Message = "Load task status set to error: id={TaskId}, sqlTime={Elapsed}.")]
         public static partial void TaskError(ILogger logger, Guid taskId, TimeSpan elapsed);
 
         [LoggerMessage(
@@ -53,9 +53,36 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         public static partial void BackgroundTaskFailed(ILogger logger, Guid taskId);
 
         [LoggerMessage(
-            EventId = 199, EventName = "LoadTaskPartial", Level = LogLevel.Warning,
-            Message = "Load task partial: id={TaskId}, rows={RowsLoaded}, time={Elapsed}.")]
+            EventId = 199, EventName = "LoadTaskPartial", Level = LogLevel.Debug,
+            Message = "Load task status set to partial: id={TaskId}, rows={RowsLoaded}, sqlTime={Elapsed}.")]
         public static partial void TaskPartial(ILogger logger, Guid taskId, long rowsLoaded, TimeSpan elapsed);
+
+        /// <summary>
+        /// Итог исторического задания: одна попытка записи на одно задание, для которого
+        /// успешно прочитана строка, определены метки и начат наблюдаемый жизненный цикл.
+        /// Длительность здесь — время задания целиком, а не время команды изменения статуса:
+        /// именно этим событие отличается от технических событий смены статуса ниже.
+        ///
+        /// Идентификатор задачи в журнале допустим: ограничение кардинальности относится
+        /// к метрикам, а не к записям журнала и трассам.
+        /// </summary>
+        [LoggerMessage(
+            EventId = 200,
+            EventName = "LoadTaskCompleted",
+            Message = "Load task completed: id={TaskId}, dataKind={DataKind}, market={Market}, " +
+                      "outcome={Outcome}, rows={Rows}, duration={Duration}, " +
+                      "stopReason={StopReason}, errorType={ErrorType}.")]
+        public static partial void TaskCompleted(
+            ILogger logger,
+            LogLevel level,
+            Guid taskId,
+            string dataKind,
+            string market,
+            string outcome,
+            long rows,
+            TimeSpan duration,
+            string? stopReason,
+            string? errorType);
 
         [LoggerMessage(EventId = 220, EventName = "MoexLoadTaskRequeuedAfterCancel",
            Level = LogLevel.Information,

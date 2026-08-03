@@ -281,13 +281,26 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 operationTags.Market,
                 MoexFlows.Realtime);
 
+            RealtimeOrderbookParseResult result;
+            using (Activity? pollActivity =
+                   MoexTelemetry.ActivitySource.StartActivity("moex.realtime.instrument.poll"))
+            {
+            pollActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
+            pollActivity?.SetTag(MoexTelemetryAttributes.Market, operationTags.Market);
+            pollActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
+
             long fetchStart = Stopwatch.GetTimestamp();
 
-            RealtimeOrderbookParseResult result;
             using (CancellationTokenSource fetchCts =
                    CancellationTokenSource.CreateLinkedTokenSource(commitCt))
             {
                 fetchCts.CancelAfter(_instrumentFetchTimeout);
+                using Activity? fetchActivity =
+                    MoexTelemetry.ActivitySource.StartActivity("moex.realtime.fetch");
+                fetchActivity?.SetTag(MoexTelemetryAttributes.Source, operationTags.Source);
+                fetchActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
+                fetchActivity?.SetTag(MoexTelemetryAttributes.Market, operationTags.Market);
+                fetchActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
                 try
                 {
                     if (state.Market == StockMarket)
@@ -304,9 +317,12 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
                     MoexMetrics.RecordOperationSuccess(
                         in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                    fetchActivity?.SetStatus(ActivityStatusCode.Ok);
                 }
                 catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
                 {
+                    fetchActivity?.SetStatus(ActivityStatusCode.Ok);
+                    pollActivity?.SetStatus(ActivityStatusCode.Ok);
                     // Остановка хоста — не отказ источника.
                     MoexMetrics.RecordOperationCancelled(
                         in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
@@ -315,6 +331,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 }
                 catch (OperationCanceledException) when (fetchCts.IsCancellationRequested)
                 {
+                    fetchActivity?.SetStatus(ActivityStatusCode.Error);
+                    pollActivity?.SetStatus(ActivityStatusCode.Error);
                     // Истёк собственный бюджет получения инструмента. Это отказ по тайм-ауту,
                     // а не отмена: хост работает, оборот продолжается со следующего инструмента.
                     MoexRealtimeReceiverLogMessages.OrderbookInstrumentFetchTimedOut(
@@ -326,6 +344,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 }
                 catch (Exception ex)
                 {
+                    fetchActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                    pollActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                     MoexMetrics.RecordOperationError(
                         in operationTags, ex, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                     MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
@@ -347,16 +367,20 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 }
 
                 MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Success);
+                pollActivity?.SetStatus(ActivityStatusCode.Ok);
             }
             catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
             {
+                pollActivity?.SetStatus(ActivityStatusCode.Ok);
                 MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Cancelled);
                 throw;
             }
             catch (Exception)
             {
+                pollActivity?.SetStatus(ActivityStatusCode.Error);
                 MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
                 throw;
+            }
             }
 
             await ReceiverSessionHeartbeat.WriteIfDueAsync(

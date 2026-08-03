@@ -44,14 +44,15 @@ namespace ProjectTraiding.Moex.Clients
                 MoexMarkets.Stock,
                 MoexFlows.History);
 
-            long operationStart = Stopwatch.GetTimestamp();
-            try
-            {
-            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
+            using Activity? activity =
+                MoexTelemetry.ActivitySource.StartActivity("moex.history.fetch");
             activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Calendar);
             activity?.SetTag(MoexTelemetryAttributes.DataKind, MoexDataKinds.OffDays);
             activity?.SetTag(MoexTelemetryAttributes.Market, MoexMarkets.Stock);
 
+            long operationStart = Stopwatch.GetTimestamp();
+            try
+            {
             const string endpoint = "/calendars/stock.json";
             long startTimestamp = Stopwatch.GetTimestamp();
             using var response = await SendRequestAsync(endpoint, cancellationToken: cancellationToken);
@@ -76,6 +77,7 @@ namespace ProjectTraiding.Moex.Clients
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.OffDays));
                 MoexMetrics.RecordOperationSuccess(
                     in operationTags, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);
+                activity?.SetStatus(ActivityStatusCode.Ok);
                 return result;
             }
             catch (MoexSchemaMismatchException ex)
@@ -86,12 +88,14 @@ namespace ProjectTraiding.Moex.Clients
             }
             catch (OperationCanceledException)
             {
+                activity?.SetStatus(ActivityStatusCode.Ok);
                 MoexMetrics.RecordOperationCancelled(
                     in operationTags, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);
                 throw;
             }
             catch (Exception ex)
             {
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 MoexMetrics.RecordOperationError(
                     in operationTags, ex, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);
                 throw;
@@ -108,14 +112,15 @@ namespace ProjectTraiding.Moex.Clients
                 MoexMarkets.Futures,
                 MoexFlows.History);
 
-            long operationStart = Stopwatch.GetTimestamp();
-            try
-            {
-            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
+            using Activity? activity =
+                MoexTelemetry.ActivitySource.StartActivity("moex.history.fetch");
             activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Calendar);
             activity?.SetTag(MoexTelemetryAttributes.DataKind, MoexDataKinds.OffDays);
             activity?.SetTag(MoexTelemetryAttributes.Market, MoexMarkets.Futures);
 
+            long operationStart = Stopwatch.GetTimestamp();
+            try
+            {
             const string endpoint = "/calendars/futures.json";
             long startTimestamp = Stopwatch.GetTimestamp();
             using var response = await SendRequestAsync(endpoint, cancellationToken: cancellationToken);
@@ -140,6 +145,7 @@ namespace ProjectTraiding.Moex.Clients
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.OffDays));
                 MoexMetrics.RecordOperationSuccess(
                     in operationTags, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);
+                activity?.SetStatus(ActivityStatusCode.Ok);
                 return result;
             }
             catch (MoexSchemaMismatchException ex)
@@ -150,12 +156,14 @@ namespace ProjectTraiding.Moex.Clients
             }
             catch (OperationCanceledException)
             {
+                activity?.SetStatus(ActivityStatusCode.Ok);
                 MoexMetrics.RecordOperationCancelled(
                     in operationTags, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);
                 throw;
             }
             catch (Exception ex)
             {
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 MoexMetrics.RecordOperationError(
                     in operationTags, ex, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);
                 throw;

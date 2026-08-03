@@ -18,8 +18,9 @@ namespace ProjectTraiding.Moex.Clients
 
         /// <summary>
         /// Логирует получение HTTP-ответа от MOEX на уровне HttpClient handler-а.
+        /// Постраничная запись относится к отладке; счёт ответов ведут метрики.
         /// </summary>
-        [LoggerMessage(EventId = 102, EventName = "MoexHttpResponseReceived", Level = LogLevel.Information, Message = "MOEX HTTP response received: source={Source}, method={Method}, endpoint={Endpoint}, status={StatusCode}, time={ElapsedMs}, size={ContentLength}.")]
+        [LoggerMessage(EventId = 102, EventName = "MoexHttpResponseReceived", Level = LogLevel.Debug, Message = "MOEX HTTP response received: source={Source}, method={Method}, endpoint={Endpoint}, status={StatusCode}, time={ElapsedMs}, size={ContentLength}.")]
         public static partial void HttpResponseReceived(ILogger logger, string source, string method, string endpoint, HttpStatusCode statusCode, TimeSpan elapsedMs, long? contentLength);
 
         /// <summary>
@@ -30,8 +31,9 @@ namespace ProjectTraiding.Moex.Clients
 
         /// <summary>
         /// Логирует успешно полученную и распарсенную страницу данных.
+        /// Постраничная запись относится к отладке; счёт страниц и строк ведут метрики.
         /// </summary>
-        [LoggerMessage(EventId = 120, EventName = "MoexPageReceived", Level = LogLevel.Information, Message = "MOEX data page received: endpoint={Endpoint}, page={PageNumber}, rows={Rows}, time={ElapsedMs}.")]
+        [LoggerMessage(EventId = 120, EventName = "MoexPageReceived", Level = LogLevel.Debug, Message = "MOEX data page received: endpoint={Endpoint}, page={PageNumber}, rows={Rows}, time={ElapsedMs}.")]
         public static partial void PageReceived(ILogger logger, string endpoint, int pageNumber, int rows, TimeSpan elapsedMs);
 
         /// <summary>
@@ -48,8 +50,9 @@ namespace ProjectTraiding.Moex.Clients
 
         /// <summary>
         /// Логирует успешно полученную страницу в сценарии подневной разбивки, например для FUTOI.
+        /// Постраничная запись относится к отладке; счёт страниц и строк ведут метрики.
         /// </summary>
-        [LoggerMessage(EventId = 123, EventName = "MoexDaySplitPageReceived", Level = LogLevel.Information, Message = "MOEX daily data received: endpoint={Endpoint}, date={Date}, rows={Rows}, time={ElapsedMs}.")]
+        [LoggerMessage(EventId = 123, EventName = "MoexDaySplitPageReceived", Level = LogLevel.Debug, Message = "MOEX daily data received: endpoint={Endpoint}, date={Date}, rows={Rows}, time={ElapsedMs}.")]
         public static partial void DaySplitPageReceived(ILogger logger, string endpoint, string date, int rows, TimeSpan elapsedMs);
 
         /// <summary>
@@ -60,8 +63,9 @@ namespace ProjectTraiding.Moex.Clients
 
         /// <summary>
         /// Логирует успешно полученный и распарсенный одностраничный ответ.
+        /// Постраничная запись относится к отладке; счёт страниц и строк ведут метрики.
         /// </summary>
-        [LoggerMessage(EventId = 125, EventName = "MoexSinglePageReceived", Level = LogLevel.Information, Message = "MOEX single page processed: endpoint={Endpoint}, rows={Rows}, time={ElapsedMs}.")]
+        [LoggerMessage(EventId = 125, EventName = "MoexSinglePageReceived", Level = LogLevel.Debug, Message = "MOEX single page processed: endpoint={Endpoint}, rows={Rows}, time={ElapsedMs}.")]
         public static partial void SinglePageReceived(ILogger logger, string endpoint, int rows, TimeSpan elapsedMs);
 
         /// <summary>
@@ -99,12 +103,6 @@ namespace ProjectTraiding.Moex.Clients
         /// </summary>
         [LoggerMessage(EventId = 142, EventName = "MoexContentLengthFallbackUsed", Level = LogLevel.Debug, Message = "MOEX response size is unknown, using fallback buffer: endpoint={Endpoint}, fallbackBytes={FallbackBytes}.")]
         public static partial void ContentLengthFallbackUsed(ILogger logger, string endpoint, int fallbackBytes);
-
-        /// <summary>
-        /// Логирует отмену запроса вызывающей стороной через CancellationToken.
-        /// </summary>
-        [LoggerMessage(EventId = 143, EventName = "MoexRequestCancelled", Level = LogLevel.Information, Message = "MOEX request was cancelled by caller: endpoint={Endpoint}.")]
-        public static partial void RequestCancelled(ILogger logger, Exception exception, string endpoint);
 
         // ── Rate Limiter ────────────────────────────────────────
 

@@ -84,14 +84,6 @@ namespace ProjectTraiding.Moex.Clients
             MoexOperationTags? operationTags = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
-            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
-            activity?.SetTag(MoexTelemetryAttributes.DataKind, MoexDataKinds.Candles);
-            if (!string.IsNullOrWhiteSpace(telemetryMarket))
-            {
-                activity?.SetTag(MoexTelemetryAttributes.Market, telemetryMarket);
-            }
-
             queryParams ??= new Dictionary<string, string>();
             queryParams["iss.meta"] = "off";
             queryParams["iss.only"] = "candles";
@@ -111,6 +103,14 @@ namespace ProjectTraiding.Moex.Clients
                 long pageStart = Stopwatch.GetTimestamp();
 
                 List<CandlesDTO> candlesList;
+                using (Activity? pageActivity =
+                       MoexTelemetry.ActivitySource.StartActivity("moex.history.fetch"))
+                {
+                pageActivity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
+                pageActivity?.SetTag(MoexTelemetryAttributes.DataKind, MoexDataKinds.Candles);
+                if (!string.IsNullOrWhiteSpace(telemetryMarket))
+                    pageActivity?.SetTag(MoexTelemetryAttributes.Market, telemetryMarket);
+
                 try
                 {
                     HttpResponseMessage response =
@@ -138,6 +138,7 @@ namespace ProjectTraiding.Moex.Clients
                 }
                 catch (OperationCanceledException)
                 {
+                    pageActivity?.SetStatus(ActivityStatusCode.Ok);
                     if (operationTags is MoexOperationTags cancelTags)
                     {
                         MoexMetrics.RecordOperationCancelled(
@@ -148,6 +149,7 @@ namespace ProjectTraiding.Moex.Clients
                 }
                 catch (Exception ex)
                 {
+                    pageActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                     if (operationTags is MoexOperationTags errorTags)
                     {
                         MoexMetrics.RecordOperationError(
@@ -195,6 +197,10 @@ namespace ProjectTraiding.Moex.Clients
                         in successTags, Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
                 }
 
+                pageActivity?.SetStatus(ActivityStatusCode.Ok);
+                }
+
+                // Отрезок страницы закрыт до передачи страницы потребителю.
                 yield return candlesList;
                 if (candlesList.Count >= 500)
                 {
@@ -208,9 +214,6 @@ namespace ProjectTraiding.Moex.Clients
                     break;
                 }
             }
-
-            activity?.SetTag("total_pages", pagesElapsed);
-            activity?.SetTag("total_rows", totalRows);
 
         }
 
@@ -226,11 +229,6 @@ namespace ProjectTraiding.Moex.Clients
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
             where TKind : struct, IAlgCursorKind<TRow>
         {
-            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
-            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
-            activity?.SetTag(MoexTelemetryAttributes.DataKind, TKind.TelemetryDataKind);
-            activity?.SetTag(MoexTelemetryAttributes.Market, TKind.TelemetryMarket);
-
             queryParams ??= new Dictionary<string, string>();
             queryParams["iss.meta"] = "off";
             queryParams["iss.only"] = "data,data.cursor";
@@ -244,6 +242,13 @@ namespace ProjectTraiding.Moex.Clients
 
                 List<TRow> rows;
                 PaginationCursorDTO cursor;
+                using (Activity? pageActivity =
+                       MoexTelemetry.ActivitySource.StartActivity("moex.history.fetch"))
+                {
+                pageActivity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
+                pageActivity?.SetTag(MoexTelemetryAttributes.DataKind, TKind.TelemetryDataKind);
+                pageActivity?.SetTag(MoexTelemetryAttributes.Market, TKind.TelemetryMarket);
+
                 try
                 {
                     HttpResponseMessage response =
@@ -271,6 +276,7 @@ namespace ProjectTraiding.Moex.Clients
                 }
                 catch (OperationCanceledException)
                 {
+                    pageActivity?.SetStatus(ActivityStatusCode.Ok);
                     if (operationTags is MoexOperationTags cancelTags)
                     {
                         MoexMetrics.RecordOperationCancelled(
@@ -281,6 +287,7 @@ namespace ProjectTraiding.Moex.Clients
                 }
                 catch (Exception ex)
                 {
+                    pageActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                     if (operationTags is MoexOperationTags errorTags)
                     {
                         MoexMetrics.RecordOperationError(
@@ -325,6 +332,10 @@ namespace ProjectTraiding.Moex.Clients
                         in successTags, Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
                 }
 
+                pageActivity?.SetStatus(ActivityStatusCode.Ok);
+                }
+
+                // Отрезок страницы закрыт до передачи страницы потребителю.
                 yield return rows;
                 PaginationStep step = MoexCursorPagination.Next(cursor, pagesElapsed, _options.MaxPagesPerLoad);
                 if (step.IsStop)
@@ -335,9 +346,6 @@ namespace ProjectTraiding.Moex.Clients
                 }
                 queryParams["start"] = step.NextStart.ToString();
             }
-
-            activity?.SetTag("total_pages", pagesElapsed);
-            activity?.SetTag("total_rows", totalRows);
 
         }
 
@@ -352,11 +360,6 @@ namespace ProjectTraiding.Moex.Clients
             MoexOperationTags? operationTags = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
-            activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
-            activity?.SetTag(MoexTelemetryAttributes.DataKind, MoexDataKinds.Futoi);
-            activity?.SetTag(MoexTelemetryAttributes.Market, MoexMarkets.Futures);
-
             queryParams ??= new Dictionary<string, string>();
             queryParams["iss.meta"] = "off";
             // FUTOI API не поддерживает пагинацию (start игнорируется, лимит 1000 строк).
@@ -397,6 +400,13 @@ namespace ProjectTraiding.Moex.Clients
                 long pageStart = Stopwatch.GetTimestamp();
 
                 List<FutoiDTO> page;
+                using (Activity? pageActivity =
+                       MoexTelemetry.ActivitySource.StartActivity("moex.history.fetch"))
+                {
+                pageActivity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
+                pageActivity?.SetTag(MoexTelemetryAttributes.DataKind, MoexDataKinds.Futoi);
+                pageActivity?.SetTag(MoexTelemetryAttributes.Market, MoexMarkets.Futures);
+
                 try
                 {
                     HttpResponseMessage response =
@@ -424,6 +434,7 @@ namespace ProjectTraiding.Moex.Clients
                 }
                 catch (OperationCanceledException)
                 {
+                    pageActivity?.SetStatus(ActivityStatusCode.Ok);
                     if (operationTags is MoexOperationTags cancelTags)
                     {
                         MoexMetrics.RecordOperationCancelled(
@@ -434,6 +445,7 @@ namespace ProjectTraiding.Moex.Clients
                 }
                 catch (Exception ex)
                 {
+                    pageActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                     if (operationTags is MoexOperationTags errorTags)
                     {
                         MoexMetrics.RecordOperationError(
@@ -478,8 +490,12 @@ namespace ProjectTraiding.Moex.Clients
                         in successTags, Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
                 }
 
+                pageActivity?.SetStatus(ActivityStatusCode.Ok);
+                }
+
                 if (page.Count > 0)
                 {
+                    // Отрезок страницы закрыт до передачи страницы потребителю.
                     yield return page;
                 }
             }
@@ -488,9 +504,6 @@ namespace ProjectTraiding.Moex.Clients
             // Дневное разбиение всегда проходит весь диапазон целиком: защитного предела страниц
             // здесь нет, поэтому исход только штатный — исчерпание диапазона, не частичный.
             stopOutcome?.Complete("range_exhausted", isPartial: false);
-
-            activity?.SetTag("total_pages", dayIndex);
-            activity?.SetTag("total_rows", totalRows);
 
         }
 

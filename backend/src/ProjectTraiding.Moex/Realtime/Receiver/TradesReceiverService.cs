@@ -299,7 +299,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     await TrySeedTailAsync(instrument, client, ct);
                 if (tail is not null)
                 {
-                    await cursorWriter.UpsertAsync(
+                    await UpdateCursorAsync(
+                        cursorWriter,
                         instrument.Secid,
                         instrument.Market,
                         boardId,
@@ -357,13 +358,27 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 operationTags.Market,
                 MoexFlows.Realtime);
 
+            RealtimeTradesParseResult<RealtimeTradesStockDTO> result;
+            RealtimeTradesStockDTO? last = null;
+            using (Activity? pollActivity =
+                   MoexTelemetry.ActivitySource.StartActivity("moex.realtime.instrument.poll"))
+            {
+            pollActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
+            pollActivity?.SetTag(MoexTelemetryAttributes.Market, operationTags.Market);
+            pollActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
+
             long fetchStart = Stopwatch.GetTimestamp();
 
-            RealtimeTradesParseResult<RealtimeTradesStockDTO> result;
             using (CancellationTokenSource fetchCts =
                    CancellationTokenSource.CreateLinkedTokenSource(commitCt))
             {
                 fetchCts.CancelAfter(_instrumentFetchTimeout);
+                using Activity? fetchActivity =
+                    MoexTelemetry.ActivitySource.StartActivity("moex.realtime.fetch");
+                fetchActivity?.SetTag(MoexTelemetryAttributes.Source, operationTags.Source);
+                fetchActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
+                fetchActivity?.SetTag(MoexTelemetryAttributes.Market, operationTags.Market);
+                fetchActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
                 try
                 {
                     result = await client.GetTradesStockAsync(
@@ -376,9 +391,12 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         new KeyValuePair<string, object?>(MoexTelemetryAttributes.Flow, operationTags.Flow));
                     MoexMetrics.RecordOperationSuccess(
                         in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                    fetchActivity?.SetStatus(ActivityStatusCode.Ok);
                 }
                 catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
                 {
+                    fetchActivity?.SetStatus(ActivityStatusCode.Ok);
+                    pollActivity?.SetStatus(ActivityStatusCode.Ok);
                     MoexMetrics.RecordOperationCancelled(
                         in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                     MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Cancelled);
@@ -386,6 +404,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 }
                 catch (OperationCanceledException) when (fetchCts.IsCancellationRequested)
                 {
+                    fetchActivity?.SetStatus(ActivityStatusCode.Error);
+                    pollActivity?.SetStatus(ActivityStatusCode.Error);
                     MoexRealtimeReceiverLogMessages.TradesInstrumentFetchTimedOut(
                         _logger, secid, state.Market, _instrumentFetchTimeout);
                     MoexMetrics.RecordOperationTimeout(
@@ -395,6 +415,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 }
                 catch (Exception ex)
                 {
+                    fetchActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                    pollActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                     MoexMetrics.RecordOperationError(
                         in operationTags, ex, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                     MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
@@ -402,7 +424,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 }
             }
 
-            RealtimeTradesStockDTO? last = null;
             try
             {
                 if (result.Rows.Count > 0)
@@ -420,7 +441,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     long lastTradeNo = last.TradeNo!.Value;
                     DateTime lastSourceTime =
                         MoexClickHouseTime.BuildSourceTime(last.TradeDate, last.TradeTime);
-                    await cursorWriter.UpsertAsync(
+                    await UpdateCursorAsync(
+                        cursorWriter,
                         secid,
                         state.Market,
                         state.BoardId,
@@ -437,16 +459,20 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 }
 
                 MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Success);
+                pollActivity?.SetStatus(ActivityStatusCode.Ok);
             }
             catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
             {
+                pollActivity?.SetStatus(ActivityStatusCode.Ok);
                 MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Cancelled);
                 throw;
             }
             catch (Exception)
             {
+                pollActivity?.SetStatus(ActivityStatusCode.Error);
                 MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
                 throw;
+            }
             }
 
             await ReceiverSessionHeartbeat.WriteIfDueAsync(
@@ -481,13 +507,27 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 operationTags.Market,
                 MoexFlows.Realtime);
 
+            RealtimeTradesParseResult<RealtimeTradesFuturesDTO> result;
+            RealtimeTradesFuturesDTO? last = null;
+            using (Activity? pollActivity =
+                   MoexTelemetry.ActivitySource.StartActivity("moex.realtime.instrument.poll"))
+            {
+            pollActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
+            pollActivity?.SetTag(MoexTelemetryAttributes.Market, operationTags.Market);
+            pollActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
+
             long fetchStart = Stopwatch.GetTimestamp();
 
-            RealtimeTradesParseResult<RealtimeTradesFuturesDTO> result;
             using (CancellationTokenSource fetchCts =
                    CancellationTokenSource.CreateLinkedTokenSource(commitCt))
             {
                 fetchCts.CancelAfter(_instrumentFetchTimeout);
+                using Activity? fetchActivity =
+                    MoexTelemetry.ActivitySource.StartActivity("moex.realtime.fetch");
+                fetchActivity?.SetTag(MoexTelemetryAttributes.Source, operationTags.Source);
+                fetchActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
+                fetchActivity?.SetTag(MoexTelemetryAttributes.Market, operationTags.Market);
+                fetchActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
                 try
                 {
                     result = await client.GetTradesFuturesAsync(
@@ -500,9 +540,12 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         new KeyValuePair<string, object?>(MoexTelemetryAttributes.Flow, operationTags.Flow));
                     MoexMetrics.RecordOperationSuccess(
                         in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                    fetchActivity?.SetStatus(ActivityStatusCode.Ok);
                 }
                 catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
                 {
+                    fetchActivity?.SetStatus(ActivityStatusCode.Ok);
+                    pollActivity?.SetStatus(ActivityStatusCode.Ok);
                     MoexMetrics.RecordOperationCancelled(
                         in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                     MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Cancelled);
@@ -510,6 +553,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 }
                 catch (OperationCanceledException) when (fetchCts.IsCancellationRequested)
                 {
+                    fetchActivity?.SetStatus(ActivityStatusCode.Error);
+                    pollActivity?.SetStatus(ActivityStatusCode.Error);
                     MoexRealtimeReceiverLogMessages.TradesInstrumentFetchTimedOut(
                         _logger, secid, state.Market, _instrumentFetchTimeout);
                     MoexMetrics.RecordOperationTimeout(
@@ -519,6 +564,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 }
                 catch (Exception ex)
                 {
+                    fetchActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                    pollActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                     MoexMetrics.RecordOperationError(
                         in operationTags, ex, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                     MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
@@ -526,7 +573,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 }
             }
 
-            RealtimeTradesFuturesDTO? last = null;
             try
             {
                 if (result.Rows.Count > 0)
@@ -540,7 +586,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     long lastTradeNo = last.TradeNo!.Value;
                     DateTime lastSourceTime =
                         MoexClickHouseTime.BuildSourceTime(last.TradeDate, last.TradeTime);
-                    await cursorWriter.UpsertAsync(
+                    await UpdateCursorAsync(
+                        cursorWriter,
                         secid,
                         state.Market,
                         state.BoardId,
@@ -555,16 +602,20 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 }
 
                 MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Success);
+                pollActivity?.SetStatus(ActivityStatusCode.Ok);
             }
             catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
             {
+                pollActivity?.SetStatus(ActivityStatusCode.Ok);
                 MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Cancelled);
                 throw;
             }
             catch (Exception)
             {
+                pollActivity?.SetStatus(ActivityStatusCode.Error);
                 MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
                 throw;
+            }
             }
 
             await ReceiverSessionHeartbeat.WriteIfDueAsync(
@@ -572,6 +623,48 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
             if (last is not null)
                 await latestWriter.WriteLatestFuturesTradeAsync(secid, last, commitCt);
+        }
+
+        private static async Task UpdateCursorAsync(
+            StreamCursorWriter cursorWriter,
+            string secid,
+            string market,
+            string boardId,
+            string dataKind,
+            int? candleInterval,
+            DateTime lastSourceTime,
+            long lastTradeNo,
+            CancellationToken ct)
+        {
+            using Activity? cursorActivity =
+                MoexTelemetry.ActivitySource.StartActivity("storage.cursor.update");
+            cursorActivity?.SetTag(MoexTelemetryAttributes.DataKind, dataKind);
+            cursorActivity?.SetTag(MoexTelemetryAttributes.Market, market);
+            cursorActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
+
+            try
+            {
+                await cursorWriter.UpsertAsync(
+                    secid,
+                    market,
+                    boardId,
+                    dataKind,
+                    candleInterval,
+                    lastSourceTime,
+                    lastTradeNo,
+                    ct);
+                cursorActivity?.SetStatus(ActivityStatusCode.Ok);
+            }
+            catch (OperationCanceledException)
+            {
+                cursorActivity?.SetStatus(ActivityStatusCode.Ok);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                cursorActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                throw;
+            }
         }
 
         private static async Task<(long TradeNo, DateTime SourceTime)?> TrySeedTailAsync(
@@ -588,6 +681,13 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 MoexDataKinds.Trades,
                 instrument.Market,
                 MoexFlows.Realtime);
+
+            using Activity? fetchActivity =
+                MoexTelemetry.ActivitySource.StartActivity("moex.realtime.fetch");
+            fetchActivity?.SetTag(MoexTelemetryAttributes.Source, operationTags.Source);
+            fetchActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
+            fetchActivity?.SetTag(MoexTelemetryAttributes.Market, operationTags.Market);
+            fetchActivity?.SetTag(MoexTelemetryAttributes.Secid, instrument.Secid);
 
             long fetchStart = Stopwatch.GetTimestamp();
 
@@ -606,6 +706,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     (long TradeNo, DateTime SourceTime)? tail = PickTailStock(page.Rows);
                     MoexMetrics.RecordOperationSuccess(
                         in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                    fetchActivity?.SetStatus(ActivityStatusCode.Ok);
                     return tail;
                 }
 
@@ -620,16 +721,19 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 (long TradeNo, DateTime SourceTime)? futuresTail = PickTailFutures(futuresPage.Rows);
                 MoexMetrics.RecordOperationSuccess(
                     in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                fetchActivity?.SetStatus(ActivityStatusCode.Ok);
                 return futuresTail;
             }
             catch (OperationCanceledException)
             {
+                fetchActivity?.SetStatus(ActivityStatusCode.Ok);
                 MoexMetrics.RecordOperationCancelled(
                     in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                 throw;
             }
             catch (Exception ex)
             {
+                fetchActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 MoexMetrics.RecordOperationError(
                     in operationTags, ex, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                 throw;

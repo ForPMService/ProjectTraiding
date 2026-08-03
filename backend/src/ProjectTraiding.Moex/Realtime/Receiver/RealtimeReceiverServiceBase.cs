@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Hosting;
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
+using System.Diagnostics;
 
 namespace ProjectTraiding.Moex.Realtime.Receiver
 {
@@ -30,17 +32,24 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             {
                 while (!stoppingToken.IsCancellationRequested)
                 {
+                    using (Activity? turnActivity =
+                           MoexTelemetry.ActivitySource.StartActivity("moex.realtime.turn"))
+                    {
                     try
                     {
                         await RunTurnAsync(stoppingToken);
+                        turnActivity?.SetStatus(ActivityStatusCode.Ok);
                     }
                     catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                     {
+                        turnActivity?.SetStatus(ActivityStatusCode.Ok);
                         break;
                     }
                     catch (Exception ex)
                     {
+                        turnActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                         LogTurnFailed(ex);
+                    }
                     }
 
                     try

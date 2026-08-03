@@ -58,6 +58,12 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 },
             };
 
+            using Activity? insertActivity =
+                MoexTelemetry.ActivitySource.StartActivity("storage.clickhouse.insert");
+            insertActivity?.SetTag(MoexTelemetryAttributes.DataKind, insertContext.DataKind);
+            insertActivity?.SetTag(MoexTelemetryAttributes.Market, insertContext.Market);
+            insertActivity?.SetTag(MoexTelemetryAttributes.Flow, insertContext.Flow);
+
             try
             {
                 long inserted = await _client.InsertBinaryAsync(table, columns, rows, options, ct);
@@ -66,10 +72,16 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 ClickHouseWriterLogMessages.WriteCompleted(_logger, table, inserted, elapsed);
 
                 RecordInsert(in insertContext, MoexOutcomes.Success, inserted, elapsed);
+                insertActivity?.SetStatus(ActivityStatusCode.Ok);
                 return inserted;
             }
             catch (Exception ex)
             {
+                insertActivity?.SetStatus(
+                    ex is OperationCanceledException
+                        ? ActivityStatusCode.Ok
+                        : ActivityStatusCode.Error,
+                    ex is OperationCanceledException ? null : ex.Message);
                 ClickHouseWriterLogMessages.WriteFailed(_logger, ex, table, ex.GetType().Name);
 
                 // Обработчик остаётся один: разводить отмену в отдельный catch значило бы

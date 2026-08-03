@@ -222,7 +222,7 @@ public static class MoexMetrics
         Exception exception,
         double seconds)
     {
-        RecordOperation(in tags, MoexOutcomes.Error, Classify(exception), seconds);
+        RecordOperation(in tags, MoexOutcomes.Error, ClassifyError(exception), seconds);
     }
 
     /// <summary>
@@ -275,15 +275,18 @@ public static class MoexMetrics
     }
 
     /// <summary>
-    /// Определяет категорию ошибки по типу исключения. Типизированные ошибки контура
-    /// несут категорию сами; для остальных применяется узкий разбор по типу.
+    /// Определяет категорию ошибки по типу исключения. Единственное место разбора
+    /// на весь контур: категория одинакова в метрике, журнале и трассе.
+    ///
+    /// Типизированные ошибки контура несут категорию сами; для остальных применяется
+    /// узкий разбор по типу.
     ///
     /// Голый тайм-аут после первого блока из производственного чтения тела не выходит:
     /// бюджет чтения преобразует его в типизированную ошибку в месте возникновения.
     /// Ветвь оставлена как страховка — её срабатывание означает нарушение контракта
     /// где-то ещё и требует разбирательства, а не расширения этой классификации.
     /// </summary>
-    private static string Classify(Exception exception)
+    internal static string ClassifyError(Exception exception)
     {
         if (exception is MoexException moexException)
             return moexException.ErrorCategory;
