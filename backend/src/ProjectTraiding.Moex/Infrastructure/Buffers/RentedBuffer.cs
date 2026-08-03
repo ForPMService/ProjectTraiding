@@ -1,4 +1,5 @@
 using System.Buffers;
+using ProjectTraiding.Moex.Clients.Errors;
 
 namespace ProjectTraiding.Moex.Infrastructure.Buffers
 {
@@ -48,13 +49,14 @@ namespace ProjectTraiding.Moex.Infrastructure.Buffers
         /// MaxBufferBytes. Так ни заниженный, ни завышенный, ни отсутствующий Content-Length
         /// не портит результат — читается ровно то, что реально прислал сервер, но в разумных
         /// пределах. Чтение накрыто сторожем bodyReadTimeout: связанный с ct источник отмены
-        /// рвёт зависшее чтение тела; вызывающий транслирует это в MoexTimeoutException(source="body_read").
+        /// рвёт зависшее чтение тела; буфер транслирует это в MoexTimeoutException(source="body_read").
         /// Превышение страховки объёма — отдельная аномалия, обрывается InvalidOperationException.
         /// </summary>
         public static async Task<RentedBuffer> RentFromStreamAsync(
             Stream stream,
             int contentLengthHint,
             TimeSpan bodyReadTimeout,
+            string endpoint,
             CancellationToken cancellationToken)
         {
             // Подсказка размера не может быть нулевой/отрицательной — берём разумный минимум;
@@ -105,13 +107,17 @@ namespace ProjectTraiding.Moex.Infrastructure.Buffers
 
                 return new RentedBuffer(position, arr);
             }
-            catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested
-                                                     && !cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException ex) when (timeoutCts.IsCancellationRequested
+                                                        && !cancellationToken.IsCancellationRequested)
             {
                 // Отмена именно по нашему сторожу тела, а не по внешнему токену.
                 ArrayPool<byte>.Shared.Return(arr);
-                throw new TimeoutException(
-                    $"MOEX body read exceeded {bodyReadTimeout.TotalSeconds:0.#}s");
+                throw new MoexTimeoutException(
+                    $"MOEX body read exceeded {bodyReadTimeout.TotalSeconds:0.#}s for {endpoint}",
+                    endpoint,
+                    "body_read",
+                    bodyReadTimeout,
+                    ex);
             }
             catch
             {

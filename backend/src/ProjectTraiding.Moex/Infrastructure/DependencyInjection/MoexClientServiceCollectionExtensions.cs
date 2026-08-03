@@ -165,13 +165,15 @@ public static class MoexClientServiceCollectionExtensions
         HttpStatusCode? statusCode = args.Outcome.Result?.StatusCode;
         string endpoint = args.Outcome.Result?.RequestMessage?.RequestUri?.PathAndQuery ?? "unknown";
 
-        string errorType = statusCode switch
+        // Числовое представление нужно для диапазона серверных ответов: перечисление
+        // отдельных кодов пропускало 501, 505 и прочие 5xx в ветвь "unknown".
+        int? status = (int?)statusCode;
+
+        string errorType = status switch
         {
-            HttpStatusCode.TooManyRequests => MoexErrorTypes.RateLimit,
-            HttpStatusCode.InternalServerError => MoexErrorTypes.ServerError,
-            HttpStatusCode.BadGateway => MoexErrorTypes.ServerError,
-            HttpStatusCode.ServiceUnavailable => MoexErrorTypes.ServerError,
-            HttpStatusCode.GatewayTimeout => MoexErrorTypes.ServerError,
+            429 => MoexErrorTypes.RateLimit,
+            408 => MoexErrorTypes.Timeout,
+            >= 500 and <= 599 => MoexErrorTypes.ServerError,
             null when args.Outcome.Exception is TimeoutRejectedException => MoexErrorTypes.Timeout,
             null when args.Outcome.Exception is TaskCanceledException => MoexErrorTypes.Timeout,
             null when args.Outcome.Exception is HttpRequestException => MoexErrorTypes.TransportError,

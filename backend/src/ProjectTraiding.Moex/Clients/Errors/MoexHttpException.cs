@@ -1,4 +1,4 @@
-using ProjectTraiding.Moex.Infrastructure.Telemetry;
+using ProjectTraiding.Moex.Errors;
 
 namespace ProjectTraiding.Moex.Clients.Errors;
 
@@ -6,7 +6,7 @@ namespace ProjectTraiding.Moex.Clients.Errors;
 /// Базовый абстрактный класс для всех HTTP-ошибок взаимодействия с MOEX ISS API.
 /// Не содержит заголовков запроса/ответа, Bearer-токенов или иных чувствительных данных.
 /// </summary>
-public abstract class MoexHttpException : Exception
+public abstract class MoexHttpException : MoexException
 {
     /// <summary>HTTP статус-код ответа (null для timeout или сетевых ошибок).</summary>
     public int? StatusCode { get; init; }
@@ -25,13 +25,6 @@ public abstract class MoexHttpException : Exception
 
     /// <summary>Рекомендуемая задержка перед повторным запросом (null если не указана).</summary>
     public TimeSpan? RetryAfter { get; init; }
-
-    /// <summary>
-    /// Стабильная категория ошибки для структурированного журналирования
-    /// и телеметрии. Значения определены в
-    /// <see cref="MoexErrorTypes"/>.
-    /// </summary>
-    public abstract string ErrorCategory { get; }
 
     /// <summary>
     /// Инициализирует новый экземпляр с сообщением и опциональным внутренним исключением.

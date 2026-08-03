@@ -57,15 +57,24 @@ namespace ProjectTraiding.Moex.Clients
                 new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, _source),
                 new KeyValuePair<string, object?>(MoexTelemetryAttributes.StatusCode, (int)response.StatusCode));
 
-            // Серверные ошибки (5xx) считаем в метрику ошибок.
-            // 4xx (кроме 429) могут быть нормальным поведением — не считаем.
-            // 429 обрабатывается Polly retry, метрика retry считается отдельно.
-            if ((int)response.StatusCode >= 500)
+            // Серверные ответы (5xx) и объявленный источником тайм-аут (408) считаем
+            // в метрику ошибок. Прочие 4xx могут быть нормальным поведением — не считаем.
+            // 429 обрабатывается слоем устойчивости, метрика повторов считается отдельно.
+            int statusCode = (int)response.StatusCode;
+
+            if (statusCode == 408)
+            {
+                MoexMetrics.HttpErrors.Add(1,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, _source),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.ErrorType, MoexErrorTypes.Timeout),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.StatusCode, statusCode));
+            }
+            else if (statusCode is >= 500 and <= 599)
             {
                 MoexMetrics.HttpErrors.Add(1,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, _source),
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.ErrorType, MoexErrorTypes.ServerError),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.StatusCode, (int)response.StatusCode));
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.StatusCode, statusCode));
             }
 
             return response;

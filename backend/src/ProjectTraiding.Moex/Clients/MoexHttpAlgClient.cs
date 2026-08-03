@@ -14,6 +14,7 @@ using Polly.Timeout;
 using System.Diagnostics;
 using System.Net;
 using System.Runtime.CompilerServices;
+using System.Text;
 
 namespace ProjectTraiding.Moex.Clients
 {
@@ -55,8 +56,20 @@ namespace ProjectTraiding.Moex.Clients
             EnsureApiKeyConfigured();
             using HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
             request.Headers.Add("Authorization", $"Bearer {_options.AlgKey}");
-            using HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken);
-            return await response.Content.ReadAsStringAsync(cancellationToken);
+            using HttpResponseMessage response = await _httpClient.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
+
+            int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
+            using RentedBuffer rentedArr = await RentedBuffer.RentFromStreamAsync(
+                await response.Content.ReadAsStreamAsync(cancellationToken),
+                contentLength,
+                _options.BodyReadTimeout,
+                method,
+                cancellationToken);
+
+            return Encoding.UTF8.GetString(rentedArr.Span);
         }
 
         // ═══════════════════════════════════════════════════════════
@@ -107,6 +120,7 @@ namespace ProjectTraiding.Moex.Clients
                         await response.Content.ReadAsStreamAsync(cancellationToken),
                         contentLength,
                         _options.BodyReadTimeout,
+                        method,
                         cancellationToken);
                     try
                     {
@@ -188,6 +202,7 @@ namespace ProjectTraiding.Moex.Clients
                         await response.Content.ReadAsStreamAsync(cancellationToken),
                         contentLength,
                         _options.BodyReadTimeout,
+                        method,
                         cancellationToken);
                     try
                     {
@@ -292,6 +307,7 @@ namespace ProjectTraiding.Moex.Clients
                         await response.Content.ReadAsStreamAsync(cancellationToken),
                         contentLength,
                         _options.BodyReadTimeout,
+                        method,
                         cancellationToken);
                     try
                     {
@@ -346,8 +362,14 @@ namespace ProjectTraiding.Moex.Clients
                 "/engines/futures/markets/forts/boards/RFUD/securities.json?iss.meta=off";
  
             using var response = await SendRequestAsync(endpoint, cancellationToken: cancellationToken);
-            byte[] bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-            return ParsingInstrumentCardUtf8.ParseFuturesCards(bytes);
+            int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
+            using var rentedArr = await RentedBuffer.RentFromStreamAsync(
+                await response.Content.ReadAsStreamAsync(cancellationToken),
+                contentLength,
+                _options.BodyReadTimeout,
+                endpoint,
+                cancellationToken);
+            return ParsingInstrumentCardUtf8.ParseFuturesCards(rentedArr.Span);
         }
         // ═══════════════════════════════════════════════════════════
         // Инфраструктура
@@ -369,17 +391,8 @@ namespace ProjectTraiding.Moex.Clients
             try
             {
                 var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-                await HttpClientHelpers.EnsureSuccessOrThrowAsync(response, method, cancellationToken);
+                HttpClientHelpers.EnsureSuccessOrThrow(response, method);
                 return response;
-            }
-            catch (TimeoutException ex)
-            {
-                var timeoutEx = new MoexTimeoutException(
-                    $"MOEX body read timeout for {method}", method, "body_read",
-                    _options.BodyReadTimeout, ex);
-                MoexLogMessages.RequestFailed(_logger, timeoutEx, MoexLogSources.Algopack, method,
-                    timeoutEx.ErrorCategory, null, timeoutEx.TimeoutSource, timeoutEx.Message);
-                throw timeoutEx;
             }
             catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
             {

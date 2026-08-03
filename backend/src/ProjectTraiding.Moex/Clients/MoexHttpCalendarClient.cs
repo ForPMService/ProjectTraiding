@@ -50,6 +50,7 @@ namespace ProjectTraiding.Moex.Clients
                     await response.Content.ReadAsStreamAsync(cancellationToken),
                     contentLength,
                     _options.BodyReadTimeout,
+                    endpoint,
                     cancellationToken);
             try
             {
@@ -88,6 +89,7 @@ namespace ProjectTraiding.Moex.Clients
                     await response.Content.ReadAsStreamAsync(cancellationToken),
                     contentLength,
                     _options.BodyReadTimeout,
+                    endpoint,
                     cancellationToken);
             try
             {
@@ -132,17 +134,8 @@ namespace ProjectTraiding.Moex.Clients
             try
             {
                 var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-                await HttpClientHelpers.EnsureSuccessOrThrowAsync(response, method, cancellationToken);
+                HttpClientHelpers.EnsureSuccessOrThrow(response, method);
                 return response;
-            }
-            catch (TimeoutException ex)
-            {
-                var timeoutEx = new MoexTimeoutException(
-                    $"MOEX body read timeout for {method}", method, "body_read",
-                    _options.BodyReadTimeout, ex);
-                MoexLogMessages.RequestFailed(_logger, timeoutEx, MoexLogSources.Calendar, method,
-                    timeoutEx.ErrorCategory, null, timeoutEx.TimeoutSource, timeoutEx.Message);
-                throw timeoutEx;
             }
             catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
             {

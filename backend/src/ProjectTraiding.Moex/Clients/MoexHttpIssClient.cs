@@ -44,8 +44,14 @@ namespace ProjectTraiding.Moex.Clients
                 "/engines/stock/markets/shares/boards/tqbr/securities.json?iss.meta=off";
  
             using var response = await SendRequestAsync(endpoint, cancellationToken);
-            byte[] bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-            return ParsingInstrumentCardUtf8.ParseStockCards(bytes);
+            int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
+            using var rentedArr = await RentedBuffer.RentFromStreamAsync(
+                await response.Content.ReadAsStreamAsync(cancellationToken),
+                contentLength,
+                _options.BodyReadTimeout,
+                endpoint,
+                cancellationToken);
+            return ParsingInstrumentCardUtf8.ParseStockCards(rentedArr.Span);
         }
         private async Task<HttpResponseMessage> SendRequestAsync(string method, CancellationToken cancellationToken)
         {
@@ -54,22 +60,13 @@ namespace ProjectTraiding.Moex.Clients
             try
             {
                 var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-                await HttpClientHelpers.EnsureSuccessOrThrowAsync(response, method, cancellationToken);
+                HttpClientHelpers.EnsureSuccessOrThrow(response, method);
                 return response;
             }
             catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
             {
                 var timeoutEx = new MoexTimeoutException($"MOEX request timeout for {method}", method, "http_client", null, ex);
                 MoexLogMessages.RequestFailed(_logger, timeoutEx, MoexLogSources.Iss, method, timeoutEx.ErrorCategory, null, timeoutEx.TimeoutSource, timeoutEx.Message);
-                throw timeoutEx;
-            }
-            catch (TimeoutException ex)
-            {
-                var timeoutEx = new MoexTimeoutException(
-                    $"MOEX body read timeout for {method}", method, "body_read",
-                    _options.BodyReadTimeout, ex);
-                MoexLogMessages.RequestFailed(_logger, timeoutEx, MoexLogSources.Iss, method,
-                    timeoutEx.ErrorCategory, null, timeoutEx.TimeoutSource, timeoutEx.Message);
                 throw timeoutEx;
             }
             catch (TimeoutRejectedException ex)

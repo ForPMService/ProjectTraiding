@@ -1,3 +1,4 @@
+using ProjectTraiding.Moex.Errors;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 
 namespace ProjectTraiding.Moex.Clients.Errors
@@ -12,7 +13,7 @@ namespace ProjectTraiding.Moex.Clients.Errors
     /// Не наследует MoexHttpException, потому что HTTP-взаимодействия не было.
     /// StatusCode, RetryAfter, IsRetryable — не применимы.
     /// </summary>
-    public sealed class MoexRateLimitRejectedException : Exception
+    public sealed class MoexRateLimitRejectedException : MoexException
     {
         /// <summary>
         /// Адрес эндпоинта, который хотели вызвать.
@@ -38,7 +39,7 @@ namespace ProjectTraiding.Moex.Clients.Errors
         /// "rate_limit_rejected" — отличается от "rate_limit" (429 от MOEX),
         /// чтобы в логах сразу видеть: проблема на нашей стороне, не на стороне MOEX.
         /// </summary>
-        public string ErrorCategory => MoexErrorTypes.RateLimitRejected;
+        public override string ErrorCategory => MoexErrorTypes.RateLimitRejected;
 
         public MoexRateLimitRejectedException(string endpoint, string reason, TimeSpan? waitTime = null)
             : base($"Rate limit permit not acquired for {endpoint}: {reason}")

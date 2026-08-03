@@ -14,14 +14,10 @@ public static class HttpClientHelpers
     /// </summary>
     /// <param name="response">HTTP-ответ сервера.</param>
     /// <param name="endpoint">Адрес эндпоинта (только путь/метод, без Bearer-токена).</param>
-    /// <param name="cancellationToken">Токен отмены.</param>
-    public static async Task EnsureSuccessOrThrowAsync(
+    public static void EnsureSuccessOrThrow(
         HttpResponseMessage response,
-        string endpoint,
-        CancellationToken cancellationToken = default)
+        string endpoint)
     {
-        await Task.CompletedTask;
-
         if (response.IsSuccessStatusCode)
         {
             return;
@@ -35,6 +31,7 @@ public static class HttpClientHelpers
         throw status switch
         {
             429 => new MoexRateLimitException(endpoint, retryAfter),
+            408 => new MoexTimeoutException(endpoint, retryAfter),
             401 or 403 => new MoexAuthException(endpoint, status),
             400 => new MoexBadRequestException(endpoint),
             404 => new MoexNotFoundException(endpoint),
