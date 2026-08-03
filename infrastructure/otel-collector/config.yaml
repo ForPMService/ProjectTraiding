@@ -1,5 +1,5 @@
 # OpenTelemetry Collector — конфигурация для ProjectTraiding.
-# Шаг 2.3: экспортеры в LGTM + debug для диагностики.
+# Шаг 2.3: экспортеры в LGTM.
 
 extensions:
   health_check:
@@ -12,13 +12,23 @@ receivers:
         endpoint: 0.0.0.0:4317
 
 processors:
+  # Ограничитель памяти. У контейнера сборщика нет внешнего ограничения,
+  # поэтому это единственный настроенный механизм обратного давления по памяти —
+  # но не жёсткий предел процесса: между проверками и во время сборки мусора
+  # потребление может временно оказаться выше заданного значения.
+  #
+  # Мягкий порог = limit_mib - spike_limit_mib = 384 МБ. С него сборщик начинает
+  # отказывать в приёме данных ошибкой, допускающей повтор. Будет ли повтор
+  # выполнен и потеряются ли данные, зависит от политики отправителя и его
+  # очереди, а не от этого процессора.
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
   batch:
 
 exporters:
-  # Debug — для диагностики параллельно с LGTM.
-  debug:
-    verbosity: detailed
-
   # Loki — логи через OTLP.
   otlphttp/loki:
     endpoint: http://loki:3100/otlp
@@ -39,13 +49,13 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [batch]
+      processors: [memory_limiter, batch]
       exporters: [otlp/tempo]
     metrics:
       receivers: [otlp]
-      processors: [batch]
+      processors: [memory_limiter, batch]
       exporters: [prometheus]
     logs:
       receivers: [otlp]
-      processors: [batch]
+      processors: [memory_limiter, batch]
       exporters: [otlphttp/loki]
