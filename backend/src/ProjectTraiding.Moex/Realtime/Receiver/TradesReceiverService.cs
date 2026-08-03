@@ -60,88 +60,102 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
         protected override async Task RunTurnAsync(CancellationToken ct)
         {
-            await using AsyncServiceScope scope = _scopeFactory.CreateAsyncScope();
-
-            MoexReceiverInstrumentReader instrumentReader =
-                scope.ServiceProvider.GetRequiredService<MoexReceiverInstrumentReader>();
-            StreamCursorWriter cursorWriter =
-                scope.ServiceProvider.GetRequiredService<StreamCursorWriter>();
-            StreamCoverageWriter coverageWriter =
-                scope.ServiceProvider.GetRequiredService<StreamCoverageWriter>();
-
-            MoexRealtimeRestClient client =
-                scope.ServiceProvider.GetRequiredService<MoexRealtimeRestClient>();
-
-            IReadOnlyList<ReceiverInstrument> instruments =
-                await instrumentReader.GetEnabledForDataKindAsync(DataKind, ct);
-            if (!_initialized)
+            try
             {
-                if (instruments.Count == 0)
-                    MoexRealtimeReceiverLogMessages.TradesSubscriptionsEmpty(_logger);
+                await using AsyncServiceScope scope = _scopeFactory.CreateAsyncScope();
 
-                await PrepareInitialInstrumentsAsync(
-                    instruments, cursorWriter, coverageWriter, client, ct);
-                _initialized = true;
+                MoexReceiverInstrumentReader instrumentReader =
+                    scope.ServiceProvider.GetRequiredService<MoexReceiverInstrumentReader>();
+                StreamCursorWriter cursorWriter =
+                    scope.ServiceProvider.GetRequiredService<StreamCursorWriter>();
+                StreamCoverageWriter coverageWriter =
+                    scope.ServiceProvider.GetRequiredService<StreamCoverageWriter>();
+
+                MoexRealtimeRestClient client =
+                    scope.ServiceProvider.GetRequiredService<MoexRealtimeRestClient>();
+
+                IReadOnlyList<ReceiverInstrument> instruments =
+                    await instrumentReader.GetEnabledForDataKindAsync(DataKind, ct);
+                if (!_initialized)
+                {
+                    if (instruments.Count == 0)
+                        MoexRealtimeReceiverLogMessages.TradesSubscriptionsEmpty(_logger);
+
+                    await PrepareInitialInstrumentsAsync(
+                        instruments, cursorWriter, coverageWriter, client, ct);
+                    _initialized = true;
+                }
+                else
+                {
+                    await ReconcileStatesAsync(
+                        instruments, cursorWriter, coverageWriter, client, ct);
+                }
+
+                RealtimeRowWriter<RealtimeTradesStockDTO> stockWriter =
+                    scope.ServiceProvider.GetRequiredService<RealtimeRowWriter<RealtimeTradesStockDTO>>();
+                RealtimeRowWriter<RealtimeTradesFuturesDTO> futuresWriter =
+                    scope.ServiceProvider.GetRequiredService<RealtimeRowWriter<RealtimeTradesFuturesDTO>>();
+                RealtimeLatestWriter latestWriter =
+                    scope.ServiceProvider.GetRequiredService<RealtimeLatestWriter>();
+
+                foreach (KeyValuePair<string, TradesInstrumentState> pair in _states)
+                {
+                    if (pair.Value.IsStopping)
+                        continue;
+
+                    try
+                    {
+                        if (pair.Value.Market == StockMarket)
+                        {
+                            await PollStockAsync(
+                                pair.Key,
+                                pair.Value,
+                                client,
+                                stockWriter,
+                                latestWriter,
+                                cursorWriter,
+                                coverageWriter,
+                                ct);
+                        }
+                        else
+                        {
+                            await PollFuturesAsync(
+                                pair.Key,
+                                pair.Value,
+                                client,
+                                futuresWriter,
+                                latestWriter,
+                                cursorWriter,
+                                coverageWriter,
+                                ct);
+                        }
+                    }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        MoexRealtimeReceiverLogMessages.TradesInstrumentPollFailed(
+                            _logger, ex, pair.Key, pair.Value.Market);
+                    }
+                }
             }
-            else
+            finally
             {
-                await ReconcileStatesAsync(
-                    instruments, cursorWriter, coverageWriter, client, ct);
-            }
-
-            RealtimeRowWriter<RealtimeTradesStockDTO> stockWriter =
-                scope.ServiceProvider.GetRequiredService<RealtimeRowWriter<RealtimeTradesStockDTO>>();
-            RealtimeRowWriter<RealtimeTradesFuturesDTO> futuresWriter =
-                scope.ServiceProvider.GetRequiredService<RealtimeRowWriter<RealtimeTradesFuturesDTO>>();
-            RealtimeLatestWriter latestWriter =
-                scope.ServiceProvider.GetRequiredService<RealtimeLatestWriter>();
-
-            foreach (KeyValuePair<string, TradesInstrumentState> pair in _states)
-            {
-                if (pair.Value.IsStopping)
-                    continue;
-
+                // Агрегат публикуется после любого исхода оборота. Иначе при отказе
+                // чтения подписок или согласования состояний числа активных и отставших
+                // инструментов застынут на прежних значениях, а разрезы снятых подписок
+                // не удалятся — до следующего полностью успешного оборота.
                 try
                 {
-                    if (pair.Value.Market == StockMarket)
-                    {
-                        await PollStockAsync(
-                            pair.Key,
-                            pair.Value,
-                            client,
-                            stockWriter,
-                            latestWriter,
-                            cursorWriter,
-                            coverageWriter,
-                            ct);
-                    }
-                    else
-                    {
-                        await PollFuturesAsync(
-                            pair.Key,
-                            pair.Value,
-                            client,
-                            futuresWriter,
-                            latestWriter,
-                            cursorWriter,
-                            coverageWriter,
-                            ct);
-                    }
+                    PublishTelemetrySnapshots();
                 }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                catch
                 {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    MoexRealtimeReceiverLogMessages.TradesInstrumentPollFailed(
-                        _logger, ex, pair.Key, pair.Value.Market);
+                    // Сбой публикации телеметрии не меняет исход оборота.
                 }
             }
-
-            // Агрегат считается здесь, в потоке приёмника, где словарь состояний
-            // принадлежит только нам. Обработчик метрики получит готовые скаляры.
-            PublishTelemetrySnapshots();
         }
 
         private async Task PrepareInitialInstrumentsAsync(

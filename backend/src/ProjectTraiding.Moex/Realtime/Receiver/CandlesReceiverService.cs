@@ -77,60 +77,74 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
         protected override async Task RunTurnAsync(CancellationToken ct)
         {
-            await using AsyncServiceScope scope = _scopeFactory.CreateAsyncScope();
-
-            MoexReceiverInstrumentReader reader =
-                scope.ServiceProvider.GetRequiredService<MoexReceiverInstrumentReader>();
-            StreamCoverageWriter coverageWriter =
-                scope.ServiceProvider.GetRequiredService<StreamCoverageWriter>();
-
-            IReadOnlyList<ReceiverInstrument> instruments =
-                await reader.GetEnabledForDataKindAsync(DataKind, ct);
-
-            if (!_initialized)
+            try
             {
-                if (instruments.Count == 0)
-                    MoexRealtimeReceiverLogMessages.CandlesSubscriptionsEmpty(_logger);
+                await using AsyncServiceScope scope = _scopeFactory.CreateAsyncScope();
 
-                await PrepareInitialInstrumentsAsync(instruments, coverageWriter, ct);
-                _initialized = true;
+                MoexReceiverInstrumentReader reader =
+                    scope.ServiceProvider.GetRequiredService<MoexReceiverInstrumentReader>();
+                StreamCoverageWriter coverageWriter =
+                    scope.ServiceProvider.GetRequiredService<StreamCoverageWriter>();
+
+                IReadOnlyList<ReceiverInstrument> instruments =
+                    await reader.GetEnabledForDataKindAsync(DataKind, ct);
+
+                if (!_initialized)
+                {
+                    if (instruments.Count == 0)
+                        MoexRealtimeReceiverLogMessages.CandlesSubscriptionsEmpty(_logger);
+
+                    await PrepareInitialInstrumentsAsync(instruments, coverageWriter, ct);
+                    _initialized = true;
+                }
+                else
+                {
+                    await ReconcileStatesAsync(instruments, coverageWriter, ct);
+                }
+
+                MoexRealtimeRestClient client =
+                    scope.ServiceProvider.GetRequiredService<MoexRealtimeRestClient>();
+                RealtimeRowWriter<CandlesDTO> writer =
+                    scope.ServiceProvider.GetRequiredService<RealtimeRowWriter<CandlesDTO>>();
+                RealtimeLatestWriter latestWriter =
+                    scope.ServiceProvider.GetRequiredService<RealtimeLatestWriter>();
+
+                foreach (KeyValuePair<string, CandleInstrumentState> pair in _states)
+                {
+                    if (pair.Value.IsStopping)
+                        continue;
+
+                    try
+                    {
+                        await PollInstrumentAsync(
+                            pair.Key, pair.Value, client, writer, latestWriter, coverageWriter, ct);
+                    }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        MoexRealtimeReceiverLogMessages.CandlesInstrumentPollFailed(
+                            _logger, ex, pair.Key, pair.Value.Market);
+                    }
+                }
             }
-            else
+            finally
             {
-                await ReconcileStatesAsync(instruments, coverageWriter, ct);
-            }
-
-            MoexRealtimeRestClient client =
-                scope.ServiceProvider.GetRequiredService<MoexRealtimeRestClient>();
-            RealtimeRowWriter<CandlesDTO> writer =
-                scope.ServiceProvider.GetRequiredService<RealtimeRowWriter<CandlesDTO>>();
-            RealtimeLatestWriter latestWriter =
-                scope.ServiceProvider.GetRequiredService<RealtimeLatestWriter>();
-
-            foreach (KeyValuePair<string, CandleInstrumentState> pair in _states)
-            {
-                if (pair.Value.IsStopping)
-                    continue;
-
+                // Агрегат публикуется после любого исхода оборота. Иначе при отказе
+                // чтения подписок или согласования состояний числа активных и отставших
+                // инструментов застынут на прежних значениях, а разрезы снятых подписок
+                // не удалятся — до следующего полностью успешного оборота.
                 try
                 {
-                    await PollInstrumentAsync(
-                        pair.Key, pair.Value, client, writer, latestWriter, coverageWriter, ct);
+                    PublishTelemetrySnapshots();
                 }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                catch
                 {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    MoexRealtimeReceiverLogMessages.CandlesInstrumentPollFailed(
-                        _logger, ex, pair.Key, pair.Value.Market);
+                    // Сбой публикации телеметрии не меняет исход оборота.
                 }
             }
-
-            // Агрегат считается здесь, в потоке приёмника, где словарь состояний
-            // принадлежит только нам. Обработчик метрики получит готовые скаляры.
-            PublishTelemetrySnapshots();
         }
 
         private async Task PrepareInitialInstrumentsAsync(
