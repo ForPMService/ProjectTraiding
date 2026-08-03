@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Infrastructure;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
@@ -282,6 +283,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             // Получение окна свечей — под собственным бюджетом, живущим строго вокруг вызова клиента
             // и уничтожаемым до фиксации. Причины те же, что в стакане: таймер бюджета не должен
             // сработать во время записи и выдать сбой хранилища за тайм-аут получения.
+            MoexOperationTags operationTags = new MoexOperationTags(
+                MoexLogSources.RealtimeRest,
+                MoexOperations.RealtimeCandlesPoll,
+                MoexDataKinds.Candles,
+                state.Market);
+
+            long fetchStart = Stopwatch.GetTimestamp();
+
             List<CandlesDTO> candles;
             using (CancellationTokenSource fetchCts =
                    CancellationTokenSource.CreateLinkedTokenSource(commitCt))
@@ -295,16 +304,29 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     else
                         candles = await client.GetCandlesTodayFuturesAsync(
                             secid, from, now, CandleInterval, fetchCts.Token);
+
+                    MoexMetrics.RecordOperationSuccess(
+                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                 }
                 catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
                 {
+                    MoexMetrics.RecordOperationCancelled(
+                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                     throw;
                 }
                 catch (OperationCanceledException) when (fetchCts.IsCancellationRequested)
                 {
                     MoexRealtimeReceiverLogMessages.CandlesInstrumentFetchTimedOut(
                         _logger, secid, state.Market, _instrumentFetchTimeout);
+                    MoexMetrics.RecordOperationTimeout(
+                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                     return;
+                }
+                catch (Exception ex)
+                {
+                    MoexMetrics.RecordOperationError(
+                        in operationTags, ex, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                    throw;
                 }
             }
 

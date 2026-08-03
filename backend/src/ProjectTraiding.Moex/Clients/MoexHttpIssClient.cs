@@ -40,18 +40,43 @@ namespace ProjectTraiding.Moex.Clients
         public async Task<List<StockInstrumentCardDTO>> GetStockInstrumentCards(
             CancellationToken cancellationToken = default)
         {
-            const string endpoint =
-                "/engines/stock/markets/shares/boards/tqbr/securities.json?iss.meta=off";
+            MoexOperationTags operationTags = new MoexOperationTags(
+                MoexLogSources.Iss,
+                MoexOperations.ReferenceInstrumentsFetch,
+                MoexDataKinds.Instruments,
+                MoexMarkets.Stock);
+
+            long operationStart = Stopwatch.GetTimestamp();
+            try
+            {
+                const string endpoint =
+                    "/engines/stock/markets/shares/boards/tqbr/securities.json?iss.meta=off";
  
-            using var response = await SendRequestAsync(endpoint, cancellationToken);
-            int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-            using var rentedArr = await RentedBuffer.RentFromStreamAsync(
-                await response.Content.ReadAsStreamAsync(cancellationToken),
-                contentLength,
-                _options.BodyReadTimeout,
-                endpoint,
-                cancellationToken);
-            return ParsingInstrumentCardUtf8.ParseStockCards(rentedArr.Span);
+                using var response = await SendRequestAsync(endpoint, cancellationToken);
+                int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
+                using var rentedArr = await RentedBuffer.RentFromStreamAsync(
+                    await response.Content.ReadAsStreamAsync(cancellationToken),
+                    contentLength,
+                    _options.BodyReadTimeout,
+                    endpoint,
+                    cancellationToken);
+                List<StockInstrumentCardDTO> result = ParsingInstrumentCardUtf8.ParseStockCards(rentedArr.Span);
+                MoexMetrics.RecordOperationSuccess(
+                    in operationTags, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);
+                return result;
+            }
+            catch (OperationCanceledException)
+            {
+                MoexMetrics.RecordOperationCancelled(
+                    in operationTags, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                MoexMetrics.RecordOperationError(
+                    in operationTags, ex, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);
+                throw;
+            }
         }
         private async Task<HttpResponseMessage> SendRequestAsync(string method, CancellationToken cancellationToken)
         {

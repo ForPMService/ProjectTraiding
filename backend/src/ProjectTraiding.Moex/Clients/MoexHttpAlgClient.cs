@@ -81,6 +81,7 @@ namespace ProjectTraiding.Moex.Clients
             Dictionary<string, string>? queryParams = null,
             string? telemetryMarket = null,
             LoadStopOutcome? stopOutcome = null,
+            MoexOperationTags? operationTags = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
@@ -109,28 +110,51 @@ namespace ProjectTraiding.Moex.Clients
                 cancellationToken.ThrowIfCancellationRequested();
                 long pageStart = Stopwatch.GetTimestamp();
 
-                HttpResponseMessage response =
-                    await SendRequestAsync(method, queryParams, cancellationToken);
-
                 List<CandlesDTO> candlesList;
-                using (response)
+                try
                 {
-                    int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-                    using var rentedArr = await RentedBuffer.RentFromStreamAsync(
-                        await response.Content.ReadAsStreamAsync(cancellationToken),
-                        contentLength,
-                        _options.BodyReadTimeout,
-                        method,
-                        cancellationToken);
-                    try
+                    HttpResponseMessage response =
+                        await SendRequestAsync(method, queryParams, cancellationToken);
+
+                    using (response)
                     {
-                        candlesList = ParsingAlgUtf8.ParseAlgCandles(rentedArr.Span);
+                        int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
+                        using var rentedArr = await RentedBuffer.RentFromStreamAsync(
+                            await response.Content.ReadAsStreamAsync(cancellationToken),
+                            contentLength,
+                            _options.BodyReadTimeout,
+                            method,
+                            cancellationToken);
+                        try
+                        {
+                            candlesList = ParsingAlgUtf8.ParseAlgCandles(rentedArr.Span);
+                        }
+                        catch (MoexSchemaMismatchException ex)
+                        {
+                            MoexLogMessages.ParseFailed(_logger, ex, method, MoexErrorTypes.SchemaMismatch, ex.Message);
+                            throw;
+                        }
                     }
-                    catch (MoexSchemaMismatchException ex)
+                }
+                catch (OperationCanceledException)
+                {
+                    if (operationTags is MoexOperationTags cancelTags)
                     {
-                        MoexLogMessages.ParseFailed(_logger, ex, method, MoexErrorTypes.SchemaMismatch, ex.Message);
-                        throw;
+                        MoexMetrics.RecordOperationCancelled(
+                            in cancelTags, Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
                     }
+
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    if (operationTags is MoexOperationTags errorTags)
+                    {
+                        MoexMetrics.RecordOperationError(
+                            in errorTags, ex, Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
+                    }
+
+                    throw;
                 }
 
                 pagesElapsed++;
@@ -144,6 +168,14 @@ namespace ProjectTraiding.Moex.Clients
                     candlesList.Count,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Candles));
+
+                // Операция страницы закончена: дальше управление уходит потребителю.
+                if (operationTags is MoexOperationTags successTags)
+                {
+                    MoexMetrics.RecordOperationSuccess(
+                        in successTags, Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
+                }
+
                 yield return candlesList;
                 if (candlesList.Count >= 500)
                 {
@@ -171,6 +203,7 @@ namespace ProjectTraiding.Moex.Clients
             string method,
             Dictionary<string, string>? queryParams = null,
             LoadStopOutcome? stopOutcome = null,
+            MoexOperationTags? operationTags = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
             where TKind : struct, IAlgCursorKind<TRow>
         {
@@ -190,29 +223,52 @@ namespace ProjectTraiding.Moex.Clients
                 cancellationToken.ThrowIfCancellationRequested();
                 long pageStart = Stopwatch.GetTimestamp();
 
-                HttpResponseMessage response =
-                    await SendRequestAsync(method, queryParams, cancellationToken);
-
                 List<TRow> rows;
                 PaginationCursorDTO cursor;
-                using (response)
+                try
                 {
-                    int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-                    using var rentedArr = await RentedBuffer.RentFromStreamAsync(
-                        await response.Content.ReadAsStreamAsync(cancellationToken),
-                        contentLength,
-                        _options.BodyReadTimeout,
-                        method,
-                        cancellationToken);
-                    try
+                    HttpResponseMessage response =
+                        await SendRequestAsync(method, queryParams, cancellationToken);
+
+                    using (response)
                     {
-                        rows = TKind.Parse(rentedArr.Span, out cursor);
+                        int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
+                        using var rentedArr = await RentedBuffer.RentFromStreamAsync(
+                            await response.Content.ReadAsStreamAsync(cancellationToken),
+                            contentLength,
+                            _options.BodyReadTimeout,
+                            method,
+                            cancellationToken);
+                        try
+                        {
+                            rows = TKind.Parse(rentedArr.Span, out cursor);
+                        }
+                        catch (MoexSchemaMismatchException ex)
+                        {
+                            MoexLogMessages.ParseFailed(_logger, ex, method, MoexErrorTypes.SchemaMismatch, ex.Message);
+                            throw;
+                        }
                     }
-                    catch (MoexSchemaMismatchException ex)
+                }
+                catch (OperationCanceledException)
+                {
+                    if (operationTags is MoexOperationTags cancelTags)
                     {
-                        MoexLogMessages.ParseFailed(_logger, ex, method, MoexErrorTypes.SchemaMismatch, ex.Message);
-                        throw;
+                        MoexMetrics.RecordOperationCancelled(
+                            in cancelTags, Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
                     }
+
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    if (operationTags is MoexOperationTags errorTags)
+                    {
+                        MoexMetrics.RecordOperationError(
+                            in errorTags, ex, Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
+                    }
+
+                    throw;
                 }
 
                 pagesElapsed++;
@@ -226,6 +282,14 @@ namespace ProjectTraiding.Moex.Clients
                     rows.Count,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, TKind.TelemetryDataKind));
+
+                // Операция страницы закончена: дальше управление уходит потребителю.
+                if (operationTags is MoexOperationTags successTags)
+                {
+                    MoexMetrics.RecordOperationSuccess(
+                        in successTags, Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
+                }
+
                 yield return rows;
                 PaginationStep step = MoexCursorPagination.Next(cursor, pagesElapsed, _options.MaxPagesPerLoad);
                 if (step.IsStop)
@@ -250,6 +314,7 @@ namespace ProjectTraiding.Moex.Clients
             string method,
             Dictionary<string, string>? queryParams = null,
             LoadStopOutcome? stopOutcome = null,
+            MoexOperationTags? operationTags = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
@@ -296,28 +361,51 @@ namespace ProjectTraiding.Moex.Clients
 
                 long pageStart = Stopwatch.GetTimestamp();
 
-                HttpResponseMessage response =
-                    await SendRequestAsync(method, queryParams, cancellationToken);
-
                 List<FutoiDTO> page;
-                using (response)
+                try
                 {
-                    int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-                    using var rentedArr = await RentedBuffer.RentFromStreamAsync(
-                        await response.Content.ReadAsStreamAsync(cancellationToken),
-                        contentLength,
-                        _options.BodyReadTimeout,
-                        method,
-                        cancellationToken);
-                    try
+                    HttpResponseMessage response =
+                        await SendRequestAsync(method, queryParams, cancellationToken);
+
+                    using (response)
                     {
-                        page = ParsingAlgUtf8.ParseFutoi(rentedArr.Span);
+                        int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
+                        using var rentedArr = await RentedBuffer.RentFromStreamAsync(
+                            await response.Content.ReadAsStreamAsync(cancellationToken),
+                            contentLength,
+                            _options.BodyReadTimeout,
+                            method,
+                            cancellationToken);
+                        try
+                        {
+                            page = ParsingAlgUtf8.ParseFutoi(rentedArr.Span);
+                        }
+                        catch (MoexSchemaMismatchException ex)
+                        {
+                            MoexLogMessages.ParseFailed(_logger, ex, method, MoexErrorTypes.SchemaMismatch, ex.Message);
+                            throw;
+                        }
                     }
-                    catch (MoexSchemaMismatchException ex)
+                }
+                catch (OperationCanceledException)
+                {
+                    if (operationTags is MoexOperationTags cancelTags)
                     {
-                        MoexLogMessages.ParseFailed(_logger, ex, method, MoexErrorTypes.SchemaMismatch, ex.Message);
-                        throw;
+                        MoexMetrics.RecordOperationCancelled(
+                            in cancelTags, Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
                     }
+
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    if (operationTags is MoexOperationTags errorTags)
+                    {
+                        MoexMetrics.RecordOperationError(
+                            in errorTags, ex, Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
+                    }
+
+                    throw;
                 }
 
                 dayIndex++;
@@ -331,6 +419,13 @@ namespace ProjectTraiding.Moex.Clients
                     page.Count,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Futoi));
+
+                // Пустой день — успешная операция, даже если страница не передаётся потребителю.
+                if (operationTags is MoexOperationTags successTags)
+                {
+                    MoexMetrics.RecordOperationSuccess(
+                        in successTags, Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
+                }
 
                 if (page.Count > 0)
                 {
@@ -358,18 +453,43 @@ namespace ProjectTraiding.Moex.Clients
         public async Task<List<FuturesInstrumentCardDTO>> GetFuturesInstrumentCards(
             CancellationToken cancellationToken = default)
         {
-            const string endpoint =
-                "/engines/futures/markets/forts/boards/RFUD/securities.json?iss.meta=off";
+            MoexOperationTags operationTags = new MoexOperationTags(
+                MoexLogSources.Algopack,
+                MoexOperations.ReferenceInstrumentsFetch,
+                MoexDataKinds.Instruments,
+                MoexMarkets.Futures);
+
+            long operationStart = Stopwatch.GetTimestamp();
+            try
+            {
+                const string endpoint =
+                    "/engines/futures/markets/forts/boards/RFUD/securities.json?iss.meta=off";
  
-            using var response = await SendRequestAsync(endpoint, cancellationToken: cancellationToken);
-            int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-            using var rentedArr = await RentedBuffer.RentFromStreamAsync(
-                await response.Content.ReadAsStreamAsync(cancellationToken),
-                contentLength,
-                _options.BodyReadTimeout,
-                endpoint,
-                cancellationToken);
-            return ParsingInstrumentCardUtf8.ParseFuturesCards(rentedArr.Span);
+                using var response = await SendRequestAsync(endpoint, cancellationToken: cancellationToken);
+                int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
+                using var rentedArr = await RentedBuffer.RentFromStreamAsync(
+                    await response.Content.ReadAsStreamAsync(cancellationToken),
+                    contentLength,
+                    _options.BodyReadTimeout,
+                    endpoint,
+                    cancellationToken);
+                List<FuturesInstrumentCardDTO> result = ParsingInstrumentCardUtf8.ParseFuturesCards(rentedArr.Span);
+                MoexMetrics.RecordOperationSuccess(
+                    in operationTags, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);
+                return result;
+            }
+            catch (OperationCanceledException)
+            {
+                MoexMetrics.RecordOperationCancelled(
+                    in operationTags, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                MoexMetrics.RecordOperationError(
+                    in operationTags, ex, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);
+                throw;
+            }
         }
         // ═══════════════════════════════════════════════════════════
         // Инфраструктура

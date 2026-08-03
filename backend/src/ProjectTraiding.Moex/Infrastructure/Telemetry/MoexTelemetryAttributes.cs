@@ -35,4 +35,13 @@ public static class MoexTelemetryAttributes
 
     /// <summary>HTTP status code.</summary>
     public const string StatusCode = "status_code";
+
+    /// <summary>Производственная операция контура. Значения — в <see cref="MoexOperations"/>.</summary>
+    public const string Operation = "operation";
+
+    /// <summary>Исход работы. Значения — в <see cref="MoexOutcomes"/>.</summary>
+    public const string Outcome = "outcome";
+
+    /// <summary>Поток данных: история или текущий приём. Значения — в <see cref="MoexFlows"/>.</summary>
+    public const string Flow = "flow";
 }

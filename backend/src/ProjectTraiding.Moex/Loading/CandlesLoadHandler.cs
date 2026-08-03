@@ -44,9 +44,15 @@ namespace ProjectTraiding.Moex.Loading
                 ? MoexMarkets.Stock
                 : MoexMarkets.Futures;
 
+            MoexOperationTags operationTags = new MoexOperationTags(
+                MoexLogSources.Algopack,
+                MoexOperations.HistoryCandlesFetch,
+                MoexDataKinds.Candles,
+                telemetryMarket);
+
             IAsyncEnumerable<List<CandlesDTO>> pages = _client.GetCandles(
                 method, query, telemetryMarket: telemetryMarket,
-                stopOutcome: stopOutcome, cancellationToken: ct);
+                stopOutcome: stopOutcome, operationTags: operationTags, cancellationToken: ct);
 
             return await writer.WriteRangeAsync(
                 task.Id, task.Secid, task.SourceContractVersion, task.WriterVersion, pages, progress, ct);

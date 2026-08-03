@@ -1,10 +1,12 @@
 ﻿using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using ProjectTraiding.Moex.Contracts.Pagination;
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 
@@ -49,6 +51,19 @@ namespace ProjectTraiding.Moex.Loading
         {
             bool ownsRunningTask = alreadyClaimed;
 
+            // Замер начинается с момента владения задачей, а не с входа в метод. На фоновом пути
+            // задача захвачена подбором ещё до вызова, поэтому отсчёт идёт сразу. На ручном пути
+            // владение наступает только после успешного перевода в рабочее состояние, и чтение
+            // строки с попыткой захвата в длительность задания не входят.
+            long taskStart = Stopwatch.GetTimestamp();
+
+            // Метки известны только после чтения строки, поэтому счётчик заданий в работе
+            // увеличивается ниже — там же, где они становятся известны. Признак увеличения
+            // ведётся отдельно от владения задачей: владение наступает раньше, чем известны метки.
+            bool activeCounted = false;
+            string dataKind = string.Empty;
+            string market = string.Empty;
+
             try
             {
                 MoexLoadTask? task = await _taskReader.GetByIdAsync(taskId, ct);
@@ -64,7 +79,19 @@ namespace ProjectTraiding.Moex.Loading
                         return new LoadOutcome(LoadStatus.NotClaimed, 0);
 
                     ownsRunningTask = true;
+
+                    // Ручной путь: владение получено только сейчас — отсчёт начинается заново.
+                    taskStart = Stopwatch.GetTimestamp();
                 }
+
+                dataKind = MoexDataKinds.FromTaskDataKind(task.DataKind);
+                market = task.Market;
+
+                MoexMetrics.LoadTasksActive.Add(
+                    1,
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, dataKind),
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, market));
+                activeCounted = true;
 
                 if (task.StorageTarget != "clickhouse")
                     throw new InvalidOperationException(
@@ -94,6 +121,7 @@ namespace ProjectTraiding.Moex.Loading
                         "диапазон превышает предел страниц: пересоздайте задачи с меньшим окном",
                         stopReason,
                         ct);
+                    RecordTaskCompleted(dataKind, market, MoexOutcomes.Error, taskStart);
                     return new LoadOutcome(LoadStatus.Failed, summary.RowsRead);
                 }
 
@@ -102,6 +130,7 @@ namespace ProjectTraiding.Moex.Loading
                 await _rangeEventPublisher.PublishChangedAsync(task.Secid);
                 await _taskWriter.MarkDoneAsync(taskId, summary.RowsRead, stopReason, summary.LastToken, ct);
 
+                RecordTaskCompleted(dataKind, market, MoexOutcomes.Success, taskStart);
                 return new LoadOutcome(LoadStatus.Done, summary.RowsRead);
             }
             catch (OperationCanceledException)
@@ -112,6 +141,9 @@ namespace ProjectTraiding.Moex.Loading
                 if (ownsRunningTask)
                     await _taskWriter.RequeueAfterCancelAsync(taskId, CancellationToken.None);
 
+                if (activeCounted)
+                    RecordTaskCompleted(dataKind, market, MoexOutcomes.Cancelled, taskStart);
+
                 throw;
             }
             catch (Exception ex)
@@ -119,8 +151,41 @@ namespace ProjectTraiding.Moex.Loading
                 if (ownsRunningTask)
                     await _taskWriter.MarkErrorAsync(taskId, ex.Message, null, CancellationToken.None);
 
+                if (activeCounted)
+                    RecordTaskCompleted(dataKind, market, MoexOutcomes.Error, taskStart);
+
                 throw;
             }
+            finally
+            {
+                // Уменьшение строго парно увеличению: без признака счётчик уходил бы
+                // в минус на каждом раннем возврате.
+                if (activeCounted)
+                {
+                    MoexMetrics.LoadTasksActive.Add(
+                        -1,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, dataKind),
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, market));
+                }
+            }
+        }
+
+        private static void RecordTaskCompleted(
+            string dataKind, string market, string outcome, long startTimestamp)
+        {
+            double seconds = Stopwatch.GetElapsedTime(startTimestamp).TotalSeconds;
+
+            MoexMetrics.LoadTasksCompleted.Add(
+                1,
+                new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, dataKind),
+                new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, market),
+                new KeyValuePair<string, object?>(MoexTelemetryAttributes.Outcome, outcome));
+
+            MoexMetrics.LoadTaskDuration.Record(
+                seconds,
+                new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, dataKind),
+                new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, market),
+                new KeyValuePair<string, object?>(MoexTelemetryAttributes.Outcome, outcome));
         }
     }
 }

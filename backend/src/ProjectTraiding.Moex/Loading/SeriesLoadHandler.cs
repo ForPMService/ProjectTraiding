@@ -1,5 +1,6 @@
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Pagination;
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using System.Globalization;
@@ -34,9 +35,15 @@ namespace ProjectTraiding.Moex.Loading
             string method = TKind.BuildMethod(task.Secid);
             Dictionary<string, string> query = BuildQuery(task);
 
+            MoexOperationTags operationTags = new MoexOperationTags(
+                MoexLogSources.Algopack,
+                MoexOperations.HistoryCursorFetch,
+                TKind.TelemetryDataKind,
+                TKind.TelemetryMarket);
+
             IAsyncEnumerable<List<TRow>> pages = _client.GetCursorPages<TKind, TRow>(
                 method, query,
-                stopOutcome: stopOutcome, cancellationToken: ct);
+                stopOutcome: stopOutcome, operationTags: operationTags, cancellationToken: ct);
 
             return await _writer.WriteRangeAsync(
                 task.Id, task.Secid, task.SourceContractVersion, task.WriterVersion, pages, progress, ct);

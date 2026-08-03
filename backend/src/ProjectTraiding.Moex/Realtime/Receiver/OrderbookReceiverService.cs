@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Dto.Realtime;
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using ProjectTraiding.Moex.StorageBase.Redis;
@@ -268,6 +269,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         {
             // Снимок стакана — под собственным бюджетом, живущим строго вокруг вызова клиента и
             // уничтожаемым до фиксации. Причины те же, что в PollStockAsync.
+            MoexOperationTags operationTags = new MoexOperationTags(
+                MoexLogSources.RealtimeRest,
+                MoexOperations.RealtimeOrderbookPoll,
+                MoexDataKinds.Orderbook,
+                state.Market);
+
+            long fetchStart = Stopwatch.GetTimestamp();
+
             RealtimeOrderbookParseResult result;
             using (CancellationTokenSource fetchCts =
                    CancellationTokenSource.CreateLinkedTokenSource(commitCt))
@@ -279,16 +288,32 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         result = await client.GetOrderbookStockAsync(secid, fetchCts.Token);
                     else
                         result = await client.GetOrderbookFuturesAsync(secid, fetchCts.Token);
+
+                    MoexMetrics.RecordOperationSuccess(
+                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                 }
                 catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
                 {
+                    // Остановка хоста — не отказ источника.
+                    MoexMetrics.RecordOperationCancelled(
+                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                     throw;
                 }
                 catch (OperationCanceledException) when (fetchCts.IsCancellationRequested)
                 {
+                    // Истёк собственный бюджет получения инструмента. Это отказ по тайм-ауту,
+                    // а не отмена: хост работает, оборот продолжается со следующего инструмента.
                     MoexRealtimeReceiverLogMessages.OrderbookInstrumentFetchTimedOut(
                         _logger, secid, state.Market, _instrumentFetchTimeout);
+                    MoexMetrics.RecordOperationTimeout(
+                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                     return;
+                }
+                catch (Exception ex)
+                {
+                    MoexMetrics.RecordOperationError(
+                        in operationTags, ex, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                    throw;
                 }
             }
 

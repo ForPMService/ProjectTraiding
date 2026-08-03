@@ -37,6 +37,15 @@ namespace ProjectTraiding.Moex.Clients
         public async Task<List<CalendarOffDaysMarketDTO>> GetStockOffDays(
             CancellationToken cancellationToken = default)
         {
+            MoexOperationTags operationTags = new MoexOperationTags(
+                MoexLogSources.Calendar,
+                MoexOperations.CalendarOffDaysFetch,
+                MoexDataKinds.OffDays,
+                MoexMarkets.Stock);
+
+            long operationStart = Stopwatch.GetTimestamp();
+            try
+            {
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
             activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Calendar);
             activity?.SetTag(MoexTelemetryAttributes.DataKind, MoexDataKinds.OffDays);
@@ -64,6 +73,8 @@ namespace ProjectTraiding.Moex.Clients
                     result.Count,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.OffDays));
+                MoexMetrics.RecordOperationSuccess(
+                    in operationTags, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);
                 return result;
             }
             catch (MoexSchemaMismatchException ex)
@@ -71,11 +82,33 @@ namespace ProjectTraiding.Moex.Clients
                 MoexLogMessages.ParseFailed(_logger, ex, endpoint, MoexErrorTypes.SchemaMismatch, ex.Message);
                 throw;
             }
+            }
+            catch (OperationCanceledException)
+            {
+                MoexMetrics.RecordOperationCancelled(
+                    in operationTags, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                MoexMetrics.RecordOperationError(
+                    in operationTags, ex, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);
+                throw;
+            }
         }
 
         public async Task<List<CalendarOffDaysMarketDTO>> GetFuturesOffDays(
             CancellationToken cancellationToken = default)
         {
+            MoexOperationTags operationTags = new MoexOperationTags(
+                MoexLogSources.Calendar,
+                MoexOperations.CalendarOffDaysFetch,
+                MoexDataKinds.OffDays,
+                MoexMarkets.Futures);
+
+            long operationStart = Stopwatch.GetTimestamp();
+            try
+            {
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
             activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Calendar);
             activity?.SetTag(MoexTelemetryAttributes.DataKind, MoexDataKinds.OffDays);
@@ -103,11 +136,26 @@ namespace ProjectTraiding.Moex.Clients
                     result.Count,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.OffDays));
+                MoexMetrics.RecordOperationSuccess(
+                    in operationTags, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);
                 return result;
             }
             catch (MoexSchemaMismatchException ex)
             {
                 MoexLogMessages.ParseFailed(_logger, ex, endpoint, MoexErrorTypes.SchemaMismatch, ex.Message);
+                throw;
+            }
+            }
+            catch (OperationCanceledException)
+            {
+                MoexMetrics.RecordOperationCancelled(
+                    in operationTags, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                MoexMetrics.RecordOperationError(
+                    in operationTags, ex, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);
                 throw;
             }
         }

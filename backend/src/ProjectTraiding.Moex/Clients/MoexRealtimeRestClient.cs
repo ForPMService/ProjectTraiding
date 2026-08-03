@@ -70,7 +70,7 @@ namespace ProjectTraiding.Moex.Clients
 
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
             activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest);
-            activity?.SetTag(MoexTelemetryAttributes.DataKind, "orderbook");
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, MoexDataKinds.Orderbook);
             activity?.SetTag(MoexTelemetryAttributes.Market, MoexMarkets.Stock);
 
             string endpoint = $"/engines/stock/markets/shares/boards/TQBR/securities/{ticker}/orderbook.json";
@@ -93,7 +93,7 @@ namespace ProjectTraiding.Moex.Clients
 
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
             activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest);
-            activity?.SetTag(MoexTelemetryAttributes.DataKind, "orderbook");
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, MoexDataKinds.Orderbook);
             activity?.SetTag(MoexTelemetryAttributes.Market, MoexMarkets.Futures);
 
             string endpoint = $"/engines/futures/markets/forts/boards/RFUD/securities/{ticker}/orderbook.json";
@@ -128,7 +128,7 @@ namespace ProjectTraiding.Moex.Clients
 
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
             activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest);
-            activity?.SetTag(MoexTelemetryAttributes.DataKind, "trades");
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, MoexDataKinds.Trades);
             activity?.SetTag(MoexTelemetryAttributes.Market, MoexMarkets.Stock);
 
             string endpoint = $"/engines/stock/markets/shares/boards/TQBR/securities/{ticker}/trades.json";
@@ -148,11 +148,11 @@ namespace ProjectTraiding.Moex.Clients
                 MoexMetrics.PagesTotal.Add(
                     1,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, "trades"));
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Trades));
                 MoexMetrics.RowsTotal.Add(
                     result.Rows.Count,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, "trades"));
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Trades));
                 return result;
             }
             catch (MoexSchemaMismatchException ex)
@@ -186,7 +186,7 @@ namespace ProjectTraiding.Moex.Clients
 
             using Activity? activity = MoexTelemetry.ActivitySource.StartActivity("moex.load");
             activity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest);
-            activity?.SetTag(MoexTelemetryAttributes.DataKind, "trades");
+            activity?.SetTag(MoexTelemetryAttributes.DataKind, MoexDataKinds.Trades);
             activity?.SetTag(MoexTelemetryAttributes.Market, MoexMarkets.Futures);
 
             string endpoint = $"/engines/futures/markets/forts/boards/RFUD/securities/{ticker}/trades.json";
@@ -206,11 +206,11 @@ namespace ProjectTraiding.Moex.Clients
                 MoexMetrics.PagesTotal.Add(
                     1,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, "trades"));
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Trades));
                 MoexMetrics.RowsTotal.Add(
                     result.Rows.Count,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, "trades"));
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Trades));
                 return result;
             }
             catch (MoexSchemaMismatchException ex)
@@ -332,11 +332,11 @@ namespace ProjectTraiding.Moex.Clients
                 MoexMetrics.PagesTotal.Add(
                     1,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, "orderbook"));
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Orderbook));
                 MoexMetrics.RowsTotal.Add(
                     result.Rows.Count,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, "orderbook"));
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Orderbook));
                 return result;
             }
             catch (MoexSchemaMismatchException ex)

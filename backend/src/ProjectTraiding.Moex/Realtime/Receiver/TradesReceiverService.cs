@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Dto.Realtime;
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using ProjectTraiding.Moex.StorageBase.Redis;
@@ -344,6 +345,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             // пропускается до следующего оборота. Бюджет уничтожается ЗДЕСЬ, до фиксации: иначе его
             // таймер, сработав во время медленной записи, мог бы ошибочно попасть на исключение
             // фазы фиксации и выдать сбой хранилища за тайм-аут получения.
+            MoexOperationTags operationTags = new MoexOperationTags(
+                MoexLogSources.RealtimeRest,
+                MoexOperations.RealtimeTradesPoll,
+                MoexDataKinds.Trades,
+                state.Market);
+
+            long fetchStart = Stopwatch.GetTimestamp();
+
             RealtimeTradesParseResult<RealtimeTradesStockDTO> result;
             using (CancellationTokenSource fetchCts =
                    CancellationTokenSource.CreateLinkedTokenSource(commitCt))
@@ -353,16 +362,28 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 {
                     result = await client.GetTradesStockAsync(
                         secid, state.AfterTradeNo, cancellationToken: fetchCts.Token);
+                    MoexMetrics.RecordOperationSuccess(
+                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                 }
                 catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
                 {
+                    MoexMetrics.RecordOperationCancelled(
+                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                     throw;
                 }
                 catch (OperationCanceledException) when (fetchCts.IsCancellationRequested)
                 {
                     MoexRealtimeReceiverLogMessages.TradesInstrumentFetchTimedOut(
                         _logger, secid, state.Market, _instrumentFetchTimeout);
+                    MoexMetrics.RecordOperationTimeout(
+                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                     return;
+                }
+                catch (Exception ex)
+                {
+                    MoexMetrics.RecordOperationError(
+                        in operationTags, ex, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                    throw;
                 }
             }
 
@@ -417,6 +438,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         {
             // Получение одной страницы — под собственным бюджетом, живущим строго вокруг вызова
             // клиента и уничтожаемым до фиксации. Причины те же, что в PollStockAsync.
+            MoexOperationTags operationTags = new MoexOperationTags(
+                MoexLogSources.RealtimeRest,
+                MoexOperations.RealtimeTradesPoll,
+                MoexDataKinds.Trades,
+                state.Market);
+
+            long fetchStart = Stopwatch.GetTimestamp();
+
             RealtimeTradesParseResult<RealtimeTradesFuturesDTO> result;
             using (CancellationTokenSource fetchCts =
                    CancellationTokenSource.CreateLinkedTokenSource(commitCt))
@@ -426,16 +455,28 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 {
                     result = await client.GetTradesFuturesAsync(
                         secid, state.AfterTradeNo, cancellationToken: fetchCts.Token);
+                    MoexMetrics.RecordOperationSuccess(
+                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                 }
                 catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
                 {
+                    MoexMetrics.RecordOperationCancelled(
+                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                     throw;
                 }
                 catch (OperationCanceledException) when (fetchCts.IsCancellationRequested)
                 {
                     MoexRealtimeReceiverLogMessages.TradesInstrumentFetchTimedOut(
                         _logger, secid, state.Market, _instrumentFetchTimeout);
+                    MoexMetrics.RecordOperationTimeout(
+                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                     return;
+                }
+                catch (Exception ex)
+                {
+                    MoexMetrics.RecordOperationError(
+                        in operationTags, ex, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                    throw;
                 }
             }
 
@@ -479,16 +520,45 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             Dictionary<string, string> reversedParams =
                 new Dictionary<string, string> { ["reversed"] = "1" };
 
-            if (instrument.Market == StockMarket)
-            {
-                RealtimeTradesParseResult<RealtimeTradesStockDTO> page =
-                    await client.GetTradesStockAsync(instrument.Secid, null, reversedParams, ct);
-                return PickTailStock(page.Rows);
-            }
+            MoexOperationTags operationTags = new MoexOperationTags(
+                MoexLogSources.RealtimeRest,
+                MoexOperations.RealtimeTradesPoll,
+                MoexDataKinds.Trades,
+                instrument.Market);
 
-            RealtimeTradesParseResult<RealtimeTradesFuturesDTO> futuresPage =
-                await client.GetTradesFuturesAsync(instrument.Secid, null, reversedParams, ct);
-            return PickTailFutures(futuresPage.Rows);
+            long fetchStart = Stopwatch.GetTimestamp();
+
+            try
+            {
+                if (instrument.Market == StockMarket)
+                {
+                    RealtimeTradesParseResult<RealtimeTradesStockDTO> page =
+                        await client.GetTradesStockAsync(instrument.Secid, null, reversedParams, ct);
+                    (long TradeNo, DateTime SourceTime)? tail = PickTailStock(page.Rows);
+                    MoexMetrics.RecordOperationSuccess(
+                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                    return tail;
+                }
+
+                RealtimeTradesParseResult<RealtimeTradesFuturesDTO> futuresPage =
+                    await client.GetTradesFuturesAsync(instrument.Secid, null, reversedParams, ct);
+                (long TradeNo, DateTime SourceTime)? futuresTail = PickTailFutures(futuresPage.Rows);
+                MoexMetrics.RecordOperationSuccess(
+                    in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                return futuresTail;
+            }
+            catch (OperationCanceledException)
+            {
+                MoexMetrics.RecordOperationCancelled(
+                    in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                MoexMetrics.RecordOperationError(
+                    in operationTags, ex, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                throw;
+            }
         }
 
         private static (long TradeNo, DateTime SourceTime)? PickTailStock(

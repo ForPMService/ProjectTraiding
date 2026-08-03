@@ -1,6 +1,7 @@
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using ProjectTraiding.Moex.Contracts.Pagination;
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using System.Globalization;
@@ -64,9 +65,15 @@ namespace ProjectTraiding.Moex.Loading
                 ["till"] = task.DateTill.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             };
 
+            MoexOperationTags operationTags = new MoexOperationTags(
+                MoexLogSources.Algopack,
+                MoexOperations.HistoryFutoiFetch,
+                MoexDataKinds.Futoi,
+                MoexMarkets.Futures);
+
             IAsyncEnumerable<List<FutoiDTO>> pages = _client.StreamFutoi(
                 method, query,
-                stopOutcome: stopOutcome, cancellationToken: ct);
+                stopOutcome: stopOutcome, operationTags: operationTags, cancellationToken: ct);
 
             return await _writer.WriteRangeAsync(
                 task.Id, task.Secid, task.SourceContractVersion, task.WriterVersion, pages, progress, ct);
