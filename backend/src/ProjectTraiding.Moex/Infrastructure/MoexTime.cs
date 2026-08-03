@@ -21,6 +21,18 @@ namespace ProjectTraiding.Moex.Infrastructure
         public static DateTime Now =>
             DateTime.SpecifyKind(DateTime.UtcNow + Offset, DateTimeKind.Unspecified);
 
+        /// <summary>
+        /// Приводит московское настенное время к типу со смещением. Существует потому,
+        /// что прямое преобразование берёт часовой пояс машины: на сервере во всемирном
+        /// времени рыночное время уехало бы на три часа, и заметить это было бы нечем.
+        /// </summary>
+        public static DateTimeOffset ToDateTimeOffset(DateTime moscowWallTime)
+        {
+            return new DateTimeOffset(
+                DateTime.SpecifyKind(moscowWallTime, DateTimeKind.Unspecified),
+                Offset);
+        }
+
         /// <summary>Текущий торговый день по московским часам.</summary>
         public static DateOnly Today => DateOnly.FromDateTime(Now);
     }

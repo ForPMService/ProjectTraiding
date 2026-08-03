@@ -59,6 +59,9 @@ namespace ProjectTraiding.Moex.Options
             if (options.CandlesPollSeconds <= 0)
                 throw new InvalidOperationException("Moex:CandlesPollSeconds должен быть положительным.");
 
+            if (options.RealtimeStalePollIntervals <= 0)
+                throw new InvalidOperationException("Moex:RealtimeStalePollIntervals должен быть положительным.");
+
             if (options.RealtimeInstrumentFetchTimeout <= TimeSpan.Zero)
                 throw new InvalidOperationException("Moex:RealtimeInstrumentFetchTimeout должен быть положительным.");
 

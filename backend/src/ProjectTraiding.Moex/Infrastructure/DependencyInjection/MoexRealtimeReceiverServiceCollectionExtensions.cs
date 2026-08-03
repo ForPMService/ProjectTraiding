@@ -71,7 +71,9 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
                     sp.GetRequiredService<ILogger<TradesReceiverService>>(),
                     TimeSpan.FromSeconds(opt.TradesPollSeconds),
                     opt.RealtimeInstrumentFetchTimeout,
-                    TimeSpan.FromSeconds(opt.HeartbeatMinIntervalSeconds));
+                    TimeSpan.FromSeconds(opt.HeartbeatMinIntervalSeconds),
+                    TimeSpan.FromSeconds(
+                        opt.TradesPollSeconds * (double)opt.RealtimeStalePollIntervals));
             });
 
             services.AddHostedService(sp =>
@@ -82,7 +84,9 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
                     sp.GetRequiredService<ILogger<OrderbookReceiverService>>(),
                     TimeSpan.FromSeconds(opt.OrderbookPollSeconds),
                     opt.RealtimeInstrumentFetchTimeout,
-                    TimeSpan.FromSeconds(opt.HeartbeatMinIntervalSeconds));
+                    TimeSpan.FromSeconds(opt.HeartbeatMinIntervalSeconds),
+                    TimeSpan.FromSeconds(
+                        opt.OrderbookPollSeconds * (double)opt.RealtimeStalePollIntervals));
             });
 
             services.AddHostedService(sp =>
@@ -93,7 +97,9 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
                     sp.GetRequiredService<ILogger<CandlesReceiverService>>(),
                     TimeSpan.FromSeconds(opt.CandlesPollSeconds),
                     opt.RealtimeInstrumentFetchTimeout,
-                    TimeSpan.FromSeconds(opt.HeartbeatMinIntervalSeconds));
+                    TimeSpan.FromSeconds(opt.HeartbeatMinIntervalSeconds),
+                    TimeSpan.FromSeconds(
+                        opt.CandlesPollSeconds * (double)opt.RealtimeStalePollIntervals));
             });
 
             return services;

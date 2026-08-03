@@ -45,6 +45,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         private readonly ILogger<CandlesReceiverService> _logger;
         private readonly TimeSpan _instrumentFetchTimeout;
         private readonly TimeSpan _heartbeatMinInterval;
+        private readonly TimeSpan _stalePollThreshold;
         private readonly Dictionary<string, CandleInstrumentState> _states =
             new Dictionary<string, CandleInstrumentState>();
         private bool _initialized;
@@ -54,13 +55,15 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             ILogger<CandlesReceiverService> logger,
             TimeSpan pollInterval,
             TimeSpan instrumentFetchTimeout,
-            TimeSpan heartbeatMinInterval)
+            TimeSpan heartbeatMinInterval,
+            TimeSpan stalePollThreshold)
             : base(pollInterval)
         {
             _scopeFactory = scopeFactory;
             _logger = logger;
             _instrumentFetchTimeout = instrumentFetchTimeout;
             _heartbeatMinInterval = heartbeatMinInterval;
+            _stalePollThreshold = stalePollThreshold;
         }
 
         protected override void LogStarted(TimeSpan pollInterval)
@@ -124,6 +127,10 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         _logger, ex, pair.Key, pair.Value.Market);
                 }
             }
+
+            // Агрегат считается здесь, в потоке приёмника, где словарь состояний
+            // принадлежит только нам. Обработчик метрики получит готовые скаляры.
+            PublishTelemetrySnapshots();
         }
 
         private async Task PrepareInitialInstrumentsAsync(
@@ -415,9 +422,11 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     await writer.WriteAsync(secid, closed, null, insertContext, commitCt);
                     state.RowsTotal += closed.Count;
                     state.LastClosedBegin = maxClosedBegin;
+                    state.LastConfirmedMarketTime = MoexTime.ToDateTimeOffset(maxClosedBegin);
                 }
 
                 MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Success);
+                state.LastSuccessfulPollTime = DateTimeOffset.UtcNow;
                 pollActivity?.SetStatus(ActivityStatusCode.Ok);
             }
             catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
@@ -441,6 +450,71 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             // известная свеча ответа (закрытая или растущая); писатель сам проглатывает сбой.
             if (latestKnown is not null)
                 await latestWriter.WriteLatestCandleAsync(secid, latestKnown, commitCt);
+        }
+
+        private void PublishTelemetrySnapshots()
+        {
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            List<KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot>> snapshots =
+                new List<KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot>>(2);
+
+            AddTelemetrySnapshot(MoexMarkets.Stock, now, snapshots);
+            AddTelemetrySnapshot(MoexMarkets.Futures, now, snapshots);
+
+            RealtimeTelemetryState.ReplaceForDataKind(MoexDataKinds.Candles, snapshots);
+        }
+
+        private void AddTelemetrySnapshot(
+            string market,
+            DateTimeOffset now,
+            List<KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot>> snapshots)
+        {
+            DateTimeOffset? lastSuccessfulPollTime = null;
+            DateTimeOffset? lastConfirmedMarketTime = null;
+            long activeInstruments = 0;
+            long staleInstruments = 0;
+
+            foreach (KeyValuePair<string, CandleInstrumentState> pair in _states)
+            {
+                CandleInstrumentState state = pair.Value;
+                if (state.IsStopping || state.Market != market)
+                    continue;
+
+                activeInstruments++;
+
+                DateTimeOffset? successfulPollTime = state.LastSuccessfulPollTime;
+                if (successfulPollTime is null ||
+                    now - successfulPollTime.Value > _stalePollThreshold)
+                {
+                    staleInstruments++;
+                }
+
+                if (successfulPollTime is not null &&
+                    (lastSuccessfulPollTime is null ||
+                     successfulPollTime.Value > lastSuccessfulPollTime.Value))
+                {
+                    lastSuccessfulPollTime = successfulPollTime;
+                }
+
+                DateTimeOffset? confirmedMarketTime = state.LastConfirmedMarketTime;
+                if (confirmedMarketTime is not null &&
+                    (lastConfirmedMarketTime is null ||
+                     confirmedMarketTime.Value > lastConfirmedMarketTime.Value))
+                {
+                    lastConfirmedMarketTime = confirmedMarketTime;
+                }
+            }
+
+            if (activeInstruments == 0)
+                return;
+
+            snapshots.Add(new KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot>(
+                new RealtimeTelemetryKey(MoexDataKinds.Candles, market),
+                new RealtimeTelemetrySnapshot(
+                    lastSuccessfulPollTime,
+                    lastConfirmedMarketTime,
+                    activeInstruments,
+                    staleInstruments)));
         }
 
         protected override async Task CloseSessionsAsync()

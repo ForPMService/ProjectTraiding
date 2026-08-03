@@ -122,6 +122,141 @@ public static class MoexMetrics
     }
 
     // ══════════════════════════════════════════════
+    // Свежесть и здоровье текущего приёма
+    // ══════════════════════════════════════════════
+
+    /// <summary>
+    /// Возраст последнего успешного опроса разреза, в секундах. Отвечает
+    /// на вопрос «работает ли приёмник», а не «свежи ли данные».
+    /// </summary>
+    public static readonly ObservableGauge<double> RealtimeLastPollAge =
+        Meter.CreateObservableGauge(
+            "moex.realtime.last_poll_age",
+            ObserveLastPollAge,
+            unit: "s",
+            description: "Age of the last successful realtime poll");
+
+    /// <summary>
+    /// Возраст последних записанных рыночных данных разреза, в секундах.
+    /// Пустой успешный опрос это значение не омолаживает.
+    /// </summary>
+    public static readonly ObservableGauge<double> RealtimeDataAge =
+        Meter.CreateObservableGauge(
+            "moex.realtime.data_age",
+            ObserveDataAge,
+            unit: "s",
+            description: "Age of the last stored realtime market data");
+
+    /// <summary>Число инструментов разреза, по которым опрос давно не проходил.</summary>
+    public static readonly ObservableGauge<long> RealtimeStaleInstruments =
+        Meter.CreateObservableGauge(
+            "moex.realtime.stale_instruments",
+            ObserveStaleInstruments,
+            description: "Instruments without a recent successful poll");
+
+    /// <summary>Число инструментов разреза в активном приёме.</summary>
+    public static readonly ObservableGauge<long> RealtimeActiveInstruments =
+        Meter.CreateObservableGauge(
+            "moex.realtime.active_instruments",
+            ObserveActiveInstruments,
+            description: "Instruments currently polled");
+
+    /// <summary>
+    /// Отметка времени последнего наблюдения в живом процессе, в секундах эпохи.
+    /// Существует, чтобы отличить остановленное приложение от приложения,
+    /// которое работает, но ничего не принимает.
+    ///
+    /// Отдельной фоновой службы не требует: значение вычисляется в момент опроса
+    /// обработчика, а сам факт вызова обработчика уже означает, что процесс жив.
+    /// </summary>
+    public static readonly ObservableGauge<long> AppHeartbeatTime =
+        Meter.CreateObservableGauge(
+            "projecttraiding.app.heartbeat.time",
+            ObserveHeartbeatTime,
+            unit: "s",
+            description: "Unix time of the last observation inside the live process");
+
+    /// <summary>
+    /// Гарантирует создание инструментов измерителя.
+    ///
+    /// Тело метода не пустое намеренно. У типа нет явного статического конструктора,
+    /// поэтому он допускает раннюю инициализацию: среда обязана создать статические
+    /// поля перед первым обращением к полю, но не перед вызовом статического метода.
+    /// Пустой метод инициализацию не гарантирует, и при простое приложения инструменты
+    /// не создались бы вовсе — сигнал присутствия отсутствовал бы именно тогда,
+    /// когда он нужнее всего. Обращение к полю такую гарантию даёт.
+    /// </summary>
+    public static void EnsureInitialized()
+    {
+        GC.KeepAlive(AppHeartbeatTime);
+    }
+
+    private static IEnumerable<Measurement<double>> ObserveLastPollAge()
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+
+        foreach (KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot> pair
+                 in RealtimeTelemetryState.Enumerate())
+        {
+            DateTimeOffset? last = pair.Value.LastSuccessfulPollTime;
+            if (last is null)
+                continue;
+
+            yield return new Measurement<double>(
+                (now - last.Value).TotalSeconds,
+                new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, pair.Key.DataKind),
+                new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, pair.Key.Market));
+        }
+    }
+
+    private static IEnumerable<Measurement<double>> ObserveDataAge()
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+
+        foreach (KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot> pair
+                 in RealtimeTelemetryState.Enumerate())
+        {
+            DateTimeOffset? last = pair.Value.LastConfirmedMarketTime;
+            if (last is null)
+                continue;
+
+            yield return new Measurement<double>(
+                (now - last.Value).TotalSeconds,
+                new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, pair.Key.DataKind),
+                new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, pair.Key.Market));
+        }
+    }
+
+    private static IEnumerable<Measurement<long>> ObserveStaleInstruments()
+    {
+        foreach (KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot> pair
+                 in RealtimeTelemetryState.Enumerate())
+        {
+            yield return new Measurement<long>(
+                pair.Value.StaleInstruments,
+                new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, pair.Key.DataKind),
+                new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, pair.Key.Market));
+        }
+    }
+
+    private static IEnumerable<Measurement<long>> ObserveActiveInstruments()
+    {
+        foreach (KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot> pair
+                 in RealtimeTelemetryState.Enumerate())
+        {
+            yield return new Measurement<long>(
+                pair.Value.ActiveInstruments,
+                new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, pair.Key.DataKind),
+                new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, pair.Key.Market));
+        }
+    }
+
+    private static long ObserveHeartbeatTime()
+    {
+        return DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    }
+
+    // ══════════════════════════════════════════════
     // Производственные операции источника
     // ══════════════════════════════════════════════
 

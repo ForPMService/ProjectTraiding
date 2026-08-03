@@ -16,7 +16,7 @@ public static class MoexClientServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        
+        MoexMetrics.EnsureInitialized();
 
         services.AddOptions<MoexOptions>()
             .Bind(configuration.GetSection("Moex"));

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Dto.Realtime;
+using ProjectTraiding.Moex.Infrastructure;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
@@ -27,6 +28,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         private readonly ILogger<OrderbookReceiverService> _logger;
         private readonly TimeSpan _instrumentFetchTimeout;
         private readonly TimeSpan _heartbeatMinInterval;
+        private readonly TimeSpan _stalePollThreshold;
         private readonly Dictionary<string, ReceiverInstrumentSessionState> _states =
             new Dictionary<string, ReceiverInstrumentSessionState>();
         private bool _initialized;
@@ -36,13 +38,15 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             ILogger<OrderbookReceiverService> logger,
             TimeSpan pollInterval,
             TimeSpan instrumentFetchTimeout,
-            TimeSpan heartbeatMinInterval)
+            TimeSpan heartbeatMinInterval,
+            TimeSpan stalePollThreshold)
             : base(pollInterval)
         {
             _scopeFactory = scopeFactory;
             _logger = logger;
             _instrumentFetchTimeout = instrumentFetchTimeout;
             _heartbeatMinInterval = heartbeatMinInterval;
+            _stalePollThreshold = stalePollThreshold;
         }
 
         protected override void LogStarted(TimeSpan pollInterval)
@@ -111,6 +115,10 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         _logger, ex, pair.Key, pair.Value.Market);
                 }
             }
+
+            // Агрегат считается здесь, в потоке приёмника, где словарь состояний
+            // принадлежит только нам. Обработчик метрики получит готовые скаляры.
+            PublishTelemetrySnapshots();
         }
 
         private async Task PrepareInitialInstrumentsAsync(
@@ -364,9 +372,13 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         secid, result.Rows, sessionDate, insertContext, commitCt);
 
                     state.RowsTotal += result.Rows.Count;
+                    DateTime snapshotSourceTime =
+                        MoexClickHouseTime.BuildSourceTimeFromSeqNum(result.Rows[0].SeqNum);
+                    state.LastConfirmedMarketTime = MoexTime.ToDateTimeOffset(snapshotSourceTime);
                 }
 
                 MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Success);
+                state.LastSuccessfulPollTime = DateTimeOffset.UtcNow;
                 pollActivity?.SetStatus(ActivityStatusCode.Ok);
             }
             catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
@@ -389,6 +401,71 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             // Витрина — best-effort и выполняется последней только для непустого ответа.
             if (result.Rows.Count > 0)
                 await latestWriter.WriteLatestOrderbookAsync(secid, result.Rows, commitCt);
+        }
+
+        private void PublishTelemetrySnapshots()
+        {
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            List<KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot>> snapshots =
+                new List<KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot>>(2);
+
+            AddTelemetrySnapshot(MoexMarkets.Stock, now, snapshots);
+            AddTelemetrySnapshot(MoexMarkets.Futures, now, snapshots);
+
+            RealtimeTelemetryState.ReplaceForDataKind(MoexDataKinds.Orderbook, snapshots);
+        }
+
+        private void AddTelemetrySnapshot(
+            string market,
+            DateTimeOffset now,
+            List<KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot>> snapshots)
+        {
+            DateTimeOffset? lastSuccessfulPollTime = null;
+            DateTimeOffset? lastConfirmedMarketTime = null;
+            long activeInstruments = 0;
+            long staleInstruments = 0;
+
+            foreach (KeyValuePair<string, ReceiverInstrumentSessionState> pair in _states)
+            {
+                ReceiverInstrumentSessionState state = pair.Value;
+                if (state.IsStopping || state.Market != market)
+                    continue;
+
+                activeInstruments++;
+
+                DateTimeOffset? successfulPollTime = state.LastSuccessfulPollTime;
+                if (successfulPollTime is null ||
+                    now - successfulPollTime.Value > _stalePollThreshold)
+                {
+                    staleInstruments++;
+                }
+
+                if (successfulPollTime is not null &&
+                    (lastSuccessfulPollTime is null ||
+                     successfulPollTime.Value > lastSuccessfulPollTime.Value))
+                {
+                    lastSuccessfulPollTime = successfulPollTime;
+                }
+
+                DateTimeOffset? confirmedMarketTime = state.LastConfirmedMarketTime;
+                if (confirmedMarketTime is not null &&
+                    (lastConfirmedMarketTime is null ||
+                     confirmedMarketTime.Value > lastConfirmedMarketTime.Value))
+                {
+                    lastConfirmedMarketTime = confirmedMarketTime;
+                }
+            }
+
+            if (activeInstruments == 0)
+                return;
+
+            snapshots.Add(new KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot>(
+                new RealtimeTelemetryKey(MoexDataKinds.Orderbook, market),
+                new RealtimeTelemetrySnapshot(
+                    lastSuccessfulPollTime,
+                    lastConfirmedMarketTime,
+                    activeInstruments,
+                    staleInstruments)));
         }
 
         protected override async Task CloseSessionsAsync()
