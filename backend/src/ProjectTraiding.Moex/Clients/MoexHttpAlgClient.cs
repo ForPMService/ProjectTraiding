@@ -162,18 +162,9 @@ namespace ProjectTraiding.Moex.Clients
                 pagesElapsed++;
                 totalRows += candlesList.Count;
                 MoexLogMessages.PageReceived(_logger, method, pagesElapsed, candlesList.Count, Stopwatch.GetElapsedTime(pageStart));
-                MoexMetrics.PagesTotal.Add(
-                    1,
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Candles));
-                MoexMetrics.RowsTotal.Add(
-                    candlesList.Count,
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Candles));
 
-                // Новые метрики считаются только для производственного вызова: диагностика набора
-                // меток не передаёт, и её обращения в производственный счёт не попадают. Старые
-                // счётчики выше временно сохранены — их удаление идёт вместе с перестройкой панелей.
+                // Метрики получения данных считаются только для производственного вызова:
+                // диагностика набора меток не передаёт, и её обращения в производственный счёт не попадают.
                 if (operationTags is MoexOperationTags receivedTags)
                 {
                     MoexMetrics.PagesReceived.Add(
@@ -300,14 +291,6 @@ namespace ProjectTraiding.Moex.Clients
                 pagesElapsed++;
                 totalRows += rows.Count;
                 MoexLogMessages.PageReceived(_logger, method, pagesElapsed, rows.Count, Stopwatch.GetElapsedTime(pageStart));
-                MoexMetrics.PagesTotal.Add(
-                    1,
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, TKind.TelemetryDataKind));
-                MoexMetrics.RowsTotal.Add(
-                    rows.Count,
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, TKind.TelemetryDataKind));
 
                 if (operationTags is MoexOperationTags receivedTags)
                 {
@@ -458,14 +441,6 @@ namespace ProjectTraiding.Moex.Clients
                 dayIndex++;
                 totalRows += page.Count;
                 MoexLogMessages.DaySplitPageReceived(_logger, method, date.ToString("yyyy-MM-dd"), page.Count, Stopwatch.GetElapsedTime(pageStart));
-                MoexMetrics.PagesTotal.Add(
-                    1,
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Futoi));
-                MoexMetrics.RowsTotal.Add(
-                    page.Count,
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Algopack),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Futoi));
 
                 if (operationTags is MoexOperationTags receivedTags)
                 {

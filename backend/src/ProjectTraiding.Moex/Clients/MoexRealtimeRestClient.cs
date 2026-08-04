@@ -130,14 +130,6 @@ namespace ProjectTraiding.Moex.Clients
             {
                 var result = ParsingRealtimeRestUtf8.ParseTradesStock(rentedArr.Span);
                 MoexLogMessages.SinglePageReceived(_logger, endpoint, result.Rows.Count, Stopwatch.GetElapsedTime(startTimestamp));
-                MoexMetrics.PagesTotal.Add(
-                    1,
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Trades));
-                MoexMetrics.RowsTotal.Add(
-                    result.Rows.Count,
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Trades));
                 return result;
             }
             catch (MoexSchemaMismatchException ex)
@@ -183,14 +175,6 @@ namespace ProjectTraiding.Moex.Clients
             {
                 var result = ParsingRealtimeRestUtf8.ParseTradesFutures(rentedArr.Span);
                 MoexLogMessages.SinglePageReceived(_logger, endpoint, result.Rows.Count, Stopwatch.GetElapsedTime(startTimestamp));
-                MoexMetrics.PagesTotal.Add(
-                    1,
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Trades));
-                MoexMetrics.RowsTotal.Add(
-                    result.Rows.Count,
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Trades));
                 return result;
             }
             catch (MoexSchemaMismatchException ex)
@@ -299,14 +283,6 @@ namespace ProjectTraiding.Moex.Clients
             {
                 var result = ParsingRealtimeRestUtf8.ParseOrderbook(rentedArr.Span);
                 MoexLogMessages.SinglePageReceived(_logger, endpoint, result.Rows.Count, Stopwatch.GetElapsedTime(startTimestamp));
-                MoexMetrics.PagesTotal.Add(
-                    1,
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Orderbook));
-                MoexMetrics.RowsTotal.Add(
-                    result.Rows.Count,
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Orderbook));
                 return result;
             }
             catch (MoexSchemaMismatchException ex)
@@ -400,14 +376,6 @@ namespace ProjectTraiding.Moex.Clients
             {
                 var result = ParsingAlgUtf8.ParseAlgCandles(rentedArr.Span);
                 MoexLogMessages.SinglePageReceived(_logger, endpoint, result.Count, Stopwatch.GetElapsedTime(startTimestamp));
-                MoexMetrics.PagesTotal.Add(
-                    1,
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Candles));
-                MoexMetrics.RowsTotal.Add(
-                    result.Count,
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.RealtimeRest),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.Candles));
                 return result;
             }
             catch (MoexSchemaMismatchException ex)

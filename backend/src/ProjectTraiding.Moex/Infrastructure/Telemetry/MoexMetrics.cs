@@ -65,16 +65,8 @@ public static class MoexMetrics
             description: "MOEX rate limit rejections total");
 
     // ══════════════════════════════════════════════
-    // Пагинация
+    // Получение данных
     // ══════════════════════════════════════════════
-
-    /// <summary>Количество загруженных страниц.</summary>
-    public static readonly Counter<long> PagesTotal =
-        Meter.CreateCounter<long>("moex.pages.total", description: "MOEX pages loaded total");
-
-    /// <summary>Количество загруженных строк.</summary>
-    public static readonly Counter<long> RowsTotal =
-        Meter.CreateCounter<long>("moex.rows.total", description: "MOEX rows loaded total");
 
     /// <summary>
     /// Количество строк, полученных от источника и успешно разобранных.

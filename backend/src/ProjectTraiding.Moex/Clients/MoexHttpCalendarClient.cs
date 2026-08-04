@@ -67,14 +67,6 @@ namespace ProjectTraiding.Moex.Clients
             {
                 List<CalendarOffDaysMarketDTO> result = ParsingCalendarUtf8.ParseOffDaysMarket(rentedArr.Span);
                 MoexLogMessages.SinglePageReceived(_logger, endpoint, result.Count, Stopwatch.GetElapsedTime(startTimestamp));
-                MoexMetrics.PagesTotal.Add(
-                    1,
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.OffDays));
-                MoexMetrics.RowsTotal.Add(
-                    result.Count,
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.OffDays));
                 MoexMetrics.RecordOperationSuccess(
                     in operationTags, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);
                 activity?.SetStatus(ActivityStatusCode.Ok);
@@ -135,14 +127,6 @@ namespace ProjectTraiding.Moex.Clients
             {
                 List<CalendarOffDaysMarketDTO> result = ParsingCalendarUtf8.ParseOffDaysMarket(rentedArr.Span);
                 MoexLogMessages.SinglePageReceived(_logger, endpoint, result.Count, Stopwatch.GetElapsedTime(startTimestamp));
-                MoexMetrics.PagesTotal.Add(
-                    1,
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.OffDays));
-                MoexMetrics.RowsTotal.Add(
-                    result.Count,
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, MoexLogSources.Calendar),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, MoexDataKinds.OffDays));
                 MoexMetrics.RecordOperationSuccess(
                     in operationTags, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);
                 activity?.SetStatus(ActivityStatusCode.Ok);

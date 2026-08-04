@@ -182,23 +182,19 @@
     },
     {
       "type": "stat",
-      "title": "Health",
-      "description": "Проверь http://localhost:5025/healthz",
+      "title": "Возраст сигнала присутствия",
+      "description": "Время с последнего наблюдения внутри живого процесса приложения.",
       "gridPos": { "h": 4, "w": 6, "x": 12, "y": 22 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "up{job=\"otel-collector\"}",
-          "legendFormat": "collector",
+          "expr": "time() - projecttraiding_app_heartbeat_time_seconds",
+          "legendFormat": "возраст",
           "refId": "A"
         }
       ],
       "fieldConfig": {
-        "defaults": {
-          "mappings": [
-            { "type": "value", "options": { "1": { "text": "UP", "color": "green" }, "0": { "text": "DOWN", "color": "red" } } }
-          ]
-        },
+        "defaults": { "unit": "s", "min": 0 },
         "overrides": []
       },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }

@@ -1,0 +1,127 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: ProjectTraiding — источник и приложение
+    folder: ProjectTraiding
+    interval: 1m
+    rules:
+      - uid: pt-operations-error-ratio
+        title: Высокая доля отказов операций к бирже
+        condition: C
+        for: 10m
+        isPaused: true
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          description: >-
+            Доля завершённых операций с отказом превысила предварительный порог 0,20.
+            Порог не откалиброван и подлежит калибровке отдельной работой:
+            эксплуатационных измерений на момент создания правила не проводилось.
+            Отсутствие данных тревогой не считается — это означает, что операций
+            не было вовсе.
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              datasource:
+                type: prometheus
+                uid: prometheus
+              editorMode: code
+              expr: >-
+                ((sum(rate(moex_operations_completed_total{outcome="error"}[10m]))
+                or vector(0))
+                /
+                sum(rate(moex_operations_completed_total[10m])))
+                and
+                (sum(rate(moex_operations_completed_total[10m])) > 0)
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.20]
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    type: last
+                    params: []
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+
+      - uid: pt-app-heartbeat-stale
+        title: Приложение не подаёт признаков жизни
+        condition: C
+        for: 5m
+        isPaused: true
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          description: >-
+            Возраст сигнала присутствия приложения превысил предварительный порог
+            300 секунд. Порог не откалиброван и подлежит калибровке отдельной
+            работой: эксплуатационных измерений на момент создания правила не
+            проводилось. Отсутствие ряда считается тревогой, потому что исчезнувший
+            сигнал означает, что приложение не отвечает.
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              datasource:
+                type: prometheus
+                uid: prometheus
+              editorMode: code
+              expr: time() - projecttraiding_app_heartbeat_time_seconds
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [300]
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    type: last
+                    params: []
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
