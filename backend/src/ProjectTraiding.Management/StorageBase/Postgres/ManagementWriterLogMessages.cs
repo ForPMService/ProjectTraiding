@@ -6,7 +6,8 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
 {
     /// <summary>
     /// Лог-события контура записи Management в PostgreSQL.
-    /// EventId 200–209: зарезервировано за management-writer.
+    /// EventId 200–209 и 250–259: зарезервировано за management-writer.
+    /// Второй диапазон открыт под команды остановки: первый исчерпан полностью.
     /// </summary>
     public static partial class ManagementWriterLogMessages
     {
@@ -59,5 +60,20 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
             EventId = 209, EventName = "MgmtRealtimeInstrumentDisabled", Level = LogLevel.Information,
             Message = "Management realtime instrument disabled: secid={Secid}, rows={RowsWritten}, time={Elapsed}.")]
         public static partial void RealtimeInstrumentDisabled(ILogger logger, string secid, int rowsWritten, TimeSpan elapsed);
+
+        [LoggerMessage(
+            EventId = 250, EventName = "MgmtRealtimeAllDisabled", Level = LogLevel.Warning,
+            Message = "Management realtime all subscriptions disabled: rows={RowsWritten}, time={Elapsed}.")]
+        public static partial void RealtimeAllDisabled(ILogger logger, int rowsWritten, TimeSpan elapsed);
+
+        [LoggerMessage(
+            EventId = 251, EventName = "MgmtLoadTasksCancelledAll", Level = LogLevel.Warning,
+            Message = "Management load tasks cancelled (all): cancelled={CancelledCount}, time={Elapsed}.")]
+        public static partial void LoadTasksCancelledAll(ILogger logger, int cancelledCount, TimeSpan elapsed);
+
+        [LoggerMessage(
+            EventId = 252, EventName = "MgmtLoadTasksCancelledInstrument", Level = LogLevel.Warning,
+            Message = "Management load tasks cancelled (instrument): secid={Secid}, cancelled={CancelledCount}, time={Elapsed}.")]
+        public static partial void LoadTasksCancelledInstrument(ILogger logger, string secid, int cancelledCount, TimeSpan elapsed);
     }
 }
