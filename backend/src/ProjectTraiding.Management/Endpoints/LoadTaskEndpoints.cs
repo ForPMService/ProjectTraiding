@@ -200,6 +200,58 @@ namespace ProjectTraiding.Management.Endpoints
                 }
             });
 
+            routes.MapPost("/management/load-tasks/cancel", async (
+                LoadTaskWriter writer,
+                ILogger<LoadTaskEndpointsLog> logger,
+                CancellationToken ct) =>
+            {
+                const string route = "POST /management/load-tasks/cancel";
+                ManagementEndpointLogMessages.OperationStarted(logger, route);
+
+                CancelResult result = await writer.CancelAllAsync(ct);
+                LoadTasksCancelResponse response = new(
+                    Scope: "all",
+                    Secid: null,
+                    CancelledCount: result.CancelledCount,
+                    ElapsedMs: result.Elapsed.TotalMilliseconds);
+
+                return Results.Json(
+                    response,
+                    ManagementJsonContext.Default.LoadTasksCancelResponse);
+            });
+
+            // Сегмент instruments обязателен. Сегодня конфликта нет — маршрут ручного
+            // запуска живёт под другим префиксом (/operations/moex/load-tasks/{taskId}/run).
+            // Но если позже понадобится адресная отмена по идентификатору задания,
+            // без этого сегмента два шаблона совпали бы буквально.
+            routes.MapPost("/management/load-tasks/instruments/{secid}/cancel", async (
+                string secid,
+                LoadTaskWriter writer,
+                ILogger<LoadTaskEndpointsLog> logger,
+                CancellationToken ct) =>
+            {
+                const string route = "POST /management/load-tasks/instruments/{secid}/cancel";
+                ManagementEndpointLogMessages.OperationStarted(logger, route);
+
+                if (string.IsNullOrWhiteSpace(secid))
+                {
+                    const string error = "secid обязателен";
+                    ManagementEndpointLogMessages.ValidationRejected(logger, route, error);
+                    return Results.BadRequest(error);
+                }
+
+                CancelResult result = await writer.CancelInstrumentAsync(secid, ct);
+                LoadTasksCancelResponse response = new(
+                    Scope: "instrument",
+                    Secid: secid,
+                    CancelledCount: result.CancelledCount,
+                    ElapsedMs: result.Elapsed.TotalMilliseconds);
+
+                return Results.Json(
+                    response,
+                    ManagementJsonContext.Default.LoadTasksCancelResponse);
+            });
+
             return routes;
         }
 

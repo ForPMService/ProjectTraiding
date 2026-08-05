@@ -235,6 +235,22 @@ namespace ProjectTraiding.Management.Endpoints
                 }
             });
 
+            routes.MapPost("/management/realtime-subscriptions/disable-all", async (
+                RealtimeSubscriptionWriter writer,
+                ILogger<RealtimeSubscriptionEndpointsLog> logger,
+                CancellationToken ct) =>
+            {
+                const string route = "POST /management/realtime-subscriptions/disable-all";
+                ManagementEndpointLogMessages.OperationStarted(logger, route);
+
+                SubscriptionWriteResult w = await writer.DisableAllAsync(ct);
+                RealtimeSubscriptionsDisableAllResponse dto = new(
+                    "disable_all", w.RowsWritten, w.Elapsed.TotalMilliseconds);
+                return Results.Json(
+                    dto,
+                    ManagementJsonContext.Default.RealtimeSubscriptionsDisableAllResponse);
+            });
+
             return routes;
         }
     }
