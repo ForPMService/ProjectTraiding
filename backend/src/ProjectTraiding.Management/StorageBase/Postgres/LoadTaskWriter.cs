@@ -9,13 +9,18 @@ using System.Text;
 namespace ProjectTraiding.Management.StorageBase.Postgres
 {
     /// <summary>
-    /// Создание задачи загрузки (moex_load_tasks) по команде оператора.
-    /// Статус и версии не задаются — берутся DEFAULT схемы. id генерирует база (uuidv7()),
-    /// возвращаем его через RETURNING. Возврат — Guid, а не DbWriteResult: идентификатор
-    /// задачи это uuid, а общий DbWriteResult.Id рассчитан на bigint-таблицы.
+    /// Создание и операторское снятие заданий загрузки (moex_load_tasks).
+    ///
+    /// При создании статус и версии не задаются — берутся DEFAULT схемы. id генерирует
+    /// база (uuidv7()), возвращаем его через RETURNING. Возврат — Guid, а не DbWriteResult:
+    /// идентификатор задачи это uuid, а общий DbWriteResult.Id рассчитан на bigint-таблицы.
+    ///
+    /// Команды отмены переводят в cancelled только pending и partial. Жизненным циклом
+    /// выполняющегося задания владеет контур Moex, и отсюда он не трогается.
     /// </summary>
     public sealed class LoadTaskWriter
     {
+        private const string LoadTasksTable = "moex_load_tasks";
         private readonly NpgsqlDataSource _dataSource;
         private readonly ILogger<LoadTaskWriter> _logger;
 
@@ -147,6 +152,101 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                     "moex_load_tasks",
                     ex.GetType().Name);
                 await transaction.RollbackAsync(CancellationToken.None);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Снимает всю ожидающую очередь: pending и partial → cancelled.
+        ///
+        /// Задания в статусе running не трогаем, и это не осторожность, а необходимость.
+        /// Координатор загрузки записывает покрытие в moex_loaded_ranges и извещает витрину
+        /// РАНЬШЕ, чем закрывает задание, а завершающие методы MarkDoneAsync и MarkErrorAsync
+        /// требуют исходный статус running и при несовпадении бросают исключение. Перевод
+        /// работающего задания в cancelled дал бы записанное покрытие со статусом ok при
+        /// задании, помеченном отменённым, то есть расхождение между правдой данных
+        /// и журналом заданий.
+        ///
+        /// Статус partial включён страховочно: сейчас его никто не проставляет
+        /// (MoexLoadTaskWriter.MarkPartialAsync не вызывается ниоткуда), но он входит
+        /// в уникальный индекс активных заданий, и оставленная строка блокировала бы
+        /// повторную постановку того же диапазона.
+        ///
+        /// Статусы done и error не трогаем: это завершённые исходы, а не очередь.
+        ///
+        /// finished_at заполняется и для заданий, которые никогда не запускались: отдельной
+        /// колонки под момент отмены в схеме нет, а знать, когда задание сняли, нужно.
+        /// Поэтому у снятого ожидающего задания started_at остаётся пустым при заполненном
+        /// finished_at — это нормальное сочетание, а не повреждение данных.
+        ///
+        /// Повторный вызов при неизменившемся состоянии возвращает ноль отменённых строк.
+        /// Ноль не гарантирован постоянно: если между вызовами поставили новые задания или
+        /// остановка хоста вернула задание в pending, повтор снимет и их.
+        /// </summary>
+        public async Task<CancelResult> CancelAllAsync(CancellationToken ct)
+        {
+            ManagementWriterLogMessages.WriteStarted(_logger, LoadTasksTable);
+            long startTs = Stopwatch.GetTimestamp();
+
+            try
+            {
+                await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
+                await using NpgsqlCommand cmd = new NpgsqlCommand("""
+                    UPDATE moex_load_tasks
+                    SET status = 'cancelled',
+                        finished_at = now(),
+                        stop_reason = 'operator_cancelled',
+                        error_message = null
+                    WHERE status IN ('pending', 'partial')
+                    """, connection);
+
+                int cancelledCount = await cmd.ExecuteNonQueryAsync(ct);
+                TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
+                ManagementWriterLogMessages.LoadTasksCancelledAll(_logger, cancelledCount, elapsed);
+                return new CancelResult(cancelledCount, elapsed);
+            }
+            catch (Exception ex)
+            {
+                ManagementWriterLogMessages.WriteRolledBack(_logger, ex, LoadTasksTable, ex.GetType().Name);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Снимает ожидающие задания одного инструмента: pending и partial → cancelled,
+        /// независимо от рынка, режима торгов, вида данных, интервала свечей, окна дат
+        /// и способа постановки. Правила по статусам те же, что в CancelAllAsync.
+        ///
+        /// Отдельный метод, а не общий с необязательным secid: не переданный по ошибке
+        /// параметр превратил бы точечную команду в снятие всей очереди.
+        /// </summary>
+        public async Task<CancelResult> CancelInstrumentAsync(string secid, CancellationToken ct)
+        {
+            ManagementWriterLogMessages.WriteStarted(_logger, LoadTasksTable);
+            long startTs = Stopwatch.GetTimestamp();
+
+            try
+            {
+                await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
+                await using NpgsqlCommand cmd = new NpgsqlCommand("""
+                    UPDATE moex_load_tasks
+                    SET status = 'cancelled',
+                        finished_at = now(),
+                        stop_reason = 'operator_cancelled',
+                        error_message = null
+                    WHERE secid = @secid
+                      AND status IN ('pending', 'partial')
+                    """, connection);
+                cmd.Parameters.Add("@secid", NpgsqlDbType.Text).Value = secid;
+
+                int cancelledCount = await cmd.ExecuteNonQueryAsync(ct);
+                TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
+                ManagementWriterLogMessages.LoadTasksCancelledInstrument(_logger, secid, cancelledCount, elapsed);
+                return new CancelResult(cancelledCount, elapsed);
+            }
+            catch (Exception ex)
+            {
+                ManagementWriterLogMessages.WriteRolledBack(_logger, ex, LoadTasksTable, ex.GetType().Name);
                 throw;
             }
         }

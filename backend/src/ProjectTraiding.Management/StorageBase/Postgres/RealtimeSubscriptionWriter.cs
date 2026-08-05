@@ -219,5 +219,38 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                 throw;
             }
         }
+
+        /// <summary>
+        /// Массовое снятие с наблюдения: гасит все включённые подписки по всем инструментам.
+        /// Строки не удаляются, гасится только признак enabled — приёмник исключит
+        /// инструменты из опроса на ближайшем обороте и штатно закроет их сеансы покрытия.
+        /// Повторный вызов при неизменившемся состоянии возвращает ноль изменённых строк;
+        /// если между вызовами подписки снова включили, ненулевой результат штатен.
+        /// </summary>
+        public async Task<SubscriptionWriteResult> DisableAllAsync(CancellationToken ct)
+        {
+            ManagementWriterLogMessages.WriteStarted(_logger, Table);
+            long startTs = Stopwatch.GetTimestamp();
+
+            try
+            {
+                await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
+                await using NpgsqlCommand cmd = new NpgsqlCommand("""
+                UPDATE moex_realtime_subscriptions
+                SET enabled = false, updated_at = now()
+                WHERE enabled = true
+                """, connection);
+
+                int rowsWritten = await cmd.ExecuteNonQueryAsync(ct);
+                TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
+                ManagementWriterLogMessages.RealtimeAllDisabled(_logger, rowsWritten, elapsed);
+                return new SubscriptionWriteResult(rowsWritten, elapsed);
+            }
+            catch (Exception ex)
+            {
+                ManagementWriterLogMessages.WriteRolledBack(_logger, ex, Table, ex.GetType().Name);
+                throw;
+            }
+        }
     }
 }
