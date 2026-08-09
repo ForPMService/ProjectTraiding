@@ -52,5 +52,17 @@ namespace ProjectTraiding.Management.Endpoints
             int missingIntervalsCount,
             int missingDaysTotal,
             int windowsCreatedCount);
+
+        [LoggerMessage(
+            EventId = 215, EventName = "MgmtInstrumentDataDeleteRejected", Level = LogLevel.Warning,
+            Message = "Management instrument data delete rejected: route={Route}, secid={Secid}, reason={Reason}.")]
+        public static partial void InstrumentDataDeleteRejected(
+            ILogger logger, string route, string secid, string reason);
+
+        [LoggerMessage(
+            EventId = 216, EventName = "MgmtWriteBlockedByDeletion", Level = LogLevel.Warning,
+            Message = "Management write blocked by active deletion: route={Route}, secid={Secid}.")]
+        public static partial void WriteBlockedByDeletion(
+            ILogger logger, string route, string secid);
     }
 }

@@ -75,5 +75,34 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
             EventId = 252, EventName = "MgmtLoadTasksCancelledInstrument", Level = LogLevel.Warning,
             Message = "Management load tasks cancelled (instrument): secid={Secid}, cancelled={CancelledCount}, time={Elapsed}.")]
         public static partial void LoadTasksCancelledInstrument(ILogger logger, string secid, int cancelledCount, TimeSpan elapsed);
+
+        [LoggerMessage(
+            EventId = 253, EventName = "MgmtInstrumentPostgresDataDeleted", Level = LogLevel.Warning,
+            Message = "Management instrument postgres data deleted: secid={Secid}, ranges={RangesDeleted}, cursors={CursorsDeleted}, tasks={TasksDeleted}, time={Elapsed}.")]
+        public static partial void InstrumentPostgresDataDeleted(
+            ILogger logger,
+            string secid,
+            int rangesDeleted,
+            int cursorsDeleted,
+            int tasksDeleted,
+            TimeSpan elapsed);
+
+        [LoggerMessage(
+            EventId = 254, EventName = "MgmtInstrumentClickHouseTableCleared", Level = LogLevel.Information,
+            Message = "Management instrument clickhouse table cleared: secid={Secid}, table={Table}.")]
+        public static partial void InstrumentClickHouseTableCleared(
+            ILogger logger, string secid, string table);
+
+        [LoggerMessage(
+            EventId = 255, EventName = "MgmtInstrumentClickHouseDataDeleted", Level = LogLevel.Warning,
+            Message = "Management instrument clickhouse data deleted: secid={Secid}, tables={TablesCleared}, time={Elapsed}.")]
+        public static partial void InstrumentClickHouseDataDeleted(
+            ILogger logger, string secid, int tablesCleared, TimeSpan elapsed);
+
+        [LoggerMessage(
+            EventId = 256, EventName = "MgmtInstrumentRedisDataDeleted", Level = LogLevel.Warning,
+            Message = "Management instrument redis data deleted: secid={Secid}, keys={KeysDeleted}, time={Elapsed}.")]
+        public static partial void InstrumentRedisDataDeleted(
+            ILogger logger, string secid, long keysDeleted, TimeSpan elapsed);
     }
 }

@@ -16,6 +16,7 @@ namespace ProjectTraiding.Management.Contracts
     [JsonSerializable(typeof(RealtimeSubscriptionResultDto))]
     [JsonSerializable(typeof(RealtimeSubscriptionsDisableAllResponse))]
     [JsonSerializable(typeof(LoadTasksCancelResponse))]
+    [JsonSerializable(typeof(InstrumentDataDeleteResponse))]
     public partial class ManagementJsonContext : JsonSerializerContext;
     
 }

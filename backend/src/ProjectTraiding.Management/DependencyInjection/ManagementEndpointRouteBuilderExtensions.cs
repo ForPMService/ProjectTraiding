@@ -13,6 +13,7 @@ namespace ProjectTraiding.Management.DependencyInjection
             routes.MapTariffEndpoints();
             routes.MapLoadTaskEndpoints();
             routes.MapRealtimeSubscriptionEndpoints();
+            routes.MapInstrumentDataDeleteEndpoints();
             return routes;
         }
     }
