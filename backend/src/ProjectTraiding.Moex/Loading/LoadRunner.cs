@@ -12,7 +12,7 @@ using System.Text;
 
 namespace ProjectTraiding.Moex.Loading
 {
-    public enum LoadStatus { NotFound, NotClaimed, Done, Failed }
+    public enum LoadStatus { NotFound, NotClaimed, Done, Failed, Cancelled }
 
     public readonly record struct LoadOutcome(LoadStatus Status, long RowsCovered);
 
@@ -24,6 +24,9 @@ namespace ProjectTraiding.Moex.Loading
     /// </summary>
     public sealed class LoadRunner
     {
+        // Опрос раз в три секунды: команда оператора редкая, задание идёт минутами.
+        private static readonly TimeSpan CancelPollInterval = TimeSpan.FromSeconds(3);
+
         private readonly MoexLoadTaskReader _taskReader;
         private readonly MoexLoadTaskWriter _taskWriter;
         private readonly MoexLoadedRangeWriter _rangeWriter;
@@ -144,7 +147,32 @@ namespace ProjectTraiding.Moex.Loading
 
                 LoadStopOutcome stopOutcome = new LoadStopOutcome();
 
-                RowWriteSummary summary = await handler.LoadAsync(task, stopOutcome, _progress, ct);
+                using CancellationTokenSource operatorCts = new CancellationTokenSource();
+                using CancellationTokenSource linkedCts =
+                    CancellationTokenSource.CreateLinkedTokenSource(ct, operatorCts.Token);
+                using CancellationTokenSource watcherStopCts = new CancellationTokenSource();
+
+                Task watcherTask = WatchCancellationAsync(taskId, operatorCts, watcherStopCts.Token);
+
+                RowWriteSummary summary;
+                try
+                {
+                    summary = await handler.LoadAsync(task, stopOutcome, _progress, linkedCts.Token);
+                }
+                finally
+                {
+                    watcherStopCts.Cancel();
+                    await watcherTask;
+                }
+
+                // Последняя проверка перед финализацией. Локального токена мало: спутник мог спать
+                // свои три секунды, пока обработчик заканчивал, и уже записанный запрос остался бы
+                // незамеченным — задание получило бы done и полное покрытие вопреки команде.
+                if (await _taskReader.IsCancelRequestedAsync(taskId, CancellationToken.None))
+                    operatorCts.Cancel();
+
+                linkedCts.Token.ThrowIfCancellationRequested();
+
                 summaryAvailable = true;
                 rowsForTelemetry = summary.RowsRead;
 
@@ -173,36 +201,43 @@ namespace ProjectTraiding.Moex.Loading
                 stopReasonForTelemetry = stopReason;
 
                 // Штатное полное покрытие: журнал результата, извещение витрины, закрытие успехом.
-                await _rangeWriter.UpsertAsync(task, summary.RowsRead, summary.LastToken, ct);
+                await _rangeWriter.UpsertAsync(task, summary.RowsRead, summary.LastToken, CancellationToken.None);
                 await _rangeEventPublisher.PublishChangedAsync(task.Secid);
-                await _taskWriter.MarkDoneAsync(taskId, summary.RowsRead, stopReason, summary.LastToken, ct);
+                await _taskWriter.MarkDoneAsync(taskId, summary.RowsRead, stopReason, summary.LastToken, CancellationToken.None);
 
                 return new LoadOutcome(LoadStatus.Done, summary.RowsRead);
             }
             catch (OperationCanceledException)
             {
                 outcome = MoexOutcomes.Cancelled;
-                stopReasonForTelemetry = null;
                 errorTypeForTelemetry = null;
 
-                // Остановка хоста, а не сбой задачи: возвращаем в очередь, а не в error.
-                // Иначе задача стала бы сиротой — автоподбор error не берёт (правка А2).
-                // CancellationToken.None: ct уже отменён, но статус закрыть обязаны.
+                string? finalStatus = null;
                 if (ownsRunningTask)
                 {
                     try
                     {
-                        await _taskWriter.RequeueAfterCancelAsync(taskId, CancellationToken.None);
+                        finalStatus = await _taskWriter.FinalizeCancellationAsync(taskId, CancellationToken.None);
                     }
-                    catch (Exception requeueException)
+                    catch (Exception closeException)
                     {
-                        // Если возврат в очередь отказал, задача осталась running: это отказ,
-                        // а не благополучная отмена. Наружу выходит именно ошибка команды базы.
                         outcome = MoexOutcomes.Error;
-                        errorTypeForTelemetry = MoexMetrics.ClassifyError(requeueException);
+                        errorTypeForTelemetry = MoexMetrics.ClassifyError(closeException);
                         throw;
                     }
                 }
+
+                bool operatorCancelled = finalStatus == "cancelled";
+
+                // Причина видна не только в базе, но и в трассировке: иначе операторская отмена
+                // и внешняя отмена выполнения слились бы в один исход наблюдаемости.
+                stopReasonForTelemetry = operatorCancelled ? "operator_cancelled" : null;
+
+                // Операторская отмена — штатный исход. Пробрасывать исключение здесь ошибка: в фоновом
+                // исполнителе оба фильтра проверяют токен остановки приложения, который при операторской
+                // отмене не отменён, и отмена записалась бы в журнал как отказ загрузки.
+                if (operatorCancelled)
+                    return new LoadOutcome(LoadStatus.Cancelled, 0);
 
                 throw;
             }
@@ -255,6 +290,42 @@ namespace ProjectTraiding.Moex.Loading
                     catch
                     {
                     }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Спутник одного выполняющегося задания: опрашивает признак операторского запроса
+        /// и при его появлении отменяет операторский источник. Останавливается вместе
+        /// с заданием через stopToken.
+        /// </summary>
+        private async Task WatchCancellationAsync(
+            Guid taskId,
+            CancellationTokenSource operatorCts,
+            CancellationToken stopToken)
+        {
+            while (!stopToken.IsCancellationRequested)
+            {
+                try
+                {
+                    // Задержка первая: задание только что взято в работу, запрос появиться не успел.
+                    await Task.Delay(CancelPollInterval, stopToken);
+
+                    if (await _taskReader.IsCancelRequestedAsync(taskId, stopToken))
+                    {
+                        operatorCts.Cancel();
+                        return;
+                    }
+                }
+                catch (OperationCanceledException) when (stopToken.IsCancellationRequested)
+                {
+                    return;   // штатная остановка спутника вместе с заданием
+                }
+                catch (Exception ex)
+                {
+                    // Сбой одного опроса не прекращает наблюдение и не имеет права уронить
+                    // загрузку. После восстановления доступа следующий оборот увидит запрос.
+                    MoexLoadTaskLogMessages.CancelWatchPollFailed(_logger, ex, taskId, ex.GetType().Name);
                 }
             }
         }

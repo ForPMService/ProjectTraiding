@@ -64,6 +64,20 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                     : reader.GetString(12));
         }
 
+        public async Task<bool> IsCancelRequestedAsync(Guid taskId, CancellationToken ct)
+        {
+            await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
+            await using NpgsqlCommand cmd = new NpgsqlCommand("""
+                SELECT cancel_requested_at IS NOT NULL
+                FROM moex_load_tasks
+                WHERE id = @id
+                """, connection);
+            cmd.Parameters.Add("@id", NpgsqlDbType.Uuid).Value = taskId;
+
+            object? requested = await cmd.ExecuteScalarAsync(ct);
+            return requested is bool value && value;
+        }
+
         /// <summary>
         /// Атомарно берёт в работу самую старую задачу под ClickHouse в статусе pending
         /// (FIFO по created_at) и возвращает её идентификатор, либо null, если очереди нет.
@@ -75,6 +89,8 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         /// Подбор пропускает задания тех инструментов, по которым удаление зафиксировано
         /// до начала этого оператора; подбор, начатый раньше фиксации, ею не отменяется
         /// (раздел 5.3 задания). После закрытия удаления задания снова доступны.
+        /// Запрос отмены на pending также исключает автоматический запуск: это защитный
+        /// инвариант для ожидающей строки с ещё не обработанным запросом оператора.
         /// </summary>
         public async Task<Guid?> ClaimNextPendingTaskIdAsync(CancellationToken ct)
         {
@@ -92,6 +108,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 WHERE id = (
                     SELECT id FROM moex_load_tasks t
                     WHERE t.status = 'pending'
+                    AND t.cancel_requested_at IS NULL
                     AND t.storage_target = 'clickhouse'
                     AND NOT EXISTS (
                         SELECT 1 FROM moex_instrument_data_deletions d

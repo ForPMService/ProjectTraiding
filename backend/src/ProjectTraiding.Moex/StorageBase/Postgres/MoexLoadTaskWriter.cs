@@ -23,8 +23,10 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         }
 
         /// <summary>
-        /// Атомарно берёт задачу в работу: pending или error → running.
-        /// Чистит весь хвост прошлой попытки. started_at = now(), attempt_count += 1.
+        /// Атомарно берёт задачу в работу: pending, error или partial → running.
+        /// Pending с незавершённым запросом отмены не запускается; явный повтор error или
+        /// partial начинает новую попытку и очищает запрос вместе с хвостом прошлой.
+        /// started_at = now(), attempt_count += 1.
         /// Возврат true — взяли; false — задачи нет, она уже running/done либо по
         /// инструменту идёт удаление данных.
         /// </summary>
@@ -42,8 +44,10 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                     stop_reason = null,
                     rows_loaded = 0,
                     last_insert_deduplication_token = null,
+                    cancel_requested_at = null,
                     attempt_count = attempt_count + 1
                 WHERE id = @id AND status IN ('pending', 'error', 'partial')
+                  AND (status <> 'pending' OR cancel_requested_at IS NULL)
                   AND NOT EXISTS (
                       SELECT 1 FROM moex_instrument_data_deletions d
                       WHERE d.secid = moex_load_tasks.secid AND d.status = 'started'
@@ -171,29 +175,36 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         }
 
         /// <summary>
-        /// Возвращает прерванную остановкой хоста задачу в очередь: running → pending,
-        /// finished_at обнуляется. Вызывается координатором из catch(OperationCanceledException)
-        /// вместо пометки error — иначе задача осталась бы сиротой, ведь автоподбор error не
-        /// берёт. После перезапуска хоста автоподбор снова возьмёт её из pending. Если строка
-        /// уже не в running (успела закрыться другим путём) — ничего не делаем: гонка с
-        /// завершением здесь безопасна, поэтому исключение при affected≠1 НЕ бросаем.
+        /// Закрывает выполняющееся задание после отмены, выбирая финал по актуальному запросу
+        /// оператора: есть запрос — cancelled, нет — возврат в очередь. Возвращает новый статус
+        /// либо null, если строки в running уже нет.
+        /// Пустой результат — не отказ, а безопасная гонка с естественным завершением: успевшее
+        /// закрыться успехом задание остаётся успешным. При возврате в очередь причина остановки
+        /// и текст ошибки очищаются; MarkRunningAsync чистит те же поля при следующем захвате.
         /// </summary>
-        public async Task RequeueAfterCancelAsync(Guid taskId, CancellationToken ct)
+        public async Task<string?> FinalizeCancellationAsync(Guid taskId, CancellationToken ct)
         {
-            long startTs = Stopwatch.GetTimestamp();
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
 
             await using NpgsqlCommand cmd = new NpgsqlCommand("""
                 UPDATE moex_load_tasks
-                SET status = 'pending', finished_at = null
+                SET status = CASE
+                        WHEN cancel_requested_at IS NOT NULL THEN 'cancelled'
+                        ELSE 'pending' END,
+                    finished_at = CASE
+                        WHEN cancel_requested_at IS NOT NULL THEN now()
+                        ELSE null END,
+                    stop_reason = CASE
+                        WHEN cancel_requested_at IS NOT NULL THEN 'operator_cancelled'
+                        ELSE null END,
+                    error_message = null
                 WHERE id = @id AND status = 'running'
+                RETURNING status
                 """, connection);
             cmd.Parameters.Add("@id", NpgsqlDbType.Uuid).Value = taskId;
 
-            int affected = await cmd.ExecuteNonQueryAsync(ct);
-            TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
-
-            MoexLoadTaskLogMessages.TaskRequeuedAfterCancel(_logger, taskId, affected, elapsed);
+            object? status = await cmd.ExecuteScalarAsync(ct);
+            return status as string;
         }
     }
 }

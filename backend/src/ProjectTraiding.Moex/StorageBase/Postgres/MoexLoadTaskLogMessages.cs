@@ -88,5 +88,14 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
            Level = LogLevel.Information,
            Message = "Load task requeued after cancel: taskId={TaskId}, affected={Affected}, elapsed={Elapsed}.")]
         public static partial void TaskRequeuedAfterCancel(ILogger logger, Guid taskId, int affected, TimeSpan elapsed);
+
+        [LoggerMessage(EventId = 221, EventName = "MoexLoadTaskCancelWatchPollFailed",
+           Level = LogLevel.Warning,
+           Message = "Load task cancellation watch poll failed: taskId={TaskId}, errorType={ErrorType}.")]
+        public static partial void CancelWatchPollFailed(
+            ILogger logger,
+            Exception exception,
+            Guid taskId,
+            string errorType);
     }
 }

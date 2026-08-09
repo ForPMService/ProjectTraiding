@@ -30,6 +30,7 @@ namespace ProjectTraiding.Moex.Endpoints
                     LoadStatus.Failed => Results.Text(
                         $"load failed: task={id} — диапазон превышает предел страниц, пересоздайте задачи меньшим окном (rows={outcome.RowsCovered.ToString(CultureInfo.InvariantCulture)})",
                         "text/plain", statusCode: StatusCodes.Status422UnprocessableEntity),
+                    LoadStatus.Cancelled => Results.Text($"load cancelled by operator: task={id}", "text/plain"),
                     LoadStatus.Done => Results.Text(
                          $"load done: task={id}, rows={outcome.RowsCovered.ToString(CultureInfo.InvariantCulture)}",
                         "text/plain"),
