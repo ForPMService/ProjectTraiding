@@ -5,7 +5,10 @@ namespace ProjectTraiding.Management.Contracts.Dto
     /// Scope принимает значения "all" и "instrument"; Secid заполняется только
     /// для масштаба instrument, для all остаётся null.
     ///
-    /// Числа работающих заданий здесь намеренно нет. Согласованно посчитать его
+    /// CancelRequestedCount — число выполняющихся заданий, впервые помеченных именно
+    /// этим вызовом, а не снимок всех выполняющихся заданий.
+    ///
+    /// Числа всех работающих заданий здесь намеренно нет. Согласованно посчитать его
     /// нельзя: конкурентный захват дорожкой исполнителя может закоммититься уже
     /// после снимка нашего оператора, и возвращённое значение оказалось бы занижено.
     /// Текущее число работающих заданий наблюдается метрикой moex_load_tasks_active
@@ -16,5 +19,6 @@ namespace ProjectTraiding.Management.Contracts.Dto
         string Scope,
         string? Secid,
         int CancelledCount,
+        int CancelRequestedCount,
         double ElapsedMs);
 }

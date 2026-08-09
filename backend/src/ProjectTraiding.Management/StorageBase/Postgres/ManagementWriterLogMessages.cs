@@ -68,13 +68,22 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
 
         [LoggerMessage(
             EventId = 251, EventName = "MgmtLoadTasksCancelledAll", Level = LogLevel.Warning,
-            Message = "Management load tasks cancelled (all): cancelled={CancelledCount}, time={Elapsed}.")]
-        public static partial void LoadTasksCancelledAll(ILogger logger, int cancelledCount, TimeSpan elapsed);
+            Message = "Management load tasks cancelled (all): cancelled={CancelledCount}, cancelRequested={CancelRequestedCount}, time={Elapsed}.")]
+        public static partial void LoadTasksCancelledAll(
+            ILogger logger,
+            int cancelledCount,
+            int cancelRequestedCount,
+            TimeSpan elapsed);
 
         [LoggerMessage(
             EventId = 252, EventName = "MgmtLoadTasksCancelledInstrument", Level = LogLevel.Warning,
-            Message = "Management load tasks cancelled (instrument): secid={Secid}, cancelled={CancelledCount}, time={Elapsed}.")]
-        public static partial void LoadTasksCancelledInstrument(ILogger logger, string secid, int cancelledCount, TimeSpan elapsed);
+            Message = "Management load tasks cancelled (instrument): secid={Secid}, cancelled={CancelledCount}, cancelRequested={CancelRequestedCount}, time={Elapsed}.")]
+        public static partial void LoadTasksCancelledInstrument(
+            ILogger logger,
+            string secid,
+            int cancelledCount,
+            int cancelRequestedCount,
+            TimeSpan elapsed);
 
         [LoggerMessage(
             EventId = 253, EventName = "MgmtInstrumentPostgresDataDeleted", Level = LogLevel.Warning,

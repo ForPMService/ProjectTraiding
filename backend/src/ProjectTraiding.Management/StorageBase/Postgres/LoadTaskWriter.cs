@@ -15,8 +15,8 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
     /// база (uuidv7()), возвращаем его через RETURNING. Возврат — Guid, а не DbWriteResult:
     /// идентификатор задачи это uuid, а общий DbWriteResult.Id рассчитан на bigint-таблицы.
     ///
-    /// Команды отмены переводят в cancelled только pending и partial. Жизненным циклом
-    /// выполняющегося задания владеет контур Moex, и отсюда он не трогается.
+    /// Команды отмены переводят pending и partial в cancelled, а для running фиксируют
+    /// запрос остановки. Финальный статус выполняющегося задания устанавливает контур Moex.
     /// </summary>
     public sealed class LoadTaskWriter
     {
@@ -233,15 +233,9 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
         }
 
         /// <summary>
-        /// Снимает всю ожидающую очередь: pending и partial → cancelled.
-        ///
-        /// Задания в статусе running не трогаем, и это не осторожность, а необходимость.
-        /// Координатор загрузки записывает покрытие в moex_loaded_ranges и извещает витрину
-        /// РАНЬШЕ, чем закрывает задание, а завершающие методы MarkDoneAsync и MarkErrorAsync
-        /// требуют исходный статус running и при несовпадении бросают исключение. Перевод
-        /// работающего задания в cancelled дал бы записанное покрытие со статусом ok при
-        /// задании, помеченном отменённым, то есть расхождение между правдой данных
-        /// и журналом заданий.
+        /// Снимает всю ожидающую очередь: pending и partial → cancelled; для running
+        /// фиксирует запрос отмены, не меняя статус. Фактическую остановку и финальный
+        /// running → cancelled выполняет координатор Moex.
         ///
         /// Статус partial включён страховочно: сейчас его никто не проставляет
         /// (MoexLoadTaskWriter.MarkPartialAsync не вызывается ниоткуда), но он входит
@@ -250,14 +244,14 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
         ///
         /// Статусы done и error не трогаем: это завершённые исходы, а не очередь.
         ///
-        /// finished_at заполняется и для заданий, которые никогда не запускались: отдельной
-        /// колонки под момент отмены в схеме нет, а знать, когда задание сняли, нужно.
-        /// Поэтому у снятого ожидающего задания started_at остаётся пустым при заполненном
+        /// finished_at заполняется и для заданий, которые никогда не запускались. Поэтому
+        /// у снятого ожидающего задания started_at остаётся пустым при заполненном
         /// finished_at — это нормальное сочетание, а не повреждение данных.
         ///
-        /// Повторный вызов при неизменившемся состоянии возвращает ноль отменённых строк.
-        /// Ноль не гарантирован постоянно: если между вызовами поставили новые задания или
-        /// остановка хоста вернула задание в pending, повтор снимет и их.
+        /// Один UPDATE покрывает оба набора состояний. Если исполнитель захватил строку
+        /// конкурентно, повторная проверка условия после ожидания блокировки всё ещё видит
+        /// running и ставит запрос. Два отдельных оператора оставили бы окно потери отмены.
+        /// Условие cancel_requested_at IS NULL делает повторный вызов идемпотентным.
         /// </summary>
         public async Task<CancelResult> CancelAllAsync(CancellationToken ct)
         {
@@ -268,18 +262,44 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
             {
                 await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
                 await using NpgsqlCommand cmd = new NpgsqlCommand("""
-                    UPDATE moex_load_tasks
-                    SET status = 'cancelled',
-                        finished_at = now(),
-                        stop_reason = 'operator_cancelled',
-                        error_message = null
-                    WHERE status IN ('pending', 'partial')
+                    WITH affected AS (
+                        UPDATE moex_load_tasks
+                        SET status = CASE
+                                WHEN status IN ('pending', 'partial') THEN 'cancelled'
+                                ELSE status END,
+                            finished_at = CASE
+                                WHEN status IN ('pending', 'partial') THEN now()
+                                ELSE finished_at END,
+                            stop_reason = CASE
+                                WHEN status IN ('pending', 'partial') THEN 'operator_cancelled'
+                                ELSE stop_reason END,
+                            error_message = CASE
+                                WHEN status IN ('pending', 'partial') THEN null
+                                ELSE error_message END,
+                            cancel_requested_at = CASE
+                                WHEN status = 'running' THEN now()
+                                ELSE cancel_requested_at END
+                        WHERE status IN ('pending', 'partial')
+                           OR (status = 'running' AND cancel_requested_at IS NULL)
+                        RETURNING status
+                    )
+                    SELECT
+                        count(*) FILTER (WHERE status = 'cancelled') AS cancelled_count,
+                        count(*) FILTER (WHERE status = 'running')   AS cancel_requested_count
+                    FROM affected
                     """, connection);
 
-                int cancelledCount = await cmd.ExecuteNonQueryAsync(ct);
+                await using NpgsqlDataReader reader = await cmd.ExecuteReaderAsync(ct);
+                await reader.ReadAsync(ct);
+                int cancelledCount = (int)reader.GetInt64(0);
+                int cancelRequestedCount = (int)reader.GetInt64(1);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
-                ManagementWriterLogMessages.LoadTasksCancelledAll(_logger, cancelledCount, elapsed);
-                return new CancelResult(cancelledCount, elapsed);
+                ManagementWriterLogMessages.LoadTasksCancelledAll(
+                    _logger,
+                    cancelledCount,
+                    cancelRequestedCount,
+                    elapsed);
+                return new CancelResult(cancelledCount, cancelRequestedCount, elapsed);
             }
             catch (Exception ex)
             {
@@ -289,9 +309,10 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
         }
 
         /// <summary>
-        /// Снимает ожидающие задания одного инструмента: pending и partial → cancelled,
-        /// независимо от рынка, режима торгов, вида данных, интервала свечей, окна дат
-        /// и способа постановки. Правила по статусам те же, что в CancelAllAsync.
+        /// Снимает ожидающие задания одного инструмента и запрашивает остановку его
+        /// выполняющихся заданий независимо от рынка, режима торгов, вида данных,
+        /// интервала свечей, окна дат и способа постановки. Правила по статусам те же,
+        /// что в CancelAllAsync.
         ///
         /// Отдельный метод, а не общий с необязательным secid: не переданный по ошибке
         /// параметр превратил бы точечную команду в снятие всей очереди.
@@ -305,20 +326,49 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
             {
                 await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
                 await using NpgsqlCommand cmd = new NpgsqlCommand("""
-                    UPDATE moex_load_tasks
-                    SET status = 'cancelled',
-                        finished_at = now(),
-                        stop_reason = 'operator_cancelled',
-                        error_message = null
-                    WHERE secid = @secid
-                      AND status IN ('pending', 'partial')
+                    WITH affected AS (
+                        UPDATE moex_load_tasks
+                        SET status = CASE
+                                WHEN status IN ('pending', 'partial') THEN 'cancelled'
+                                ELSE status END,
+                            finished_at = CASE
+                                WHEN status IN ('pending', 'partial') THEN now()
+                                ELSE finished_at END,
+                            stop_reason = CASE
+                                WHEN status IN ('pending', 'partial') THEN 'operator_cancelled'
+                                ELSE stop_reason END,
+                            error_message = CASE
+                                WHEN status IN ('pending', 'partial') THEN null
+                                ELSE error_message END,
+                            cancel_requested_at = CASE
+                                WHEN status = 'running' THEN now()
+                                ELSE cancel_requested_at END
+                        WHERE secid = @secid
+                          AND (
+                              status IN ('pending', 'partial')
+                              OR (status = 'running' AND cancel_requested_at IS NULL)
+                          )
+                        RETURNING status
+                    )
+                    SELECT
+                        count(*) FILTER (WHERE status = 'cancelled') AS cancelled_count,
+                        count(*) FILTER (WHERE status = 'running')   AS cancel_requested_count
+                    FROM affected
                     """, connection);
                 cmd.Parameters.Add("@secid", NpgsqlDbType.Text).Value = secid;
 
-                int cancelledCount = await cmd.ExecuteNonQueryAsync(ct);
+                await using NpgsqlDataReader reader = await cmd.ExecuteReaderAsync(ct);
+                await reader.ReadAsync(ct);
+                int cancelledCount = (int)reader.GetInt64(0);
+                int cancelRequestedCount = (int)reader.GetInt64(1);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
-                ManagementWriterLogMessages.LoadTasksCancelledInstrument(_logger, secid, cancelledCount, elapsed);
-                return new CancelResult(cancelledCount, elapsed);
+                ManagementWriterLogMessages.LoadTasksCancelledInstrument(
+                    _logger,
+                    secid,
+                    cancelledCount,
+                    cancelRequestedCount,
+                    elapsed);
+                return new CancelResult(cancelledCount, cancelRequestedCount, elapsed);
             }
             catch (Exception ex)
             {

@@ -231,6 +231,7 @@ namespace ProjectTraiding.Management.Endpoints
                     Scope: "all",
                     Secid: null,
                     CancelledCount: result.CancelledCount,
+                    CancelRequestedCount: result.CancelRequestedCount,
                     ElapsedMs: result.Elapsed.TotalMilliseconds);
 
                 return Results.Json(
@@ -263,6 +264,7 @@ namespace ProjectTraiding.Management.Endpoints
                     Scope: "instrument",
                     Secid: secid,
                     CancelledCount: result.CancelledCount,
+                    CancelRequestedCount: result.CancelRequestedCount,
                     ElapsedMs: result.Elapsed.TotalMilliseconds);
 
                 return Results.Json(
