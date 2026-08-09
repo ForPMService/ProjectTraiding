@@ -25,7 +25,8 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         /// <summary>
         /// Атомарно берёт задачу в работу: pending или error → running.
         /// Чистит весь хвост прошлой попытки. started_at = now(), attempt_count += 1.
-        /// Возврат true — взяли; false — задачи нет либо она уже running/done.
+        /// Возврат true — взяли; false — задачи нет, она уже running/done либо по
+        /// инструменту идёт удаление данных.
         /// </summary>
         public async Task<bool> MarkRunningAsync(Guid taskId, CancellationToken ct)
         {
@@ -43,6 +44,10 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                     last_insert_deduplication_token = null,
                     attempt_count = attempt_count + 1
                 WHERE id = @id AND status IN ('pending', 'error', 'partial')
+                  AND NOT EXISTS (
+                      SELECT 1 FROM moex_instrument_data_deletions d
+                      WHERE d.secid = moex_load_tasks.secid AND d.status = 'started'
+                  )
                 """, connection);
             cmd.Parameters.Add("@id", NpgsqlDbType.Uuid).Value = taskId;
 

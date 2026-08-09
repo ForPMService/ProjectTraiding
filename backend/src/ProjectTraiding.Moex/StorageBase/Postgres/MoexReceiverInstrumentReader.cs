@@ -30,6 +30,9 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         /// <summary>
         /// Включённые подписки одного вида данных (trades или orderbook) с рынком инструмента.
         /// Пустой результат означает, что собирать по этому виду нечего.
+        /// Инструмент, по которому идёт удаление, выпадает из списка наблюдения на
+        /// ближайшем обороте; уже начавшийся оборот доработает по прежнему составу —
+        /// ограничение разобрано в разделе 5.2 задания.
         /// </summary>
         public async Task<IReadOnlyList<ReceiverInstrument>> GetEnabledForDataKindAsync(
             string dataKind, CancellationToken ct)
@@ -40,6 +43,10 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 FROM moex_realtime_subscriptions s
                 JOIN moex_instruments i ON i.secid = s.secid
                 WHERE s.data_kind = @data_kind AND s.enabled
+                  AND NOT EXISTS (
+                      SELECT 1 FROM moex_instrument_data_deletions d
+                      WHERE d.secid = s.secid AND d.status = 'started'
+                  )
                 ORDER BY i.secid
                 """, connection);
             cmd.Parameters.Add("@data_kind", NpgsqlDbType.Text).Value = dataKind;

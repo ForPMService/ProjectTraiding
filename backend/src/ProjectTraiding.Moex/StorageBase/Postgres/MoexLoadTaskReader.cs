@@ -71,6 +71,10 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         /// дорожками (FOR UPDATE SKIP LOCKED), внешний UPDATE переводит её в running и чистит
         /// хвост прошлой попытки. Несколько дорожек берут разные задачи без холостых проигрышей.
         /// Вид данных здесь не различается — маршрутизацию по data_kind делает координатор.
+        ///
+        /// Подбор пропускает задания тех инструментов, по которым удаление зафиксировано
+        /// до начала этого оператора; подбор, начатый раньше фиксации, ею не отменяется
+        /// (раздел 5.3 задания). После закрытия удаления задания снова доступны.
         /// </summary>
         public async Task<Guid?> ClaimNextPendingTaskIdAsync(CancellationToken ct)
         {
@@ -86,10 +90,14 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                     last_insert_deduplication_token = null,
                     attempt_count = attempt_count + 1
                 WHERE id = (
-                    SELECT id FROM moex_load_tasks
-                    WHERE status = 'pending'
-                    AND storage_target = 'clickhouse'
-                    ORDER BY created_at
+                    SELECT id FROM moex_load_tasks t
+                    WHERE t.status = 'pending'
+                    AND t.storage_target = 'clickhouse'
+                    AND NOT EXISTS (
+                        SELECT 1 FROM moex_instrument_data_deletions d
+                        WHERE d.secid = t.secid AND d.status = 'started'
+                    )
+                    ORDER BY t.created_at
                     FOR UPDATE SKIP LOCKED
                     LIMIT 1
                     )
