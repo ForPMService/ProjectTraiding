@@ -41,10 +41,19 @@ namespace ProjectTraiding.Management.Endpoints
 
                 try
                 {
-                    Guid taskId = await writer.CreateAsync(request, ct);
+                    Guid? taskId = await writer.CreateAsync(request, ct);
+                    if (taskId is null)
+                    {
+                        ManagementEndpointLogMessages.WriteBlockedByDeletion(
+                            logger, route, request.Secid);
+                        return Results.Text(
+                            "по инструменту выполняется удаление данных, постановка задания невозможна",
+                            "text/plain", statusCode: StatusCodes.Status409Conflict);
+                    }
+
                     // Идентификатор задачи — uuid; общий ManagementResultDto.Id рассчитан на long,
                     // поэтому отдаём taskId отдельно текстом, а не втискиваем в общий DTO.
-                    return Results.Text($"load task created: taskId={taskId}", "text/plain");
+                    return Results.Text($"load task created: taskId={taskId.Value}", "text/plain");
                 }
                 catch (PostgresException ex)
                 {
@@ -166,6 +175,15 @@ namespace ProjectTraiding.Management.Endpoints
                 try
                 {
                     BulkCreateResult result = await writer.CreateManyAsync(tasks, ct);
+                    if (result.BlockedSecids.Count > 0)
+                    {
+                        string blocked = string.Join(", ", result.BlockedSecids);
+                        ManagementEndpointLogMessages.WriteBlockedByDeletion(logger, route, blocked);
+                        return Results.Text(
+                            "по инструментам выполняется удаление данных, ни одно задание пакета не создано: " + blocked,
+                            "text/plain", statusCode: StatusCodes.Status409Conflict);
+                    }
+
                     ManagementEndpointLogMessages.BulkLoadTasksCreated(
                         logger,
                         route,

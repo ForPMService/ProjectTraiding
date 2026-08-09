@@ -23,6 +23,14 @@ namespace ProjectTraiding.Management.Endpoints
                 try
                 {
                     SubscriptionWriteResult w = await writer.EnableTradesAsync(secid, ct);
+                    if (w.RowsWritten == 0)
+                    {
+                        ManagementEndpointLogMessages.WriteBlockedByDeletion(logger, route, secid);
+                        return Results.Text(
+                            "по инструменту выполняется удаление данных, включение приёма невозможно",
+                            "text/plain", statusCode: StatusCodes.Status409Conflict);
+                    }
+
                     RealtimeSubscriptionResultDto dto = new(
                         "enable_trades", secid, "trades", true, w.RowsWritten, w.Elapsed.TotalMilliseconds);
                     return Results.Json(dto, ManagementJsonContext.Default.RealtimeSubscriptionResultDto);
@@ -87,6 +95,14 @@ namespace ProjectTraiding.Management.Endpoints
                 try
                 {
                     SubscriptionWriteResult w = await writer.EnableOrderbookAsync(secid, ct);
+                    if (w.RowsWritten == 0)
+                    {
+                        ManagementEndpointLogMessages.WriteBlockedByDeletion(logger, route, secid);
+                        return Results.Text(
+                            "по инструменту выполняется удаление данных, включение приёма невозможно",
+                            "text/plain", statusCode: StatusCodes.Status409Conflict);
+                    }
+
                     RealtimeSubscriptionResultDto dto = new(
                         "enable_orderbook", secid, "orderbook", true, w.RowsWritten, w.Elapsed.TotalMilliseconds);
                     return Results.Json(dto, ManagementJsonContext.Default.RealtimeSubscriptionResultDto);
@@ -151,6 +167,14 @@ namespace ProjectTraiding.Management.Endpoints
                 try
                 {
                     SubscriptionWriteResult w = await writer.EnableCandlesAsync(secid, ct);
+                    if (w.RowsWritten == 0)
+                    {
+                        ManagementEndpointLogMessages.WriteBlockedByDeletion(logger, route, secid);
+                        return Results.Text(
+                            "по инструменту выполняется удаление данных, включение приёма невозможно",
+                            "text/plain", statusCode: StatusCodes.Status409Conflict);
+                    }
+
                     RealtimeSubscriptionResultDto dto = new(
                         "enable_candles", secid, "candles", true, w.RowsWritten, w.Elapsed.TotalMilliseconds);
                     return Results.Json(dto, ManagementJsonContext.Default.RealtimeSubscriptionResultDto);

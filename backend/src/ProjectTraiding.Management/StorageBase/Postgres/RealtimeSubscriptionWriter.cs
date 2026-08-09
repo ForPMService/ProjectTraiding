@@ -22,6 +22,10 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
             _logger = logger;
         }
 
+        /// Возврат RowsWritten = 0 означает, что по инструменту идёт удаление данных:
+        /// при обычном ходе строка либо вставляется, либо обновляется через ON CONFLICT,
+        /// и ноль затронутых строк невозможен. Отсекающее условие стоит внутри вставки,
+        /// потому что проверка отдельным запросом перед ней оставляет окно шире.
         public async Task<SubscriptionWriteResult> EnableTradesAsync(string secid, CancellationToken ct)
         {
             ManagementWriterLogMessages.WriteStarted(_logger, Table);
@@ -33,8 +37,11 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                 await using NpgsqlCommand cmd = new NpgsqlCommand("""
                 INSERT INTO moex_realtime_subscriptions
                     (secid, data_kind, candle_interval, enabled, created_at, updated_at)
-                VALUES
-                    (@secid, 'trades', NULL, true, now(), now())
+                SELECT @secid, 'trades', NULL::int, true, now(), now()
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM moex_instrument_data_deletions d
+                    WHERE d.secid = @secid AND d.status = 'started'
+                )
                 ON CONFLICT (secid, data_kind)
                 DO UPDATE SET enabled = true, updated_at = now()
                 """, connection);
@@ -52,6 +59,10 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
             }
         }
 
+        /// Возврат RowsWritten = 0 означает, что по инструменту идёт удаление данных:
+        /// при обычном ходе строка либо вставляется, либо обновляется через ON CONFLICT,
+        /// и ноль затронутых строк невозможен. Отсекающее условие стоит внутри вставки,
+        /// потому что проверка отдельным запросом перед ней оставляет окно шире.
         public async Task<SubscriptionWriteResult> EnableOrderbookAsync(string secid, CancellationToken ct)
         {
             ManagementWriterLogMessages.WriteStarted(_logger, Table);
@@ -63,8 +74,11 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                 await using NpgsqlCommand cmd = new NpgsqlCommand("""
                 INSERT INTO moex_realtime_subscriptions
                     (secid, data_kind, candle_interval, enabled, created_at, updated_at)
-                VALUES
-                    (@secid, 'orderbook', NULL, true, now(), now())
+                SELECT @secid, 'orderbook', NULL::int, true, now(), now()
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM moex_instrument_data_deletions d
+                    WHERE d.secid = @secid AND d.status = 'started'
+                )
                 ON CONFLICT (secid, data_kind)
                 DO UPDATE SET enabled = true, updated_at = now()
                 """, connection);
@@ -82,6 +96,10 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
             }
         }
 
+        /// Возврат RowsWritten = 0 означает, что по инструменту идёт удаление данных:
+        /// при обычном ходе строка либо вставляется, либо обновляется через ON CONFLICT,
+        /// и ноль затронутых строк невозможен. Отсекающее условие стоит внутри вставки,
+        /// потому что проверка отдельным запросом перед ней оставляет окно шире.
         public async Task<SubscriptionWriteResult> EnableCandlesAsync(string secid, CancellationToken ct)
         {
             ManagementWriterLogMessages.WriteStarted(_logger, Table);
@@ -93,8 +111,11 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                 await using NpgsqlCommand cmd = new NpgsqlCommand("""
                 INSERT INTO moex_realtime_subscriptions
                     (secid, data_kind, candle_interval, enabled, created_at, updated_at)
-                VALUES
-                    (@secid, 'candles', 1, true, now(), now())
+                SELECT @secid, 'candles', 1, true, now(), now()
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM moex_instrument_data_deletions d
+                    WHERE d.secid = @secid AND d.status = 'started'
+                )
                 ON CONFLICT (secid, data_kind)
                 DO UPDATE SET enabled = true, updated_at = now()
                 """, connection);

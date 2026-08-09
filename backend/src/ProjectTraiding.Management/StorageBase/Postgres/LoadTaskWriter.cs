@@ -30,7 +30,18 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
             _logger = logger;
         }
 
-        public async Task<Guid> CreateAsync(LoadTaskCreateRequest request, CancellationToken ct)
+        /// <summary>
+        /// Ставит одно задание загрузки. Возврат null — по инструменту идёт удаление
+        /// данных, задание не создано.
+        ///
+        /// Условие not exists стоит внутри вставки, а не отдельной проверкой перед
+        /// ней: проверка отдельным запросом оставляет окно шириной в промежуток
+        /// между двумя запросами, условие внутри запроса — нулевое окно для всех
+        /// удалений, зафиксированных до начала этого оператора. Удаление,
+        /// зафиксированное уже после начала оператора, не отсекается ни тем ни
+        /// другим способом (раздел 5.3 задания).
+        /// </summary>
+        public async Task<Guid?> CreateAsync(LoadTaskCreateRequest request, CancellationToken ct)
         {
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
 
@@ -38,9 +49,13 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                 INSERT INTO moex_load_tasks
                     (secid, market, boardid, data_kind, candle_interval,
                      date_from, date_till, storage_target)
-                VALUES
-                    (@secid, @market, @boardid, @data_kind, @candle_interval,
-                     @date_from, @date_till, @storage_target)
+                SELECT
+                    @secid, @market, @boardid, @data_kind, @candle_interval,
+                    @date_from, @date_till, @storage_target
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM moex_instrument_data_deletions d
+                    WHERE d.secid = @secid AND d.status = 'started'
+                )
                 RETURNING id
                 """, connection);
 
@@ -55,7 +70,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
             cmd.Parameters.Add("@storage_target", NpgsqlDbType.Text).Value = request.StorageTarget;
 
             object? idObj = await cmd.ExecuteScalarAsync(ct);
-            return (Guid)idObj!;
+            return idObj is Guid id ? id : (Guid?)null;
         }
 
         public async Task<BulkCreateResult> CreateManyAsync(
@@ -66,7 +81,8 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                 return new BulkCreateResult(
                     ExpandedCount: 0,
                     InsertedCount: 0,
-                    SkippedDuplicateCount: 0);
+                    SkippedDuplicateCount: 0,
+                    BlockedSecids: Array.Empty<string>());
 
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
             await using NpgsqlTransaction transaction = await connection.BeginTransactionAsync(ct);
@@ -123,26 +139,86 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                     await importer.CompleteAsync(ct);
                 }
 
+                // Один оператор — один снимок. Общее выражение blocked собирает
+                // инструменты пакета, по которым идёт очистка; вставка выполняется
+                // только при пустом blocked и потому либо проходит целиком, либо не
+                // вставляет ничего. Разнести это на два оператора нельзя: в режиме
+                // READ COMMITTED у них разные снимки, и состояние удаления между ними
+                // успевает измениться — строка 'started' переходит в 'finished' при
+                // завершении очистки или исчезает вовсе, если координатор снял
+                // несостоявшееся задание. Тогда вставка отсекла бы строки по признаку,
+                // которого второй запрос уже не видит.
+                //
+                // ON CONFLICT ... DO NOTHING сохраняется без изменений: пропуск дублей —
+                // штатный исход постановки, к удалению отношения не имеющий. RETURNING
+                // отдаёт только фактически вставленные строки, поэтому count(*) над ним
+                // и есть число созданных заданий.
+                //
+                // Список заблокированных возвращается склейкой через запятую, а не
+                // массивом: коды инструментов Московской биржи запятых не содержат,
+                // а склейка не требует сопоставления типа-массива при нативной
+                // компиляции.
                 await using NpgsqlCommand insertCommand = new NpgsqlCommand("""
-                    INSERT INTO moex_load_tasks
-                        (secid, market, boardid, data_kind, candle_interval,
-                         date_from, date_till, storage_target)
-                    SELECT secid, market, boardid, data_kind, candle_interval,
-                           date_from, date_till, storage_target
-                    FROM tmp_moex_load_tasks_bulk
-                    ON CONFLICT (secid, market, boardid, data_kind, candle_interval,
-                                 date_from, date_till, storage_target)
-                        WHERE status IN ('pending', 'running', 'partial')
-                    DO NOTHING
+                    WITH blocked AS (
+                        SELECT DISTINCT t.secid
+                        FROM tmp_moex_load_tasks_bulk t
+                        WHERE EXISTS (
+                            SELECT 1 FROM moex_instrument_data_deletions d
+                            WHERE d.secid = t.secid AND d.status = 'started'
+                        )
+                    ),
+                    inserted AS (
+                        INSERT INTO moex_load_tasks
+                            (secid, market, boardid, data_kind, candle_interval,
+                             date_from, date_till, storage_target)
+                        SELECT t.secid, t.market, t.boardid, t.data_kind, t.candle_interval,
+                               t.date_from, t.date_till, t.storage_target
+                        FROM tmp_moex_load_tasks_bulk t
+                        WHERE NOT EXISTS (SELECT 1 FROM blocked)
+                        ON CONFLICT (secid, market, boardid, data_kind, candle_interval,
+                                     date_from, date_till, storage_target)
+                            WHERE status IN ('pending', 'running', 'partial')
+                        DO NOTHING
+                        RETURNING 1
+                    )
+                    SELECT
+                        (SELECT count(*) FROM inserted)                                   AS inserted_count,
+                        (SELECT string_agg(b.secid, ',' ORDER BY b.secid) FROM blocked b) AS blocked_secids
                     """, connection, transaction);
-                int insertedCount = await insertCommand.ExecuteNonQueryAsync(ct);
 
+                long insertedCount;
+                string? blockedRaw;
+                await using (NpgsqlDataReader reader = await insertCommand.ExecuteReaderAsync(ct))
+                {
+                    await reader.ReadAsync(ct);
+                    insertedCount = reader.GetInt64(0);
+                    blockedRaw = reader.IsDBNull(1) ? null : reader.GetString(1);
+                }
+
+                // Отката не требуется даже при блокировке: вставка при непустом blocked
+                // не создаёт ни одной строки, и фиксировать нечего кроме удаления
+                // временной таблицы, которое произойдёт при завершении транзакции.
                 await transaction.CommitAsync(ct);
+
+                if (blockedRaw is not null)
+                {
+                    string[] parts = blockedRaw.Split(',');
+                    List<string> blocked = new List<string>(parts.Length);
+                    for (int i = 0; i < parts.Length; i++)
+                        blocked.Add(parts[i]);
+
+                    return new BulkCreateResult(
+                        ExpandedCount: tasks.Count,
+                        InsertedCount: 0,
+                        SkippedDuplicateCount: 0,
+                        BlockedSecids: blocked);
+                }
 
                 return new BulkCreateResult(
                     ExpandedCount: tasks.Count,
-                    InsertedCount: insertedCount,
-                    SkippedDuplicateCount: tasks.Count - insertedCount);
+                    InsertedCount: (int)insertedCount,
+                    SkippedDuplicateCount: tasks.Count - (int)insertedCount,
+                    BlockedSecids: Array.Empty<string>());
             }
             catch (Exception ex)
             {
