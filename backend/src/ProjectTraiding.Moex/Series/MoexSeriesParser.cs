@@ -69,7 +69,16 @@ public sealed class MoexSeriesParser
 
                 if (reader.ValueTextEquals("data.cursor"u8))
                 {
-                    cursor = ParseHelpersUtf8.ReadCursorRootObject(ref reader, "data.cursor");
+                    try
+                    {
+                        cursor = ParseHelpersUtf8.ReadCursorRootObject(
+                            ref reader, "data.cursor");
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        ParseHelpersUtf8.SchemaMismatch("data.cursor", ex.Message);
+                    }
+
                     break;
                 }
 
@@ -93,9 +102,12 @@ public sealed class MoexSeriesParser
                 && position == spec.SourceColumns[expectedIndex].Position)
             {
                 SourceColumn column = spec.SourceColumns[expectedIndex];
-                if (!reader.ValueTextEquals(column.Name))
+                if (reader.TokenType != JsonTokenType.String
+                    || !reader.ValueTextEquals(column.Name))
                 {
-                    string actual = reader.GetString() ?? "<null>";
+                    string actual = reader.TokenType == JsonTokenType.String
+                        ? reader.GetString() ?? "<null>"
+                        : $"<{reader.TokenType}>";
                     string expected = Encoding.UTF8.GetString(column.Name);
                     string[] expectedColumns = new string[spec.SourceColumns.Length];
                     for (int i = 0; i < spec.SourceColumns.Length; i++)
@@ -199,21 +211,29 @@ public sealed class MoexSeriesParser
         int rowIndex,
         string rootKey)
     {
-        return column.Kind switch
+        try
         {
-            ColumnKind.String => ParseHelpersUtf8.ReadString(
-                ref reader, rowIndex, column.Position, rootKey),
-            ColumnKind.Int32 => ParseHelpersUtf8.ReadInt(
-                ref reader, rowIndex, column.Position, rootKey),
-            ColumnKind.Int64 => ParseHelpersUtf8.ReadLong(
-                ref reader, rowIndex, column.Position, rootKey),
-            ColumnKind.Double => ParseHelpersUtf8.ReadDouble(
-                ref reader, rowIndex, column.Position, rootKey),
-            ColumnKind.DateTime => ParseHelpersUtf8.ReadDateTimeUtf8(
-                ref reader, rowIndex, column.Position, rootKey),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(column), column.Kind, "Неизвестный тип колонки источника."),
-        };
+            return column.Kind switch
+            {
+                ColumnKind.String => ParseHelpersUtf8.ReadString(
+                    ref reader, rowIndex, column.Position, rootKey),
+                ColumnKind.Int32 => ParseHelpersUtf8.ReadInt(
+                    ref reader, rowIndex, column.Position, rootKey),
+                ColumnKind.Int64 => ParseHelpersUtf8.ReadLong(
+                    ref reader, rowIndex, column.Position, rootKey),
+                ColumnKind.Double => ParseHelpersUtf8.ReadDouble(
+                    ref reader, rowIndex, column.Position, rootKey),
+                ColumnKind.DateTime => ParseHelpersUtf8.ReadDateTimeUtf8(
+                    ref reader, rowIndex, column.Position, rootKey),
+                _ => throw new ArgumentOutOfRangeException(
+                    nameof(column), column.Kind, "Неизвестный тип колонки источника."),
+            };
+        }
+        catch (InvalidOperationException ex)
+        {
+            ParseHelpersUtf8.SchemaMismatch(rootKey, ex.Message);
+            throw;
+        }
     }
 
     private static (object?[] Row, DateTime Time) BuildTargetRow(
