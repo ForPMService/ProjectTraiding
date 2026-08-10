@@ -1,104 +1,18 @@
 using ProjectTraiding.Moex.Clients;
-using ProjectTraiding.Moex.Infrastructure;
 
 namespace ProjectTraiding.Diagnostics.Endpoints
 {
     /// <summary>
-    /// Диагностические endpoint-ы для real-time REST MOEX.
+    /// Диагностические endpoint-ы для сырых real-time REST-ответов MOEX.
     /// 
-    /// Не будущий API — только для проверки source contract:
-    ///   raw → что реально отдал MOEX;
-    ///   parsed → что наш client/parser это корректно понял.
-    /// 
-    /// Используются при diagnostic REST poll cycle (Шаг 9).
+    /// Не будущий API — только для проверки source contract: возвращают без разбора
+    /// то, что реально отдал MOEX.
     /// </summary>
     public static class RealtimeDebugEndpoints
     {
         public static IEndpointRouteBuilder MapRealtimeDebugEndpoints(this IEndpointRouteBuilder routes)
         {
             var group = routes.MapGroup("/realtime");
-
-            // ═══════════════════════════════════════════════════════════
-            // Parsed endpoints
-            // ═══════════════════════════════════════════════════════════
-
-            group.MapGet("/orderbook-stock/{ticker}", async (
-                string ticker,
-                MoexRealtimeRestClient client,
-                CancellationToken ct) =>
-            {
-                var result = await client.GetOrderbookStockAsync(ticker, ct);
-                return Results.Ok(result);
-            });
-
-            group.MapGet("/orderbook-futures/{ticker}", async (
-                string ticker,
-                MoexRealtimeRestClient client,
-                CancellationToken ct) =>
-            {
-                var result = await client.GetOrderbookFuturesAsync(ticker, ct);
-                return Results.Ok(result);
-            });
-
-            group.MapGet("/trades-stock/{ticker}", async (
-                string ticker,
-                MoexRealtimeRestClient client,
-                CancellationToken ct) =>
-            {
-                var result = await client.GetTradesStockAsync(ticker, cancellationToken: ct);
-                return Results.Ok(result);
-            });
-
-            group.MapGet("/trades-futures/{ticker}", async (
-                string ticker,
-                MoexRealtimeRestClient client,
-                CancellationToken ct) =>
-            {
-                var result = await client.GetTradesFuturesAsync(ticker, cancellationToken: ct);
-                return Results.Ok(result);
-            });
-
-            // ── Candles Today ──
-
-            group.MapGet("/candles-today-stock/{ticker}", async (
-                string ticker,
-                MoexRealtimeRestClient client,
-                CancellationToken ct) =>
-            {
-                // Весь московский торговый день целиком: диагностика должна видеть все страницы,
-                // включая утреннюю и вечернюю сессии.
-                DateOnly tradeDate = MoexTime.Today;
-                DateTime from = tradeDate.ToDateTime(TimeOnly.MinValue);
-                DateTime till = tradeDate.ToDateTime(new TimeOnly(23, 59, 59));
-
-                var result = await client.GetCandlesTodayStockAsync(
-                    ticker,
-                    from,
-                    till,
-                    interval: 1,
-                    cancellationToken: ct);
-                return Results.Ok(result);
-            });
-
-            group.MapGet("/candles-today-futures/{ticker}", async (
-                string ticker,
-                MoexRealtimeRestClient client,
-                CancellationToken ct) =>
-            {
-                // Весь московский торговый день целиком: диагностика должна видеть все страницы,
-                // включая утреннюю и вечернюю сессии.
-                DateOnly tradeDate = MoexTime.Today;
-                DateTime from = tradeDate.ToDateTime(TimeOnly.MinValue);
-                DateTime till = tradeDate.ToDateTime(new TimeOnly(23, 59, 59));
-
-                var result = await client.GetCandlesTodayFuturesAsync(
-                    ticker,
-                    from,
-                    till,
-                    interval: 1,
-                    cancellationToken: ct);
-                return Results.Ok(result);
-            });
 
             // ── Raw endpoints ──
 

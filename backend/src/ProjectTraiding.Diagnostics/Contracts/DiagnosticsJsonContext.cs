@@ -1,6 +1,4 @@
-using ProjectTraiding.Diagnostics.Endpoints;
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
-using ProjectTraiding.Moex.Contracts.Dto.Realtime;
 using System.Text.Json.Serialization;
 
 namespace ProjectTraiding.Diagnostics.Contracts;
@@ -27,18 +25,6 @@ namespace ProjectTraiding.Diagnostics.Contracts;
 [JsonSerializable(typeof(Hi2FuturesDTO))]
 [JsonSerializable(typeof(MegaAlertsAssetsDTO))]
 [JsonSerializable(typeof(MegaAlertsFuturesDTO))]
-[JsonSerializable(typeof(RealtimeOrderbookParseResult))]
-[JsonSerializable(typeof(RealtimeTradesParseResult<RealtimeTradesStockDTO>))]
-[JsonSerializable(typeof(RealtimeTradesParseResult<RealtimeTradesFuturesDTO>))]
-[JsonSerializable(typeof(RealtimeDataVersionDTO))]
-[JsonSerializable(typeof(List<RealtimeTradesStockDTO>))]
-[JsonSerializable(typeof(List<RealtimeTradesFuturesDTO>))]
-[JsonSerializable(typeof(RealtimeDiagnosticEndpoints.OrderbookPollReport))]
-[JsonSerializable(typeof(RealtimeDiagnosticEndpoints.OrderbookSnapshot))]
-[JsonSerializable(typeof(RealtimeDiagnosticEndpoints.TradesPollReport))]
-[JsonSerializable(typeof(RealtimeDiagnosticEndpoints.TradesSnapshot))]
-[JsonSerializable(typeof(RealtimeDiagnosticEndpoints.CandlesPollReport))]
-[JsonSerializable(typeof(RealtimeDiagnosticEndpoints.CandlesSnapshot))]
 public partial class DiagnosticsJsonContext : JsonSerializerContext
 {
 }

@@ -16,7 +16,6 @@ public static class DiagnosticsEndpointRouteBuilderExtensions
 
         diagnostics.MapAlgopackEndpoints();
         diagnostics.MapRealtimeDebugEndpoints();
-        diagnostics.MapRealtimeDiagnosticEndpoints();
         diagnostics.MapDiagnosticDebugEndpoints();
 
         return routes;
