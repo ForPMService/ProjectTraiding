@@ -52,11 +52,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             Message = "Load background task failed (marked error by runner): id={TaskId}.")]
         public static partial void BackgroundTaskFailed(ILogger logger, Guid taskId);
 
-        [LoggerMessage(
-            EventId = 199, EventName = "LoadTaskPartial", Level = LogLevel.Debug,
-            Message = "Load task status set to partial: id={TaskId}, rows={RowsLoaded}, sqlTime={Elapsed}.")]
-        public static partial void TaskPartial(ILogger logger, Guid taskId, long rowsLoaded, TimeSpan elapsed);
-
         /// <summary>
         /// Итог исторического задания: одна попытка записи на одно задание, для которого
         /// успешно прочитана строка, определены метки и начат наблюдаемый жизненный цикл.

@@ -136,45 +136,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         }
 
         /// <summary>
-        /// Закрывает задачу частичной загрузкой: running → partial.
-        /// ВНИМАНИЕ (А1): координатор больше НЕ вызывает этот метод. Срабатывание защитного
-        /// предела страниц теперь закрывается через MarkErrorAsync (stop_reason='safety_cap_hit')
-        /// без записи покрытия, а автоподбор берёт только 'pending'. Метод оставлен для возможного
-        /// ручного сценария; статус 'partial' сохранён в схеме. Кандидат на удаление при ревизии
-        /// мёртвого кода (блок Д3), если ручной путь его так и не использует.
-        /// </summary>
-        public async Task MarkPartialAsync(
-            Guid taskId,
-            long rowsLoaded,
-            string? stopReason,
-            string? lastDeduplicationToken,
-            CancellationToken ct)
-        {
-            long startTs = Stopwatch.GetTimestamp();
-            await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
-
-            await using NpgsqlCommand cmd = new NpgsqlCommand("""
-                UPDATE moex_load_tasks
-                SET status = 'partial', finished_at = now(),
-                    rows_loaded = @rows, stop_reason = @stop_reason,
-                    last_insert_deduplication_token = @token
-                WHERE id = @id AND status = 'running'
-                """, connection);
-            cmd.Parameters.Add("@id", NpgsqlDbType.Uuid).Value = taskId;
-            cmd.Parameters.Add("@rows", NpgsqlDbType.Bigint).Value = rowsLoaded;
-            cmd.Parameters.Add("@stop_reason", NpgsqlDbType.Text).Value = (object?)stopReason ?? DBNull.Value;
-            cmd.Parameters.Add("@token", NpgsqlDbType.Text).Value = (object?)lastDeduplicationToken ?? DBNull.Value;
-
-            int affected = await cmd.ExecuteNonQueryAsync(ct);
-            if (affected != 1)
-                throw new InvalidOperationException(
-                    $"Задача {taskId} не в статусе running — закрыть частичной нельзя (affected={affected}).");
-
-            TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
-            MoexLoadTaskLogMessages.TaskPartial(_logger, taskId, rowsLoaded, elapsed);
-        }
-
-        /// <summary>
         /// Закрывает выполняющееся задание после отмены, выбирая финал по актуальному запросу
         /// оператора: есть запрос — cancelled, нет — возврат в очередь. Возвращает новый статус
         /// либо null, если строки в running уже нет.
