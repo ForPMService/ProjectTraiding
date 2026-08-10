@@ -1,5 +1,4 @@
 ﻿using ProjectTraiding.Moex.Contracts.Dto.Algopack;
-using ProjectTraiding.Moex.Loading;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -48,7 +47,6 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
             string sourceContractVersion,
             string writerVersion,
             IAsyncEnumerable<List<T>> pages,
-            ILoadProgressReporter progress,
             StorageInsertContext insertContext,
             CancellationToken ct)
         {
@@ -82,7 +80,6 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                         rowsInsertedReported += reported;
                         batch.Clear();
 
-                        await progress.ReportAsync(taskId, rowsRead, batchLastTime, ct);
                     }
                 }
             }
@@ -94,7 +91,6 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                     batch, batchFirstTime, batchLastTime, insertContext, ct);
                 rowsInsertedReported += reported;
 
-                await progress.ReportAsync(taskId, rowsRead, batchLastTime, ct);
             }
 
             ClickHouseWriterLogMessages.RangeWritten(_logger, secid, rowsRead, rowsInsertedReported);

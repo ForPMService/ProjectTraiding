@@ -53,7 +53,7 @@ namespace ProjectTraiding.Moex.Loading
         }
 
         public async Task<RowWriteSummary> LoadAsync(
-            MoexLoadTask task, LoadStopOutcome stopOutcome, ILoadProgressReporter progress, CancellationToken ct)
+            MoexLoadTask task, LoadStopOutcome stopOutcome, CancellationToken ct)
         {
             string requestKey = ResolveRequestKey(task);
 
@@ -83,7 +83,7 @@ namespace ProjectTraiding.Moex.Loading
 
             return await _writer.WriteRangeAsync(
                 task.Id, task.Secid, task.SourceContractVersion, task.WriterVersion,
-                pages, progress, insertContext, ct);
+                pages, insertContext, ct);
         }
     }
 }

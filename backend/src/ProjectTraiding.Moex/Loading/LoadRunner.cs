@@ -31,7 +31,6 @@ namespace ProjectTraiding.Moex.Loading
         private readonly MoexLoadTaskWriter _taskWriter;
         private readonly MoexLoadedRangeWriter _rangeWriter;
         private readonly LoadHandlerDispatcher _dispatcher;
-        private readonly ILoadProgressReporter _progress;
         private readonly ProjectTraiding.Moex.StorageBase.Redis.LoadedRangeEventPublisher _rangeEventPublisher;
         private readonly ILogger<LoadRunner> _logger;
 
@@ -40,7 +39,6 @@ namespace ProjectTraiding.Moex.Loading
             MoexLoadTaskWriter taskWriter,
             MoexLoadedRangeWriter rangeWriter,
             LoadHandlerDispatcher dispatcher,
-            ILoadProgressReporter progress,
             ProjectTraiding.Moex.StorageBase.Redis.LoadedRangeEventPublisher rangeEventPublisher,
             ILogger<LoadRunner> logger)
         {
@@ -48,7 +46,6 @@ namespace ProjectTraiding.Moex.Loading
             _taskWriter = taskWriter;
             _rangeWriter = rangeWriter;
             _dispatcher = dispatcher;
-            _progress = progress;
             _rangeEventPublisher = rangeEventPublisher;
             _logger = logger;
         }
@@ -157,7 +154,7 @@ namespace ProjectTraiding.Moex.Loading
                 RowWriteSummary summary;
                 try
                 {
-                    summary = await handler.LoadAsync(task, stopOutcome, _progress, linkedCts.Token);
+                    summary = await handler.LoadAsync(task, stopOutcome, linkedCts.Token);
                 }
                 finally
                 {

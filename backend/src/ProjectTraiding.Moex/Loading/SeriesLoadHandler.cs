@@ -30,7 +30,7 @@ namespace ProjectTraiding.Moex.Loading
             task.DataKind == TKind.DataKind && task.Market == TKind.Market;
 
         public async Task<RowWriteSummary> LoadAsync(
-            MoexLoadTask task, LoadStopOutcome stopOutcome, ILoadProgressReporter progress, CancellationToken ct)
+            MoexLoadTask task, LoadStopOutcome stopOutcome, CancellationToken ct)
         {
             string method = TKind.BuildMethod(task.Secid);
             Dictionary<string, string> query = BuildQuery(task);
@@ -53,7 +53,7 @@ namespace ProjectTraiding.Moex.Loading
 
             return await _writer.WriteRangeAsync(
                 task.Id, task.Secid, task.SourceContractVersion, task.WriterVersion,
-                pages, progress, insertContext, ct);
+                pages, insertContext, ct);
         }
 
         private static Dictionary<string, string> BuildQuery(MoexLoadTask task)

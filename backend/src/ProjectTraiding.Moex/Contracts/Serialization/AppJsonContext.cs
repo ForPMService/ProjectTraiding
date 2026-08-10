@@ -15,7 +15,6 @@ namespace ProjectTraiding.Moex.Contracts.Serialization;
 [JsonSerializable(typeof(List<CalendarOffDaysMarketDTO>))]   // CalendarEndpoints
 [JsonSerializable(typeof(LoadResultDto))]                    // InstrumentCardEndpoints, CalendarEndpoints
 [JsonSerializable(typeof(LoadResultDto[]))]                  // InstrumentCardEndpoints (bootstrap)
-[JsonSerializable(typeof(LoadProgressValue))]                // LoadProgressWriter (Redis)
 public partial class AppJsonContext : JsonSerializerContext
 {
 }

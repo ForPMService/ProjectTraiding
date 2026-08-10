@@ -16,7 +16,7 @@ namespace ProjectTraiding.Moex.StorageBase.Redis
     ///
     /// Redis здесь витрина последних значений, НЕ источник истины приёма: истину несут
     /// ClickHouse (данные) и moex_stream_cursors (отметка). Сбой записи не роняет приём:
-    /// пишется в журнал и проглатывается, как в LoadProgressWriter.
+    /// пишется в журнал и проглатывается.
     /// </summary>
     public sealed class RealtimeLatestWriter
     {
