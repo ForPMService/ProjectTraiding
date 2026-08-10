@@ -2,6 +2,7 @@ using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using ProjectTraiding.Diagnostics.Contracts;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
+using ProjectTraiding.Moex.Series;
 using System.Text.Json.Serialization.Metadata;
 
 
@@ -60,9 +61,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
 
             diagnosticsGroup.MapGet("/parsed/market/futures/candles/{ticker}", GetParsedFuturesCandlesAsync);
 
-            // Колонки сырых точек курсорных видов берутся из паспорта, а не из константы схемы:
-            // сырая и разобранная точки обязаны запрашивать одно и то же, иначе сверка исходного
-            // ответа с разобранным перестаёт быть сверкой.
+            // Колонки сырых точек курсорных видов берутся из декларации реестра.
             diagnosticsGroup.MapGet("/raw/market/stock/tradestats/{ticker}", async (
                 string ticker,
                 string? from,
@@ -77,11 +76,9 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/eq/tradestats/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, TradeStatsStockCursorKind.Schema.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.TradeStatsStock.BuildColumnsParam());
                 return await ExecuteRawAsync("tradestats", "stock", ticker, client, method, queryParams, ct);
             });
-
-            diagnosticsGroup.MapGet("/parsed/market/stock/tradestats/{ticker}", GetParsedStockTradeStatsAsync);
 
             diagnosticsGroup.MapGet("/raw/market/futures/tradestats/{ticker}", async (
                 string ticker,
@@ -97,11 +94,9 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/fo/tradestats/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, TradeStatsFuturesCursorKind.Schema.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.TradeStatsFutures.BuildColumnsParam());
                 return await ExecuteRawAsync("tradestats", "futures", ticker, client, method, queryParams, ct);
             });
-
-            diagnosticsGroup.MapGet("/parsed/market/futures/tradestats/{ticker}", GetParsedFuturesTradeStatsAsync);
 
             diagnosticsGroup.MapGet("/raw/market/stock/obstats/{ticker}", async (
                 string ticker,
@@ -117,11 +112,9 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/eq/obstats/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, ObStatsStockCursorKind.Schema.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.ObStatsStock.BuildColumnsParam());
                 return await ExecuteRawAsync("obstats", "stock", ticker, client, method, queryParams, ct);
             });
-
-            diagnosticsGroup.MapGet("/parsed/market/stock/obstats/{ticker}", GetParsedStockOrderBookStatsAsync);
 
             diagnosticsGroup.MapGet("/raw/market/futures/obstats/{ticker}", async (
                 string ticker,
@@ -137,11 +130,9 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/fo/obstats/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, ObStatsFuturesCursorKind.Schema.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.ObStatsFutures.BuildColumnsParam());
                 return await ExecuteRawAsync("obstats", "futures", ticker, client, method, queryParams, ct);
             });
-
-            diagnosticsGroup.MapGet("/parsed/market/futures/obstats/{ticker}", GetParsedFuturesOrderBookStatsAsync);
 
             diagnosticsGroup.MapGet("/raw/market/stock/orderstats/{ticker}", async (
                 string ticker,
@@ -157,11 +148,9 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/eq/orderstats/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, OrderStatsStockCursorKind.Schema.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.OrderStatsStock.BuildColumnsParam());
                 return await ExecuteRawAsync("orderstats", "stock", ticker, client, method, queryParams, ct);
             });
-
-            diagnosticsGroup.MapGet("/parsed/market/stock/orderstats/{ticker}", GetParsedStockOrderStatsAsync);
 
             diagnosticsGroup.MapGet("/raw/market/futures/futoi/{ticker}", async (
                 string ticker,
@@ -181,8 +170,6 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 return await ExecuteRawAsync("futoi", "futures", ticker, client, method, queryParams, ct);
             });
 
-            diagnosticsGroup.MapGet("/parsed/market/futures/futoi/{ticker}", GetParsedFuturesFutoiAsync);
-
             diagnosticsGroup.MapGet("/raw/market/stock/hi2/{ticker}", async (
                 string ticker,
                 string? from,
@@ -197,11 +184,9 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/eq/hi2/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, Hi2StockCursorKind.Schema.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.Hi2Stock.BuildColumnsParam());
                 return await ExecuteRawAsync("hi2", "stock", ticker, client, method, queryParams, ct);
             });
-
-            diagnosticsGroup.MapGet("/parsed/market/stock/hi2/{ticker}", GetParsedStockHi2Async);
 
             diagnosticsGroup.MapGet("/raw/market/futures/hi2/{ticker}", async (
                 string ticker,
@@ -217,11 +202,9 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/fo/hi2/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, Hi2FuturesCursorKind.Schema.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.Hi2Futures.BuildColumnsParam());
                 return await ExecuteRawAsync("hi2", "futures", ticker, client, method, queryParams, ct);
             });
-
-            diagnosticsGroup.MapGet("/parsed/market/futures/hi2/{ticker}", GetParsedFuturesHi2Async);
 
             diagnosticsGroup.MapGet("/raw/market/stock/alerts/{ticker}", async (
                 string ticker,
@@ -237,11 +220,9 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/eq/alerts/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MegaAlertsStockCursorKind.Schema.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.MegaAlertsStock.BuildColumnsParam());
                 return await ExecuteRawAsync("alerts", "stock", ticker, client, method, queryParams, ct);
             });
-
-            diagnosticsGroup.MapGet("/parsed/market/stock/alerts/{ticker}", GetParsedStockAlertsAsync);
 
             diagnosticsGroup.MapGet("/raw/market/futures/alerts/{ticker}", async (
                 string ticker,
@@ -257,11 +238,9 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/fo/alerts/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MegaAlertsFuturesCursorKind.Schema.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.MegaAlertsFutures.BuildColumnsParam());
                 return await ExecuteRawAsync("alerts", "futures", ticker, client, method, queryParams, ct);
             });
-
-            diagnosticsGroup.MapGet("/parsed/market/futures/alerts/{ticker}", GetParsedFuturesAlertsAsync);
 
             return routes;
         }
@@ -328,265 +307,6 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 ct);
         }
 
-        private static Task<IResult> GetParsedStockTradeStatsAsync(
-            string ticker,
-            string? from,
-            string? till,
-            MoexHttpAlgClient client,
-            CancellationToken ct)
-        {
-            string? validationMessage = ValidateRangeRequest(ticker, from, till);
-            if (validationMessage is not null)
-            {
-                return Task.FromResult(CreateDiagnosticError(400, "tradestats", "stock", ticker, validationMessage));
-            }
-
-            string method = $"/datashop/algopack/eq/tradestats/{ticker}.json";
-            return ExecuteParsedAsync(
-                "tradestats",
-                "stock",
-                ticker,
-                cancellationToken => CollectAsync(
-                    client.GetCursorPages<TradeStatsStockCursorKind, SuperCandlesTradeStats5mDTO>(
-                        method, CreateParsedRangeQuery(from!, till!), cancellationToken: cancellationToken),
-                    cancellationToken),
-                DiagnosticsJsonContext.Default.ListSuperCandlesTradeStats5mDTO,
-                ct);
-        }
-
-        private static Task<IResult> GetParsedFuturesTradeStatsAsync(
-            string ticker,
-            string? from,
-            string? till,
-            MoexHttpAlgClient client,
-            CancellationToken ct)
-        {
-            string? validationMessage = ValidateRangeRequest(ticker, from, till);
-            if (validationMessage is not null)
-            {
-                return Task.FromResult(CreateDiagnosticError(400, "tradestats", "futures", ticker, validationMessage));
-            }
-
-            string method = $"/datashop/algopack/fo/tradestats/{ticker}.json";
-            return ExecuteParsedAsync(
-                "tradestats",
-                "futures",
-                ticker,
-                cancellationToken => CollectAsync(
-                    client.GetCursorPages<TradeStatsFuturesCursorKind, SuperCandlesFuturesTradeStats5mDTO>(
-                        method, CreateParsedRangeQuery(from!, till!), cancellationToken: cancellationToken),
-                    cancellationToken),
-                DiagnosticsJsonContext.Default.ListSuperCandlesFuturesTradeStats5mDTO,
-                ct);
-        }
-
-        private static Task<IResult> GetParsedStockOrderBookStatsAsync(
-            string ticker,
-            string? from,
-            string? till,
-            MoexHttpAlgClient client,
-            CancellationToken ct)
-        {
-            string? validationMessage = ValidateRangeRequest(ticker, from, till);
-            if (validationMessage is not null)
-            {
-                return Task.FromResult(CreateDiagnosticError(400, "obstats", "stock", ticker, validationMessage));
-            }
-
-            string method = $"/datashop/algopack/eq/obstats/{ticker}.json";
-            return ExecuteParsedAsync(
-                "obstats",
-                "stock",
-                ticker,
-                cancellationToken => CollectAsync(
-                    client.GetCursorPages<ObStatsStockCursorKind, SuperCandlesOrderBookStats5mDTO>(
-                        method, CreateParsedRangeQuery(from!, till!), cancellationToken: cancellationToken),
-                    cancellationToken),
-                DiagnosticsJsonContext.Default.ListSuperCandlesOrderBookStats5mDTO,
-                ct);
-        }
-
-        private static Task<IResult> GetParsedFuturesOrderBookStatsAsync(
-            string ticker,
-            string? from,
-            string? till,
-            MoexHttpAlgClient client,
-            CancellationToken ct)
-        {
-            string? validationMessage = ValidateRangeRequest(ticker, from, till);
-            if (validationMessage is not null)
-            {
-                return Task.FromResult(CreateDiagnosticError(400, "obstats", "futures", ticker, validationMessage));
-            }
-
-            string method = $"/datashop/algopack/fo/obstats/{ticker}.json";
-            return ExecuteParsedAsync(
-                "obstats",
-                "futures",
-                ticker,
-                cancellationToken => CollectAsync(
-                    client.GetCursorPages<ObStatsFuturesCursorKind, SuperCandlesFuturesOrderBookStats5mDTO>(
-                        method, CreateParsedRangeQuery(from!, till!), cancellationToken: cancellationToken),
-                    cancellationToken),
-                DiagnosticsJsonContext.Default.ListSuperCandlesFuturesOrderBookStats5mDTO,
-                ct);
-        }
-
-        private static Task<IResult> GetParsedStockOrderStatsAsync(
-            string ticker,
-            string? from,
-            string? till,
-            MoexHttpAlgClient client,
-            CancellationToken ct)
-        {
-            string? validationMessage = ValidateRangeRequest(ticker, from, till);
-            if (validationMessage is not null)
-            {
-                return Task.FromResult(CreateDiagnosticError(400, "orderstats", "stock", ticker, validationMessage));
-            }
-
-            string method = $"/datashop/algopack/eq/orderstats/{ticker}.json";
-            return ExecuteParsedAsync(
-                "orderstats",
-                "stock",
-                ticker,
-                cancellationToken => CollectAsync(
-                    client.GetCursorPages<OrderStatsStockCursorKind, SuperCandlesOrderStats5mDTO>(
-                        method, CreateParsedRangeQuery(from!, till!), cancellationToken: cancellationToken),
-                    cancellationToken),
-                DiagnosticsJsonContext.Default.ListSuperCandlesOrderStats5mDTO,
-                ct);
-        }
-
-        private static Task<IResult> GetParsedFuturesFutoiAsync(
-            string ticker,
-            string? from,
-            string? till,
-            MoexHttpAlgClient client,
-            CancellationToken ct)
-        {
-            string? validationMessage = ValidateRangeRequest(ticker, from, till);
-            if (validationMessage is not null)
-            {
-                return Task.FromResult(CreateDiagnosticError(400, "futoi", "futures", ticker, validationMessage));
-            }
-
-            string method = $"/analyticalproducts/futoi/securities/{ticker}.json";
-            return ExecuteParsedAsync(
-                "futoi",
-                "futures",
-                ticker,
-                cancellationToken => CollectAsync(
-                    client.StreamFutoi(method, CreateParsedRangeQuery(from!, till!), cancellationToken: cancellationToken),
-                    cancellationToken),
-                DiagnosticsJsonContext.Default.ListFutoiDTO,
-                ct);
-        }
-
-        private static Task<IResult> GetParsedStockHi2Async(
-            string ticker,
-            string? from,
-            string? till,
-            MoexHttpAlgClient client,
-            CancellationToken ct)
-        {
-            string? validationMessage = ValidateRangeRequest(ticker, from, till);
-            if (validationMessage is not null)
-            {
-                return Task.FromResult(CreateDiagnosticError(400, "hi2", "stock", ticker, validationMessage));
-            }
-
-            string method = $"/datashop/algopack/eq/hi2/{ticker}.json";
-            return ExecuteParsedAsync(
-                "hi2",
-                "stock",
-                ticker,
-                cancellationToken => CollectAsync(
-                    client.GetCursorPages<Hi2StockCursorKind, Hi2AssetDTO>(
-                        method, CreateParsedRangeQuery(from!, till!), cancellationToken: cancellationToken),
-                    cancellationToken),
-                DiagnosticsJsonContext.Default.ListHi2AssetDTO,
-                ct);
-        }
-
-        private static Task<IResult> GetParsedFuturesHi2Async(
-            string ticker,
-            string? from,
-            string? till,
-            MoexHttpAlgClient client,
-            CancellationToken ct)
-        {
-            string? validationMessage = ValidateRangeRequest(ticker, from, till);
-            if (validationMessage is not null)
-            {
-                return Task.FromResult(CreateDiagnosticError(400, "hi2", "futures", ticker, validationMessage));
-            }
-
-            string method = $"/datashop/algopack/fo/hi2/{ticker}.json";
-            return ExecuteParsedAsync(
-                "hi2",
-                "futures",
-                ticker,
-                cancellationToken => CollectAsync(
-                    client.GetCursorPages<Hi2FuturesCursorKind, Hi2FuturesDTO>(
-                        method, CreateParsedRangeQuery(from!, till!), cancellationToken: cancellationToken),
-                    cancellationToken),
-                DiagnosticsJsonContext.Default.ListHi2FuturesDTO,
-                ct);
-        }
-
-        private static Task<IResult> GetParsedStockAlertsAsync(
-            string ticker,
-            string? from,
-            string? till,
-            MoexHttpAlgClient client,
-            CancellationToken ct)
-        {
-            string? validationMessage = ValidateRangeRequest(ticker, from, till);
-            if (validationMessage is not null)
-            {
-                return Task.FromResult(CreateDiagnosticError(400, "alerts", "stock", ticker, validationMessage));
-            }
-
-            string method = $"/datashop/algopack/eq/alerts/{ticker}.json";
-            return ExecuteParsedAsync(
-                "alerts",
-                "stock",
-                ticker,
-                cancellationToken => CollectAsync(
-                    client.GetCursorPages<MegaAlertsStockCursorKind, MegaAlertsAssetsDTO>(
-                        method, CreateParsedRangeQuery(from!, till!), cancellationToken: cancellationToken),
-                    cancellationToken),
-                DiagnosticsJsonContext.Default.ListMegaAlertsAssetsDTO,
-                ct);
-        }
-
-        private static Task<IResult> GetParsedFuturesAlertsAsync(
-            string ticker,
-            string? from,
-            string? till,
-            MoexHttpAlgClient client,
-            CancellationToken ct)
-        {
-            string? validationMessage = ValidateRangeRequest(ticker, from, till);
-            if (validationMessage is not null)
-            {
-                return Task.FromResult(CreateDiagnosticError(400, "alerts", "futures", ticker, validationMessage));
-            }
-
-            string method = $"/datashop/algopack/fo/alerts/{ticker}.json";
-            return ExecuteParsedAsync(
-                "alerts",
-                "futures",
-                ticker,
-                cancellationToken => CollectAsync(
-                    client.GetCursorPages<MegaAlertsFuturesCursorKind, MegaAlertsFuturesDTO>(
-                        method, CreateParsedRangeQuery(from!, till!), cancellationToken: cancellationToken),
-                    cancellationToken),
-                DiagnosticsJsonContext.Default.ListMegaAlertsFuturesDTO,
-                ct);
-        }
-
         private static async Task<IResult> ExecuteRawAsync(
             string kind,
             string market,
@@ -638,15 +358,6 @@ namespace ProjectTraiding.Diagnostics.Endpoints
             }
 
             return items;
-        }
-
-        private static Dictionary<string, string> CreateParsedRangeQuery(string from, string till)
-        {
-            return new Dictionary<string, string>
-            {
-                ["from"] = from,
-                ["till"] = till
-            };
         }
 
         private static Dictionary<string, string> CreateParsedCandlesQuery(string from, string till, int interval)
