@@ -2,7 +2,6 @@ using Microsoft.Extensions.Options;
 using ProjectTraiding.Api.Infrastructure;
 using ProjectTraiding.Diagnostics.Contracts;
 using ProjectTraiding.Diagnostics.DependencyInjection;
-using ProjectTraiding.Diagnostics.Options;
 using ProjectTraiding.Management.Contracts;
 using ProjectTraiding.Management.DependencyInjection;
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
@@ -40,9 +39,6 @@ builder.Services.AddManagement();
 builder.Services.AddMoexLoading(builder.Configuration);
 builder.Services.AddMoexRealtimeReceiver(builder.Configuration);
 
-if (builder.Environment.IsDevelopment())
-    builder.Services.AddProjectTraidingDiagnostics(builder.Configuration);
-
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default);
@@ -69,13 +65,6 @@ using (IServiceScope startupScope = app.Services.CreateScope())
     ILogger<Program> startupLogger = startupScope.ServiceProvider
         .GetRequiredService<ILogger<Program>>();
     MoexOptionsValidator.ValidateAndLog(moexOptions, startupLogger);
-
-    if (app.Environment.IsDevelopment())
-    {
-        WebSocketProbeOptions probeOptions = startupScope.ServiceProvider
-            .GetRequiredService<IOptions<WebSocketProbeOptions>>().Value;
-        WebSocketProbeOptionsValidator.Validate(probeOptions);
-    }
 }
 app.MapObservabilityEndpoints();
 app.MapMoexLoadRunEndpoints();

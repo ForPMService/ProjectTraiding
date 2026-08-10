@@ -1,5 +1,4 @@
 using ProjectTraiding.Diagnostics.Endpoints;
-using ProjectTraiding.Diagnostics.Probe;
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using ProjectTraiding.Moex.Contracts.Dto.Realtime;
 using System.Text.Json.Serialization;
@@ -40,7 +39,6 @@ namespace ProjectTraiding.Diagnostics.Contracts;
 [JsonSerializable(typeof(RealtimeDiagnosticEndpoints.TradesSnapshot))]
 [JsonSerializable(typeof(RealtimeDiagnosticEndpoints.CandlesPollReport))]
 [JsonSerializable(typeof(RealtimeDiagnosticEndpoints.CandlesSnapshot))]
-[JsonSerializable(typeof(WebSocketProbeReport))]
 public partial class DiagnosticsJsonContext : JsonSerializerContext
 {
 }

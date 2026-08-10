@@ -18,7 +18,6 @@ public static class DiagnosticsEndpointRouteBuilderExtensions
         diagnostics.MapRealtimeDebugEndpoints();
         diagnostics.MapRealtimeDiagnosticEndpoints();
         diagnostics.MapDiagnosticDebugEndpoints();
-        diagnostics.MapWebSocketProbeEndpoints();
 
         return routes;
     }
