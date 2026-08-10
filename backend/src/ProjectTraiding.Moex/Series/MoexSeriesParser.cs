@@ -1,0 +1,259 @@
+using System.Text;
+using System.Text.Json;
+using ProjectTraiding.Moex.Contracts.Dto;
+using ProjectTraiding.Moex.Parsing;
+using ProjectTraiding.Moex.Parsing.Errors;
+using ProjectTraiding.Moex.StorageBase.ClickHouse;
+
+namespace ProjectTraiding.Moex.Series;
+
+public sealed class MoexSeriesParser
+{
+    public List<(object?[] Row, DateTime Time)> Parse(
+        ReadOnlySpan<byte> body,
+        MoexSeriesSpec spec,
+        string taskSecId,
+        out PaginationCursorDTO cursor)
+    {
+        List<(object?[] Row, DateTime Time)> rows = [];
+        Utf8JsonReader reader = new(body);
+
+        ParseHelpersUtf8.SkipToRootObject(ref reader, spec.RootKey);
+
+        bool foundColumns = false;
+        bool foundData = false;
+        while (reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.EndObject)
+                break;
+
+            if (reader.TokenType != JsonTokenType.PropertyName)
+                continue;
+
+            if (reader.ValueTextEquals("columns"u8))
+            {
+                foundColumns = true;
+                ValidateColumns(ref reader, spec);
+            }
+            else if (reader.ValueTextEquals("data"u8))
+            {
+                if (!foundColumns)
+                {
+                    ParseHelpersUtf8.SchemaMismatch(
+                        spec.RootKey,
+                        $"[{spec.RootKey}] Секция 'data' встретилась до 'columns'. " +
+                        "Порядок columns → data обязателен.");
+                }
+
+                foundData = true;
+                ReadRows(ref reader, rows, spec, taskSecId);
+            }
+            else
+            {
+                reader.Skip();
+            }
+        }
+
+        ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, spec.RootKey);
+
+        cursor = new PaginationCursorDTO();
+        if (spec.Pagination == PaginationKind.Cursor)
+        {
+            while (reader.Read())
+            {
+                if (reader.TokenType == JsonTokenType.EndObject)
+                    break;
+
+                if (reader.TokenType != JsonTokenType.PropertyName)
+                    continue;
+
+                if (reader.ValueTextEquals("data.cursor"u8))
+                {
+                    cursor = ParseHelpersUtf8.ReadCursorRootObject(ref reader, "data.cursor");
+                    break;
+                }
+
+                reader.Skip();
+            }
+        }
+
+        return rows;
+    }
+
+    private static void ValidateColumns(ref Utf8JsonReader reader, MoexSeriesSpec spec)
+    {
+        ParseHelpersUtf8.ReadAndExpect(
+            ref reader, JsonTokenType.StartArray, "columns", spec.RootKey);
+
+        int position = 0;
+        int expectedIndex = 0;
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+        {
+            if (expectedIndex < spec.SourceColumns.Length
+                && position == spec.SourceColumns[expectedIndex].Position)
+            {
+                SourceColumn column = spec.SourceColumns[expectedIndex];
+                if (!reader.ValueTextEquals(column.Name))
+                {
+                    string actual = reader.GetString() ?? "<null>";
+                    string expected = Encoding.UTF8.GetString(column.Name);
+                    string[] expectedColumns = new string[spec.SourceColumns.Length];
+                    for (int i = 0; i < spec.SourceColumns.Length; i++)
+                        expectedColumns[i] = Encoding.UTF8.GetString(spec.SourceColumns[i].Name);
+
+                    throw new MoexSchemaMismatchException(
+                        $"[{spec.RootKey}] Колонка не совпала на позиции {position}: " +
+                        $"ожидалось '{expected}', получено '{actual}'.",
+                        expectedColumns,
+                        [actual],
+                        [expected],
+                        dataNeedCode: spec.RootKey);
+                }
+
+                expectedIndex++;
+            }
+
+            position++;
+        }
+
+        if (position != spec.SourceColumns.Length)
+        {
+            ParseHelpersUtf8.SchemaMismatch(
+                spec.RootKey,
+                $"[{spec.RootKey}] Количество колонок не совпадает: " +
+                $"ожидалось {spec.SourceColumns.Length}, получено {position}.");
+        }
+
+        if (expectedIndex != spec.SourceColumns.Length)
+        {
+            ParseHelpersUtf8.SchemaMismatch(
+                spec.RootKey,
+                $"[{spec.RootKey}] Не все ожидаемые колонки найдены: " +
+                $"ожидалось {spec.SourceColumns.Length}, проверено {expectedIndex}.");
+        }
+    }
+
+    private static void ReadRows(
+        ref Utf8JsonReader reader,
+        List<(object?[] Row, DateTime Time)> rows,
+        MoexSeriesSpec spec,
+        string taskSecId)
+    {
+        ParseHelpersUtf8.ReadAndExpect(
+            ref reader, JsonTokenType.StartArray, "data", spec.RootKey);
+
+        int rowIndex = 0;
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+        {
+            if (reader.TokenType != JsonTokenType.StartArray)
+            {
+                ParseHelpersUtf8.SchemaMismatch(
+                    spec.RootKey,
+                    $"[{spec.RootKey}] Ожидался StartArray строки {rowIndex}, " +
+                    $"получено {reader.TokenType}.");
+            }
+
+            object?[] sourceValues = new object?[spec.SourceColumns.Length];
+            for (int position = 0; position < spec.SourceColumns.Length; position++)
+            {
+                if (!reader.Read())
+                {
+                    ParseHelpersUtf8.SchemaMismatch(
+                        spec.RootKey,
+                        $"[{spec.RootKey}] Неожиданный конец JSON в строке {rowIndex}, " +
+                        $"позиция {position}.");
+                }
+
+                if (reader.TokenType == JsonTokenType.EndArray)
+                {
+                    ParseHelpersUtf8.SchemaMismatch(
+                        spec.RootKey,
+                        $"[{spec.RootKey}] Короткая строка данных: ожидалось " +
+                        $"{spec.SourceColumns.Length} колонок, получено {position} " +
+                        $"(строка {rowIndex}).");
+                }
+
+                if (reader.TokenType != JsonTokenType.Null)
+                {
+                    sourceValues[position] = ReadValue(
+                        ref reader, spec.SourceColumns[position], rowIndex, spec.RootKey);
+                }
+            }
+
+            if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
+            {
+                ParseHelpersUtf8.SchemaMismatch(
+                    spec.RootKey,
+                    $"[{spec.RootKey}] Ожидался EndArray после " +
+                    $"{spec.SourceColumns.Length} колонок (строка {rowIndex}).");
+            }
+
+            rows.Add(BuildTargetRow(sourceValues, spec, taskSecId));
+            rowIndex++;
+        }
+    }
+
+    private static object? ReadValue(
+        ref Utf8JsonReader reader,
+        SourceColumn column,
+        int rowIndex,
+        string rootKey)
+    {
+        return column.Kind switch
+        {
+            ColumnKind.String => ParseHelpersUtf8.ReadString(
+                ref reader, rowIndex, column.Position, rootKey),
+            ColumnKind.Int32 => ParseHelpersUtf8.ReadInt(
+                ref reader, rowIndex, column.Position, rootKey),
+            ColumnKind.Int64 => ParseHelpersUtf8.ReadLong(
+                ref reader, rowIndex, column.Position, rootKey),
+            ColumnKind.Double => ParseHelpersUtf8.ReadDouble(
+                ref reader, rowIndex, column.Position, rootKey),
+            ColumnKind.DateTime => ParseHelpersUtf8.ReadDateTimeUtf8(
+                ref reader, rowIndex, column.Position, rootKey),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(column), column.Kind, "Неизвестный тип колонки источника."),
+        };
+    }
+
+    private static (object?[] Row, DateTime Time) BuildTargetRow(
+        object?[] sourceValues,
+        MoexSeriesSpec spec,
+        string taskSecId)
+    {
+        object?[] row = new object?[spec.TargetColumns.Length];
+        DateTime sourceTime = default;
+
+        for (int i = 0; i < spec.TargetColumns.Length; i++)
+        {
+            TargetColumn column = spec.TargetColumns[i];
+            object? value = column.FillRule switch
+            {
+                FillRule.TaskSecId => taskSecId,
+                FillRule.Direct => sourceValues[column.SourceIndex],
+                FillRule.SourceDateTime => MoexClickHouseTime.BuildSourceTime(
+                    sourceValues[column.SourceIndex] as string,
+                    sourceValues[column.SecondSourceIndex] as string),
+                FillRule.WallClock => MoexClickHouseTime.AsWallClock(
+                    (DateTime?)sourceValues[column.SourceIndex]),
+                FillRule.ExternalSecId => sourceValues[column.SourceIndex],
+                _ => throw new ArgumentOutOfRangeException(
+                    nameof(column), column.FillRule, "Неизвестное правило заполнения."),
+            };
+
+            if (column.Required
+                && (value is null || value is string text && string.IsNullOrWhiteSpace(text)))
+            {
+                throw new InvalidOperationException(
+                    column.RequiredMessage
+                    ?? $"Строка отвергнута: обязательная колонка {column.Name} пуста.");
+            }
+
+            row[i] = value;
+            if (column.FillRule == FillRule.SourceDateTime)
+                sourceTime = (DateTime)value!;
+        }
+
+        return (row, sourceTime);
+    }
+}
