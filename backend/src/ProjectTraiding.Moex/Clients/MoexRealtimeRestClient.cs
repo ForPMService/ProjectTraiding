@@ -108,7 +108,7 @@ namespace ProjectTraiding.Moex.Clients
             }
 
             queryParams.TryAdd("iss.meta", "off");
-            queryParams.TryAdd("iss.only", "trades,dataversion,trades_yields");
+            queryParams.TryAdd("iss.only", "trades,dataversion");
             queryParams.TryAdd(
                 "trades.columns",
                 ColumnAndNumbersForParsing.RealtimeTradesStockSchema.BuildColumnsParam());
@@ -153,7 +153,7 @@ namespace ProjectTraiding.Moex.Clients
             }
 
             queryParams.TryAdd("iss.meta", "off");
-            queryParams.TryAdd("iss.only", "trades,dataversion,trades_yields");
+            queryParams.TryAdd("iss.only", "trades,dataversion");
             queryParams.TryAdd(
                 "trades.columns",
                 ColumnAndNumbersForParsing.RealtimeTradesFuturesSchema.BuildColumnsParam());

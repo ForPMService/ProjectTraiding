@@ -538,26 +538,6 @@ namespace ProjectTraiding.Moex.Parsing
             });
 
         // ═══════════════════════════════════════════════════════════
-        // Real-time — Trades Yields (блок доходности сделок)
-        // Источник: raw fixtures trades-stock-raw.json, trades-futures-raw.json
-        // rootKey: "trades_yields", columnCount: 2, используем: все 2
-        //
-        // В текущих raw samples блок приходит с columns, но без data.
-        // Схема нужна, чтобы parser фиксировал наличие блока
-        // и не падал при валидации.
-        // ═══════════════════════════════════════════════════════════
-
-        public static readonly ExpectedSchema RealtimeTradesYieldsSchema = new(
-            TotalColumns: 2,
-            RootKey: "trades_yields",
-            Columns: new ExpectedColumn[]
-            {
-                new(0, "boardid"u8.ToArray()),
-                new(1, "secid"u8.ToArray()),
-            });
-            
-        
-        // ═══════════════════════════════════════════════════════════
         // Карточка акции — securities
         // Источник: /engines/stock/markets/shares/boards/tqbr/securities.json
         // Probe: probe-13, 2026-06-01

@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace ProjectTraiding.Moex.Parsing
 {
     /// <summary>
-    /// Парсер real-time REST-ответов MOEX (orderbook, trades, dataversion, trades_yields).
+    /// Парсер real-time REST-ответов MOEX (orderbook, trades, dataversion).
     /// 
     /// Паттерн: мульти-проход по одному JSON — для каждого root-блока
     /// создаётся отдельный Utf8JsonReader с собственной ExpectedSchema.
@@ -45,16 +45,15 @@ namespace ProjectTraiding.Moex.Parsing
         }
 
         // ═══════════════════════════════════════════════════════════
-        // ParseTradesStock — trades(14) + dataversion + trades_yields (3 прохода)
+        // ParseTradesStock — trades(14) + dataversion (2 прохода)
         // ═══════════════════════════════════════════════════════════
 
         /// <summary>
         /// Парсит ответ trades endpoint-а MOEX real-time REST для акций.
         /// 
-        /// JSON содержит три root-блока:
+        /// JSON содержит два root-блока:
         ///   "trades"        → строки сделок (14 колонок);
-        ///   "dataversion"   → версия данных (4 колонки, ровно 1 строка);
-        ///   "trades_yields" → блок доходности (2 колонки, может быть пустым).
+        ///   "dataversion"   → версия данных (4 колонки, ровно 1 строка).
         /// 
         /// Каждый блок парсится отдельным проходом.
         /// </summary>
@@ -66,23 +65,19 @@ namespace ProjectTraiding.Moex.Parsing
             // Проход 2: dataversion
             var dataVersion = ParseDataVersion(jsonBytes);
 
-            // Проход 3: trades_yields
-            var yields = ParseTradesYields(jsonBytes);
-
-            return new RealtimeTradesParseResult<RealtimeTradesStockDTO>(rows, dataVersion, yields);
+            return new RealtimeTradesParseResult<RealtimeTradesStockDTO>(rows, dataVersion);
         }
 
         // ═══════════════════════════════════════════════════════════
-        // ParseTradesFutures — trades(13) + dataversion + trades_yields (3 прохода)
+        // ParseTradesFutures — trades(13) + dataversion (2 прохода)
         // ═══════════════════════════════════════════════════════════
 
         /// <summary>
         /// Парсит ответ trades endpoint-а MOEX real-time REST для фьючерсов.
         /// 
-        /// JSON содержит три root-блока:
+        /// JSON содержит два root-блока:
         ///   "trades"        → строки сделок (13 колонок);
-        ///   "dataversion"   → версия данных (4 колонки, ровно 1 строка);
-        ///   "trades_yields" → блок доходности (2 колонки, может быть пустым).
+        ///   "dataversion"   → версия данных (4 колонки, ровно 1 строка).
         /// 
         /// Каждый блок парсится отдельным проходом.
         /// </summary>
@@ -94,10 +89,7 @@ namespace ProjectTraiding.Moex.Parsing
             // Проход 2: dataversion
             var dataVersion = ParseDataVersion(jsonBytes);
 
-            // Проход 3: trades_yields
-            var yields = ParseTradesYields(jsonBytes);
-
-            return new RealtimeTradesParseResult<RealtimeTradesFuturesDTO>(rows, dataVersion, yields);
+            return new RealtimeTradesParseResult<RealtimeTradesFuturesDTO>(rows, dataVersion);
         }
 
         // ═══════════════════════════════════════════════════════════
@@ -158,61 +150,6 @@ namespace ProjectTraiding.Moex.Parsing
                     $"[{schema.RootKey}] Блок dataversion не содержит ни одной строки.");
 
             return result;
-        }
-
-        // ═══════════════════════════════════════════════════════════
-        // ParseTradesYields — публичный, один проход
-        // ═══════════════════════════════════════════════════════════
-
-        /// <summary>
-        /// Парсит блок "trades_yields" из JSON ответа MOEX real-time REST.
-        /// 
-        /// В текущих raw samples data[] пустой — это штатно.
-        /// Если MOEX начнёт наполнять data — парсер прочитает строки.
-        /// 
-        /// Публичный для использования в debug endpoints.
-        /// </summary>
-        public static List<RealtimeTradesYieldsDTO> ParseTradesYields(ReadOnlySpan<byte> jsonBytes)
-        {
-            var schema = ColumnAndNumbersForParsing.RealtimeTradesYieldsSchema;
-            var list = new List<RealtimeTradesYieldsDTO>();
-            var reader = new Utf8JsonReader(jsonBytes);
-
-            ParseHelpersUtf8.SkipToRootObject(ref reader, schema.RootKey);
-
-            bool foundColumns = false;
-            bool foundData = false;
-
-            while (reader.Read())
-            {
-                if (reader.TokenType == JsonTokenType.EndObject)
-                    break;
-
-                if (reader.TokenType != JsonTokenType.PropertyName)
-                    continue;
-
-                if (reader.ValueTextEquals("columns"u8))
-                {
-                    foundColumns = true;
-                    ParseHelpersUtf8.ValidateColumnsUtf8(ref reader, schema);
-                }
-                else if (reader.ValueTextEquals("data"u8))
-                {
-                    if (!foundColumns)
-                        ParseHelpersUtf8.SchemaMismatch(schema.RootKey,
-                            $"[{schema.RootKey}] Секция 'data' встретилась до 'columns'. Порядок columns → data обязателен.");
-
-                    foundData = true;
-                    ReadTradesYieldsData(ref reader, list, schema);
-                }
-                else
-                {
-                    reader.Skip();
-                }
-            }
-
-            ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, schema.RootKey);
-            return list;
         }
 
         // ═══════════════════════════════════════════════════════════
@@ -698,66 +635,5 @@ namespace ProjectTraiding.Moex.Parsing
             }
         }
 
-        // ═══════════════════════════════════════════════════════════
-        // ReadTradesYieldsData — 2 колонки (data[] может быть пустым)
-        // ═══════════════════════════════════════════════════════════
-
-        private static void ReadTradesYieldsData(
-            ref Utf8JsonReader reader,
-            List<RealtimeTradesYieldsDTO> list,
-            ColumnAndNumbersForParsing.ExpectedSchema schema)
-        {
-            ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", schema.RootKey);
-
-            int rowIndex = 0;
-            while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
-            {
-                string? boardId = null, secId = null;
-
-                {
-                    int expectedIdx = 0;
-                    // 0=boardid 1=secid
-                    for (int pos = 0; pos < schema.TotalColumns; pos++)
-                    {
-                        if (!reader.Read())
-                            ParseHelpersUtf8.SchemaMismatch(schema.RootKey,
-                                $"[{schema.RootKey}] Неожиданный конец JSON в строке {rowIndex}, позиция {pos}.");
-
-                        if (reader.TokenType == JsonTokenType.EndArray)
-                            ParseHelpersUtf8.SchemaMismatch(schema.RootKey,
-                                $"[{schema.RootKey}] Короткая строка данных: " +
-                                $"ожидалось {schema.TotalColumns} колонок, получено {pos} " +
-                                $"(строка {rowIndex}).");
-
-                        if (expectedIdx < schema.Columns.Length
-                            && pos == schema.Columns[expectedIdx].SourceIndex)
-                        {
-                            if (reader.TokenType != JsonTokenType.Null)
-                            {
-                                switch (expectedIdx)
-                                {
-                                    case 0: boardId = ParseHelpersUtf8.ReadString(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
-                                    case 1: secId = ParseHelpersUtf8.ReadString(ref reader, rowIndex, expectedIdx, schema.RootKey); break;
-                                }
-                            }
-
-                            expectedIdx++;
-                        }
-                    }
-
-                    if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
-                        ParseHelpersUtf8.SchemaMismatch(schema.RootKey,
-                            $"[{schema.RootKey}] Ожидался EndArray после {schema.TotalColumns} колонок (строка {rowIndex}).");
-                }
-
-                list.Add(new RealtimeTradesYieldsDTO
-                {
-                    BoardId = boardId,
-                    SecId   = secId,
-                });
-
-                rowIndex++;
-            }
-        }
     }
 }

@@ -20,11 +20,9 @@ namespace ProjectTraiding.Moex.Contracts.Dto.Realtime
     /// 
     /// Содержит:
     ///   Rows — строки сделок (блок "trades");
-    ///   DataVersion — служебный блок версии данных (блок "dataversion");
-    ///   Yields — блок доходности сделок (блок "trades_yields", может быть пустым).
+    ///   DataVersion — служебный блок версии данных (блок "dataversion").
     /// </summary>
     public sealed record RealtimeTradesParseResult<TTrade>(
         List<TTrade> Rows,
-        RealtimeDataVersionDTO DataVersion,
-        List<RealtimeTradesYieldsDTO> Yields);
+        RealtimeDataVersionDTO DataVersion);
 }

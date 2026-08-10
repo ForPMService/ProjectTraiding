@@ -32,8 +32,6 @@ namespace ProjectTraiding.Diagnostics.Contracts;
 [JsonSerializable(typeof(RealtimeTradesParseResult<RealtimeTradesStockDTO>))]
 [JsonSerializable(typeof(RealtimeTradesParseResult<RealtimeTradesFuturesDTO>))]
 [JsonSerializable(typeof(RealtimeDataVersionDTO))]
-[JsonSerializable(typeof(RealtimeTradesYieldsDTO))]
-[JsonSerializable(typeof(List<RealtimeTradesYieldsDTO>))]
 [JsonSerializable(typeof(List<RealtimeTradesStockDTO>))]
 [JsonSerializable(typeof(List<RealtimeTradesFuturesDTO>))]
 [JsonSerializable(typeof(RealtimeDiagnosticEndpoints.OrderbookPollReport))]
