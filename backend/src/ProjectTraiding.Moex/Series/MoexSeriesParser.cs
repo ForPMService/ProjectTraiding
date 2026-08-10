@@ -241,19 +241,43 @@ public sealed class MoexSeriesParser
                     nameof(column), column.FillRule, "Неизвестное правило заполнения."),
             };
 
-            if (column.Required
-                && (value is null || value is string text && string.IsNullOrWhiteSpace(text)))
-            {
-                throw new InvalidOperationException(
-                    column.RequiredMessage
-                    ?? $"Строка отвергнута: обязательная колонка {column.Name} пуста.");
-            }
+            if (column.FillRule is not FillRule.Direct and not FillRule.ExternalSecId)
+                ValidateRequired(column, value);
 
             row[i] = value;
             if (column.FillRule == FillRule.SourceDateTime)
                 sourceTime = (DateTime)value!;
         }
 
+        // Карты проверяли собственные обязательные поля после source_time:
+        // сначала обычные значения строки, затем внешний secid.
+        ValidateRequired(row, spec, FillRule.Direct);
+        ValidateRequired(row, spec, FillRule.ExternalSecId);
+
         return (row, sourceTime);
+    }
+
+    private static void ValidateRequired(
+        object?[] row,
+        MoexSeriesSpec spec,
+        FillRule fillRule)
+    {
+        for (int i = 0; i < spec.TargetColumns.Length; i++)
+        {
+            TargetColumn column = spec.TargetColumns[i];
+            if (column.FillRule == fillRule)
+                ValidateRequired(column, row[i]);
+        }
+    }
+
+    private static void ValidateRequired(TargetColumn column, object? value)
+    {
+        if (column.Required
+            && (value is null || value is string text && string.IsNullOrWhiteSpace(text)))
+        {
+            throw new InvalidOperationException(
+                column.RequiredMessage
+                ?? $"Строка отвергнута: обязательная колонка {column.Name} пуста.");
+        }
     }
 }

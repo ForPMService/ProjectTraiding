@@ -524,4 +524,50 @@ public static class MoexSeriesRegistry
         Pagination = PaginationKind.Cursor,
         RequestKey = RequestKeyRule.TaskSecId,
     };
+
+    public static readonly MoexSeriesSpec Futoi = new()
+    {
+        DataKind = "futoi",
+        Market = "futures",
+        TelemetryDataKind = "futoi",
+        MethodTemplate = "/analyticalproducts/futoi/securities/{0}.json",
+        RootKey = "futoi",
+        SourceColumns =
+        [
+            new(0, "sess_id"u8.ToArray(), ColumnKind.Int32),
+            new(1, "seqnum"u8.ToArray(), ColumnKind.Int32),
+            new(2, "tradedate"u8.ToArray(), ColumnKind.String),
+            new(3, "tradetime"u8.ToArray(), ColumnKind.String),
+            new(4, "ticker"u8.ToArray(), ColumnKind.String),
+            new(5, "clgroup"u8.ToArray(), ColumnKind.String),
+            new(6, "pos"u8.ToArray(), ColumnKind.Int64),
+            new(7, "pos_long"u8.ToArray(), ColumnKind.Int64),
+            new(8, "pos_short"u8.ToArray(), ColumnKind.Int64),
+            new(9, "pos_long_num"u8.ToArray(), ColumnKind.Int64),
+            new(10, "pos_short_num"u8.ToArray(), ColumnKind.Int64),
+            new(11, "systime"u8.ToArray(), ColumnKind.DateTime),
+            new(12, "trade_session_date"u8.ToArray(), ColumnKind.String),
+        ],
+        Table = "moex_futoi_5m",
+        TargetColumns =
+        [
+            new("secid", "LowCardinality(String)", FillRule.ExternalSecId, 4, Required: true,
+                RequiredMessage: "Строка открытого интереса отвергнута: ticker пустой."),
+            new("source_time", "DateTime64(3, 'Europe/Moscow')", FillRule.SourceDateTime, 2, 3, Required: true),
+            new("clgroup", "LowCardinality(String)", FillRule.Direct, 5, Required: true,
+                RequiredMessage: "Строка открытого интереса отвергнута: clgroup пустой."),
+            new("sess_id", "Nullable(Int32)", FillRule.Direct, 0),
+            new("seqnum", "Nullable(Int32)", FillRule.Direct, 1),
+            new("pos", "Nullable(Int64)", FillRule.Direct, 6),
+            new("pos_long", "Nullable(Int64)", FillRule.Direct, 7),
+            new("pos_short", "Nullable(Int64)", FillRule.Direct, 8),
+            new("pos_long_num", "Nullable(Int64)", FillRule.Direct, 9),
+            new("pos_short_num", "Nullable(Int64)", FillRule.Direct, 10),
+            new("trade_session_date", "Nullable(String)", FillRule.Direct, 12),
+            new("systime", "Nullable(DateTime64(3, 'Europe/Moscow'))", FillRule.WallClock, 11),
+        ],
+        TokenPrefix = "futoi:5m:futures",
+        Pagination = PaginationKind.DaySplit,
+        RequestKey = RequestKeyRule.FuturesSeriesCode,
+    };
 }

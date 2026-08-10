@@ -112,7 +112,6 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
             // принимает уже переведённые виды, остальные продолжают обслуживать старые.
             services.AddScoped<ILoadHandler, SpecLoadHandler>();
 
-            services.AddScoped<ILoadHandler, FutoiLoadHandler>();
             services.AddScoped<ILoadHandler, CandlesLoadHandler>();
 
             // Читатель и писатели задач, диспетчер и координатор.

@@ -20,6 +20,7 @@ public sealed class SpecLoadHandler : ILoadHandler
         MoexSeriesRegistry.OrderStatsStock,
         MoexSeriesRegistry.MegaAlertsStock,
         MoexSeriesRegistry.MegaAlertsFutures,
+        MoexSeriesRegistry.Futoi,
     ];
 
     private readonly MoexHistoryPageReader _reader;
@@ -42,9 +43,20 @@ public sealed class SpecLoadHandler : ILoadHandler
             ?? throw new InvalidOperationException(
                 $"Для {task.DataKind}/{task.Market} нет переведённой декларации.");
 
+        string requestKey = ResolveRequestKey(spec, task);
+        if (spec.RequestKey == RequestKeyRule.FuturesSeriesCode
+            && string.IsNullOrWhiteSpace(task.Secid))
+        {
+            throw new InvalidOperationException(
+                "Загрузка открытого интереса отвергнута: secid пустой.");
+        }
+
+        string operation = spec.Pagination == PaginationKind.DaySplit
+            ? MoexOperations.HistoryFutoiFetch
+            : MoexOperations.HistoryCursorFetch;
         MoexOperationTags operationTags = new(
             MoexLogSources.Algopack,
-            MoexOperations.HistoryCursorFetch,
+            operation,
             spec.TelemetryDataKind,
             spec.Market,
             MoexFlows.History);
@@ -52,7 +64,7 @@ public sealed class SpecLoadHandler : ILoadHandler
         IAsyncEnumerable<List<(object?[] Row, DateTime Time)>> pages = _reader.ReadPages(
             spec,
             task.Secid,
-            task.Secid,
+            requestKey,
             task.DateFrom,
             task.DateTill,
             stopOutcome,
@@ -84,5 +96,31 @@ public sealed class SpecLoadHandler : ILoadHandler
         }
 
         return null;
+    }
+
+    private static string ResolveRequestKey(MoexSeriesSpec spec, MoexLoadTask task)
+    {
+        if (spec.RequestKey == RequestKeyRule.TaskSecId)
+            return task.Secid;
+
+        if (task.Secid is "USDRUBF"
+            or "EURRUBF"
+            or "CNYRUBF"
+            or "IMOEXF"
+            or "GLDRUBF"
+            or "SBERF"
+            or "GAZPF")
+        {
+            return task.Secid;
+        }
+
+        if (string.IsNullOrWhiteSpace(task.SecType))
+        {
+            throw new InvalidOperationException(
+                $"Открытый интерес требует код серии контракта; " +
+                $"у инструмента {task.Secid} SECTYPE не заполнен.");
+        }
+
+        return task.SecType;
     }
 }
