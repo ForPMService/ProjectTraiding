@@ -112,7 +112,6 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
             // принимает уже переведённые виды, остальные продолжают обслуживать старые.
             services.AddScoped<ILoadHandler, SpecLoadHandler>();
 
-            services.AddScoped<ILoadHandler, SeriesLoadHandler<ObStatsFuturesCursorKind, SuperCandlesFuturesOrderBookStats5mDTO>>();
             services.AddScoped<ILoadHandler, SeriesLoadHandler<OrderStatsStockCursorKind, SuperCandlesOrderStats5mDTO>>();
             services.AddScoped<ILoadHandler, FutoiLoadHandler>();
             services.AddScoped<ILoadHandler, SeriesLoadHandler<MegaAlertsStockCursorKind, MegaAlertsAssetsDTO>>();
