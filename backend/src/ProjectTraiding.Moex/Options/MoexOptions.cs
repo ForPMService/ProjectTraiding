@@ -43,7 +43,7 @@ namespace ProjectTraiding.Moex.Options
         /// 64 — достаточно для нескольких параллельных пагинаций,
         /// но не даёт копить тысячу запросов при зависании.
         /// </summary>
-        public int RateLimitQueueLimit { get; set; } = 64;
+        public int RateLimitQueueLimit { get; set; } = 256;
 
         /// <summary>
         /// Предельное время ОДНОЙ попытки запроса — фазы до получения заголовков ответа.
