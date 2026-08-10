@@ -1,5 +1,4 @@
 ﻿using Microsoft.Extensions.Options;
-using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using ProjectTraiding.Moex.Loading;
 using ProjectTraiding.Moex.Options;
@@ -54,62 +53,6 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
                 };
             });
 
-            // Карты столбцов остальных видов — без состояния, одиночки.
-            services.AddSingleton<TradeStatsStockRowMap>();
-            services.AddSingleton<TradeStatsFuturesRowMap>();
-            services.AddSingleton<ObStatsStockRowMap>();
-            services.AddSingleton<ObStatsFuturesRowMap>();
-            services.AddSingleton<OrderStatsStockRowMap>();
-            services.AddSingleton<FutoiRowMap>();
-            services.AddSingleton<Hi2StockRowMap>();
-            services.AddSingleton<Hi2FuturesRowMap>();
-            services.AddSingleton<MegaAlertsStockRowMap>();
-            services.AddSingleton<MegaAlertsFuturesRowMap>();
-
-            // Писатели под каждый вид (тот же размер пачки, что у свечей).
-            services.AddTransient(sp => new RowWriter<SuperCandlesTradeStats5mDTO>(
-                sp.GetRequiredService<ClickHouseInsertExecutor>(),
-                sp.GetRequiredService<TradeStatsStockRowMap>(),
-                sp.GetRequiredService<ILogger<RowWriter<SuperCandlesTradeStats5mDTO>>>(), batchSize));
-            services.AddTransient(sp => new RowWriter<SuperCandlesFuturesTradeStats5mDTO>(
-                sp.GetRequiredService<ClickHouseInsertExecutor>(),
-                sp.GetRequiredService<TradeStatsFuturesRowMap>(),
-                sp.GetRequiredService<ILogger<RowWriter<SuperCandlesFuturesTradeStats5mDTO>>>(), batchSize));
-            services.AddTransient(sp => new RowWriter<SuperCandlesOrderBookStats5mDTO>(
-                sp.GetRequiredService<ClickHouseInsertExecutor>(),
-                sp.GetRequiredService<ObStatsStockRowMap>(),
-                sp.GetRequiredService<ILogger<RowWriter<SuperCandlesOrderBookStats5mDTO>>>(), batchSize));
-            services.AddTransient(sp => new RowWriter<SuperCandlesFuturesOrderBookStats5mDTO>(
-                sp.GetRequiredService<ClickHouseInsertExecutor>(),
-                sp.GetRequiredService<ObStatsFuturesRowMap>(),
-                sp.GetRequiredService<ILogger<RowWriter<SuperCandlesFuturesOrderBookStats5mDTO>>>(), batchSize));
-            services.AddTransient(sp => new RowWriter<SuperCandlesOrderStats5mDTO>(
-                sp.GetRequiredService<ClickHouseInsertExecutor>(),
-                sp.GetRequiredService<OrderStatsStockRowMap>(),
-                sp.GetRequiredService<ILogger<RowWriter<SuperCandlesOrderStats5mDTO>>>(), batchSize));
-            services.AddTransient(sp => new RowWriter<FutoiDTO>(
-                sp.GetRequiredService<ClickHouseInsertExecutor>(),
-                sp.GetRequiredService<FutoiRowMap>(),
-                sp.GetRequiredService<ILogger<RowWriter<FutoiDTO>>>(), batchSize));
-            services.AddTransient(sp => new RowWriter<Hi2AssetDTO>(
-                sp.GetRequiredService<ClickHouseInsertExecutor>(),
-                sp.GetRequiredService<Hi2StockRowMap>(),
-                sp.GetRequiredService<ILogger<RowWriter<Hi2AssetDTO>>>(), batchSize));
-            services.AddTransient(sp => new RowWriter<Hi2FuturesDTO>(
-                sp.GetRequiredService<ClickHouseInsertExecutor>(),
-                sp.GetRequiredService<Hi2FuturesRowMap>(),
-                sp.GetRequiredService<ILogger<RowWriter<Hi2FuturesDTO>>>(), batchSize));
-            services.AddTransient(sp => new RowWriter<MegaAlertsAssetsDTO>(
-                sp.GetRequiredService<ClickHouseInsertExecutor>(),
-                sp.GetRequiredService<MegaAlertsStockRowMap>(),
-                sp.GetRequiredService<ILogger<RowWriter<MegaAlertsAssetsDTO>>>(), batchSize));
-            services.AddTransient(sp => new RowWriter<MegaAlertsFuturesDTO>(
-                sp.GetRequiredService<ClickHouseInsertExecutor>(),
-                sp.GetRequiredService<MegaAlertsFuturesRowMap>(),
-                sp.GetRequiredService<ILogger<RowWriter<MegaAlertsFuturesDTO>>>(), batchSize));
-
-            // Общий декларативный обработчик регистрируется первым: во время миграции он
-            // принимает уже переведённые виды, остальные продолжают обслуживать старые.
             services.AddScoped<ILoadHandler, SpecLoadHandler>();
 
             services.AddScoped<ILoadHandler, CandlesLoadHandler>();
