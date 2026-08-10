@@ -535,7 +535,7 @@ namespace ProjectTraiding.Moex.Clients
         // Инфраструктура
         // ═══════════════════════════════════════════════════════════
 
-        private async Task<HttpResponseMessage> SendRequestAsync(string method, Dictionary<string, string>? queryParams = null, CancellationToken cancellationToken = default)
+        internal async Task<HttpResponseMessage> SendRequestAsync(string method, Dictionary<string, string>? queryParams = null, CancellationToken cancellationToken = default)
         {
             string baseUrl = _options.ApimBaseUrl;
             string requestUrl = baseUrl + method;

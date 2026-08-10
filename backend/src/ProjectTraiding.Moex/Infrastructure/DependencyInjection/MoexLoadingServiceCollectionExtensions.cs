@@ -3,6 +3,7 @@ using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using ProjectTraiding.Moex.Loading;
 using ProjectTraiding.Moex.Options;
+using ProjectTraiding.Moex.Series;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using System;
@@ -26,6 +27,12 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
             int batchSize = configuration.GetValue<int>("ClickHouse:CandlesBatchSize", 10000);
 
             services.AddTransient<ClickHouseInsertExecutor>();
+            services.AddSingleton<MoexSeriesParser>();
+            services.AddTransient<MoexHistoryPageReader>();
+            services.AddTransient(sp => new MoexHistoryWriter(
+                sp.GetRequiredService<ClickHouseInsertExecutor>(),
+                sp.GetRequiredService<ILogger<MoexHistoryWriter>>(),
+                batchSize));
 
             // Свечные писатели по интервалам: одна форма, разные таблица и префикс токена.
             // Коды интервала MOEX: 1 — минута, 10 — десять минут, 60 — час, 24 — день.
@@ -101,16 +108,16 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
                 sp.GetRequiredService<MegaAlertsFuturesRowMap>(),
                 sp.GetRequiredService<ILogger<RowWriter<MegaAlertsFuturesDTO>>>(), batchSize));
 
-            // Обработчики видов — диспетчер соберёт их все через IEnumerable<ILoadHandler>.
-            // Девять курсорных видов закрыты обобщённым обработчиком парой «паспорт × строка»;
-            // FUTOI и свечи остаются отдельными обработчиками из-за иной формы загрузки.
+            // Общий декларативный обработчик регистрируется первым: во время миграции он
+            // принимает уже переведённые виды, остальные продолжают обслуживать старые.
+            services.AddScoped<ILoadHandler, SpecLoadHandler>();
+
             services.AddScoped<ILoadHandler, SeriesLoadHandler<TradeStatsStockCursorKind, SuperCandlesTradeStats5mDTO>>();
             services.AddScoped<ILoadHandler, SeriesLoadHandler<TradeStatsFuturesCursorKind, SuperCandlesFuturesTradeStats5mDTO>>();
             services.AddScoped<ILoadHandler, SeriesLoadHandler<ObStatsStockCursorKind, SuperCandlesOrderBookStats5mDTO>>();
             services.AddScoped<ILoadHandler, SeriesLoadHandler<ObStatsFuturesCursorKind, SuperCandlesFuturesOrderBookStats5mDTO>>();
             services.AddScoped<ILoadHandler, SeriesLoadHandler<OrderStatsStockCursorKind, SuperCandlesOrderStats5mDTO>>();
             services.AddScoped<ILoadHandler, FutoiLoadHandler>();
-            services.AddScoped<ILoadHandler, SeriesLoadHandler<Hi2StockCursorKind, Hi2AssetDTO>>();
             services.AddScoped<ILoadHandler, SeriesLoadHandler<Hi2FuturesCursorKind, Hi2FuturesDTO>>();
             services.AddScoped<ILoadHandler, SeriesLoadHandler<MegaAlertsStockCursorKind, MegaAlertsAssetsDTO>>();
             services.AddScoped<ILoadHandler, SeriesLoadHandler<MegaAlertsFuturesCursorKind, MegaAlertsFuturesDTO>>();
