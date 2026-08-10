@@ -73,7 +73,8 @@ namespace ProjectTraiding.Moex.Options
 
             if (options.LoadWorkerConcurrency > options.MaxConnectionsPerServer)
                 throw new InvalidOperationException(
-                    "Moex:LoadWorkerConcurrency не должен превышать Moex:MaxConnectionsPerServer.");
+                    $"Moex:LoadWorkerConcurrency ({options.LoadWorkerConcurrency}) не должен превышать " +
+                    $"Moex:MaxConnectionsPerServer ({options.MaxConnectionsPerServer}).");
 
             // Действующие значения — в журнал. Ключ доступа НЕ пишем, только признак наличия.
             MoexLogMessages.OptionsApplied(

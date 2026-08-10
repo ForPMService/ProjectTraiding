@@ -35,7 +35,7 @@ namespace ProjectTraiding.Moex.Options
         /// MOEX ≈ 10 req/sec на IP (частная переписка, май 2026). Держим на верхней границе 10;
         /// проверка настроек не пропускает значения вне диапазона от одного до десяти.
         /// </summary>
-        public int MaxRequestsPerSecond { get; set; } = 10;
+        public int MaxRequestsPerSecond { get; set; } = 9;
 
         /// <summary>
         /// Максимум запросов, ожидающих жетон в очереди rate limiter.

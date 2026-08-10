@@ -21,12 +21,12 @@ namespace ProjectTraiding.Api.Infrastructure
             services.AddRateLimiter(options =>
             {
                 options.AddPolicy(VitrinePolicy, PartitionByClient(
-                    tokenLimit: 20,
+                    tokenLimit: 400,
                     tokensPerPeriod: 1,
                     replenishmentSeconds: 2));
 
                 options.AddPolicy(ManagementPolicy, PartitionByClient(
-                    tokenLimit: 6,
+                    tokenLimit: 120,
                     tokensPerPeriod: 1,
                     replenishmentSeconds: 30));
 
