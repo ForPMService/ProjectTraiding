@@ -5,8 +5,7 @@ using System.Diagnostics;
 namespace ProjectTraiding.Management.StorageBase.Redis
 {
     /// <summary>
-    /// Удаление ключей Redis, принадлежащих одному инструменту: последние принятые
-    /// значения приёма и кеш покрытия витрины.
+    /// Удаление ключа Redis, принадлежащего одному инструменту: кеша покрытия витрины.
     ///
     /// Ключи собираются по известным образцам, а не перебором пространства ключей:
     /// команда сканирования на боевом Redis обходит все ключи и её незачем звать,
@@ -17,19 +16,11 @@ namespace ProjectTraiding.Management.StorageBase.Redis
     /// со сроком жизни в сутки: LoadedRangeCache при промахе идёт в базу и пишет
     /// прочитанное обратно. Сбрось его раньше базы — и первое же обращение
     /// витрины восстановит кеш со старым покрытием на сутки вперёд.
-    ///
-    /// Ключ прогресса задания load:task:progress:{taskId} не удаляется: он привязан
-    /// к заданию, а не к инструменту, и уходит сам по сроку годности.
-    ///
     /// Общие кеши витрины (каталог инструментов, карточки, тарифы) не трогаются:
     /// справочник при удалении рабочих данных не меняется.
     /// </summary>
     public sealed class InstrumentRedisDataDeleter
     {
-        private const string StockTradeKeyPrefix = "moex:latest:trade:stock:v1:";
-        private const string FuturesTradeKeyPrefix = "moex:latest:trade:futures:v1:";
-        private const string OrderbookKeyPrefix = "moex:latest:orderbook:v1:";
-        private const string CandleKeyPrefix = "moex:latest:candle:1m:v1:";
         private const string VitrineLoadedRangesKeyPrefix = "vitrine:loaded-ranges:";
         private const string VitrineLoadedRangesKeySuffix = ":v1";
 
@@ -54,10 +45,6 @@ namespace ProjectTraiding.Management.StorageBase.Redis
 
             RedisKey[] keys = new RedisKey[]
             {
-                StockTradeKeyPrefix + secid,
-                FuturesTradeKeyPrefix + secid,
-                OrderbookKeyPrefix + secid,
-                CandleKeyPrefix + secid,
                 VitrineLoadedRangesKeyPrefix + secid + VitrineLoadedRangesKeySuffix,
             };
 

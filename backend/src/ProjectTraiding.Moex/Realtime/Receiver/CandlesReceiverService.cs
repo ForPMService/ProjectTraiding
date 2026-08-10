@@ -7,7 +7,6 @@ using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Infrastructure;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
-using ProjectTraiding.Moex.StorageBase.Redis;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -16,10 +15,9 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 {
     /// <summary>
     /// Периодический приём свечей текущего торгового дня по всем подписанным инструментам.
-    /// Реальное время — только минутная свеча (интервал 1): её растущую минуту ждёт график.
     /// Закрытые минуты пишутся в moex_candles_1m с приоритетом приёма 0 (историческая загрузка
-    /// перекрывает при слиянии); текущая незакрытая минута идёт только в оперативное хранилище —
-    /// в ClickHouse её писать нельзя, она ещё меняется. Курсора у свечей в базе нет; повтор записи
+    /// перекрывает при слиянии); текущая незакрытая минута в ClickHouse не пишется, она ещё
+    /// меняется. Курсора у свечей в базе нет; повтор записи
     /// закрытых минут в пределах запуска отсекает граница LastClosedBegin в состоянии.
     /// Желаемый список подписок сверяется на каждом обороте: снятые инструменты исключаются
     /// из опроса немедленно, а их сеансы покрытия закрываются штатно без перезапуска процесса —
@@ -106,9 +104,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     scope.ServiceProvider.GetRequiredService<MoexRealtimeRestClient>();
                 RealtimeRowWriter<CandlesDTO> writer =
                     scope.ServiceProvider.GetRequiredService<RealtimeRowWriter<CandlesDTO>>();
-                RealtimeLatestWriter latestWriter =
-                    scope.ServiceProvider.GetRequiredService<RealtimeLatestWriter>();
-
                 foreach (KeyValuePair<string, CandleInstrumentState> pair in _states)
                 {
                     if (pair.Value.IsStopping)
@@ -117,7 +112,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     try
                     {
                         await PollInstrumentAsync(
-                            pair.Key, pair.Value, client, writer, latestWriter, coverageWriter, ct);
+                            pair.Key, pair.Value, client, writer, coverageWriter, ct);
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested)
                     {
@@ -293,7 +288,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             CandleInstrumentState state,
             MoexRealtimeRestClient client,
             RealtimeRowWriter<CandlesDTO> writer,
-            RealtimeLatestWriter latestWriter,
             StreamCoverageWriter coverageWriter,
             CancellationToken commitCt)
         {
@@ -317,7 +311,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 MoexFlows.Realtime);
 
             List<CandlesDTO> candles;
-            CandlesDTO? latestKnown = null;
             using (Activity? pollActivity =
                    MoexTelemetry.ActivitySource.StartActivity("moex.realtime.instrument.poll"))
             {
@@ -388,13 +381,10 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 }
             }
 
-            // Разделение на закрытые минуты и последнюю известную. Минута с началом B закрыта,
-            // когда московское время достигло B + интервал. Закрытые пишем в ClickHouse, но только
-            // новее уже записанной границы, чтобы не гонять повтор. Отдельно отслеживаем последнюю
-            // известную свечу ответа (максимум по Begin) — её, закрытую или растущую, кладём в
-            // оперативное хранилище.
+            // Минута с началом B закрыта, когда московское время достигло B + интервал.
+            // Закрытые пишем в ClickHouse, но только новее уже записанной границы,
+            // чтобы не гонять повтор.
             List<CandlesDTO> closed = new List<CandlesDTO>(candles.Count);
-            DateTime latestKnownBegin = DateTime.MinValue;
             DateTime maxClosedBegin = state.LastClosedBegin ?? DateTime.MinValue;
 
             try
@@ -406,12 +396,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         continue;
 
                     DateTime begin = candle.Begin.Value;
-
-                    if (begin > latestKnownBegin)
-                    {
-                        latestKnownBegin = begin;
-                        latestKnown = candle;
-                    }
 
                     bool isClosed = begin.AddMinutes(CandleInterval) <= now;
                     if (!isClosed)
@@ -459,11 +443,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
             await ReceiverSessionHeartbeat.WriteIfDueAsync(
                 state, _heartbeatMinInterval, coverageWriter, commitCt);
-
-            // Оперативное хранилище — best-effort, последним действием: в ключ кладётся последняя
-            // известная свеча ответа (закрытая или растущая); писатель сам проглатывает сбой.
-            if (latestKnown is not null)
-                await latestWriter.WriteLatestCandleAsync(secid, latestKnown, commitCt);
         }
 
         private void PublishTelemetrySnapshots()

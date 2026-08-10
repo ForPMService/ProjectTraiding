@@ -6,13 +6,12 @@ using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Realtime.Receiver;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
-using ProjectTraiding.Moex.StorageBase.Redis;
 
 namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
 {
     /// <summary>
     /// Регистрация включаемого контура реального времени: карты столбцов, читатель инструментов,
-    /// писатели курсора, покрытия, ClickHouse и Redis, а также независимые фоновые службы
+    /// писатели курсора, покрытия и ClickHouse, а также независимые фоновые службы
     /// сделок, стакана и свечей.
     /// </summary>
     public static class MoexRealtimeReceiverServiceCollectionExtensions
@@ -37,7 +36,6 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
             services.AddSingleton<MoexReceiverInstrumentReader>();
             services.AddSingleton<StreamCursorWriter>();
             services.AddSingleton<StreamCoverageWriter>();
-            services.AddSingleton<RealtimeLatestWriter>();
 
             // Прямые писатели ClickHouse: один на вид строки. Исполнитель зарегистрирован
             // исторической загрузкой, карты — выше в этой включённой ветви.

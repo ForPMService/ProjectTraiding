@@ -5,7 +5,6 @@ using ProjectTraiding.Moex.Infrastructure;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
-using ProjectTraiding.Moex.StorageBase.Redis;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -88,9 +87,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     scope.ServiceProvider.GetRequiredService<MoexRealtimeRestClient>();
                 RealtimeRowWriter<RealtimeOrderbookRowDTO> writer =
                     scope.ServiceProvider.GetRequiredService<RealtimeRowWriter<RealtimeOrderbookRowDTO>>();
-                RealtimeLatestWriter latestWriter =
-                    scope.ServiceProvider.GetRequiredService<RealtimeLatestWriter>();
-
                 foreach (KeyValuePair<string, ReceiverInstrumentSessionState> pair in _states)
                 {
                     if (pair.Value.IsStopping)
@@ -103,7 +99,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                             pair.Value,
                             client,
                             writer,
-                            latestWriter,
                             coverageWriter,
                             ct);
                     }
@@ -285,7 +280,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             ReceiverInstrumentSessionState state,
             MoexRealtimeRestClient client,
             RealtimeRowWriter<RealtimeOrderbookRowDTO> writer,
-            RealtimeLatestWriter latestWriter,
             StreamCoverageWriter coverageWriter,
             CancellationToken commitCt)
         {
@@ -411,10 +405,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
             await ReceiverSessionHeartbeat.WriteIfDueAsync(
                 state, _heartbeatMinInterval, coverageWriter, commitCt);
-
-            // Витрина — best-effort и выполняется последней только для непустого ответа.
-            if (result.Rows.Count > 0)
-                await latestWriter.WriteLatestOrderbookAsync(secid, result.Rows, commitCt);
         }
 
         private void PublishTelemetrySnapshots()

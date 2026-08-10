@@ -5,7 +5,6 @@ using ProjectTraiding.Moex.Infrastructure;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
-using ProjectTraiding.Moex.StorageBase.Redis;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -95,9 +94,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     scope.ServiceProvider.GetRequiredService<RealtimeRowWriter<RealtimeTradesStockDTO>>();
                 RealtimeRowWriter<RealtimeTradesFuturesDTO> futuresWriter =
                     scope.ServiceProvider.GetRequiredService<RealtimeRowWriter<RealtimeTradesFuturesDTO>>();
-                RealtimeLatestWriter latestWriter =
-                    scope.ServiceProvider.GetRequiredService<RealtimeLatestWriter>();
-
                 foreach (KeyValuePair<string, TradesInstrumentState> pair in _states)
                 {
                     if (pair.Value.IsStopping)
@@ -112,7 +108,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                                 pair.Value,
                                 client,
                                 stockWriter,
-                                latestWriter,
                                 cursorWriter,
                                 coverageWriter,
                                 ct);
@@ -124,7 +119,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                                 pair.Value,
                                 client,
                                 futuresWriter,
-                                latestWriter,
                                 cursorWriter,
                                 coverageWriter,
                                 ct);
@@ -358,7 +352,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             TradesInstrumentState state,
             MoexRealtimeRestClient client,
             RealtimeRowWriter<RealtimeTradesStockDTO> writer,
-            RealtimeLatestWriter latestWriter,
             StreamCursorWriter cursorWriter,
             StreamCoverageWriter coverageWriter,
             CancellationToken commitCt)
@@ -475,7 +468,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         commitCt);
 
                     // In-memory состояние двигается сразу за durable-курсором — чтобы не разойтись с ним,
-                    // если сердцебиение или витрина упадут.
+                    // если сердцебиение упадёт.
                     state.RowsTotal += result.Rows.Count;
                     state.AfterTradeNo = lastTradeNo;
                     state.LastConfirmedMarketTime = MoexTime.ToDateTimeOffset(lastSourceTime);
@@ -501,10 +494,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
             await ReceiverSessionHeartbeat.WriteIfDueAsync(
                 state, _heartbeatMinInterval, coverageWriter, commitCt);
-
-            // Витрина последних значений — best-effort, последней: писатель сам проглатывает сбой.
-            if (last is not null)
-                await latestWriter.WriteLatestStockTradeAsync(secid, last, commitCt);
         }
 
         private async Task PollFuturesAsync(
@@ -512,7 +501,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             TradesInstrumentState state,
             MoexRealtimeRestClient client,
             RealtimeRowWriter<RealtimeTradesFuturesDTO> writer,
-            RealtimeLatestWriter latestWriter,
             StreamCursorWriter cursorWriter,
             StreamCoverageWriter coverageWriter,
             CancellationToken commitCt)
@@ -646,9 +634,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
             await ReceiverSessionHeartbeat.WriteIfDueAsync(
                 state, _heartbeatMinInterval, coverageWriter, commitCt);
-
-            if (last is not null)
-                await latestWriter.WriteLatestFuturesTradeAsync(secid, last, commitCt);
         }
 
         private void PublishTelemetrySnapshots()
