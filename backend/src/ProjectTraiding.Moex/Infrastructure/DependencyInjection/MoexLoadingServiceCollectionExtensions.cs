@@ -118,7 +118,6 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
             services.AddScoped<ILoadHandler, SeriesLoadHandler<ObStatsFuturesCursorKind, SuperCandlesFuturesOrderBookStats5mDTO>>();
             services.AddScoped<ILoadHandler, SeriesLoadHandler<OrderStatsStockCursorKind, SuperCandlesOrderStats5mDTO>>();
             services.AddScoped<ILoadHandler, FutoiLoadHandler>();
-            services.AddScoped<ILoadHandler, SeriesLoadHandler<Hi2FuturesCursorKind, Hi2FuturesDTO>>();
             services.AddScoped<ILoadHandler, SeriesLoadHandler<MegaAlertsStockCursorKind, MegaAlertsAssetsDTO>>();
             services.AddScoped<ILoadHandler, SeriesLoadHandler<MegaAlertsFuturesCursorKind, MegaAlertsFuturesDTO>>();
             services.AddScoped<ILoadHandler, CandlesLoadHandler>();

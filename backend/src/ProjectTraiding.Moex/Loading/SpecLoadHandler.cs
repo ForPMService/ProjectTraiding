@@ -12,6 +12,7 @@ public sealed class SpecLoadHandler : ILoadHandler
     private static readonly MoexSeriesSpec[] MigratedSpecs =
     [
         MoexSeriesRegistry.Hi2Stock,
+        MoexSeriesRegistry.Hi2Futures,
     ];
 
     private readonly MoexHistoryPageReader _reader;
