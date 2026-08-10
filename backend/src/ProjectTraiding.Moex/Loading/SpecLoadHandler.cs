@@ -14,6 +14,7 @@ public sealed class SpecLoadHandler : ILoadHandler
         MoexSeriesRegistry.Hi2Stock,
         MoexSeriesRegistry.Hi2Futures,
         MoexSeriesRegistry.TradeStatsStock,
+        MoexSeriesRegistry.TradeStatsFutures,
     ];
 
     private readonly MoexHistoryPageReader _reader;
