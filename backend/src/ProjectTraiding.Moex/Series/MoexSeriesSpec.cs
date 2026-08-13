@@ -26,12 +26,6 @@ public enum PaginationKind
     DaySplit,
 }
 
-public enum RequestKeyRule
-{
-    TaskSecId,
-    FuturesSeriesCode,
-}
-
 public readonly record struct SourceColumn(
     int Position,
     byte[] Name,
@@ -58,8 +52,6 @@ public sealed class MoexSeriesSpec
     public required TargetColumn[] TargetColumns { get; init; }
     public required string TokenPrefix { get; init; }
     public required PaginationKind Pagination { get; init; }
-    public required RequestKeyRule RequestKey { get; init; }
-
     public string BuildColumnsParam()
     {
         string[] names = new string[SourceColumns.Length];

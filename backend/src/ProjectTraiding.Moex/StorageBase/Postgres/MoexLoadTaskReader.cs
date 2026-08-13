@@ -33,11 +33,8 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                        t.storage_target,
                        t.source_contract_version,
                        t.writer_version,
-                       t.status,
-                       f.sectype
+                       t.status
                 FROM moex_load_tasks t
-                LEFT JOIN moex_futures_details f
-                    ON f.secid = t.secid
                 WHERE t.id = @id
                 """, connection);
             cmd.Parameters.Add("@id", NpgsqlDbType.Uuid).Value = taskId;
@@ -58,10 +55,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 StorageTarget: reader.GetString(8),
                 SourceContractVersion: reader.GetString(9),
                 WriterVersion: reader.GetString(10),
-                Status: reader.GetString(11),
-                SecType: reader.IsDBNull(12)
-                    ? null
-                    : reader.GetString(12));
+                Status: reader.GetString(11));
         }
 
         public async Task<bool> IsCancelRequestedAsync(Guid taskId, CancellationToken ct)

@@ -72,7 +72,6 @@ public static class MoexSeriesRegistry
         ],
         TokenPrefix = "tradestats:5m:stock",
         Pagination = PaginationKind.Cursor,
-        RequestKey = RequestKeyRule.TaskSecId,
     };
 
     public static readonly MoexSeriesSpec TradeStatsFutures = new()
@@ -157,7 +156,6 @@ public static class MoexSeriesRegistry
         ],
         TokenPrefix = "tradestats:5m:futures",
         Pagination = PaginationKind.Cursor,
-        RequestKey = RequestKeyRule.TaskSecId,
     };
 
     public static readonly MoexSeriesSpec ObStatsStock = new()
@@ -218,7 +216,6 @@ public static class MoexSeriesRegistry
         ],
         TokenPrefix = "obstats:5m:stock",
         Pagination = PaginationKind.Cursor,
-        RequestKey = RequestKeyRule.TaskSecId,
     };
 
     public static readonly MoexSeriesSpec ObStatsFutures = new()
@@ -307,7 +304,6 @@ public static class MoexSeriesRegistry
         ],
         TokenPrefix = "obstats:5m:futures",
         Pagination = PaginationKind.Cursor,
-        RequestKey = RequestKeyRule.TaskSecId,
     };
 
     public static readonly MoexSeriesSpec OrderStatsStock = new()
@@ -378,7 +374,6 @@ public static class MoexSeriesRegistry
         ],
         TokenPrefix = "orderstats:5m:stock",
         Pagination = PaginationKind.Cursor,
-        RequestKey = RequestKeyRule.TaskSecId,
     };
 
     public static readonly MoexSeriesSpec Hi2Stock = new()
@@ -412,7 +407,6 @@ public static class MoexSeriesRegistry
         ],
         TokenPrefix = "hi2:1d:stock",
         Pagination = PaginationKind.Cursor,
-        RequestKey = RequestKeyRule.TaskSecId,
     };
 
     public static readonly MoexSeriesSpec Hi2Futures = new()
@@ -448,7 +442,6 @@ public static class MoexSeriesRegistry
         ],
         TokenPrefix = "hi2:1d:futures",
         Pagination = PaginationKind.Cursor,
-        RequestKey = RequestKeyRule.TaskSecId,
     };
 
     public static readonly MoexSeriesSpec MegaAlertsStock = new()
@@ -484,7 +477,6 @@ public static class MoexSeriesRegistry
         ],
         TokenPrefix = "megaalerts:event:stock",
         Pagination = PaginationKind.Cursor,
-        RequestKey = RequestKeyRule.TaskSecId,
     };
 
     public static readonly MoexSeriesSpec MegaAlertsFutures = new()
@@ -522,7 +514,6 @@ public static class MoexSeriesRegistry
         ],
         TokenPrefix = "megaalerts:event:futures",
         Pagination = PaginationKind.Cursor,
-        RequestKey = RequestKeyRule.TaskSecId,
     };
 
     public static readonly MoexSeriesSpec Futoi = new()
@@ -568,6 +559,5 @@ public static class MoexSeriesRegistry
         ],
         TokenPrefix = "futoi:5m:futures",
         Pagination = PaginationKind.DaySplit,
-        RequestKey = RequestKeyRule.FuturesSeriesCode,
     };
 }
