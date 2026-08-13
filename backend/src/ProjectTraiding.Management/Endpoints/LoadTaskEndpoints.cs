@@ -25,6 +25,7 @@ namespace ProjectTraiding.Management.Endpoints
             routes.MapPost("/management/load-tasks", async (
                 LoadTaskCreateRequest request,
                 LoadTaskWriter writer,
+                FutoiSubjectReader subjectReader,
                 ILogger<LoadTaskEndpointsLog> logger,
                 CancellationToken ct) =>
             {
@@ -39,9 +40,31 @@ namespace ProjectTraiding.Management.Endpoints
                     return Results.BadRequest(errors);
                 }
 
+                // Открытый интерес принадлежит серии. Подстановка делается здесь, при
+                // создании задачи: тогда и задача, и покрытие, и строки в ClickHouse
+                // говорят одним кодом, и повторная загрузка отсекается по покрытию.
+                LoadTaskCreateRequest effectiveRequest = request;
+                if (request.DataKind == "futoi")
+                {
+                    string[] requested = new string[1];
+                    requested[0] = request.Secid;
+
+                    Dictionary<string, string> subjects = await subjectReader.ResolveAsync(requested, ct);
+                    if (!subjects.TryGetValue(request.Secid, out string? subject))
+                    {
+                        string message =
+                            $"открытый интерес публикуется по серии срочных контрактов; " +
+                            $"у инструмента {request.Secid} код серии не заполнен";
+                        ManagementEndpointLogMessages.ValidationRejected(logger, route, message);
+                        return Results.BadRequest(message);
+                    }
+
+                    effectiveRequest = request with { Secid = subject };
+                }
+
                 try
                 {
-                    Guid? taskId = await writer.CreateAsync(request, ct);
+                    Guid? taskId = await writer.CreateAsync(effectiveRequest, ct);
                     if (taskId is null)
                     {
                         ManagementEndpointLogMessages.WriteBlockedByDeletion(
@@ -75,6 +98,7 @@ namespace ProjectTraiding.Management.Endpoints
             routes.MapPost("/management/load-tasks/bulk", async (
                 LoadTaskBulkCreateRequest request,
                 LoadTaskWriter writer,
+                FutoiSubjectReader subjectReader,
                 LoadedRangeCoverageReader coverageReader,
                 ILogger<LoadTaskEndpointsLog> logger,
                 CancellationToken ct) =>
@@ -116,6 +140,28 @@ namespace ProjectTraiding.Management.Endpoints
                 DateOnly lastMatureDate =
                     DateOnly.FromDateTime(DateTime.UtcNow + TimeSpan.FromHours(3)).AddDays(-1);
 
+                int futuresInstrumentCount = 0;
+                for (int i = 0; i < request.Instruments.Count; i++)
+                {
+                    if (request.Instruments[i].Market == "futures")
+                        futuresInstrumentCount++;
+                }
+
+                string[] futuresSecids = new string[futuresInstrumentCount];
+                int futuresSecidIndex = 0;
+                for (int i = 0; i < request.Instruments.Count; i++)
+                {
+                    LoadTaskBulkInstrumentRequest instrument = request.Instruments[i];
+                    if (instrument.Market != "futures")
+                        continue;
+
+                    futuresSecids[futuresSecidIndex] = instrument.Secid;
+                    futuresSecidIndex++;
+                }
+
+                Dictionary<string, string> subjects =
+                    await subjectReader.ResolveAsync(futuresSecids, ct);
+
                 List<LoadTaskCreateRequest> tasks = new();
                 for (int instrumentIndex = 0; instrumentIndex < request.Instruments.Count; instrumentIndex++)
                 {
@@ -148,13 +194,28 @@ namespace ProjectTraiding.Management.Endpoints
 
                     for (int dataKindIndex = 0; dataKindIndex < dataKinds.Length; dataKindIndex++)
                     {
+                        string dataKind = dataKinds[dataKindIndex];
+
+                        LoadTaskBulkInstrumentRequest subjectInstrument = instrument;
+                        if (dataKind == "futoi")
+                        {
+                            if (!subjects.TryGetValue(instrument.Secid, out string? subject))
+                            {
+                                ManagementEndpointLogMessages.BulkFutoiSubjectMissing(
+                                    logger, route, instrument.Secid);
+                                continue;
+                            }
+
+                            subjectInstrument = instrument with { Secid = subject };
+                        }
+
                         await AddMissingWindowsAsync(
                             tasks,
                             coverageReader,
                             logger,
                             route,
-                            instrument,
-                            dataKind: dataKinds[dataKindIndex],
+                            subjectInstrument,
+                            dataKind: dataKind,
                             candleInterval: null,
                             storageTarget: request.StorageTarget,
                             requestedSliceWeeks: request.SliceWeeks,

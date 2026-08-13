@@ -64,5 +64,10 @@ namespace ProjectTraiding.Management.Endpoints
             Message = "Management write blocked by active deletion: route={Route}, secid={Secid}.")]
         public static partial void WriteBlockedByDeletion(
             ILogger logger, string route, string secid);
+
+        [LoggerMessage(EventId = 217, EventName = "MgmtBulkFutoiSubjectMissing",
+            Level = LogLevel.Warning,
+            Message = "Bulk load tasks: futoi skipped, no series subject: route={Route}, secid={Secid}.")]
+        public static partial void BulkFutoiSubjectMissing(ILogger logger, string route, string secid);
     }
 }
