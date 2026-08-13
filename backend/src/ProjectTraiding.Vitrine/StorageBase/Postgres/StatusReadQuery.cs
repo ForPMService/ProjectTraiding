@@ -31,7 +31,8 @@ namespace ProjectTraiding.Vitrine.StorageBase.Postgres
                 await using NpgsqlCommand cmd = new NpgsqlCommand("""
                     SELECT
                         CURRENT_DATE AS as_of_date,
-                        (SELECT count(*) FROM moex_instruments)                                  AS instruments_total,
+                        (SELECT count(*) FROM moex_instruments
+                            WHERE instrument_type <> 'futures_series')                           AS instruments_total,
                         (SELECT count(*) FROM moex_instruments WHERE instrument_type = 'stock')  AS instruments_stock,
                         (SELECT count(*) FROM moex_instruments WHERE instrument_type = 'futures') AS instruments_futures,
                         (SELECT is_traded = 1 FROM moex_calendar_days

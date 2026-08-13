@@ -29,8 +29,11 @@ namespace ProjectTraiding.Vitrine.StorageBase.Postgres
             {
                 await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
                 await using NpgsqlCommand cmd = new NpgsqlCommand("""
+                    -- Серии срочных контрактов — внутренний субъект открытого интереса,
+                    -- а не торгуемый инструмент: в каталоге им не место.
                     SELECT secid, instrument_type, asset_code, shortname, secname
                     FROM moex_instruments
+                    WHERE instrument_type <> 'futures_series'
                     ORDER BY secid
                     """, connection);
 

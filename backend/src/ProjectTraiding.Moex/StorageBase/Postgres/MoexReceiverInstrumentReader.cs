@@ -43,6 +43,8 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 FROM moex_realtime_subscriptions s
                 JOIN moex_instruments i ON i.secid = s.secid
                 WHERE s.data_kind = @data_kind AND s.enabled
+                  -- Серия не торгуется: приёмник не знает для неё кода площадки.
+                  AND i.instrument_type <> 'futures_series'
                   AND NOT EXISTS (
                       SELECT 1 FROM moex_instrument_data_deletions d
                       WHERE d.secid = s.secid AND d.status = 'started'
