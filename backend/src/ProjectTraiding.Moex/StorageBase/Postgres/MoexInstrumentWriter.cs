@@ -140,6 +140,9 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             string currentKey = "?";
             int processedCount = 0;
 
+            // Серии срочных контрактов из этой партии: код серии -> код базового актива.
+            Dictionary<string, string?> seriesByCode = new(StringComparer.Ordinal);
+
             try
             {
                 foreach (FuturesInstrumentCardDTO future in futures)
@@ -225,7 +228,43 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
 
                     await detailsCommand.ExecuteNonQueryAsync(ct);
 
+                    // Бессрочный фьючерс серии не имеет: открытый интерес по нему источник
+                    // отдаёт по собственному коду, а по коду серии возвращает пустой набор.
+                    if (!string.IsNullOrWhiteSpace(future.SecType)
+                        && !IsPerpetual(future.LastTradeDate))
+                    {
+                        seriesByCode[future.SecType] = future.AssetCode;
+                    }
+
                     processedCount++;
+                }
+
+                // ── UPSERT 3: строки серий ──
+                // Условие в ON CONFLICT защищает настоящий инструмент от затирания, если
+                // код серии когда-либо совпадёт с кодом контракта.
+                foreach (KeyValuePair<string, string?> series in seriesByCode)
+                {
+                    currentKey = series.Key;
+
+                    await using NpgsqlCommand seriesCommand = new NpgsqlCommand("""
+                        INSERT INTO moex_instruments
+                            (secid, instrument_type, asset_code, shortname, secname, updated_at)
+                        VALUES
+                            (@secid, 'futures_series', @asset_code, @secid, @secname, now())
+                        ON CONFLICT (secid) DO UPDATE SET
+                            asset_code = EXCLUDED.asset_code,
+                            secname    = EXCLUDED.secname,
+                            updated_at = now()
+                        WHERE moex_instruments.instrument_type = 'futures_series'
+                        """, connection, transaction);
+
+                    seriesCommand.Parameters.Add("@secid", NpgsqlDbType.Text).Value = series.Key;
+                    seriesCommand.Parameters.Add("@asset_code", NpgsqlDbType.Text).Value =
+                        (object?)series.Value ?? DBNull.Value;
+                    seriesCommand.Parameters.Add("@secname", NpgsqlDbType.Text).Value =
+                        "Серия срочных контрактов " + series.Key;
+
+                    await seriesCommand.ExecuteNonQueryAsync(ct);
                 }
 
                 await transaction.CommitAsync(ct);
@@ -239,6 +278,19 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 await transaction.RollbackAsync(CancellationToken.None);
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Бессрочный фьючерс: дата последнего торгового дня не наступает.
+        /// Биржа обозначает это условным значением 2100-01-01.
+        /// </summary>
+        private static bool IsPerpetual(string? lastTradeDate)
+        {
+            if (string.IsNullOrWhiteSpace(lastTradeDate))
+                return false;
+
+            return DateOnly.TryParse(lastTradeDate, out DateOnly parsed)
+                && parsed >= new DateOnly(2100, 1, 1);
         }
 
         private object ParseNullableDateOrDbNull(string? raw, string table, string field, string key)
