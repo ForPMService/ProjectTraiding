@@ -257,6 +257,7 @@ public sealed class MoexSeriesParser
                 FillRule.WallClock => MoexClickHouseTime.AsWallClock(
                     (DateTime?)sourceValues[column.SourceIndex]),
                 FillRule.ExternalSecId => sourceValues[column.SourceIndex],
+                FillRule.Constant => column.Constant,
                 _ => throw new ArgumentOutOfRangeException(
                     nameof(column), column.FillRule, "Неизвестное правило заполнения."),
             };

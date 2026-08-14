@@ -18,12 +18,14 @@ public enum FillRule
     SourceDateTime,
     WallClock,
     ExternalSecId,
+    Constant,
 }
 
 public enum PaginationKind
 {
     Cursor,
     DaySplit,
+    FixedPage,
 }
 
 public readonly record struct SourceColumn(
@@ -38,7 +40,8 @@ public readonly record struct TargetColumn(
     int SourceIndex = -1,
     int SecondSourceIndex = -1,
     bool Required = false,
-    string? RequiredMessage = null);
+    string? RequiredMessage = null,
+    object? Constant = null);
 
 public sealed class MoexSeriesSpec
 {
@@ -52,6 +55,12 @@ public sealed class MoexSeriesSpec
     public required TargetColumn[] TargetColumns { get; init; }
     public required string TokenPrefix { get; init; }
     public required PaginationKind Pagination { get; init; }
+
+    // Код свечного интервала MOEX (1, 10, 60, 24). Заполнен только у свечей;
+    // у остальных видов пуст. Диспетчеризация по нему подключается на коммите
+    // исторической загрузки свечей.
+    public int? CandleInterval { get; init; }
+
     public string BuildColumnsParam()
     {
         string[] names = new string[SourceColumns.Length];

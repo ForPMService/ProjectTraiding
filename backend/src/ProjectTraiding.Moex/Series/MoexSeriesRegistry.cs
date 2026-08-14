@@ -560,4 +560,88 @@ public static class MoexSeriesRegistry
         TokenPrefix = "futoi:5m:futures",
         Pagination = PaginationKind.DaySplit,
     };
+
+    // ═══════════════════════════════════════════════════════════
+    // Свечи. Форма одна на оба рынка и все интервалы; различаются
+    // шаблон адреса (рынок), таблица и префикс токена (интервал).
+    // Адрес двухместный: {0} — код инструмента, {1} — доска из задачи;
+    // регистр доски (строчные у акций, прописные у фьючерсов) применяет
+    // загрузчик по рынку декларации. Приоритет вставки 1 — исторический
+    // тракт, перекрывающий строки приёмника (у него 0) при слиянии
+    // ReplacingMergeTree.
+    // ═══════════════════════════════════════════════════════════
+
+    private static readonly SourceColumn[] CandlesSourceColumns =
+    [
+        new(0, "open"u8.ToArray(), ColumnKind.Double),
+        new(1, "close"u8.ToArray(), ColumnKind.Double),
+        new(2, "high"u8.ToArray(), ColumnKind.Double),
+        new(3, "low"u8.ToArray(), ColumnKind.Double),
+        new(4, "value"u8.ToArray(), ColumnKind.Double),
+        new(5, "volume"u8.ToArray(), ColumnKind.Double),
+        new(6, "begin"u8.ToArray(), ColumnKind.DateTime),
+        new(7, "end"u8.ToArray(), ColumnKind.DateTime),
+    ];
+
+    private static readonly TargetColumn[] CandlesTargetColumns =
+    [
+        new("secid", "LowCardinality(String)", FillRule.TaskSecId, Required: true,
+            RequiredMessage: "Загрузка свечей отвергнута: secid пустой."),
+        new("open", "Nullable(Float64)", FillRule.Direct, 0),
+        new("close", "Nullable(Float64)", FillRule.Direct, 1),
+        new("high", "Nullable(Float64)", FillRule.Direct, 2),
+        new("low", "Nullable(Float64)", FillRule.Direct, 3),
+        new("value", "Nullable(Float64)", FillRule.Direct, 4),
+        new("volume", "Nullable(Float64)", FillRule.Direct, 5),
+        new("begin", "DateTime64(3, 'Europe/Moscow')", FillRule.WallClock, 6, Required: true,
+            RequiredMessage: "Свеча отвергнута: begin пустой."),
+        new("end", "Nullable(DateTime64(3, 'Europe/Moscow'))", FillRule.WallClock, 7),
+        new("ingest_priority", "UInt8", FillRule.Constant, Constant: (byte)1),
+    ];
+
+    private static MoexSeriesSpec Candles(
+        string market, string methodTemplate, int interval, string table, string tokenPrefix) => new()
+    {
+        DataKind = "candles",
+        Market = market,
+        TelemetryDataKind = "candles",
+        MethodTemplate = methodTemplate,
+        RootKey = "candles",
+        SourceColumns = CandlesSourceColumns,
+        Table = table,
+        TargetColumns = CandlesTargetColumns,
+        TokenPrefix = tokenPrefix,
+        Pagination = PaginationKind.FixedPage,
+        CandleInterval = interval,
+    };
+
+    private const string CandlesStockTemplate =
+        "/engines/stock/markets/shares/boards/{1}/securities/{0}/candles.json";
+
+    private const string CandlesFuturesTemplate =
+        "/engines/futures/markets/forts/boards/{1}/securities/{0}/candles.json";
+
+    public static readonly MoexSeriesSpec CandlesStock1m =
+        Candles("stock", CandlesStockTemplate, 1, "moex_candles_1m", "candles:1m");
+
+    public static readonly MoexSeriesSpec CandlesStock10m =
+        Candles("stock", CandlesStockTemplate, 10, "moex_candles_10m", "candles:10m");
+
+    public static readonly MoexSeriesSpec CandlesStock1h =
+        Candles("stock", CandlesStockTemplate, 60, "moex_candles_1h", "candles:1h");
+
+    public static readonly MoexSeriesSpec CandlesStock1d =
+        Candles("stock", CandlesStockTemplate, 24, "moex_candles_1d", "candles:1d");
+
+    public static readonly MoexSeriesSpec CandlesFutures1m =
+        Candles("futures", CandlesFuturesTemplate, 1, "moex_candles_1m", "candles:1m");
+
+    public static readonly MoexSeriesSpec CandlesFutures10m =
+        Candles("futures", CandlesFuturesTemplate, 10, "moex_candles_10m", "candles:10m");
+
+    public static readonly MoexSeriesSpec CandlesFutures1h =
+        Candles("futures", CandlesFuturesTemplate, 60, "moex_candles_1h", "candles:1h");
+
+    public static readonly MoexSeriesSpec CandlesFutures1d =
+        Candles("futures", CandlesFuturesTemplate, 24, "moex_candles_1d", "candles:1d");
 }
