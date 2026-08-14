@@ -54,11 +54,12 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
                 sp.GetRequiredService<RealtimeOrderbookRowMap>(),
                 sp.GetRequiredService<ILogger<RealtimeRowWriter<RealtimeOrderbookRowDTO>>>()));
 
-            // Свечной писатель приёма: та же карта, что у истории, но приоритет 0 —
-            // историческая загрузка (приоритет 1) перекрывает при слиянии по ключу (secid, begin).
+            // Свечной писатель приёма: форма — из декларации минутных свечей,
+            // приоритет 0 — историческая загрузка (приоритет 1) перекрывает при
+            // слиянии по ключу (secid, begin).
             services.AddTransient(sp => new RealtimeRowWriter<CandlesDTO>(
                 sp.GetRequiredService<ClickHouseInsertExecutor>(),
-                new CandlesRowMap("moex_candles_1m", "candles:1m", ingestPriority: 0),
+                new RealtimeCandlesRowMap(),
                 sp.GetRequiredService<ILogger<RealtimeRowWriter<CandlesDTO>>>()));
 
             services.AddHostedService(sp =>
