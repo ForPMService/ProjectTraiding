@@ -33,8 +33,7 @@ public sealed class MoexHistoryPageReader
 
     public async IAsyncEnumerable<List<(object?[] Row, DateTime Time)>> ReadPages(
         MoexSeriesSpec spec,
-        string taskSecId,
-        string requestKey,
+        string secId,
         DateOnly from,
         DateOnly till,
         LoadStopOutcome stopOutcome,
@@ -45,8 +44,7 @@ public sealed class MoexHistoryPageReader
         {
             await foreach (List<(object?[] Row, DateTime Time)> page in ReadCursorPages(
                                spec,
-                               taskSecId,
-                               requestKey,
+                               secId,
                                from,
                                till,
                                stopOutcome,
@@ -61,8 +59,7 @@ public sealed class MoexHistoryPageReader
 
         await foreach (List<(object?[] Row, DateTime Time)> page in ReadDaySplitPages(
                            spec,
-                           taskSecId,
-                           requestKey,
+                           secId,
                            from,
                            till,
                            stopOutcome,
@@ -75,8 +72,7 @@ public sealed class MoexHistoryPageReader
 
     private async IAsyncEnumerable<List<(object?[] Row, DateTime Time)>> ReadCursorPages(
         MoexSeriesSpec spec,
-        string taskSecId,
-        string requestKey,
+        string secId,
         DateOnly from,
         DateOnly till,
         LoadStopOutcome stopOutcome,
@@ -84,7 +80,7 @@ public sealed class MoexHistoryPageReader
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         string method = string.Format(
-            CultureInfo.InvariantCulture, spec.MethodTemplate, requestKey);
+            CultureInfo.InvariantCulture, spec.MethodTemplate, secId);
         Dictionary<string, string> query = new()
         {
             ["from"] = from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
@@ -125,7 +121,7 @@ public sealed class MoexHistoryPageReader
 
                     try
                     {
-                        rows = _parser.Parse(body.Span, spec, taskSecId, out cursor);
+                        rows = _parser.Parse(body.Span, spec, secId, out cursor);
                     }
                     catch (MoexSchemaMismatchException ex)
                     {
@@ -207,8 +203,7 @@ public sealed class MoexHistoryPageReader
 
     private async IAsyncEnumerable<List<(object?[] Row, DateTime Time)>> ReadDaySplitPages(
         MoexSeriesSpec spec,
-        string taskSecId,
-        string requestKey,
+        string secId,
         DateOnly from,
         DateOnly till,
         LoadStopOutcome stopOutcome,
@@ -216,7 +211,7 @@ public sealed class MoexHistoryPageReader
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         string method = string.Format(
-            CultureInfo.InvariantCulture, spec.MethodTemplate, requestKey);
+            CultureInfo.InvariantCulture, spec.MethodTemplate, secId);
         string fromText = from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         string tillText = till.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         Dictionary<string, string> query = new()
@@ -264,7 +259,7 @@ public sealed class MoexHistoryPageReader
 
                     try
                     {
-                        page = _parser.Parse(body.Span, spec, taskSecId, out _);
+                        page = _parser.Parse(body.Span, spec, secId, out _);
                     }
                     catch (MoexSchemaMismatchException ex)
                     {

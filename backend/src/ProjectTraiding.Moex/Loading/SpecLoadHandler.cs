@@ -56,7 +56,6 @@ public sealed class SpecLoadHandler : ILoadHandler
         IAsyncEnumerable<List<(object?[] Row, DateTime Time)>> pages = _reader.ReadPages(
             spec,
             task.Secid,
-            task.Secid,
             task.DateFrom,
             task.DateTill,
             stopOutcome,
