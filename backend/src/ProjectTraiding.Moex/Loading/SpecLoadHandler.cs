@@ -7,7 +7,7 @@ using ProjectTraiding.Moex.StorageBase.Postgres;
 
 namespace ProjectTraiding.Moex.Loading;
 
-public sealed class SpecLoadHandler : ILoadHandler
+public sealed class SpecLoadHandler
 {
     private static readonly MoexSeriesSpec[] MigratedSpecs =
     [
@@ -40,8 +40,6 @@ public sealed class SpecLoadHandler : ILoadHandler
         _writer = writer;
     }
 
-    public bool CanHandle(MoexLoadTask task) => FindSpec(task) is not null;
-
     public async Task<RowWriteSummary> LoadAsync(
         MoexLoadTask task,
         LoadStopOutcome stopOutcome,
@@ -49,7 +47,7 @@ public sealed class SpecLoadHandler : ILoadHandler
     {
         MoexSeriesSpec spec = FindSpec(task)
             ?? throw new InvalidOperationException(
-                $"Для {task.DataKind}/{task.Market} нет переведённой декларации.");
+                $"Нет обработчика для задачи {task.Id} (data_kind={task.DataKind}, market={task.Market}, interval={task.CandleInterval}).");
 
         string operation = spec.Pagination switch
         {

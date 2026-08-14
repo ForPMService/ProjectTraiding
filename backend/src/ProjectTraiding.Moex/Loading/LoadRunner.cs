@@ -30,7 +30,7 @@ namespace ProjectTraiding.Moex.Loading
         private readonly MoexLoadTaskReader _taskReader;
         private readonly MoexLoadTaskWriter _taskWriter;
         private readonly MoexLoadedRangeWriter _rangeWriter;
-        private readonly LoadHandlerDispatcher _dispatcher;
+        private readonly SpecLoadHandler _loader;
         private readonly ProjectTraiding.Moex.StorageBase.Redis.LoadedRangeEventPublisher _rangeEventPublisher;
         private readonly ILogger<LoadRunner> _logger;
 
@@ -38,14 +38,14 @@ namespace ProjectTraiding.Moex.Loading
             MoexLoadTaskReader taskReader,
             MoexLoadTaskWriter taskWriter,
             MoexLoadedRangeWriter rangeWriter,
-            LoadHandlerDispatcher dispatcher,
+            SpecLoadHandler loader,
             ProjectTraiding.Moex.StorageBase.Redis.LoadedRangeEventPublisher rangeEventPublisher,
             ILogger<LoadRunner> logger)
         {
             _taskReader = taskReader;
             _taskWriter = taskWriter;
             _rangeWriter = rangeWriter;
-            _dispatcher = dispatcher;
+            _loader = loader;
             _rangeEventPublisher = rangeEventPublisher;
             _logger = logger;
         }
@@ -137,11 +137,6 @@ namespace ProjectTraiding.Moex.Loading
                     throw new InvalidOperationException(
                         $"Задача {taskId} не нацелена на ClickHouse (storage_target={task.StorageTarget}).");
 
-                ILoadHandler? handler = _dispatcher.Resolve(task);
-                if (handler is null)
-                    throw new InvalidOperationException(
-                        $"Нет обработчика для задачи {taskId} (data_kind={task.DataKind}, market={task.Market}, interval={task.CandleInterval}).");
-
                 LoadStopOutcome stopOutcome = new LoadStopOutcome();
 
                 using CancellationTokenSource operatorCts = new CancellationTokenSource();
@@ -154,7 +149,7 @@ namespace ProjectTraiding.Moex.Loading
                 RowWriteSummary summary;
                 try
                 {
-                    summary = await handler.LoadAsync(task, stopOutcome, linkedCts.Token);
+                    summary = await _loader.LoadAsync(task, stopOutcome, linkedCts.Token);
                 }
                 finally
                 {

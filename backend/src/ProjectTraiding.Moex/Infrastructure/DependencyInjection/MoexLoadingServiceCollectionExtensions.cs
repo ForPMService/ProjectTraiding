@@ -12,8 +12,8 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
 {
     /// <summary>
     /// Регистрация всего контура исторической загрузки: исполнитель вставки, писатели по видам
-    /// и карты столбцов, обработчики видов, читатель и писатели задач, диспетчер, координатор
-    /// и фоновый исполнитель. Вынесено из точки входа,
+    /// и карты столбцов, читатель и писатели задач, координатор и фоновый исполнитель.
+    /// Вынесено из точки входа,
     /// чтобы та оставалась тонкой. Размер пачки берётся из настроек (ClickHouse:CandlesBatchSize).
     /// </summary>
     public static class MoexLoadingServiceCollectionExtensions
@@ -32,14 +32,13 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
                 sp.GetRequiredService<ILogger<MoexHistoryWriter>>(),
                 batchSize));
 
-            services.AddScoped<ILoadHandler, SpecLoadHandler>();
+            services.AddScoped<SpecLoadHandler>();
 
             // Читатель и писатели задач, диспетчер и координатор.
             services.AddTransient<MoexLoadTaskReader>();
             services.AddTransient<MoexLoadTaskWriter>();
             services.AddTransient<MoexLoadedRangeWriter>();
             services.AddSingleton<ProjectTraiding.Moex.StorageBase.Redis.LoadedRangeEventPublisher>();
-            services.AddScoped<LoadHandlerDispatcher>();
             services.AddScoped<LoadRunner>();
 
             // Фоновый исполнитель: интервал опроса и число дорожек — из настроек.
