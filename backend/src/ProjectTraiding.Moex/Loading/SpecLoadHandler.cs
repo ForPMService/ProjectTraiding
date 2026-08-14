@@ -21,6 +21,14 @@ public sealed class SpecLoadHandler : ILoadHandler
         MoexSeriesRegistry.MegaAlertsStock,
         MoexSeriesRegistry.MegaAlertsFutures,
         MoexSeriesRegistry.Futoi,
+        MoexSeriesRegistry.CandlesStock1m,
+        MoexSeriesRegistry.CandlesStock10m,
+        MoexSeriesRegistry.CandlesStock1h,
+        MoexSeriesRegistry.CandlesStock1d,
+        MoexSeriesRegistry.CandlesFutures1m,
+        MoexSeriesRegistry.CandlesFutures10m,
+        MoexSeriesRegistry.CandlesFutures1h,
+        MoexSeriesRegistry.CandlesFutures1d,
     ];
 
     private readonly MoexHistoryPageReader _reader;
@@ -43,9 +51,12 @@ public sealed class SpecLoadHandler : ILoadHandler
             ?? throw new InvalidOperationException(
                 $"Для {task.DataKind}/{task.Market} нет переведённой декларации.");
 
-        string operation = spec.Pagination == PaginationKind.DaySplit
-            ? MoexOperations.HistoryFutoiFetch
-            : MoexOperations.HistoryCursorFetch;
+        string operation = spec.Pagination switch
+        {
+            PaginationKind.DaySplit => MoexOperations.HistoryFutoiFetch,
+            PaginationKind.FixedPage => MoexOperations.HistoryCandlesFetch,
+            _ => MoexOperations.HistoryCursorFetch,
+        };
         MoexOperationTags operationTags = new(
             MoexLogSources.Algopack,
             operation,
@@ -83,7 +94,9 @@ public sealed class SpecLoadHandler : ILoadHandler
         for (int i = 0; i < MigratedSpecs.Length; i++)
         {
             MoexSeriesSpec spec = MigratedSpecs[i];
-            if (task.DataKind == spec.DataKind && task.Market == spec.Market)
+            if (task.DataKind == spec.DataKind
+                && task.Market == spec.Market
+                && task.CandleInterval == spec.CandleInterval)
                 return spec;
         }
 
