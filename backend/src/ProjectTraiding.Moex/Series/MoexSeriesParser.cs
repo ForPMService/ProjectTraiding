@@ -268,6 +268,10 @@ public sealed class MoexSeriesParser
             row[i] = value;
             if (column.FillRule == FillRule.SourceDateTime)
                 sourceTime = (DateTime)value!;
+            else if (column.FillRule == FillRule.WallClock
+                     && column.Required
+                     && value is DateTime wallClockTime)
+                sourceTime = wallClockTime;
         }
 
         // Карты проверяли собственные обязательные поля после source_time:

@@ -34,6 +34,7 @@ public sealed class MoexHistoryPageReader
     public async IAsyncEnumerable<List<(object?[] Row, DateTime Time)>> ReadPages(
         MoexSeriesSpec spec,
         string secId,
+        string boardId,
         DateOnly from,
         DateOnly till,
         LoadStopOutcome stopOutcome,
@@ -45,6 +46,24 @@ public sealed class MoexHistoryPageReader
             await foreach (List<(object?[] Row, DateTime Time)> page in ReadCursorPages(
                                spec,
                                secId,
+                               from,
+                               till,
+                               stopOutcome,
+                               operationTags,
+                               cancellationToken))
+            {
+                yield return page;
+            }
+
+            yield break;
+        }
+
+        if (spec.Pagination == PaginationKind.FixedPage)
+        {
+            await foreach (List<(object?[] Row, DateTime Time)> page in ReadFixedPages(
+                               spec,
+                               secId,
+                               boardId,
                                from,
                                till,
                                stopOutcome,
@@ -198,6 +217,152 @@ public sealed class MoexHistoryPageReader
             }
 
             query["start"] = step.NextStart.ToString();
+        }
+    }
+
+    private async IAsyncEnumerable<List<(object?[] Row, DateTime Time)>> ReadFixedPages(
+        MoexSeriesSpec spec,
+        string secId,
+        string boardId,
+        DateOnly from,
+        DateOnly till,
+        LoadStopOutcome stopOutcome,
+        MoexOperationTags operationTags,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        // Постраничное чтение с фиксированным размером. Форма запроса и правило
+        // остановки перенесены дословно из прежнего GetCandles: страница 500 строк,
+        // сдвиг start, остановка на неполной странице. Параметр data.columns свечной
+        // запрос не шлёт — форма запроса к бирже неизменна. Регистр доски в адресе
+        // разный: у акций строчными, у фьючерсов прописными — форма, проверенная
+        // диагностикой.
+        if (spec.CandleInterval is not int candleInterval)
+            throw new InvalidOperationException(
+                $"Декларация {spec.DataKind}/{spec.Market} с постраничной пагинацией без интервала.");
+
+        string board = spec.Market == "stock"
+            ? boardId.ToLowerInvariant()
+            : boardId.ToUpperInvariant();
+        string method = string.Format(
+            CultureInfo.InvariantCulture, spec.MethodTemplate, secId, board);
+        Dictionary<string, string> query = new()
+        {
+            ["from"] = from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            ["till"] = till.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            ["interval"] = candleInterval.ToString(CultureInfo.InvariantCulture),
+            ["iss.meta"] = "off",
+            ["iss.only"] = spec.RootKey,
+        };
+
+        const int FixedPageSize = 500;
+        int queryStart = 0;
+        int pagesElapsed = 0;
+        int totalRows = 0;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            long pageStart = Stopwatch.GetTimestamp();
+
+            List<(object?[] Row, DateTime Time)> rows;
+            using (Activity? pageActivity =
+                   MoexTelemetry.ActivitySource.StartActivity("moex.history.fetch"))
+            {
+                pageActivity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
+                pageActivity?.SetTag(MoexTelemetryAttributes.DataKind, spec.TelemetryDataKind);
+                pageActivity?.SetTag(MoexTelemetryAttributes.Market, spec.Market);
+
+                try
+                {
+                    using HttpResponseMessage response = await _client.SendRequestAsync(
+                        method, query, cancellationToken);
+                    int contentLength =
+                        (int)(response.Content.Headers.ContentLength ?? 1_048_576);
+                    using RentedBuffer body = await RentedBuffer.RentFromStreamAsync(
+                        await response.Content.ReadAsStreamAsync(cancellationToken),
+                        contentLength,
+                        _options.BodyReadTimeout,
+                        method,
+                        cancellationToken);
+
+                    try
+                    {
+                        rows = _parser.Parse(body.Span, spec, secId, out _);
+                    }
+                    catch (MoexSchemaMismatchException ex)
+                    {
+                        MoexLogMessages.ParseFailed(
+                            _logger, ex, method, MoexErrorTypes.SchemaMismatch, ex.Message);
+                        throw;
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    pageActivity?.SetStatus(ActivityStatusCode.Ok);
+                    MoexMetrics.RecordOperationCancelled(
+                        in operationTags,
+                        Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    pageActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                    MoexMetrics.RecordOperationError(
+                        in operationTags,
+                        ex,
+                        Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
+                    throw;
+                }
+
+                pagesElapsed++;
+                totalRows += rows.Count;
+                MoexLogMessages.PageReceived(
+                    _logger,
+                    method,
+                    pagesElapsed,
+                    rows.Count,
+                    Stopwatch.GetElapsedTime(pageStart));
+
+                MoexMetrics.PagesReceived.Add(
+                    1,
+                    new KeyValuePair<string, object?>(
+                        MoexTelemetryAttributes.Source, operationTags.Source),
+                    new KeyValuePair<string, object?>(
+                        MoexTelemetryAttributes.DataKind, operationTags.DataKind),
+                    new KeyValuePair<string, object?>(
+                        MoexTelemetryAttributes.Market, operationTags.Market));
+
+                MoexMetrics.RowsReceived.Add(
+                    rows.Count,
+                    new KeyValuePair<string, object?>(
+                        MoexTelemetryAttributes.Source, operationTags.Source),
+                    new KeyValuePair<string, object?>(
+                        MoexTelemetryAttributes.DataKind, operationTags.DataKind),
+                    new KeyValuePair<string, object?>(
+                        MoexTelemetryAttributes.Market, operationTags.Market),
+                    new KeyValuePair<string, object?>(
+                        MoexTelemetryAttributes.Flow, operationTags.Flow));
+
+                MoexMetrics.RecordOperationSuccess(
+                    in operationTags,
+                    Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
+                pageActivity?.SetStatus(ActivityStatusCode.Ok);
+            }
+
+            yield return rows;
+
+            if (rows.Count >= FixedPageSize)
+            {
+                queryStart += FixedPageSize;
+                query["start"] = queryStart.ToString();
+            }
+            else
+            {
+                MoexLogMessages.FixedPagePaginationStopped(
+                    _logger, method, "last_page_incomplete",
+                    pagesElapsed, totalRows, rows.Count, FixedPageSize);
+                stopOutcome.Complete("range_exhausted", isPartial: false);
+                break;
+            }
         }
     }
 
