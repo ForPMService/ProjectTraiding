@@ -1,6 +1,5 @@
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Dto.Algopack;
-using ProjectTraiding.Diagnostics.Contracts;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Series;
 using System.Text.Json.Serialization.Metadata;
@@ -38,8 +37,6 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 return await ExecuteRawAsync("candles", "stock", ticker, client, method, queryParams, ct);
             });
 
-            diagnosticsGroup.MapGet("/parsed/market/stock/candles/{ticker}", GetParsedStockCandlesAsync);
-
             diagnosticsGroup.MapGet("/raw/market/futures/candles/{ticker}", async (
                 string ticker,
                 string? from,
@@ -58,8 +55,6 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 Dictionary<string, string> queryParams = CreateRawCandlesQuery(from!, till!, interval ?? 1);
                 return await ExecuteRawAsync("candles", "futures", ticker, client, method, queryParams, ct);
             });
-
-            diagnosticsGroup.MapGet("/parsed/market/futures/candles/{ticker}", GetParsedFuturesCandlesAsync);
 
             // Колонки сырых точек курсорных видов берутся из декларации реестра.
             diagnosticsGroup.MapGet("/raw/market/stock/tradestats/{ticker}", async (
@@ -245,68 +240,6 @@ namespace ProjectTraiding.Diagnostics.Endpoints
             return routes;
         }
 
-        private static Task<IResult> GetParsedStockCandlesAsync(
-            string ticker,
-            string? from,
-            string? till,
-            int? interval,
-            MoexHttpAlgClient client,
-            CancellationToken ct)
-        {
-            string? validationMessage = ValidateRangeRequest(ticker, from, till);
-            if (validationMessage is not null)
-            {
-                return Task.FromResult(CreateDiagnosticError(400, "candles", "stock", ticker, validationMessage));
-            }
-
-            string method = $"/engines/stock/markets/shares/boards/tqbr/securities/{ticker}/candles.json";
-            int effectiveInterval = interval ?? 1;
-            return ExecuteParsedAsync(
-                "candles",
-                "stock",
-                ticker,
-                cancellationToken => CollectAsync(
-                    client.GetCandles(
-                        method,
-                        CreateParsedCandlesQuery(from!, till!, effectiveInterval),
-                        telemetryMarket: MoexMarkets.Stock,
-                        cancellationToken: cancellationToken),
-                    cancellationToken),
-                DiagnosticsJsonContext.Default.ListCandlesDTO,
-                ct);
-        }
-
-        private static Task<IResult> GetParsedFuturesCandlesAsync(
-            string ticker,
-            string? from,
-            string? till,
-            int? interval,
-            MoexHttpAlgClient client,
-            CancellationToken ct)
-        {
-            string? validationMessage = ValidateRangeRequest(ticker, from, till);
-            if (validationMessage is not null)
-            {
-                return Task.FromResult(CreateDiagnosticError(400, "candles", "futures", ticker, validationMessage));
-            }
-
-            string method = $"/engines/futures/markets/forts/boards/RFUD/securities/{ticker}/candles.json";
-            int effectiveInterval = interval ?? 1;
-            return ExecuteParsedAsync(
-                "candles",
-                "futures",
-                ticker,
-                cancellationToken => CollectAsync(
-                    client.GetCandles(
-                        method,
-                        CreateParsedCandlesQuery(from!, till!, effectiveInterval),
-                        telemetryMarket: MoexMarkets.Futures,
-                        cancellationToken: cancellationToken),
-                    cancellationToken),
-                DiagnosticsJsonContext.Default.ListCandlesDTO,
-                ct);
-        }
-
         private static async Task<IResult> ExecuteRawAsync(
             string kind,
             string market,
@@ -325,49 +258,6 @@ namespace ProjectTraiding.Diagnostics.Endpoints
             {
                 return CreateDiagnosticError(500, kind, market, ticker, ex.Message);
             }
-        }
-
-        private static async Task<IResult> ExecuteParsedAsync<T>(
-            string kind,
-            string market,
-            string ticker,
-            Func<CancellationToken, Task<List<T>>> loader,
-            JsonTypeInfo<List<T>> typeInfo,
-            CancellationToken ct)
-        {
-            try
-            {
-                List<T> items = await loader(ct);
-                return Results.Json(items, typeInfo);
-            }
-            catch (Exception ex)
-            {
-                return CreateDiagnosticError(500, kind, market, ticker, ex.Message);
-            }
-        }
-
-        private static async Task<List<T>> CollectAsync<T>(
-            IAsyncEnumerable<List<T>> pages,
-            CancellationToken ct)
-        {
-            List<T> items = new List<T>();
-
-            await foreach (List<T> page in pages.WithCancellation(ct))
-            {
-                items.AddRange(page);
-            }
-
-            return items;
-        }
-
-        private static Dictionary<string, string> CreateParsedCandlesQuery(string from, string till, int interval)
-        {
-            return new Dictionary<string, string>
-            {
-                ["interval"] = interval.ToString(),
-                ["from"] = from,
-                ["till"] = till
-            };
         }
 
         private static Dictionary<string, string> CreateRawCandlesQuery(string from, string till, int interval)
