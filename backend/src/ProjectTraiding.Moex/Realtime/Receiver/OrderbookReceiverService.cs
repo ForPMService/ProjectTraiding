@@ -17,7 +17,9 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
     /// </summary>
     public sealed class OrderbookReceiverService : RealtimeReceiverServiceBase<ReceiverInstrumentSessionState>
     {
-        private const string DataKind = "orderbook";
+        protected override string DataKind => "orderbook";
+
+        protected override TimeSpan StalePollThreshold => _stalePollThreshold;
 
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<OrderbookReceiverService> _logger;
@@ -404,71 +406,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
             await ReceiverSessionHeartbeat.WriteIfDueAsync(
                 state, _heartbeatMinInterval, coverageWriter, commitCt);
-        }
-
-        private void PublishTelemetrySnapshots()
-        {
-            DateTimeOffset now = DateTimeOffset.UtcNow;
-            List<KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot>> snapshots =
-                new List<KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot>>(2);
-
-            AddTelemetrySnapshot(MoexMarkets.Stock, now, snapshots);
-            AddTelemetrySnapshot(MoexMarkets.Futures, now, snapshots);
-
-            RealtimeTelemetryState.ReplaceForDataKind(MoexDataKinds.Orderbook, snapshots);
-        }
-
-        private void AddTelemetrySnapshot(
-            string market,
-            DateTimeOffset now,
-            List<KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot>> snapshots)
-        {
-            DateTimeOffset? lastSuccessfulPollTime = null;
-            DateTimeOffset? lastConfirmedMarketTime = null;
-            long activeInstruments = 0;
-            long staleInstruments = 0;
-
-            foreach (KeyValuePair<string, ReceiverInstrumentSessionState> pair in States)
-            {
-                ReceiverInstrumentSessionState state = pair.Value;
-                if (state.IsStopping || state.Market != market)
-                    continue;
-
-                activeInstruments++;
-
-                DateTimeOffset? successfulPollTime = state.LastSuccessfulPollTime;
-                if (successfulPollTime is null ||
-                    now - successfulPollTime.Value > _stalePollThreshold)
-                {
-                    staleInstruments++;
-                }
-
-                if (successfulPollTime is not null &&
-                    (lastSuccessfulPollTime is null ||
-                     successfulPollTime.Value > lastSuccessfulPollTime.Value))
-                {
-                    lastSuccessfulPollTime = successfulPollTime;
-                }
-
-                DateTimeOffset? confirmedMarketTime = state.LastConfirmedMarketTime;
-                if (confirmedMarketTime is not null &&
-                    (lastConfirmedMarketTime is null ||
-                     confirmedMarketTime.Value > lastConfirmedMarketTime.Value))
-                {
-                    lastConfirmedMarketTime = confirmedMarketTime;
-                }
-            }
-
-            if (activeInstruments == 0)
-                return;
-
-            snapshots.Add(new KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot>(
-                new RealtimeTelemetryKey(MoexDataKinds.Orderbook, market),
-                new RealtimeTelemetrySnapshot(
-                    lastSuccessfulPollTime,
-                    lastConfirmedMarketTime,
-                    activeInstruments,
-                    staleInstruments)));
         }
 
         protected override async Task CloseSessionsAsync()

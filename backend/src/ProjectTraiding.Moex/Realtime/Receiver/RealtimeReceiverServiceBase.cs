@@ -86,6 +86,89 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         protected abstract Task RunTurnAsync(CancellationToken ct);
 
         /// <summary>
+        /// Вид данных приёма: "trades", "orderbook" или "candles". Одно значение служит
+        /// и разрезом телеметрии, и значением столбца в PostgreSQL. Второго поля под
+        /// телеметрическое имя нет намеренно: у видов данных приёма преобразование
+        /// MoexDataKinds.FromTaskDataKind тождественно, особое значение там одно —
+        /// оповещения, а их приём не ведёт. Чем меньше независимых истин, тем меньше
+        /// мест, где они разойдутся.
+        /// </summary>
+        protected abstract string DataKind { get; }
+
+        /// <summary>Порог, после которого инструмент считается отставшим.</summary>
+        protected abstract TimeSpan StalePollThreshold { get; }
+
+        /// <summary>
+        /// Публикует агрегат состояния приёма по обоим рынкам. Вызывается после любого
+        /// исхода оборота: иначе при отказе согласования состояний числа активных
+        /// и отставших инструментов застынут на прежних значениях.
+        /// </summary>
+        protected void PublishTelemetrySnapshots()
+        {
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            List<KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot>> snapshots =
+                new List<KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot>>(2);
+
+            AddTelemetrySnapshot(MoexMarkets.Stock, now, snapshots);
+            AddTelemetrySnapshot(MoexMarkets.Futures, now, snapshots);
+
+            RealtimeTelemetryState.ReplaceForDataKind(DataKind, snapshots);
+        }
+
+        private void AddTelemetrySnapshot(
+            string market,
+            DateTimeOffset now,
+            List<KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot>> snapshots)
+        {
+            DateTimeOffset? lastSuccessfulPollTime = null;
+            DateTimeOffset? lastConfirmedMarketTime = null;
+            long activeInstruments = 0;
+            long staleInstruments = 0;
+
+            foreach (KeyValuePair<string, TState> pair in States)
+            {
+                TState state = pair.Value;
+                if (state.IsStopping || state.Market != market)
+                    continue;
+
+                activeInstruments++;
+
+                DateTimeOffset? successfulPollTime = state.LastSuccessfulPollTime;
+                if (successfulPollTime is null ||
+                    now - successfulPollTime.Value > StalePollThreshold)
+                {
+                    staleInstruments++;
+                }
+
+                if (successfulPollTime is not null &&
+                    (lastSuccessfulPollTime is null ||
+                     successfulPollTime.Value > lastSuccessfulPollTime.Value))
+                {
+                    lastSuccessfulPollTime = successfulPollTime;
+                }
+
+                DateTimeOffset? confirmedMarketTime = state.LastConfirmedMarketTime;
+                if (confirmedMarketTime is not null &&
+                    (lastConfirmedMarketTime is null ||
+                     confirmedMarketTime.Value > lastConfirmedMarketTime.Value))
+                {
+                    lastConfirmedMarketTime = confirmedMarketTime;
+                }
+            }
+
+            if (activeInstruments == 0)
+                return;
+
+            snapshots.Add(new KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot>(
+                new RealtimeTelemetryKey(DataKind, market),
+                new RealtimeTelemetrySnapshot(
+                    lastSuccessfulPollTime,
+                    lastConfirmedMarketTime,
+                    activeInstruments,
+                    staleInstruments)));
+        }
+
+        /// <summary>
         /// Закрытие оставшихся сеансов при завершении службы. Токен отмены сюда
         /// намеренно не передаётся, и по двум причинам сразу. При штатной остановке
         /// хостовый токен к этому моменту уже отменён, и его передача привела бы
