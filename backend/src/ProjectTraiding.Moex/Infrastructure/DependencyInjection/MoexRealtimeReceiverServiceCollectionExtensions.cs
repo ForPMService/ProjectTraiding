@@ -36,6 +36,7 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
             services.AddSingleton<MoexReceiverInstrumentReader>();
             services.AddSingleton<StreamCursorWriter>();
             services.AddSingleton<StreamCoverageWriter>();
+            services.AddTransient<RealtimeSpecRowWriter>();
 
             // Прямые писатели ClickHouse: один на вид строки. Исполнитель зарегистрирован
             // исторической загрузкой, карты — выше в этой включённой ветви.
