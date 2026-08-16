@@ -23,12 +23,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
     /// из опроса немедленно, а их сеансы покрытия закрываются штатно без перезапуска процесса —
     /// так же, как у сделок и стакана.
     /// </summary>
-    public sealed class CandlesReceiverService : RealtimeReceiverServiceBase
+    public sealed class CandlesReceiverService : RealtimeReceiverServiceBase<CandleInstrumentState>
     {
-        private const string StockMarket = "stock";
-        private const string FuturesMarket = "futures";
-        private const string StockBoardId = "TQBR";
-        private const string FuturesBoardId = "RFUD";
         private const string DataKind = "candles";
 
         // Реальное время пока только минутная свеча. Контракт подписок (V026) держит это CHECK-ом.
@@ -44,8 +40,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         private readonly TimeSpan _instrumentFetchTimeout;
         private readonly TimeSpan _heartbeatMinInterval;
         private readonly TimeSpan _stalePollThreshold;
-        private readonly Dictionary<string, CandleInstrumentState> _states =
-            new Dictionary<string, CandleInstrumentState>();
         private bool _initialized;
 
         public CandlesReceiverService(
@@ -104,7 +98,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     scope.ServiceProvider.GetRequiredService<MoexRealtimeRestClient>();
                 RealtimeSpecRowWriter writer =
                     scope.ServiceProvider.GetRequiredService<RealtimeSpecRowWriter>();
-                foreach (KeyValuePair<string, CandleInstrumentState> pair in _states)
+                foreach (KeyValuePair<string, CandleInstrumentState> pair in States)
                 {
                     if (pair.Value.IsStopping)
                         continue;
@@ -154,7 +148,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             for (int i = 0; i < instruments.Count; i++)
             {
                 ReceiverInstrument instrument = instruments[i];
-                if (_states.ContainsKey(instrument.Secid))
+                if (States.ContainsKey(instrument.Secid))
                     continue;
 
                 try
@@ -191,7 +185,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 desired.Add(instruments[i].Secid);
 
             // Пометка. Изменяем только значения, ключи словаря не трогаем — перечисление безопасно.
-            foreach (KeyValuePair<string, CandleInstrumentState> pair in _states)
+            foreach (KeyValuePair<string, CandleInstrumentState> pair in States)
             {
                 if (desired.Contains(pair.Key) || pair.Value.IsStopping)
                     continue;
@@ -203,7 +197,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
             // Ключи собираем заранее: удалять из словаря во время перечисления нельзя.
             List<string> stopping = new();
-            foreach (KeyValuePair<string, CandleInstrumentState> pair in _states)
+            foreach (KeyValuePair<string, CandleInstrumentState> pair in States)
             {
                 if (pair.Value.IsStopping)
                     stopping.Add(pair.Key);
@@ -212,11 +206,11 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             for (int i = 0; i < stopping.Count; i++)
             {
                 string secid = stopping[i];
-                CandleInstrumentState state = _states[secid];
+                CandleInstrumentState state = States[secid];
                 try
                 {
                     await coverageWriter.CloseSessionAsync(state.SessionId, state.RowsTotal, ct);
-                    _states.Remove(secid);
+                    States.Remove(secid);
                     MoexRealtimeReceiverLogMessages.CandlesInstrumentStopped(
                         _logger, secid, state.SessionId, state.RowsTotal);
                 }
@@ -244,7 +238,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             for (int i = 0; i < instruments.Count; i++)
             {
                 ReceiverInstrument instrument = instruments[i];
-                if (_states.ContainsKey(instrument.Secid))
+                if (States.ContainsKey(instrument.Secid))
                     continue;
 
                 try
@@ -275,7 +269,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             long sessionId = await coverageWriter.OpenSessionAsync(
                 instrument.Secid, instrument.Market, boardId, DataKind, CandleInterval, ct);
             long heartbeatTimestamp = Stopwatch.GetTimestamp();
-            _states.Add(
+            States.Add(
                 instrument.Secid,
                 new CandleInstrumentState(
                     sessionId, instrument.Market, boardId, heartbeatTimestamp));
@@ -486,7 +480,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             long activeInstruments = 0;
             long staleInstruments = 0;
 
-            foreach (KeyValuePair<string, CandleInstrumentState> pair in _states)
+            foreach (KeyValuePair<string, CandleInstrumentState> pair in States)
             {
                 CandleInstrumentState state = pair.Value;
                 if (state.IsStopping || state.Market != market)
@@ -537,7 +531,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 StreamCoverageWriter coverageWriter =
                     scope.ServiceProvider.GetRequiredService<StreamCoverageWriter>();
 
-                foreach (KeyValuePair<string, CandleInstrumentState> pair in _states)
+                foreach (KeyValuePair<string, CandleInstrumentState> pair in States)
                 {
                     try
                     {
@@ -557,19 +551,9 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             }
         }
 
-        private static string GetBoardId(string market)
-        {
-            if (market == StockMarket)
-                return StockBoardId;
-            if (market == FuturesMarket)
-                return FuturesBoardId;
-
-            throw new InvalidOperationException(
-                $"Неизвестный рынок инструмента приёмника: '{market}'.");
-        }
     }
 
-    internal sealed class CandleInstrumentState : ReceiverInstrumentSessionState
+    public sealed class CandleInstrumentState : ReceiverInstrumentSessionState
     {
         public CandleInstrumentState(
             long sessionId, string market, string boardId, long lastHeartbeatTimestamp)

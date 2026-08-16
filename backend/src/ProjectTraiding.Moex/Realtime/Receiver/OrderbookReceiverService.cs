@@ -15,12 +15,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
     /// Периодический приём полных снимков стакана по всем инструментам. Стакан ведёт только
     /// покрытие: курсора у полного снимка нет и в moex_stream_cursors он не записывается.
     /// </summary>
-    public sealed class OrderbookReceiverService : RealtimeReceiverServiceBase
+    public sealed class OrderbookReceiverService : RealtimeReceiverServiceBase<ReceiverInstrumentSessionState>
     {
-        private const string StockMarket = "stock";
-        private const string FuturesMarket = "futures";
-        private const string StockBoardId = "TQBR";
-        private const string FuturesBoardId = "RFUD";
         private const string DataKind = "orderbook";
 
         private readonly IServiceScopeFactory _scopeFactory;
@@ -28,8 +24,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         private readonly TimeSpan _instrumentFetchTimeout;
         private readonly TimeSpan _heartbeatMinInterval;
         private readonly TimeSpan _stalePollThreshold;
-        private readonly Dictionary<string, ReceiverInstrumentSessionState> _states =
-            new Dictionary<string, ReceiverInstrumentSessionState>();
         private bool _initialized;
 
         public OrderbookReceiverService(
@@ -87,7 +81,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     scope.ServiceProvider.GetRequiredService<MoexRealtimeRestClient>();
                 RealtimeSpecRowWriter writer =
                     scope.ServiceProvider.GetRequiredService<RealtimeSpecRowWriter>();
-                foreach (KeyValuePair<string, ReceiverInstrumentSessionState> pair in _states)
+                foreach (KeyValuePair<string, ReceiverInstrumentSessionState> pair in States)
                 {
                     if (pair.Value.IsStopping)
                         continue;
@@ -146,7 +140,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             for (int i = 0; i < instruments.Count; i++)
             {
                 ReceiverInstrument instrument = instruments[i];
-                if (_states.ContainsKey(instrument.Secid))
+                if (States.ContainsKey(instrument.Secid))
                     continue;
 
                 try
@@ -183,7 +177,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 desired.Add(instruments[i].Secid);
 
             // Пометка. Изменяем только значения, ключи словаря не трогаем — перечисление безопасно.
-            foreach (KeyValuePair<string, ReceiverInstrumentSessionState> pair in _states)
+            foreach (KeyValuePair<string, ReceiverInstrumentSessionState> pair in States)
             {
                 if (desired.Contains(pair.Key) || pair.Value.IsStopping)
                     continue;
@@ -195,7 +189,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
             // Ключи собираем заранее: удалять из словаря во время перечисления нельзя.
             List<string> stopping = new();
-            foreach (KeyValuePair<string, ReceiverInstrumentSessionState> pair in _states)
+            foreach (KeyValuePair<string, ReceiverInstrumentSessionState> pair in States)
             {
                 if (pair.Value.IsStopping)
                     stopping.Add(pair.Key);
@@ -204,11 +198,11 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             for (int i = 0; i < stopping.Count; i++)
             {
                 string secid = stopping[i];
-                ReceiverInstrumentSessionState state = _states[secid];
+                ReceiverInstrumentSessionState state = States[secid];
                 try
                 {
                     await coverageWriter.CloseSessionAsync(state.SessionId, state.RowsTotal, ct);
-                    _states.Remove(secid);
+                    States.Remove(secid);
                     MoexRealtimeReceiverLogMessages.OrderbookInstrumentStopped(
                         _logger, secid, state.SessionId, state.RowsTotal);
                 }
@@ -236,7 +230,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             for (int i = 0; i < instruments.Count; i++)
             {
                 ReceiverInstrument instrument = instruments[i];
-                if (_states.ContainsKey(instrument.Secid))
+                if (States.ContainsKey(instrument.Secid))
                     continue;
 
                 try
@@ -267,7 +261,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             long sessionId = await coverageWriter.OpenSessionAsync(
                 instrument.Secid, instrument.Market, boardId, DataKind, null, ct);
             long heartbeatTimestamp = Stopwatch.GetTimestamp();
-            _states.Add(
+            States.Add(
                 instrument.Secid,
                 new ReceiverInstrumentSessionState(
                     sessionId, instrument.Market, boardId, heartbeatTimestamp));
@@ -434,7 +428,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             long activeInstruments = 0;
             long staleInstruments = 0;
 
-            foreach (KeyValuePair<string, ReceiverInstrumentSessionState> pair in _states)
+            foreach (KeyValuePair<string, ReceiverInstrumentSessionState> pair in States)
             {
                 ReceiverInstrumentSessionState state = pair.Value;
                 if (state.IsStopping || state.Market != market)
@@ -485,7 +479,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 StreamCoverageWriter coverageWriter =
                     scope.ServiceProvider.GetRequiredService<StreamCoverageWriter>();
 
-                foreach (KeyValuePair<string, ReceiverInstrumentSessionState> pair in _states)
+                foreach (KeyValuePair<string, ReceiverInstrumentSessionState> pair in States)
                 {
                     try
                     {
@@ -507,16 +501,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             }
         }
 
-        private static string GetBoardId(string market)
-        {
-            if (market == StockMarket)
-                return StockBoardId;
-            if (market == FuturesMarket)
-                return FuturesBoardId;
-
-            throw new InvalidOperationException(
-                $"Неизвестный рынок инструмента приёмника: '{market}'.");
-        }
     }
 
 }

@@ -15,9 +15,22 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
     /// в наблюдаемый контракт. Базовый класс задаёт порядок и момент записи, но не
     /// подменяет сами события.
     /// </summary>
-    public abstract class RealtimeReceiverServiceBase : BackgroundService
+    public abstract class RealtimeReceiverServiceBase<TState> : BackgroundService
+        where TState : ReceiverInstrumentSessionState
     {
+        private const string StockMarket = "stock";
+        private const string FuturesMarket = "futures";
+        private const string StockBoardId = "TQBR";
+        private const string FuturesBoardId = "RFUD";
+
         private readonly TimeSpan _pollInterval;
+
+        /// <summary>
+        /// Состояния сеансов по коду инструмента. Ключи изменяются только в методах
+        /// согласования подписок; предметный опрос меняет лишь значения.
+        /// </summary>
+        protected readonly Dictionary<string, TState> States =
+            new Dictionary<string, TState>();
 
         protected RealtimeReceiverServiceBase(TimeSpan pollInterval)
         {
@@ -91,5 +104,21 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
         /// <summary>Событие остановки службы со стабильным EventId наследника.</summary>
         protected abstract void LogStopped();
+
+        /// <summary>
+        /// Доска торгов по рынку. Постоянна для рынка у всех трёх видов данных приёма.
+        /// Ветки перечислены явно, без отката к одному из рынков: молчаливый откат
+        /// превратил бы опечатку в рынке в обращение не по той доске.
+        /// </summary>
+        protected static string GetBoardId(string market)
+        {
+            if (market == StockMarket)
+                return StockBoardId;
+            if (market == FuturesMarket)
+                return FuturesBoardId;
+
+            throw new InvalidOperationException(
+                $"Неизвестный рынок инструмента приёмника: '{market}'.");
+        }
     }
 }

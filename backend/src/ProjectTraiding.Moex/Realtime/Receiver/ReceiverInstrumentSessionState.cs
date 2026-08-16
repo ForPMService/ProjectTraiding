@@ -8,7 +8,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
     /// и пустой наследник ради одинакового вида имён не заводится. Если у стакана
     /// появится собственное состояние, наследник будет введён тогда.
     /// </summary>
-    internal class ReceiverInstrumentSessionState
+    public class ReceiverInstrumentSessionState
     {
         public ReceiverInstrumentSessionState(
             long sessionId,
