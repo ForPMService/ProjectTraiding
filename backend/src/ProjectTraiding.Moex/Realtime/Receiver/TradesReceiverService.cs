@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Hosting;
 using ProjectTraiding.Moex.Clients;
-using ProjectTraiding.Moex.Contracts.Dto.Realtime;
 using ProjectTraiding.Moex.Infrastructure;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
+using ProjectTraiding.Moex.Realtime.Series;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using System;
@@ -90,10 +90,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         instruments, cursorWriter, coverageWriter, client, ct);
                 }
 
-                RealtimeRowWriter<RealtimeTradesStockDTO> stockWriter =
-                    scope.ServiceProvider.GetRequiredService<RealtimeRowWriter<RealtimeTradesStockDTO>>();
-                RealtimeRowWriter<RealtimeTradesFuturesDTO> futuresWriter =
-                    scope.ServiceProvider.GetRequiredService<RealtimeRowWriter<RealtimeTradesFuturesDTO>>();
+                RealtimeSpecRowWriter writer =
+                    scope.ServiceProvider.GetRequiredService<RealtimeSpecRowWriter>();
                 foreach (KeyValuePair<string, TradesInstrumentState> pair in _states)
                 {
                     if (pair.Value.IsStopping)
@@ -101,28 +99,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
                     try
                     {
-                        if (pair.Value.Market == StockMarket)
-                        {
-                            await PollStockAsync(
-                                pair.Key,
-                                pair.Value,
-                                client,
-                                stockWriter,
-                                cursorWriter,
-                                coverageWriter,
-                                ct);
-                        }
-                        else
-                        {
-                            await PollFuturesAsync(
-                                pair.Key,
-                                pair.Value,
-                                client,
-                                futuresWriter,
-                                cursorWriter,
-                                coverageWriter,
-                                ct);
-                        }
+                        await PollAsync(
+                            pair.Key,
+                            pair.Value,
+                            client,
+                            writer,
+                            cursorWriter,
+                            coverageWriter,
+                            ct);
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested)
                     {
@@ -347,15 +331,17 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 _logger, instrument.Secid, instrument.Market, sessionId);
         }
 
-        private async Task PollStockAsync(
+        private async Task PollAsync(
             string secid,
             TradesInstrumentState state,
             MoexRealtimeRestClient client,
-            RealtimeRowWriter<RealtimeTradesStockDTO> writer,
+            RealtimeSpecRowWriter writer,
             StreamCursorWriter cursorWriter,
             StreamCoverageWriter coverageWriter,
             CancellationToken commitCt)
         {
+            MoexRealtimeSpec spec = MoexRealtimeRegistry.TradesFor(state.Market);
+
             // Получение одной страницы — под собственным бюджетом, живущим строго вокруг вызова
             // клиента. По истечении RealtimeInstrumentFetchTimeout получение отменяется, инструмент
             // пропускается до следующего оборота. Бюджет уничтожается ЗДЕСЬ, до фиксации: иначе его
@@ -373,8 +359,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 operationTags.Market,
                 MoexFlows.Realtime);
 
-            RealtimeTradesParseResult<RealtimeTradesStockDTO> result;
-            RealtimeTradesStockDTO? last = null;
+            RealtimeParsedPage page;
             using (Activity? pollActivity =
                    MoexTelemetry.ActivitySource.StartActivity("moex.realtime.instrument.poll"))
             {
@@ -396,10 +381,13 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 fetchActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
                 try
                 {
-                    result = await client.GetTradesStockAsync(
-                        secid, state.AfterTradeNo, cancellationToken: fetchCts.Token);
+                    page = await client.GetTradesAsync(
+                        state.Market,
+                        secid,
+                        state.AfterTradeNo,
+                        cancellationToken: fetchCts.Token);
                     MoexMetrics.RowsReceived.Add(
-                        result.Rows.Count,
+                        page.Rows.Count,
                         new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, operationTags.Source),
                         new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, operationTags.DataKind),
                         new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, operationTags.Market),
@@ -441,21 +429,35 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
             try
             {
-                if (result.Rows.Count > 0)
+                if (page.Rows.Count > 0)
                 {
+                    // Отказ построчного стража поднимается здесь, а не в разборе: к этому
+                    // моменту успех получения и число полученных строк уже учтены, и
+                    // наблюдаемая картина остаётся прежней — успешное получение,
+                    // засчитанные строки, неуспешный оборот.
+                    //
+                    // Проверка стоит внутри ветви непустой пачки намеренно: сегодня стражи
+                    // живут в карте столбцов, а карта на пустой странице не вызывается вовсе,
+                    // и такой оборот заканчивается успешно.
+                    // Бросается сохранённое исключение, а не новое поверх его текста:
+                    // тип отказа виден в записи журнала и подменяться не должен.
+                    if (page.GuardFailure is not null) throw page.GuardFailure;
+
                     // Фиксация страницы — под хостовым commitCt. Обрыв бюджетом между записью и курсором
                     // недопустим: следующий оборот со старым курсором получит расширенную пачку с другим
                     // токеном, insert-дедупликация её примет, и до фонового слияния будут видны лишние
                     // физические версии. ReplacingMergeTree схлопнет их по ключу при слиянии; чтение до
                     // этого требует FINAL. Порядок: durable-запись, затем сразу in-memory состояние.
-                    string? sessionDate = result.DataVersion?.TradeSessionDate;
                     await writer.WriteAsync(
-                        secid, result.Rows, sessionDate, insertContext, commitCt);
+                        spec,
+                        secid,
+                        page.Rows,
+                        page.FirstTime,
+                        page.LastTime,
+                        insertContext,
+                        commitCt);
 
-                    last = result.Rows[^1];
-                    long lastTradeNo = last.TradeNo!.Value;
-                    DateTime lastSourceTime =
-                        MoexClickHouseTime.BuildSourceTime(last.TradeDate, last.TradeTime);
+                    long lastTradeNo = page.LastTradeNo!.Value;
                     await UpdateCursorAsync(
                         cursorWriter,
                         secid,
@@ -463,155 +465,15 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         state.BoardId,
                         DataKind,
                         null,
-                        lastSourceTime,
+                        page.LastTime,
                         lastTradeNo,
                         commitCt);
 
                     // In-memory состояние двигается сразу за durable-курсором — чтобы не разойтись с ним,
                     // если сердцебиение упадёт.
-                    state.RowsTotal += result.Rows.Count;
+                    state.RowsTotal += page.Rows.Count;
                     state.AfterTradeNo = lastTradeNo;
-                    state.LastConfirmedMarketTime = MoexTime.ToDateTimeOffset(lastSourceTime);
-                }
-
-                MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Success);
-                state.LastSuccessfulPollTime = DateTimeOffset.UtcNow;
-                pollActivity?.SetStatus(ActivityStatusCode.Ok);
-            }
-            catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
-            {
-                pollActivity?.SetStatus(ActivityStatusCode.Ok);
-                MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Cancelled);
-                throw;
-            }
-            catch (Exception)
-            {
-                pollActivity?.SetStatus(ActivityStatusCode.Error);
-                MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
-                throw;
-            }
-            }
-
-            await ReceiverSessionHeartbeat.WriteIfDueAsync(
-                state, _heartbeatMinInterval, coverageWriter, commitCt);
-        }
-
-        private async Task PollFuturesAsync(
-            string secid,
-            TradesInstrumentState state,
-            MoexRealtimeRestClient client,
-            RealtimeRowWriter<RealtimeTradesFuturesDTO> writer,
-            StreamCursorWriter cursorWriter,
-            StreamCoverageWriter coverageWriter,
-            CancellationToken commitCt)
-        {
-            // Получение одной страницы — под собственным бюджетом, живущим строго вокруг вызова
-            // клиента и уничтожаемым до фиксации. Причины те же, что в PollStockAsync.
-            MoexOperationTags operationTags = new MoexOperationTags(
-                MoexLogSources.RealtimeRest,
-                MoexOperations.RealtimeTradesPoll,
-                MoexDataKinds.Trades,
-                state.Market,
-                MoexFlows.Realtime);
-
-            StorageInsertContext insertContext = new StorageInsertContext(
-                operationTags.DataKind,
-                operationTags.Market,
-                MoexFlows.Realtime);
-
-            RealtimeTradesParseResult<RealtimeTradesFuturesDTO> result;
-            RealtimeTradesFuturesDTO? last = null;
-            using (Activity? pollActivity =
-                   MoexTelemetry.ActivitySource.StartActivity("moex.realtime.instrument.poll"))
-            {
-            pollActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
-            pollActivity?.SetTag(MoexTelemetryAttributes.Market, operationTags.Market);
-            pollActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
-
-            long fetchStart = Stopwatch.GetTimestamp();
-
-            using (CancellationTokenSource fetchCts =
-                   CancellationTokenSource.CreateLinkedTokenSource(commitCt))
-            {
-                fetchCts.CancelAfter(_instrumentFetchTimeout);
-                using Activity? fetchActivity =
-                    MoexTelemetry.ActivitySource.StartActivity("moex.realtime.fetch");
-                fetchActivity?.SetTag(MoexTelemetryAttributes.Source, operationTags.Source);
-                fetchActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
-                fetchActivity?.SetTag(MoexTelemetryAttributes.Market, operationTags.Market);
-                fetchActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
-                try
-                {
-                    result = await client.GetTradesFuturesAsync(
-                        secid, state.AfterTradeNo, cancellationToken: fetchCts.Token);
-                    MoexMetrics.RowsReceived.Add(
-                        result.Rows.Count,
-                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, operationTags.Source),
-                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, operationTags.DataKind),
-                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, operationTags.Market),
-                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Flow, operationTags.Flow));
-                    MoexMetrics.RecordOperationSuccess(
-                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
-                    fetchActivity?.SetStatus(ActivityStatusCode.Ok);
-                }
-                catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
-                {
-                    fetchActivity?.SetStatus(ActivityStatusCode.Ok);
-                    pollActivity?.SetStatus(ActivityStatusCode.Ok);
-                    MoexMetrics.RecordOperationCancelled(
-                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
-                    MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Cancelled);
-                    throw;
-                }
-                catch (OperationCanceledException) when (fetchCts.IsCancellationRequested)
-                {
-                    fetchActivity?.SetStatus(ActivityStatusCode.Error);
-                    pollActivity?.SetStatus(ActivityStatusCode.Error);
-                    MoexRealtimeReceiverLogMessages.TradesInstrumentFetchTimedOut(
-                        _logger, secid, state.Market, _instrumentFetchTimeout);
-                    MoexMetrics.RecordOperationTimeout(
-                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
-                    MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    fetchActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                    pollActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                    MoexMetrics.RecordOperationError(
-                        in operationTags, ex, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
-                    MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
-                    throw;
-                }
-            }
-
-            try
-            {
-                if (result.Rows.Count > 0)
-                {
-                    // Фиксация — под хостовым commitCt. Порядок: durable-запись и in-memory состояние.
-                    string? sessionDate = result.DataVersion?.TradeSessionDate;
-                    await writer.WriteAsync(
-                        secid, result.Rows, sessionDate, insertContext, commitCt);
-
-                    last = result.Rows[^1];
-                    long lastTradeNo = last.TradeNo!.Value;
-                    DateTime lastSourceTime =
-                        MoexClickHouseTime.BuildSourceTime(last.TradeDate, last.TradeTime);
-                    await UpdateCursorAsync(
-                        cursorWriter,
-                        secid,
-                        state.Market,
-                        state.BoardId,
-                        DataKind,
-                        null,
-                        lastSourceTime,
-                        lastTradeNo,
-                        commitCt);
-
-                    state.RowsTotal += result.Rows.Count;
-                    state.AfterTradeNo = lastTradeNo;
-                    state.LastConfirmedMarketTime = MoexTime.ToDateTimeOffset(lastSourceTime);
+                    state.LastConfirmedMarketTime = MoexTime.ToDateTimeOffset(page.LastTime);
                 }
 
                 MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Success);
@@ -769,36 +631,23 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
             try
             {
-                if (instrument.Market == StockMarket)
-                {
-                    RealtimeTradesParseResult<RealtimeTradesStockDTO> page =
-                        await client.GetTradesStockAsync(instrument.Secid, null, reversedParams, ct);
-                    MoexMetrics.RowsReceived.Add(
-                        page.Rows.Count,
-                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, operationTags.Source),
-                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, operationTags.DataKind),
-                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, operationTags.Market),
-                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Flow, operationTags.Flow));
-                    (long TradeNo, DateTime SourceTime)? tail = PickTailStock(page.Rows);
-                    MoexMetrics.RecordOperationSuccess(
-                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
-                    fetchActivity?.SetStatus(ActivityStatusCode.Ok);
-                    return tail;
-                }
-
-                RealtimeTradesParseResult<RealtimeTradesFuturesDTO> futuresPage =
-                    await client.GetTradesFuturesAsync(instrument.Secid, null, reversedParams, ct);
+                RealtimeParsedPage page = await client.GetTradesAsync(
+                    instrument.Market, instrument.Secid, null, reversedParams, ct);
                 MoexMetrics.RowsReceived.Add(
-                    futuresPage.Rows.Count,
+                    page.Rows.Count,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, operationTags.Source),
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, operationTags.DataKind),
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, operationTags.Market),
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Flow, operationTags.Flow));
-                (long TradeNo, DateTime SourceTime)? futuresTail = PickTailFutures(futuresPage.Rows);
+
+                // Здесь и только здесь — на месте нынешнего отбора хвоста, между счётчиком
+                // строк и записью успеха операции. Иначе меняется наблюдаемая картина отказа.
+                (long TradeNo, DateTime SourceTime)? tail = PickTail(page);
+
                 MoexMetrics.RecordOperationSuccess(
                     in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                 fetchActivity?.SetStatus(ActivityStatusCode.Ok);
-                return futuresTail;
+                return tail;
             }
             catch (OperationCanceledException)
             {
@@ -816,46 +665,27 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             }
         }
 
-        private static (long TradeNo, DateTime SourceTime)? PickTailStock(
-            List<RealtimeTradesStockDTO> rows)
+        private static (long TradeNo, DateTime SourceTime)? PickTail(
+            RealtimeParsedPage page)
         {
-            long maxTradeNo = long.MinValue;
-            RealtimeTradesStockDTO? tail = null;
-            for (int i = 0; i < rows.Count; i++)
-            {
-                long? tradeNo = rows[i].TradeNo;
-                if (tradeNo is not null && tradeNo.Value > maxTradeNo)
-                {
-                    maxTradeNo = tradeNo.Value;
-                    tail = rows[i];
-                }
-            }
-
-            if (tail is null)
+            // Строки с пустым номером сделки холодный старт пропускает молча — их отсеял
+            // сам разборщик, отбирая наибольший номер. Общий признак отвергнутой строки
+            // на этом пути не смотрят вовсе: сегодня отбор хвоста страницу не отвергает.
+            if (page.MaxTradeNo is null)
                 return null;
 
-            return (maxTradeNo, MoexClickHouseTime.BuildSourceTime(tail.TradeDate, tail.TradeTime));
-        }
-
-        private static (long TradeNo, DateTime SourceTime)? PickTailFutures(
-            List<RealtimeTradesFuturesDTO> rows)
-        {
-            long maxTradeNo = long.MinValue;
-            RealtimeTradesFuturesDTO? tail = null;
-            for (int i = 0; i < rows.Count; i++)
+            // Но у выбранной строки момент обязан быть: сегодня отбор хвоста вызывает сборку
+            // момента именно на ней, и она отказывает. Причин отказа две и они различны —
+            // пустые дата или время дают один отказ, непустые неверного формата другой, —
+            // поэтому поднимается сохранённая причина, а не одна на оба случая.
+            if (page.MaxTradeNoTime is null)
             {
-                long? tradeNo = rows[i].TradeNo;
-                if (tradeNo is not null && tradeNo.Value > maxTradeNo)
-                {
-                    maxTradeNo = tradeNo.Value;
-                    tail = rows[i];
-                }
+                throw page.MaxTradeNoTimeFailure
+                    ?? new InvalidOperationException(
+                        "Строка статистики отвергнута: пустые дата или время торгов.");
             }
 
-            if (tail is null)
-                return null;
-
-            return (maxTradeNo, MoexClickHouseTime.BuildSourceTime(tail.TradeDate, tail.TradeTime));
+            return (page.MaxTradeNo.Value, page.MaxTradeNoTime.Value);
         }
 
         protected override async Task CloseSessionsAsync()

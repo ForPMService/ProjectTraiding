@@ -284,7 +284,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             CancellationToken commitCt)
         {
             // Снимок стакана — под собственным бюджетом, живущим строго вокруг вызова клиента и
-            // уничтожаемым до фиксации. Причины те же, что в PollStockAsync.
+            // уничтожаемым до фиксации. Причины те же, что в опросе сделок.
             MoexOperationTags operationTags = new MoexOperationTags(
                 MoexLogSources.RealtimeRest,
                 MoexOperations.RealtimeOrderbookPoll,
