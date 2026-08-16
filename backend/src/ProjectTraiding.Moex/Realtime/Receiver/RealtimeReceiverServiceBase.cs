@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
+using ProjectTraiding.Moex.StorageBase.Postgres;
 using System.Diagnostics;
 
 namespace ProjectTraiding.Moex.Realtime.Receiver
@@ -168,6 +169,15 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     staleInstruments)));
         }
 
+        /// <summary>Фабрика областей видимости для доступа к писателям в фоновом потоке.</summary>
+        protected abstract IServiceScopeFactory ScopeFactory { get; }
+
+        /// <summary>Событие неудачного закрытия сеанса со стабильным EventId наследника.</summary>
+        protected abstract void LogSessionCloseFailed(Exception exception, string secid, long sessionId);
+
+        /// <summary>Событие отказа завершающей очистки со стабильным EventId наследника.</summary>
+        protected abstract void LogShutdownFailed(Exception exception);
+
         /// <summary>
         /// Закрытие оставшихся сеансов при завершении службы. Токен отмены сюда
         /// намеренно не передаётся, и по двум причинам сразу. При штатной остановке
@@ -175,9 +185,35 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         /// к молчаливому отказу закрытия. На любом другом пути выхода из цикла —
         /// например, если исключение выбросит сама запись об ошибке оборота —
         /// завершающая очистка тем более не должна зависеть от состояния токена.
-        /// Реализация использует CancellationToken.None.
         /// </summary>
-        protected abstract Task CloseSessionsAsync();
+        protected virtual async Task CloseSessionsAsync()
+        {
+            try
+            {
+                await using AsyncServiceScope scope = ScopeFactory.CreateAsyncScope();
+                StreamCoverageWriter coverageWriter =
+                    scope.ServiceProvider.GetRequiredService<StreamCoverageWriter>();
+
+                foreach (KeyValuePair<string, TState> pair in States)
+                {
+                    try
+                    {
+                        await coverageWriter.CloseSessionAsync(
+                            pair.Value.SessionId,
+                            pair.Value.RowsTotal,
+                            CancellationToken.None);
+                    }
+                    catch (Exception ex)
+                    {
+                        LogSessionCloseFailed(ex, pair.Key, pair.Value.SessionId);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogShutdownFailed(ex);
+            }
+        }
 
         /// <summary>Событие запуска службы со стабильным EventId наследника.</summary>
         protected abstract void LogStarted(TimeSpan pollInterval);

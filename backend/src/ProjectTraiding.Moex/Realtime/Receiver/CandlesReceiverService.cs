@@ -460,33 +460,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 state, _heartbeatMinInterval, coverageWriter, commitCt);
         }
 
-        protected override async Task CloseSessionsAsync()
-        {
-            try
-            {
-                await using AsyncServiceScope scope = _scopeFactory.CreateAsyncScope();
-                StreamCoverageWriter coverageWriter =
-                    scope.ServiceProvider.GetRequiredService<StreamCoverageWriter>();
+        protected override IServiceScopeFactory ScopeFactory => _scopeFactory;
 
-                foreach (KeyValuePair<string, CandleInstrumentState> pair in States)
-                {
-                    try
-                    {
-                        await coverageWriter.CloseSessionAsync(
-                            pair.Value.SessionId, pair.Value.RowsTotal, CancellationToken.None);
-                    }
-                    catch (Exception ex)
-                    {
-                        MoexRealtimeReceiverLogMessages.CandlesSessionCloseFailed(
-                            _logger, ex, pair.Key, pair.Value.SessionId);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                MoexRealtimeReceiverLogMessages.CandlesShutdownFailed(_logger, ex);
-            }
-        }
+        protected override void LogSessionCloseFailed(Exception exception, string secid, long sessionId)
+            => MoexRealtimeReceiverLogMessages.CandlesSessionCloseFailed(
+                _logger, exception, secid, sessionId);
+
+        protected override void LogShutdownFailed(Exception exception)
+            => MoexRealtimeReceiverLogMessages.CandlesShutdownFailed(_logger, exception);
 
     }
 

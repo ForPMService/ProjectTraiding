@@ -408,35 +408,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 state, _heartbeatMinInterval, coverageWriter, commitCt);
         }
 
-        protected override async Task CloseSessionsAsync()
-        {
-            try
-            {
-                await using AsyncServiceScope scope = _scopeFactory.CreateAsyncScope();
-                StreamCoverageWriter coverageWriter =
-                    scope.ServiceProvider.GetRequiredService<StreamCoverageWriter>();
+        protected override IServiceScopeFactory ScopeFactory => _scopeFactory;
 
-                foreach (KeyValuePair<string, ReceiverInstrumentSessionState> pair in States)
-                {
-                    try
-                    {
-                        await coverageWriter.CloseSessionAsync(
-                            pair.Value.SessionId,
-                            pair.Value.RowsTotal,
-                            CancellationToken.None);
-                    }
-                    catch (Exception ex)
-                    {
-                        MoexRealtimeReceiverLogMessages.OrderbookSessionCloseFailed(
-                            _logger, ex, pair.Key, pair.Value.SessionId);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                MoexRealtimeReceiverLogMessages.OrderbookShutdownFailed(_logger, ex);
-            }
-        }
+        protected override void LogSessionCloseFailed(Exception exception, string secid, long sessionId)
+            => MoexRealtimeReceiverLogMessages.OrderbookSessionCloseFailed(
+                _logger, exception, secid, sessionId);
+
+        protected override void LogShutdownFailed(Exception exception)
+            => MoexRealtimeReceiverLogMessages.OrderbookShutdownFailed(_logger, exception);
 
     }
 

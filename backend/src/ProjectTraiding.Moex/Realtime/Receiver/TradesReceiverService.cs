@@ -619,35 +619,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             return (page.MaxTradeNo.Value, page.MaxTradeNoTime.Value);
         }
 
-        protected override async Task CloseSessionsAsync()
-        {
-            try
-            {
-                await using AsyncServiceScope scope = _scopeFactory.CreateAsyncScope();
-                StreamCoverageWriter coverageWriter =
-                    scope.ServiceProvider.GetRequiredService<StreamCoverageWriter>();
+        protected override IServiceScopeFactory ScopeFactory => _scopeFactory;
 
-                foreach (KeyValuePair<string, TradesInstrumentState> pair in States)
-                {
-                    try
-                    {
-                        await coverageWriter.CloseSessionAsync(
-                            pair.Value.SessionId,
-                            pair.Value.RowsTotal,
-                            CancellationToken.None);
-                    }
-                    catch (Exception ex)
-                    {
-                        MoexRealtimeReceiverLogMessages.TradesSessionCloseFailed(
-                            _logger, ex, pair.Key, pair.Value.SessionId);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                MoexRealtimeReceiverLogMessages.TradesShutdownFailed(_logger, ex);
-            }
-        }
+        protected override void LogSessionCloseFailed(Exception exception, string secid, long sessionId)
+            => MoexRealtimeReceiverLogMessages.TradesSessionCloseFailed(
+                _logger, exception, secid, sessionId);
+
+        protected override void LogShutdownFailed(Exception exception)
+            => MoexRealtimeReceiverLogMessages.TradesShutdownFailed(_logger, exception);
 
     }
 
