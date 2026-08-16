@@ -76,23 +76,6 @@ namespace ProjectTraiding.Moex.Parsing
             });
 
         // ═══════════════════════════════════════════════════════════
-        // ALGOPACK — Cursor пагинации
-        // Используется всеми ALGOPACK-парсерами с cursor-пагинацией
-        // rootKey: "data.cursor", columnCount: 3, используем: все 3
-        // ═══════════════════════════════════════════════════════════
-
-        public static readonly ExpectedSchema AlgCandlesDataCursorSchema = new(
-            TotalColumns: 3,
-            RootKey: "data.cursor",
-            Columns: new ExpectedColumn[]
-            {
-                new(0, "INDEX"u8.ToArray()),
-                new(1, "TOTAL"u8.ToArray()),
-                new(2, "PAGESIZE"u8.ToArray()),
-            });
-
-
-        // ═══════════════════════════════════════════════════════════
         // Календарь — Выходные дни (один рынок: stock или futures)
         // Источник: columns-map.json → "Calendar Stock OffDays", "Calendar Futures OffDays"
         // rootKey: "off_days", columnCount: 5, используем: все 5

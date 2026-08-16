@@ -47,7 +47,6 @@ public sealed class MoexSeriesSpec
 {
     public required string DataKind { get; init; }
     public required string Market { get; init; }
-    public required string TelemetryDataKind { get; init; }
     public required string MethodTemplate { get; init; }
     public required string RootKey { get; init; }
     public required SourceColumn[] SourceColumns { get; init; }

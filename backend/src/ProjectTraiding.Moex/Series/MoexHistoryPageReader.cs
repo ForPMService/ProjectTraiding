@@ -122,7 +122,7 @@ public sealed class MoexHistoryPageReader
                    MoexTelemetry.ActivitySource.StartActivity("moex.history.fetch"))
             {
                 pageActivity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
-                pageActivity?.SetTag(MoexTelemetryAttributes.DataKind, spec.TelemetryDataKind);
+                pageActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
                 pageActivity?.SetTag(MoexTelemetryAttributes.Market, spec.Market);
 
                 try
@@ -268,7 +268,7 @@ public sealed class MoexHistoryPageReader
                    MoexTelemetry.ActivitySource.StartActivity("moex.history.fetch"))
             {
                 pageActivity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
-                pageActivity?.SetTag(MoexTelemetryAttributes.DataKind, spec.TelemetryDataKind);
+                pageActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
                 pageActivity?.SetTag(MoexTelemetryAttributes.Market, spec.Market);
 
                 try
@@ -406,7 +406,7 @@ public sealed class MoexHistoryPageReader
                    MoexTelemetry.ActivitySource.StartActivity("moex.history.fetch"))
             {
                 pageActivity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
-                pageActivity?.SetTag(MoexTelemetryAttributes.DataKind, spec.TelemetryDataKind);
+                pageActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
                 pageActivity?.SetTag(MoexTelemetryAttributes.Market, spec.Market);
 
                 try

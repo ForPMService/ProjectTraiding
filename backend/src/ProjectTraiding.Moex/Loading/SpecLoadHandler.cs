@@ -58,7 +58,7 @@ public sealed class SpecLoadHandler
         MoexOperationTags operationTags = new(
             MoexLogSources.Algopack,
             operation,
-            spec.TelemetryDataKind,
+            MoexDataKinds.FromTaskDataKind(task.DataKind),
             spec.Market,
             MoexFlows.History);
 

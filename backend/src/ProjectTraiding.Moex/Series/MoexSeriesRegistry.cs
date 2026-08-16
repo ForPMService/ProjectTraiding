@@ -6,7 +6,6 @@ public static class MoexSeriesRegistry
     {
         DataKind = "tradestats",
         Market = "stock",
-        TelemetryDataKind = "tradestats",
         MethodTemplate = "/datashop/algopack/eq/tradestats/{0}.json",
         RootKey = "data",
         SourceColumns =
@@ -78,7 +77,6 @@ public static class MoexSeriesRegistry
     {
         DataKind = "tradestats",
         Market = "futures",
-        TelemetryDataKind = "tradestats",
         MethodTemplate = "/datashop/algopack/fo/tradestats/{0}.json",
         RootKey = "data",
         SourceColumns =
@@ -162,7 +160,6 @@ public static class MoexSeriesRegistry
     {
         DataKind = "obstats",
         Market = "stock",
-        TelemetryDataKind = "obstats",
         MethodTemplate = "/datashop/algopack/eq/obstats/{0}.json",
         RootKey = "data",
         SourceColumns =
@@ -222,7 +219,6 @@ public static class MoexSeriesRegistry
     {
         DataKind = "obstats",
         Market = "futures",
-        TelemetryDataKind = "obstats",
         MethodTemplate = "/datashop/algopack/fo/obstats/{0}.json",
         RootKey = "data",
         SourceColumns =
@@ -310,7 +306,6 @@ public static class MoexSeriesRegistry
     {
         DataKind = "orderstats",
         Market = "stock",
-        TelemetryDataKind = "orderstats",
         MethodTemplate = "/datashop/algopack/eq/orderstats/{0}.json",
         RootKey = "data",
         SourceColumns =
@@ -380,7 +375,6 @@ public static class MoexSeriesRegistry
     {
         DataKind = "hi2",
         Market = "stock",
-        TelemetryDataKind = "hi2",
         MethodTemplate = "/datashop/algopack/eq/hi2/{0}.json",
         RootKey = "data",
         SourceColumns =
@@ -413,7 +407,6 @@ public static class MoexSeriesRegistry
     {
         DataKind = "hi2",
         Market = "futures",
-        TelemetryDataKind = "hi2",
         MethodTemplate = "/datashop/algopack/fo/hi2/{0}.json",
         RootKey = "data",
         SourceColumns =
@@ -448,7 +441,6 @@ public static class MoexSeriesRegistry
     {
         DataKind = "mega_alerts",
         Market = "stock",
-        TelemetryDataKind = "alerts",
         MethodTemplate = "/datashop/algopack/eq/alerts/{0}.json",
         RootKey = "data",
         SourceColumns =
@@ -483,7 +475,6 @@ public static class MoexSeriesRegistry
     {
         DataKind = "mega_alerts",
         Market = "futures",
-        TelemetryDataKind = "alerts",
         MethodTemplate = "/datashop/algopack/fo/alerts/{0}.json",
         RootKey = "data",
         SourceColumns =
@@ -520,7 +511,6 @@ public static class MoexSeriesRegistry
     {
         DataKind = "futoi",
         Market = "futures",
-        TelemetryDataKind = "futoi",
         MethodTemplate = "/analyticalproducts/futoi/securities/{0}.json",
         RootKey = "futoi",
         SourceColumns =
@@ -604,7 +594,6 @@ public static class MoexSeriesRegistry
     {
         DataKind = "candles",
         Market = market,
-        TelemetryDataKind = "candles",
         MethodTemplate = methodTemplate,
         RootKey = "candles",
         SourceColumns = CandlesSourceColumns,
