@@ -1,6 +1,4 @@
 using Microsoft.Extensions.Options;
-using Polly.Timeout;
-using ProjectTraiding.Moex.Clients.Errors;
 using ProjectTraiding.Moex.Infrastructure.Buffers;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Options;
@@ -9,7 +7,6 @@ using ProjectTraiding.Moex.Parsing.Errors;
 using ProjectTraiding.Moex.Realtime.Series;
 using System.Diagnostics;
 using System.Globalization;
-using System.Net;
 using System.Text;
 
 namespace ProjectTraiding.Moex.Clients
@@ -46,8 +43,8 @@ namespace ProjectTraiding.Moex.Clients
 
 
         private readonly MoexOptions _options;
-        private readonly HttpClient _httpClient;
         private readonly ILogger<MoexRealtimeRestClient> _logger;
+        private readonly MoexHttpTransport _transport;
 
         public MoexRealtimeRestClient(
             IOptions<MoexOptions> options,
@@ -55,8 +52,14 @@ namespace ProjectTraiding.Moex.Clients
             ILogger<MoexRealtimeRestClient> logger)
         {
             _options = options.Value;
-            _httpClient = httpClient;
             _logger = logger;
+            _transport = new MoexHttpTransport(
+                httpClient,
+                logger,
+                _options,
+                _options.ApimBaseUrl,
+                MoexLogSources.RealtimeRest,
+                requiresApiKey: true);
         }
 
         // ═══════════════════════════════════════════════════════════
@@ -87,7 +90,7 @@ namespace ProjectTraiding.Moex.Clients
             string endpoint = BuildEndpoint(market, ticker, "/trades.json");
             long startTimestamp = Stopwatch.GetTimestamp();
             using HttpResponseMessage response =
-                await SendRequestAsync(endpoint, queryParams, cancellationToken);
+                await _transport.SendAsync(endpoint, queryParams, cancellationToken);
             int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
             using RentedBuffer rentedArr = await RentedBuffer.RentFromStreamAsync(
                 await response.Content.ReadAsStreamAsync(cancellationToken),
@@ -131,7 +134,7 @@ namespace ProjectTraiding.Moex.Clients
             string endpoint = BuildEndpoint(market, ticker, "/orderbook.json");
             long startTimestamp = Stopwatch.GetTimestamp();
             using HttpResponseMessage response =
-                await SendRequestAsync(endpoint, queryParams, cancellationToken);
+                await _transport.SendAsync(endpoint, queryParams, cancellationToken);
             int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
             using RentedBuffer rentedArr = await RentedBuffer.RentFromStreamAsync(
                 await response.Content.ReadAsStreamAsync(cancellationToken),
@@ -202,7 +205,7 @@ namespace ProjectTraiding.Moex.Clients
 
                 long startTimestamp = Stopwatch.GetTimestamp();
                 using HttpResponseMessage response =
-                    await SendRequestAsync(endpoint, queryParams, cancellationToken);
+                    await _transport.SendAsync(endpoint, queryParams, cancellationToken);
                 int contentLength =
                     (int)(response.Content.Headers.ContentLength ?? 1_048_576);
                 using RentedBuffer rentedArr = await RentedBuffer.RentFromStreamAsync(
@@ -252,7 +255,7 @@ namespace ProjectTraiding.Moex.Clients
         // ═══════════════════════════════════════════════════════════
 
         /// <summary>
-        /// Идёт через общий SendRequestAsync (EnsureSuccessOrThrow, typed errors, timeout).
+        /// Идёт через общий транспорт: проверка статуса, типизированные ошибки, тайм-аут.
         /// Raw = «не парсим JSON», а не «обходим ошибки и lifecycle ответа».
         /// Для debug endpoints и диагностики source contract.
         /// </summary>
@@ -261,7 +264,8 @@ namespace ProjectTraiding.Moex.Clients
             Dictionary<string, string>? queryParams = null,
             CancellationToken cancellationToken = default)
         {
-            using var response = await SendRequestAsync(method, queryParams, cancellationToken);
+            using var response = await _transport.SendAsync(
+                method, queryParams, cancellationToken);
             int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
             using var rentedArr = await RentedBuffer.RentFromStreamAsync(
                 await response.Content.ReadAsStreamAsync(cancellationToken),
@@ -294,69 +298,6 @@ namespace ProjectTraiding.Moex.Clients
         }
 
         private const int CandlesPageLimit = 500;
-
-        private async Task<HttpResponseMessage> SendRequestAsync(
-    string method,
-    Dictionary<string, string>? queryParams = null,
-    CancellationToken cancellationToken = default)
-        {
-            string requestUrl = _options.ApimBaseUrl + method;           // Realtime REST transport: APIM base URL, не публичный ISS.
-            queryParams ??= new Dictionary<string, string>();
-            if (queryParams.Count > 0)
-            {
-                QueryString queryString = QueryString.Create(queryParams);
-                requestUrl += queryString.ToString();
-            }
-            EnsureApiKeyConfigured();                                    // ← проверка ключа
-            using var request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
-            request.Headers.Add("Authorization", $"Bearer {_options.AlgKey}");  // ← Bearer
-            try
-            {
-                var response = await _httpClient.SendAsync(
-                    request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-                HttpClientHelpers.EnsureSuccessOrThrow(response, method);
-                return response;
-            }
-            catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
-            {
-                var timeoutEx = new MoexTimeoutException($"MOEX request timeout for {method}", method, "http_client", null, ex);
-                MoexLogMessages.RequestFailed(_logger, timeoutEx,
-                    MoexLogSources.RealtimeRest, method, timeoutEx.ErrorCategory,
-                    null, timeoutEx.TimeoutSource, timeoutEx.Message);
-                throw timeoutEx;
-            }
-            catch (TimeoutRejectedException ex)
-            {
-                var timeoutEx = new MoexTimeoutException(
-                    $"MOEX attempt timeout for {method}", method, "polly_attempt", null, ex);
-                MoexLogMessages.RequestFailed(_logger, timeoutEx,
-                    MoexLogSources.RealtimeRest, method, timeoutEx.ErrorCategory,
-                    null, timeoutEx.TimeoutSource, timeoutEx.Message);
-                throw timeoutEx;
-            }
-            catch (MoexHttpException ex)
-            {
-                // Источник тайм-аута берётся из самого исключения: при статусе 408
-                // EnsureSuccessOrThrow бросает MoexTimeoutException с заполненным
-                // TimeoutSource, и терять его в журнале незачем. У прочих отказов
-                // приведение даёт пустое значение — прежнее поведение сохраняется.
-                MoexLogMessages.RequestFailed(_logger, ex,
-                    MoexLogSources.RealtimeRest, method, ex.ErrorCategory,
-                    (HttpStatusCode?)ex.StatusCode,
-                    (ex as MoexTimeoutException)?.TimeoutSource, ex.Message);
-                throw;
-            }
-        }
-
-        private void EnsureApiKeyConfigured()
-        {
-            if (string.IsNullOrWhiteSpace(_options.AlgKey))
-            {
-                throw new InvalidOperationException(
-                    "MOEX ALGOPACK API key is not configured. " +
-                    "Set MoexAlg:Key via user-secrets or environment variable.");
-            }
-        }
 
     }
 }
