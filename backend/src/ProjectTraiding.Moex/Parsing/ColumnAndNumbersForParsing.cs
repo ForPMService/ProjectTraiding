@@ -37,9 +37,8 @@ namespace ProjectTraiding.Moex.Parsing
             /// Пример: "tradedate,tradetime,secid,pr_open,pr_high,..."
             /// 
             /// Применим к плотным схемам, где все колонки перечислены явно и SourceIndex идёт
-            /// без пропусков: datashop, realtime-сделки, стакан, свечи и dataversion. Это делает
-            /// схему единым источником правды: она одновременно определяет, что запросить и что
-            /// валидировать.
+            /// без пропусков, например dataversion. Это делает схему единым источником правды:
+            /// она одновременно определяет, что запросить и что валидировать.
             /// 
             /// Неприменим к схемам с пропусками в SourceIndex, например ISS securities.
             /// </summary>
@@ -53,27 +52,6 @@ namespace ProjectTraiding.Moex.Parsing
                 return string.Join(',', names);
             }
         };
-
-        // ═══════════════════════════════════════════════════════════
-        // ALGOPACK — Свечи
-        // Источник: columns-map.json → "Candles (stock SBER)", "Candles (futures SiM6)"
-        // rootKey: "candles", columnCount: 8, используем: все 8
-        // ═══════════════════════════════════════════════════════════
-
-        public static readonly ExpectedSchema AlgCandlesSchema = new(
-            TotalColumns: 8,
-            RootKey: "candles",
-            Columns: new ExpectedColumn[]
-            {
-                new(0, "open"u8.ToArray()),
-                new(1, "close"u8.ToArray()),
-                new(2, "high"u8.ToArray()),
-                new(3, "low"u8.ToArray()),
-                new(4, "value"u8.ToArray()),
-                new(5, "volume"u8.ToArray()),
-                new(6, "begin"u8.ToArray()),
-                new(7, "end"u8.ToArray()),
-            });
 
         // ═══════════════════════════════════════════════════════════
         // Календарь — Выходные дни (один рынок: stock или futures)
@@ -94,29 +72,6 @@ namespace ProjectTraiding.Moex.Parsing
             });
 
         // ═══════════════════════════════════════════════════════════
-        // Real-time — Orderbook (стакан котировок)
-        // Источник: raw fixtures orderbook-stock-raw.json, orderbook-futures-raw.json
-        // rootKey: "orderbook", columnCount: 8, используем: все 8
-        //
-        // Структура stock и futures идентична.
-        // ═══════════════════════════════════════════════════════════
-
-        public static readonly ExpectedSchema RealtimeOrderbookSchema = new(
-            TotalColumns: 8,
-            RootKey: "orderbook",
-            Columns: new ExpectedColumn[]
-            {
-                new(0, "BOARDID"u8.ToArray()),
-                new(1, "SECID"u8.ToArray()),
-                new(2, "BUYSELL"u8.ToArray()),
-                new(3, "PRICE"u8.ToArray()),
-                new(4, "QUANTITY"u8.ToArray()),
-                new(5, "SEQNUM"u8.ToArray()),
-                new(6, "UPDATETIME"u8.ToArray()),
-                new(7, "DECIMALS"u8.ToArray()),
-            });
-
-        // ═══════════════════════════════════════════════════════════
         // Real-time — DataVersion (служебный блок версии данных)
         // Источник: raw fixtures orderbook-*-raw.json, trades-*-raw.json
         // rootKey: "dataversion", columnCount: 4, используем: все 4
@@ -134,74 +89,6 @@ namespace ProjectTraiding.Moex.Parsing
                 new(1, "seqnum"u8.ToArray()),
                 new(2, "trade_date"u8.ToArray()),
                 new(3, "trade_session_date"u8.ToArray()),
-            });
-
-        // ═══════════════════════════════════════════════════════════
-        // Real-time — Trades Stock (сделки по акциям)
-        //
-        // ВНИМАНИЕ: контракт источника изменён биржей. Проверено живым ответом 2026-07-13:
-        //   /engines/stock/markets/shares/boards/tqbr/securities/SBER/trades.json
-        //
-        // Было 15 колонок, стало 14:
-        //   — колонка TRADETIME_GRP убрана;
-        //   — BOARDID переехал с позиции 2 на позицию 7;
-        //   — PERIOD и VALUE поменялись местами.
-        // Биржа об изменении не предупреждала.
-        //
-        // После включения явного списка колонок (trades.columns) порядок ниже становится
-        // ЗАПРОШЕННЫМ, а не полученным: биржа возвращает колонки в том порядке, в каком мы их
-        // перечислили. Схема одновременно строит запрос и проверяет ответ.
-        // ═══════════════════════════════════════════════════════════
-
-        public static readonly ExpectedSchema RealtimeTradesStockSchema = new(
-            TotalColumns: 14,
-            RootKey: "trades",
-            Columns: new ExpectedColumn[]
-            {
-                new(0,  "TRADENO"u8.ToArray()),
-                new(1,  "TRADETIME"u8.ToArray()),
-                new(2,  "SECID"u8.ToArray()),
-                new(3,  "PRICE"u8.ToArray()),
-                new(4,  "QUANTITY"u8.ToArray()),
-                new(5,  "PERIOD"u8.ToArray()),
-                new(6,  "VALUE"u8.ToArray()),
-                new(7,  "BOARDID"u8.ToArray()),
-                new(8,  "SYSTIME"u8.ToArray()),
-                new(9,  "BUYSELL"u8.ToArray()),
-                new(10, "DECIMALS"u8.ToArray()),
-                new(11, "TRADINGSESSION"u8.ToArray()),
-                new(12, "TRADEDATE"u8.ToArray()),
-                new(13, "TRADE_SESSION_DATE"u8.ToArray()),
-            });
-
-        // ═══════════════════════════════════════════════════════════
-        // Real-time — Trades Futures (сделки по фьючерсам)
-        // Источник: raw fixture trades-futures-raw.json
-        // rootKey: "trades", columnCount: 13, используем: все 13
-        //
-        // Внимание: rootKey совпадает со stock ("trades"),
-        // но набор и количество колонок разные.
-        // Парсер выбирает схему по контексту вызова (stock vs futures endpoint).
-        // ═══════════════════════════════════════════════════════════
-
-        public static readonly ExpectedSchema RealtimeTradesFuturesSchema = new(
-            TotalColumns: 13,
-            RootKey: "trades",
-            Columns: new ExpectedColumn[]
-            {
-                new(0,  "TRADENO"u8.ToArray()),
-                new(1,  "BOARDNAME"u8.ToArray()),
-                new(2,  "SECID"u8.ToArray()),
-                new(3,  "TRADEDATE"u8.ToArray()),
-                new(4,  "TRADETIME"u8.ToArray()),
-                new(5,  "PRICE"u8.ToArray()),
-                new(6,  "QUANTITY"u8.ToArray()),
-                new(7,  "SYSTIME"u8.ToArray()),
-                new(8,  "RECNO"u8.ToArray()),
-                new(9,  "OPENPOSITION"u8.ToArray()),
-                new(10, "OFFMARKETDEAL"u8.ToArray()),
-                new(11, "BUYSELL"u8.ToArray()),
-                new(12, "TRADE_SESSION_DATE"u8.ToArray()),
             });
 
         // ═══════════════════════════════════════════════════════════

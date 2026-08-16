@@ -4,10 +4,9 @@ using System.Globalization;
 namespace ProjectTraiding.Moex.StorageBase.ClickHouse
 {
     /// <summary>
-    /// Построение меток времени для вставки в ClickHouse. Общий доменный модуль для всех карт
-    /// столбцов: собирает ключевое время строки из строковых даты и времени торгов и переводит
-    /// произвольную метку в московское стенное представление без сдвига. Вынесено из карт,
-    /// где оба метода дословно повторялись. Состояния нет — только чистые преобразования.
+    /// Построение меток времени для вставки в ClickHouse. Собирает ключевое время строки
+    /// из строковых даты и времени торгов и переводит произвольную метку в московское
+    /// стенное представление без сдвига. Состояния нет — только чистые преобразования.
     /// </summary>
     public static class MoexClickHouseTime
     {
@@ -34,36 +33,6 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 return null;
 
             return DateTime.SpecifyKind(value.Value, DateTimeKind.Unspecified);
-        }
-
-        // ═══════════════════════════════════════════════════════════
-        // Real-time: время приходит строками, а у стакана — числом.
-        // ═══════════════════════════════════════════════════════════
-
-        /// <summary>
-        /// Время снимка стакана из SEQNUM. В ответе стакана даты нет: UPDATETIME даёт только
-        /// время суток, и единственное поле с датой — SEQNUM в виде числа YYYYMMDDHHmmss.
-        /// Точность — секунда; два снимка внутри одной секунды по времени источника неразличимы.
-        /// </summary>
-        public static DateTime BuildSourceTimeFromSeqNum(long? seqNum)
-        {
-            if (seqNum is null || seqNum.Value <= 0)
-                throw new InvalidOperationException(
-                    "Строка стакана отвергнута: SEQNUM пуст.");
-
-            string text = seqNum.Value.ToString(CultureInfo.InvariantCulture);
-
-            if (text.Length != 14)
-                throw new InvalidOperationException(
-                    $"Строка стакана отвергнута: SEQNUM='{text}' не в форме YYYYMMDDHHmmss.");
-
-            DateTime parsed = DateTime.ParseExact(
-                text,
-                "yyyyMMddHHmmss",
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.None);
-
-            return DateTime.SpecifyKind(parsed, DateTimeKind.Unspecified);
         }
 
         /// <summary>

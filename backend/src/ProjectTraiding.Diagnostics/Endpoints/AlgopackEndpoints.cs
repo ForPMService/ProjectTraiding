@@ -1,5 +1,4 @@
 using ProjectTraiding.Moex.Clients;
-using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Series;
 using System.Text.Json.Serialization.Metadata;

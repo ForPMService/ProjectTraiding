@@ -1,5 +1,4 @@
 ﻿using ProjectTraiding.Moex.Clients;
-using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using ProjectTraiding.Moex.Contracts.Pagination;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;

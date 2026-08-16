@@ -9,9 +9,8 @@ namespace ProjectTraiding.Moex.Parsing
     /// Акции:    /engines/stock/markets/shares/boards/tqbr/securities.json
     /// Фьючерсы: /engines/futures/markets/forts/boards/RFUD/securities.json
     ///
-    /// Паттерн: два прохода по одним байтам (securities → marketdata).
-    /// Аналог: ParsingCalendarUtf8.ParseStockSession (два прохода),
-    ///         ParsingRealtimeRestUtf8.ParseOrderbook (два прохода).
+    /// Паттерн: два прохода по одним байтам (securities → marketdata), как в
+    /// ParsingCalendarUtf8.ParseStockSession.
     ///
     /// Блоки dataversion и marketdata_yields — пропускаются (парсер их не ищет).
     /// </summary>

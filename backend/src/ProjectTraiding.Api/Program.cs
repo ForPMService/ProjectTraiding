@@ -3,7 +3,6 @@ using ProjectTraiding.Api.Infrastructure;
 using ProjectTraiding.Diagnostics.DependencyInjection;
 using ProjectTraiding.Management.Contracts;
 using ProjectTraiding.Management.DependencyInjection;
-using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using ProjectTraiding.Moex.Contracts.Serialization;
 using ProjectTraiding.Moex.Endpoints;
 using ProjectTraiding.Moex.Infrastructure.DependencyInjection;
