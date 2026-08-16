@@ -193,7 +193,11 @@ namespace ProjectTraiding.Moex.Clients
             }
             catch (MoexHttpException ex)
             {
-                MoexLogMessages.RequestFailed(_logger, ex, MoexLogSources.Calendar, method, ex.ErrorCategory, (HttpStatusCode?)ex.StatusCode, null, ex.Message);
+                // Источник тайм-аута берётся из самого исключения: при статусе 408
+                // EnsureSuccessOrThrow бросает MoexTimeoutException с заполненным
+                // TimeoutSource, и терять его в журнале незачем. У прочих отказов
+                // приведение даёт пустое значение — прежнее поведение сохраняется.
+                MoexLogMessages.RequestFailed(_logger, ex, MoexLogSources.Calendar, method, ex.ErrorCategory, (HttpStatusCode?)ex.StatusCode, (ex as MoexTimeoutException)?.TimeoutSource, ex.Message);
                 throw;
             }
         }
