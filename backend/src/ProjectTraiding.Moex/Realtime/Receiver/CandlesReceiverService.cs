@@ -29,6 +29,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
         protected override TimeSpan StalePollThreshold => _stalePollThreshold;
 
+        protected override int? StorageCandleInterval => CandleInterval;
+
         // Реальное время пока только минутная свеча. Контракт подписок (V026) держит это CHECK-ом.
         private const int CandleInterval = 1;
 
@@ -88,12 +90,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     if (instruments.Count == 0)
                         MoexRealtimeReceiverLogMessages.CandlesSubscriptionsEmpty(_logger);
 
-                    await PrepareInitialInstrumentsAsync(instruments, coverageWriter, ct);
+                    await PrepareInitialInstrumentsAsync(
+                        scope.ServiceProvider, instruments, coverageWriter, ct);
                     _initialized = true;
                 }
                 else
                 {
-                    await ReconcileStatesAsync(instruments, coverageWriter, ct);
+                    await ReconcileStatesAsync(
+                        scope.ServiceProvider, instruments, coverageWriter, ct);
                 }
 
                 MoexRealtimeRestClient client =
@@ -138,136 +142,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             }
         }
 
-        private async Task PrepareInitialInstrumentsAsync(
-            IReadOnlyList<ReceiverInstrument> instruments,
-            StreamCoverageWriter coverageWriter,
-            CancellationToken ct)
-        {
-            // Один запрос закрывает ВСЕ осиротевшие 'open'-сеансы свечей (интервал 1) прошлого
-            // запуска, независимо от инструмента — по единственному писателю этого вида и интервала.
-            await coverageWriter.MarkOrphanedOpenAsCrashedAsync(DataKind, CandleInterval, ct);
-
-            for (int i = 0; i < instruments.Count; i++)
-            {
-                ReceiverInstrument instrument = instruments[i];
-                if (States.ContainsKey(instrument.Secid))
-                    continue;
-
-                try
-                {
-                    string boardId = GetBoardId(instrument.Market);
-                    await OpenStateAsync(instrument, boardId, coverageWriter, ct);
-                }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    MoexRealtimeReceiverLogMessages.CandlesInstrumentPreparationFailed(
-                        _logger, ex, instrument.Secid);
-                }
-            }
-        }
-
-        /// <summary>
-        /// Приводит словарь состояний к желаемому списку подписок. Снятые инструменты
-        /// помечаются к остановке, исключаются из опроса и закрываются штатно; состояние
-        /// удаляется только после успешного закрытия, при отказе закрытие повторяется на
-        /// следующем обороте. Затем добавляются новые. Пустой желаемый список означает
-        /// остановку всех состояний этого вида — это законное состояние, а не сбой.
-        /// </summary>
-        private async Task ReconcileStatesAsync(
-            IReadOnlyList<ReceiverInstrument> instruments,
-            StreamCoverageWriter coverageWriter,
-            CancellationToken ct)
-        {
-            HashSet<string> desired = new(StringComparer.Ordinal);
-            for (int i = 0; i < instruments.Count; i++)
-                desired.Add(instruments[i].Secid);
-
-            // Пометка. Изменяем только значения, ключи словаря не трогаем — перечисление безопасно.
-            foreach (KeyValuePair<string, CandleInstrumentState> pair in States)
-            {
-                if (desired.Contains(pair.Key) || pair.Value.IsStopping)
-                    continue;
-
-                pair.Value.IsStopping = true;
-                MoexRealtimeReceiverLogMessages.CandlesInstrumentStopping(
-                    _logger, pair.Key, pair.Value.SessionId);
-            }
-
-            // Ключи собираем заранее: удалять из словаря во время перечисления нельзя.
-            List<string> stopping = new();
-            foreach (KeyValuePair<string, CandleInstrumentState> pair in States)
-            {
-                if (pair.Value.IsStopping)
-                    stopping.Add(pair.Key);
-            }
-
-            for (int i = 0; i < stopping.Count; i++)
-            {
-                string secid = stopping[i];
-                CandleInstrumentState state = States[secid];
-                try
-                {
-                    await coverageWriter.CloseSessionAsync(state.SessionId, state.RowsTotal, ct);
-                    States.Remove(secid);
-                    MoexRealtimeReceiverLogMessages.CandlesInstrumentStopped(
-                        _logger, secid, state.SessionId, state.RowsTotal);
-                }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    // Состояние остаётся с признаком остановки: в опрос не попадёт,
-                    // закрытие повторится на следующем обороте.
-                    MoexRealtimeReceiverLogMessages.CandlesSessionCloseFailed(
-                        _logger, ex, secid, state.SessionId);
-                }
-            }
-
-            await AddNewInstrumentsAsync(instruments, coverageWriter, ct);
-        }
-
-        private async Task AddNewInstrumentsAsync(
-            IReadOnlyList<ReceiverInstrument> instruments,
-            StreamCoverageWriter coverageWriter,
-            CancellationToken ct)
-        {
-            for (int i = 0; i < instruments.Count; i++)
-            {
-                ReceiverInstrument instrument = instruments[i];
-                if (States.ContainsKey(instrument.Secid))
-                    continue;
-
-                try
-                {
-                    string boardId = GetBoardId(instrument.Market);
-                    await coverageWriter.CloseCrashedAsync(
-                        instrument.Secid, instrument.Market, boardId, DataKind, CandleInterval, ct);
-                    await OpenStateAsync(instrument, boardId, coverageWriter, ct);
-                }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    MoexRealtimeReceiverLogMessages.CandlesInstrumentPreparationFailed(
-                        _logger, ex, instrument.Secid);
-                }
-            }
-        }
-
-        private async Task OpenStateAsync(
+        protected override async Task OpenStateAsync(
+            IServiceProvider services,
             ReceiverInstrument instrument,
             string boardId,
-            StreamCoverageWriter coverageWriter,
             CancellationToken ct)
         {
+            StreamCoverageWriter coverageWriter =
+                services.GetRequiredService<StreamCoverageWriter>();
             long sessionId = await coverageWriter.OpenSessionAsync(
                 instrument.Secid, instrument.Market, boardId, DataKind, CandleInterval, ct);
             long heartbeatTimestamp = Stopwatch.GetTimestamp();
@@ -468,6 +350,17 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
         protected override void LogShutdownFailed(Exception exception)
             => MoexRealtimeReceiverLogMessages.CandlesShutdownFailed(_logger, exception);
+
+        protected override void LogInstrumentPreparationFailed(Exception exception, string secid)
+            => MoexRealtimeReceiverLogMessages.CandlesInstrumentPreparationFailed(
+                _logger, exception, secid);
+
+        protected override void LogInstrumentStopping(string secid, long sessionId)
+            => MoexRealtimeReceiverLogMessages.CandlesInstrumentStopping(_logger, secid, sessionId);
+
+        protected override void LogInstrumentStopped(string secid, long sessionId, long rowsTotal)
+            => MoexRealtimeReceiverLogMessages.CandlesInstrumentStopped(
+                _logger, secid, sessionId, rowsTotal);
 
     }
 

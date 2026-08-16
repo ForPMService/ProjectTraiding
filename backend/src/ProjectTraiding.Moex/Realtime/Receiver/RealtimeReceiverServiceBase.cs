@@ -100,6 +100,159 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         protected abstract TimeSpan StalePollThreshold { get; }
 
         /// <summary>
+        /// Свечной интервал для писателей покрытия или пусто у видов данных без интервала.
+        /// </summary>
+        protected abstract int? StorageCandleInterval { get; }
+
+        /// <summary>
+        /// Открывает сеанс по одному инструменту и кладёт состояние в словарь.
+        /// Остаётся у каждой службы своим: у сделок сюда входят чтение курсора
+        /// и холодный старт по хвосту, у стакана и свечей — только открытие сеанса.
+        /// </summary>
+        protected abstract Task OpenStateAsync(
+            IServiceProvider services,
+            ReceiverInstrument instrument,
+            string boardId,
+            CancellationToken ct);
+
+        /// <summary>Событие неудачной подготовки инструмента со стабильным EventId наследника.</summary>
+        protected abstract void LogInstrumentPreparationFailed(Exception exception, string secid);
+
+        /// <summary>Событие пометки инструмента к остановке со стабильным EventId наследника.</summary>
+        protected abstract void LogInstrumentStopping(string secid, long sessionId);
+
+        /// <summary>Событие штатной остановки инструмента со стабильным EventId наследника.</summary>
+        protected abstract void LogInstrumentStopped(string secid, long sessionId, long rowsTotal);
+
+        /// <summary>
+        /// Первичная подготовка при первом обороте. Один запрос закрывает все осиротевшие
+        /// открытые сеансы прошлого запуска независимо от инструмента: приёмник читает
+        /// только включённые подписки, поэтому точечное закрытие пропустило бы осиротевший
+        /// сеанс отключённой или удалённой подписки.
+        /// </summary>
+        protected async Task PrepareInitialInstrumentsAsync(
+            IServiceProvider services,
+            IReadOnlyList<ReceiverInstrument> instruments,
+            StreamCoverageWriter coverageWriter,
+            CancellationToken ct)
+        {
+            await coverageWriter.MarkOrphanedOpenAsCrashedAsync(
+                DataKind, StorageCandleInterval, ct);
+
+            for (int i = 0; i < instruments.Count; i++)
+            {
+                ReceiverInstrument instrument = instruments[i];
+                if (States.ContainsKey(instrument.Secid))
+                    continue;
+
+                try
+                {
+                    string boardId = GetBoardId(instrument.Market);
+                    await OpenStateAsync(services, instrument, boardId, ct);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    LogInstrumentPreparationFailed(ex, instrument.Secid);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Приводит словарь состояний к желаемому списку подписок. Снятые инструменты
+        /// помечаются к остановке, исключаются из опроса и закрываются штатно; состояние
+        /// удаляется только после успешного закрытия, при отказе закрытие повторяется на
+        /// следующем обороте. Затем добавляются новые. Пустой желаемый список означает
+        /// остановку всех состояний этого вида — это законное состояние, а не сбой.
+        /// </summary>
+        protected async Task ReconcileStatesAsync(
+            IServiceProvider services,
+            IReadOnlyList<ReceiverInstrument> instruments,
+            StreamCoverageWriter coverageWriter,
+            CancellationToken ct)
+        {
+            HashSet<string> desired = new(StringComparer.Ordinal);
+            for (int i = 0; i < instruments.Count; i++)
+                desired.Add(instruments[i].Secid);
+
+            // Пометка. Изменяем только значения, ключи словаря не трогаем — перечисление безопасно.
+            foreach (KeyValuePair<string, TState> pair in States)
+            {
+                if (desired.Contains(pair.Key) || pair.Value.IsStopping)
+                    continue;
+
+                pair.Value.IsStopping = true;
+                LogInstrumentStopping(pair.Key, pair.Value.SessionId);
+            }
+
+            // Ключи собираем заранее: удалять из словаря во время перечисления нельзя.
+            List<string> stopping = new();
+            foreach (KeyValuePair<string, TState> pair in States)
+            {
+                if (pair.Value.IsStopping)
+                    stopping.Add(pair.Key);
+            }
+
+            for (int i = 0; i < stopping.Count; i++)
+            {
+                string secid = stopping[i];
+                TState state = States[secid];
+                try
+                {
+                    await coverageWriter.CloseSessionAsync(state.SessionId, state.RowsTotal, ct);
+                    States.Remove(secid);
+                    LogInstrumentStopped(secid, state.SessionId, state.RowsTotal);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    // Состояние остаётся с признаком остановки: в опрос не попадёт,
+                    // закрытие повторится на следующем обороте.
+                    LogSessionCloseFailed(ex, secid, state.SessionId);
+                }
+            }
+
+            await AddNewInstrumentsAsync(services, instruments, coverageWriter, ct);
+        }
+
+        private async Task AddNewInstrumentsAsync(
+            IServiceProvider services,
+            IReadOnlyList<ReceiverInstrument> instruments,
+            StreamCoverageWriter coverageWriter,
+            CancellationToken ct)
+        {
+            for (int i = 0; i < instruments.Count; i++)
+            {
+                ReceiverInstrument instrument = instruments[i];
+                if (States.ContainsKey(instrument.Secid))
+                    continue;
+
+                try
+                {
+                    string boardId = GetBoardId(instrument.Market);
+                    await coverageWriter.CloseCrashedAsync(
+                        instrument.Secid, instrument.Market, boardId,
+                        DataKind, StorageCandleInterval, ct);
+                    await OpenStateAsync(services, instrument, boardId, ct);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    LogInstrumentPreparationFailed(ex, instrument.Secid);
+                }
+            }
+        }
+
+        /// <summary>
         /// Публикует агрегат состояния приёма по обоим рынкам. Вызывается после любого
         /// исхода оборота: иначе при отказе согласования состояний числа активных
         /// и отставших инструментов застынут на прежних значениях.

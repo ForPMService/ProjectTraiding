@@ -21,6 +21,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
         protected override TimeSpan StalePollThreshold => _stalePollThreshold;
 
+        protected override int? StorageCandleInterval => null;
+
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<OrderbookReceiverService> _logger;
         private readonly TimeSpan _instrumentFetchTimeout;
@@ -71,12 +73,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     if (instruments.Count == 0)
                         MoexRealtimeReceiverLogMessages.OrderbookSubscriptionsEmpty(_logger);
 
-                    await PrepareInitialInstrumentsAsync(instruments, coverageWriter, ct);
+                    await PrepareInitialInstrumentsAsync(
+                        scope.ServiceProvider, instruments, coverageWriter, ct);
                     _initialized = true;
                 }
                 else
                 {
-                    await ReconcileStatesAsync(instruments, coverageWriter, ct);
+                    await ReconcileStatesAsync(
+                        scope.ServiceProvider, instruments, coverageWriter, ct);
                 }
 
                 MoexRealtimeRestClient client =
@@ -126,140 +130,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             }
         }
 
-        private async Task PrepareInitialInstrumentsAsync(
-            IReadOnlyList<ReceiverInstrument> instruments,
-            StreamCoverageWriter coverageWriter,
-            CancellationToken ct)
-        {
-            // Один запрос закрывает ВСЕ осиротевшие 'open'-сеансы стакана прошлого запуска —
-            // независимо от инструмента. Приёмник читает только включённые подписки, поэтому
-            // точечное закрытие по этому списку пропустило бы осиротевший сеанс отключённой или
-            // удалённой подписки. Глобальное закрытие опирается на единственного писателя этого
-            // вида данных.
-            await coverageWriter.MarkOrphanedOpenAsCrashedAsync(DataKind, null, ct);
-
-            // Открываем сеанс каждому инструменту из читаемого списка. Гейт по crashedClosed не нужен.
-            for (int i = 0; i < instruments.Count; i++)
-            {
-                ReceiverInstrument instrument = instruments[i];
-                if (States.ContainsKey(instrument.Secid))
-                    continue;
-
-                try
-                {
-                    string boardId = GetBoardId(instrument.Market);
-                    await OpenStateAsync(instrument, boardId, coverageWriter, ct);
-                }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    MoexRealtimeReceiverLogMessages.OrderbookInstrumentPreparationFailed(
-                        _logger, ex, instrument.Secid);
-                }
-            }
-        }
-
-        /// <summary>
-        /// Приводит словарь состояний к желаемому списку подписок. Снятые инструменты
-        /// помечаются к остановке, исключаются из опроса и закрываются штатно; состояние
-        /// удаляется только после успешного закрытия, при отказе закрытие повторяется на
-        /// следующем обороте. Затем добавляются новые. Пустой желаемый список означает
-        /// остановку всех состояний этого вида — это законное состояние, а не сбой.
-        /// </summary>
-        private async Task ReconcileStatesAsync(
-            IReadOnlyList<ReceiverInstrument> instruments,
-            StreamCoverageWriter coverageWriter,
-            CancellationToken ct)
-        {
-            HashSet<string> desired = new(StringComparer.Ordinal);
-            for (int i = 0; i < instruments.Count; i++)
-                desired.Add(instruments[i].Secid);
-
-            // Пометка. Изменяем только значения, ключи словаря не трогаем — перечисление безопасно.
-            foreach (KeyValuePair<string, ReceiverInstrumentSessionState> pair in States)
-            {
-                if (desired.Contains(pair.Key) || pair.Value.IsStopping)
-                    continue;
-
-                pair.Value.IsStopping = true;
-                MoexRealtimeReceiverLogMessages.OrderbookInstrumentStopping(
-                    _logger, pair.Key, pair.Value.SessionId);
-            }
-
-            // Ключи собираем заранее: удалять из словаря во время перечисления нельзя.
-            List<string> stopping = new();
-            foreach (KeyValuePair<string, ReceiverInstrumentSessionState> pair in States)
-            {
-                if (pair.Value.IsStopping)
-                    stopping.Add(pair.Key);
-            }
-
-            for (int i = 0; i < stopping.Count; i++)
-            {
-                string secid = stopping[i];
-                ReceiverInstrumentSessionState state = States[secid];
-                try
-                {
-                    await coverageWriter.CloseSessionAsync(state.SessionId, state.RowsTotal, ct);
-                    States.Remove(secid);
-                    MoexRealtimeReceiverLogMessages.OrderbookInstrumentStopped(
-                        _logger, secid, state.SessionId, state.RowsTotal);
-                }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    // Состояние остаётся с признаком остановки: в опрос не попадёт,
-                    // закрытие повторится на следующем обороте.
-                    MoexRealtimeReceiverLogMessages.OrderbookSessionCloseFailed(
-                        _logger, ex, secid, state.SessionId);
-                }
-            }
-
-            await AddNewInstrumentsAsync(instruments, coverageWriter, ct);
-        }
-
-        private async Task AddNewInstrumentsAsync(
-            IReadOnlyList<ReceiverInstrument> instruments,
-            StreamCoverageWriter coverageWriter,
-            CancellationToken ct)
-        {
-            for (int i = 0; i < instruments.Count; i++)
-            {
-                ReceiverInstrument instrument = instruments[i];
-                if (States.ContainsKey(instrument.Secid))
-                    continue;
-
-                try
-                {
-                    string boardId = GetBoardId(instrument.Market);
-                    await coverageWriter.CloseCrashedAsync(
-                        instrument.Secid, instrument.Market, boardId, DataKind, null, ct);
-                    await OpenStateAsync(instrument, boardId, coverageWriter, ct);
-                }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    MoexRealtimeReceiverLogMessages.OrderbookInstrumentPreparationFailed(
-                        _logger, ex, instrument.Secid);
-                }
-            }
-        }
-
-        private async Task OpenStateAsync(
+        protected override async Task OpenStateAsync(
+            IServiceProvider services,
             ReceiverInstrument instrument,
             string boardId,
-            StreamCoverageWriter coverageWriter,
             CancellationToken ct)
         {
+            StreamCoverageWriter coverageWriter =
+                services.GetRequiredService<StreamCoverageWriter>();
             long sessionId = await coverageWriter.OpenSessionAsync(
                 instrument.Secid, instrument.Market, boardId, DataKind, null, ct);
             long heartbeatTimestamp = Stopwatch.GetTimestamp();
@@ -416,6 +294,18 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
         protected override void LogShutdownFailed(Exception exception)
             => MoexRealtimeReceiverLogMessages.OrderbookShutdownFailed(_logger, exception);
+
+        protected override void LogInstrumentPreparationFailed(Exception exception, string secid)
+            => MoexRealtimeReceiverLogMessages.OrderbookInstrumentPreparationFailed(
+                _logger, exception, secid);
+
+        protected override void LogInstrumentStopping(string secid, long sessionId)
+            => MoexRealtimeReceiverLogMessages.OrderbookInstrumentStopping(
+                _logger, secid, sessionId);
+
+        protected override void LogInstrumentStopped(string secid, long sessionId, long rowsTotal)
+            => MoexRealtimeReceiverLogMessages.OrderbookInstrumentStopped(
+                _logger, secid, sessionId, rowsTotal);
 
     }
 
