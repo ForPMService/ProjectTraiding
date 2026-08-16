@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Hosting;
 using ProjectTraiding.Moex.Clients;
-using ProjectTraiding.Moex.Contracts.Dto.Realtime;
 using ProjectTraiding.Moex.Infrastructure;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
+using ProjectTraiding.Moex.Realtime.Series;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using System;
@@ -85,8 +85,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
                 MoexRealtimeRestClient client =
                     scope.ServiceProvider.GetRequiredService<MoexRealtimeRestClient>();
-                RealtimeRowWriter<RealtimeOrderbookRowDTO> writer =
-                    scope.ServiceProvider.GetRequiredService<RealtimeRowWriter<RealtimeOrderbookRowDTO>>();
+                RealtimeSpecRowWriter writer =
+                    scope.ServiceProvider.GetRequiredService<RealtimeSpecRowWriter>();
                 foreach (KeyValuePair<string, ReceiverInstrumentSessionState> pair in _states)
                 {
                     if (pair.Value.IsStopping)
@@ -279,10 +279,12 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             string secid,
             ReceiverInstrumentSessionState state,
             MoexRealtimeRestClient client,
-            RealtimeRowWriter<RealtimeOrderbookRowDTO> writer,
+            RealtimeSpecRowWriter writer,
             StreamCoverageWriter coverageWriter,
             CancellationToken commitCt)
         {
+            MoexRealtimeSpec spec = MoexRealtimeRegistry.Orderbook;
+
             // Снимок стакана — под собственным бюджетом, живущим строго вокруг вызова клиента и
             // уничтожаемым до фиксации. Причины те же, что в опросе сделок.
             MoexOperationTags operationTags = new MoexOperationTags(
@@ -297,7 +299,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 operationTags.Market,
                 MoexFlows.Realtime);
 
-            RealtimeOrderbookParseResult result;
+            RealtimeParsedPage page;
             using (Activity? pollActivity =
                    MoexTelemetry.ActivitySource.StartActivity("moex.realtime.instrument.poll"))
             {
@@ -319,13 +321,11 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 fetchActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
                 try
                 {
-                    if (state.Market == StockMarket)
-                        result = await client.GetOrderbookStockAsync(secid, fetchCts.Token);
-                    else
-                        result = await client.GetOrderbookFuturesAsync(secid, fetchCts.Token);
+                    page = await client.GetOrderbookAsync(
+                        state.Market, secid, fetchCts.Token);
 
                     MoexMetrics.RowsReceived.Add(
-                        result.Rows.Count,
+                        page.Rows.Count,
                         new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, operationTags.Source),
                         new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, operationTags.DataKind),
                         new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, operationTags.Market),
@@ -371,18 +371,23 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
             try
             {
-                if (result.Rows.Count > 0)
+                if (page.Rows.Count > 0)
                 {
+                    if (page.GuardFailure is not null) throw page.GuardFailure;
+
                     // Фиксация — под хостовым commitCt. У стакана курсора нет, durable-запись — только
                     // ClickHouse; за ней сразу двигается накопленный счётчик состояния.
-                    string? sessionDate = result.DataVersion?.TradeSessionDate;
                     await writer.WriteAsync(
-                        secid, result.Rows, sessionDate, insertContext, commitCt);
+                        spec,
+                        secid,
+                        page.Rows,
+                        page.FirstTime,
+                        page.LastTime,
+                        insertContext,
+                        commitCt);
 
-                    state.RowsTotal += result.Rows.Count;
-                    DateTime snapshotSourceTime =
-                        MoexClickHouseTime.BuildSourceTimeFromSeqNum(result.Rows[0].SeqNum);
-                    state.LastConfirmedMarketTime = MoexTime.ToDateTimeOffset(snapshotSourceTime);
+                    state.RowsTotal += page.Rows.Count;
+                    state.LastConfirmedMarketTime = MoexTime.ToDateTimeOffset(page.FirstTime);
                 }
 
                 MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Success);

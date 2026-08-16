@@ -2,9 +2,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ProjectTraiding.Moex.Clients;
-using ProjectTraiding.Moex.Contracts.Dto.Algopack;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Infrastructure;
+using ProjectTraiding.Moex.Realtime.Series;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using System;
@@ -102,8 +102,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
                 MoexRealtimeRestClient client =
                     scope.ServiceProvider.GetRequiredService<MoexRealtimeRestClient>();
-                RealtimeRowWriter<CandlesDTO> writer =
-                    scope.ServiceProvider.GetRequiredService<RealtimeRowWriter<CandlesDTO>>();
+                RealtimeSpecRowWriter writer =
+                    scope.ServiceProvider.GetRequiredService<RealtimeSpecRowWriter>();
                 foreach (KeyValuePair<string, CandleInstrumentState> pair in _states)
                 {
                     if (pair.Value.IsStopping)
@@ -287,10 +287,12 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             string secid,
             CandleInstrumentState state,
             MoexRealtimeRestClient client,
-            RealtimeRowWriter<CandlesDTO> writer,
+            RealtimeSpecRowWriter writer,
             StreamCoverageWriter coverageWriter,
             CancellationToken commitCt)
         {
+            MoexRealtimeSpec spec = MoexRealtimeRegistry.CandlesFor(CandleInterval);
+
             // Московское время фиксируем один раз: им задаётся и окно запроса, и граница «закрыта».
             DateTime now = MoexTime.Now;
             DateTime from = now.AddMinutes(-WindowMinutes);
@@ -310,7 +312,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 operationTags.Market,
                 MoexFlows.Realtime);
 
-            List<CandlesDTO> candles;
+            List<(object?[] Row, DateTime? Begin)> candles;
             using (Activity? pollActivity =
                    MoexTelemetry.ActivitySource.StartActivity("moex.realtime.instrument.poll"))
             {
@@ -332,12 +334,13 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 fetchActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
                 try
                 {
-                    if (state.Market == StockMarket)
-                        candles = await client.GetCandlesTodayStockAsync(
-                            secid, from, now, CandleInterval, fetchCts.Token);
-                    else
-                        candles = await client.GetCandlesTodayFuturesAsync(
-                            secid, from, now, CandleInterval, fetchCts.Token);
+                    candles = await client.GetCandlesTodayAsync(
+                        state.Market,
+                        secid,
+                        from,
+                        now,
+                        CandleInterval,
+                        fetchCts.Token);
 
                     MoexMetrics.RowsReceived.Add(
                         candles.Count,
@@ -382,31 +385,40 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             }
 
             // Минута с началом B закрыта, когда московское время достигло B + интервал.
-            // Закрытые пишем в ClickHouse, но только новее уже записанной границы,
-            // чтобы не гонять повтор.
-            List<CandlesDTO> closed = new List<CandlesDTO>(candles.Count);
+            // Границы отобранной пачки считаются этим же проходом: отдельный проход
+            // по отобранным строкам не нужен.
+            List<object?[]> closed = new List<object?[]>(candles.Count);
             DateTime maxClosedBegin = state.LastClosedBegin ?? DateTime.MinValue;
+            DateTime firstClosedBegin = default;
+            DateTime lastClosedBegin = default;
 
             try
             {
                 for (int i = 0; i < candles.Count; i++)
                 {
-                    CandlesDTO candle = candles[i];
-                    if (candle.Begin is null)
+                    DateTime? begin = candles[i].Begin;
+
+                    // Свеча без начала пропускается и страницу не отвергает: приём этим
+                    // отличается от исторической загрузки намеренно.
+                    if (begin is null)
                         continue;
 
-                    DateTime begin = candle.Begin.Value;
-
-                    bool isClosed = begin.AddMinutes(CandleInterval) <= now;
-                    if (!isClosed)
+                    DateTime beginValue = begin.Value;
+                    if (beginValue.AddMinutes(CandleInterval) > now)
                         continue;
 
-                    if (state.LastClosedBegin is null || begin > state.LastClosedBegin.Value)
-                    {
-                        closed.Add(candle);
-                        if (begin > maxClosedBegin)
-                            maxClosedBegin = begin;
-                    }
+                    if (state.LastClosedBegin is not null &&
+                        beginValue <= state.LastClosedBegin.Value)
+                        continue;
+
+                    if (closed.Count == 0)
+                        firstClosedBegin = beginValue;
+
+                    lastClosedBegin = beginValue;
+                    closed.Add(candles[i].Row);
+
+                    if (beginValue > maxClosedBegin)
+                        maxClosedBegin = beginValue;
                 }
 
                 if (closed.Count > 0)
@@ -417,7 +429,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     // он перекрывает минуту при слиянии. До планировщика догрузки текущего дня
                     // предварительная версия может дожить до ручного прогона; точные расчёты обязаны
                     // считать строки приёмника предварительными.
-                    await writer.WriteAsync(secid, closed, null, insertContext, commitCt);
+                    await writer.WriteAsync(
+                        spec,
+                        secid,
+                        closed,
+                        firstClosedBegin,
+                        lastClosedBegin,
+                        insertContext,
+                        commitCt);
                     state.RowsTotal += closed.Count;
                     state.LastClosedBegin = maxClosedBegin;
                     state.LastConfirmedMarketTime = MoexTime.ToDateTimeOffset(maxClosedBegin);
