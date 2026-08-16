@@ -129,14 +129,8 @@ public sealed class MoexHistoryPageReader
                 {
                     using HttpResponseMessage response = await _client.SendRequestAsync(
                         method, query, cancellationToken);
-                    int contentLength =
-                        (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-                    using RentedBuffer body = await RentedBuffer.RentFromStreamAsync(
-                        await response.Content.ReadAsStreamAsync(cancellationToken),
-                        contentLength,
-                        _options.BodyReadTimeout,
-                        method,
-                        cancellationToken);
+                    using RentedBuffer body = await RentedBuffer.RentFromResponseAsync(
+                        response, _options.BodyReadTimeout, method, cancellationToken);
 
                     try
                     {
@@ -275,14 +269,8 @@ public sealed class MoexHistoryPageReader
                 {
                     using HttpResponseMessage response = await _client.SendRequestAsync(
                         method, query, cancellationToken);
-                    int contentLength =
-                        (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-                    using RentedBuffer body = await RentedBuffer.RentFromStreamAsync(
-                        await response.Content.ReadAsStreamAsync(cancellationToken),
-                        contentLength,
-                        _options.BodyReadTimeout,
-                        method,
-                        cancellationToken);
+                    using RentedBuffer body = await RentedBuffer.RentFromResponseAsync(
+                        response, _options.BodyReadTimeout, method, cancellationToken);
 
                     try
                     {
@@ -413,14 +401,8 @@ public sealed class MoexHistoryPageReader
                 {
                     using HttpResponseMessage response = await _client.SendRequestAsync(
                         method, query, cancellationToken);
-                    int contentLength =
-                        (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-                    using RentedBuffer body = await RentedBuffer.RentFromStreamAsync(
-                        await response.Content.ReadAsStreamAsync(cancellationToken),
-                        contentLength,
-                        _options.BodyReadTimeout,
-                        method,
-                        cancellationToken);
+                    using RentedBuffer body = await RentedBuffer.RentFromResponseAsync(
+                        response, _options.BodyReadTimeout, method, cancellationToken);
 
                     try
                     {

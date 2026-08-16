@@ -48,13 +48,8 @@ namespace ProjectTraiding.Moex.Clients
             using HttpResponseMessage response =
                 await _transport.SendWithoutStatusCheckAsync(method, queryParams, cancellationToken);
 
-            int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-            using RentedBuffer rentedArr = await RentedBuffer.RentFromStreamAsync(
-                await response.Content.ReadAsStreamAsync(cancellationToken),
-                contentLength,
-                _options.BodyReadTimeout,
-                method,
-                cancellationToken);
+            using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
+                response, _options.BodyReadTimeout, method, cancellationToken);
 
             return Encoding.UTF8.GetString(rentedArr.Span);
         }
@@ -83,13 +78,8 @@ namespace ProjectTraiding.Moex.Clients
                     "/engines/futures/markets/forts/boards/RFUD/securities.json?iss.meta=off";
  
                 using var response = await SendRequestAsync(endpoint, cancellationToken: cancellationToken);
-                int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-                using var rentedArr = await RentedBuffer.RentFromStreamAsync(
-                    await response.Content.ReadAsStreamAsync(cancellationToken),
-                    contentLength,
-                    _options.BodyReadTimeout,
-                    endpoint,
-                    cancellationToken);
+                using var rentedArr = await RentedBuffer.RentFromResponseAsync(
+                    response, _options.BodyReadTimeout, endpoint, cancellationToken);
                 List<FuturesInstrumentCardDTO> result = ParsingInstrumentCardUtf8.ParseFuturesCards(rentedArr.Span);
                 MoexMetrics.RecordOperationSuccess(
                     in operationTags, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);

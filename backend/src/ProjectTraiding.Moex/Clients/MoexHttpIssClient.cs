@@ -56,13 +56,8 @@ namespace ProjectTraiding.Moex.Clients
  
                 using var response = await _transport.SendAsync(
                     endpoint, cancellationToken: cancellationToken);
-                int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-                using var rentedArr = await RentedBuffer.RentFromStreamAsync(
-                    await response.Content.ReadAsStreamAsync(cancellationToken),
-                    contentLength,
-                    _options.BodyReadTimeout,
-                    endpoint,
-                    cancellationToken);
+                using var rentedArr = await RentedBuffer.RentFromResponseAsync(
+                    response, _options.BodyReadTimeout, endpoint, cancellationToken);
                 List<StockInstrumentCardDTO> result = ParsingInstrumentCardUtf8.ParseStockCards(rentedArr.Span);
                 MoexMetrics.RecordOperationSuccess(
                     in operationTags, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);

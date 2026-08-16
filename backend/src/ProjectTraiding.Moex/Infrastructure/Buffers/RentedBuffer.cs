@@ -43,6 +43,26 @@ namespace ProjectTraiding.Moex.Infrastructure.Buffers
         }
 
         /// <summary>
+        /// Читает тело ответа в арендованный буфер. Подсказкой начального размера служит
+        /// заголовок длины содержимого; при его отсутствии берётся мегабайт. Сама подсказка
+        /// на результат не влияет — поток читается до фактического конца.
+        /// </summary>
+        public static async Task<RentedBuffer> RentFromResponseAsync(
+            HttpResponseMessage response,
+            TimeSpan bodyReadTimeout,
+            string endpoint,
+            CancellationToken cancellationToken)
+        {
+            int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
+            return await RentFromStreamAsync(
+                await response.Content.ReadAsStreamAsync(cancellationToken),
+                contentLength,
+                bodyReadTimeout,
+                endpoint,
+                cancellationToken);
+        }
+
+        /// <summary>
         /// Читает поток ДО ФАКТИЧЕСКОГО КОНЦА (Read==0), а не до объявленной длины.
         /// contentLength — лишь подсказка начального размера буфера (обычно Content-Length);
         /// если тела оказалось больше, массив дорастает удвоением, но не выше страховки

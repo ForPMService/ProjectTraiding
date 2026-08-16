@@ -91,13 +91,8 @@ namespace ProjectTraiding.Moex.Clients
             long startTimestamp = Stopwatch.GetTimestamp();
             using HttpResponseMessage response =
                 await _transport.SendAsync(endpoint, queryParams, cancellationToken);
-            int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-            using RentedBuffer rentedArr = await RentedBuffer.RentFromStreamAsync(
-                await response.Content.ReadAsStreamAsync(cancellationToken),
-                contentLength,
-                _options.BodyReadTimeout,
-                endpoint,
-                cancellationToken);
+            using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
+                response, _options.BodyReadTimeout, endpoint, cancellationToken);
             try
             {
                 RealtimeParsedPage result =
@@ -135,13 +130,8 @@ namespace ProjectTraiding.Moex.Clients
             long startTimestamp = Stopwatch.GetTimestamp();
             using HttpResponseMessage response =
                 await _transport.SendAsync(endpoint, queryParams, cancellationToken);
-            int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-            using RentedBuffer rentedArr = await RentedBuffer.RentFromStreamAsync(
-                await response.Content.ReadAsStreamAsync(cancellationToken),
-                contentLength,
-                _options.BodyReadTimeout,
-                endpoint,
-                cancellationToken);
+            using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
+                response, _options.BodyReadTimeout, endpoint, cancellationToken);
             try
             {
                 RealtimeParsedPage result =
@@ -206,14 +196,8 @@ namespace ProjectTraiding.Moex.Clients
                 long startTimestamp = Stopwatch.GetTimestamp();
                 using HttpResponseMessage response =
                     await _transport.SendAsync(endpoint, queryParams, cancellationToken);
-                int contentLength =
-                    (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-                using RentedBuffer rentedArr = await RentedBuffer.RentFromStreamAsync(
-                    await response.Content.ReadAsStreamAsync(cancellationToken),
-                    contentLength,
-                    _options.BodyReadTimeout,
-                    endpoint,
-                    cancellationToken);
+                using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
+                    response, _options.BodyReadTimeout, endpoint, cancellationToken);
 
                 List<(object?[] Row, DateTime? Begin)> page;
                 try
@@ -266,13 +250,8 @@ namespace ProjectTraiding.Moex.Clients
         {
             using var response = await _transport.SendAsync(
                 method, queryParams, cancellationToken);
-            int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-            using var rentedArr = await RentedBuffer.RentFromStreamAsync(
-                await response.Content.ReadAsStreamAsync(cancellationToken),
-                contentLength,
-                _options.BodyReadTimeout,
-                method,
-                cancellationToken);
+            using var rentedArr = await RentedBuffer.RentFromResponseAsync(
+                response, _options.BodyReadTimeout, method, cancellationToken);
             return Encoding.UTF8.GetString(rentedArr.Span);
         }
 

@@ -60,13 +60,8 @@ namespace ProjectTraiding.Moex.Clients
             long startTimestamp = Stopwatch.GetTimestamp();
             using var response = await _transport.SendAsync(
                 endpoint, cancellationToken: cancellationToken);
-            int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-            using var rentedArr = await RentedBuffer.RentFromStreamAsync(
-                    await response.Content.ReadAsStreamAsync(cancellationToken),
-                    contentLength,
-                    _options.BodyReadTimeout,
-                    endpoint,
-                    cancellationToken);
+            using var rentedArr = await RentedBuffer.RentFromResponseAsync(
+                response, _options.BodyReadTimeout, endpoint, cancellationToken);
             try
             {
                 List<CalendarOffDaysMarketDTO> result = ParsingCalendarUtf8.ParseOffDaysMarket(rentedArr.Span);
@@ -121,13 +116,8 @@ namespace ProjectTraiding.Moex.Clients
             long startTimestamp = Stopwatch.GetTimestamp();
             using var response = await _transport.SendAsync(
                 endpoint, cancellationToken: cancellationToken);
-            int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
-            using var rentedArr = await RentedBuffer.RentFromStreamAsync(
-                    await response.Content.ReadAsStreamAsync(cancellationToken),
-                    contentLength,
-                    _options.BodyReadTimeout,
-                    endpoint,
-                    cancellationToken);
+            using var rentedArr = await RentedBuffer.RentFromResponseAsync(
+                response, _options.BodyReadTimeout, endpoint, cancellationToken);
             try
             {
                 List<CalendarOffDaysMarketDTO> result = ParsingCalendarUtf8.ParseOffDaysMarket(rentedArr.Span);
