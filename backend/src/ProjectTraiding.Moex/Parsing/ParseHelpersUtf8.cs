@@ -27,10 +27,6 @@ namespace ProjectTraiding.Moex.Parsing
 
         /// <summary>
         /// Бросает MoexSchemaMismatchException для structural failure парсера.
-        /// rootKey передаётся как dataNeedCode (используется для диагностики и фильтрации
-        /// в ingestion слое ProjectTraiding). Column-параметры передаются пустыми массивами —
-        /// для structural failures конкретные колонки не релевантны.
-        ///
         /// Помечен [DoesNotReturn] чтобы компилятор не требовал unreachable return после вызова.
         /// Используется парсерами для: missing root key, missing columns block, missing data block,
         /// data before columns, missing cursor block, wrong token type structural. Lock §10.
@@ -38,12 +34,7 @@ namespace ProjectTraiding.Moex.Parsing
         [DoesNotReturn]
         internal static void SchemaMismatch(string rootKey, string message)
         {
-            throw new MoexSchemaMismatchException(
-                message: message,
-                expectedColumns: Array.Empty<string>(),
-                actualColumns: Array.Empty<string>(),
-                missingColumns: Array.Empty<string>(),
-                dataNeedCode: rootKey);
+            throw new MoexSchemaMismatchException(message: message);
         }
 
         // ═══════════════════════════════════════════════════════════
@@ -139,13 +130,7 @@ namespace ProjectTraiding.Moex.Parsing
 
                         throw new MoexSchemaMismatchException(
                             $"[{schema.RootKey}] Колонка не совпала на позиции {position}: " +
-                            $"ожидалось '{expected}', получено '{actual}'.",
-                            expectedColumns: schema.Columns
-                                .Select(c => System.Text.Encoding.UTF8.GetString(c.Name))
-                                .ToList(),
-                            actualColumns: new List<string> { actual },
-                            missingColumns: new List<string> { expected },
-                            dataNeedCode: schema.RootKey);
+                            $"ожидалось '{expected}', получено '{actual}'.");
                     }
                     expectedIdx++;
                 }

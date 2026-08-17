@@ -14,12 +14,6 @@ public abstract class MoexHttpException : MoexException
     /// <summary>Адрес эндпоинта, вызов которого привёл к ошибке.</summary>
     public string? Endpoint { get; init; }
 
-    /// <summary>Код источника ошибки (например, имя метода или операции).</summary>
-    public string? SourceCode { get; init; }
-
-    /// <summary>Идентификатор корреляции запроса для трассировки.</summary>
-    public string? CorrelationId { get; init; }
-
     /// <summary>Признак того, что запрос можно повторить после ошибки.</summary>
     public bool IsRetryable { get; init; }
 

@@ -656,17 +656,10 @@ public static class MoexRealtimeParser
                         ? reader.GetString() ?? "<null>"
                         : $"<{reader.TokenType}>";
                     string expected = Encoding.UTF8.GetString(column.Name);
-                    string[] expectedColumns = new string[spec.SourceColumns.Length];
-                    for (int i = 0; i < spec.SourceColumns.Length; i++)
-                        expectedColumns[i] = Encoding.UTF8.GetString(spec.SourceColumns[i].Name);
 
                     throw new MoexSchemaMismatchException(
                         $"[{spec.RootKey}] Колонка не совпала на позиции {position}: " +
-                        $"ожидалось '{expected}', получено '{actual}'.",
-                        expectedColumns,
-                        [actual],
-                        [expected],
-                        dataNeedCode: spec.RootKey);
+                        $"ожидалось '{expected}', получено '{actual}'.");
                 }
 
                 expectedIndex++;
