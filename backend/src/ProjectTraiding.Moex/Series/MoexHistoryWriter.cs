@@ -104,7 +104,7 @@ public sealed class MoexHistoryWriter
 
         ClickHouseWriterLogMessages.RangeWritten(
             _logger, secid, rowsRead, rowsInsertedReported);
-        return new RowWriteSummary(rowsRead, rowsInsertedReported, lastToken);
+        return new RowWriteSummary(rowsRead, lastToken);
     }
 
     private static void EnsureRangeValid(MoexSeriesSpec spec, string secid)

@@ -19,6 +19,5 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         DateOnly DateTill,
         string StorageTarget,
         string SourceContractVersion,
-        string WriterVersion,
-        string Status);
+        string WriterVersion);
 }

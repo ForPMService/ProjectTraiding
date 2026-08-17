@@ -32,8 +32,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                        t.date_till,
                        t.storage_target,
                        t.source_contract_version,
-                       t.writer_version,
-                       t.status
+                       t.writer_version
                 FROM moex_load_tasks t
                 WHERE t.id = @id
                 """, connection);
@@ -54,8 +53,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 DateTill: reader.GetFieldValue<DateOnly>(7),
                 StorageTarget: reader.GetString(8),
                 SourceContractVersion: reader.GetString(9),
-                WriterVersion: reader.GetString(10),
-                Status: reader.GetString(11));
+                WriterVersion: reader.GetString(10));
         }
 
         public async Task<bool> IsCancelRequestedAsync(Guid taskId, CancellationToken ct)

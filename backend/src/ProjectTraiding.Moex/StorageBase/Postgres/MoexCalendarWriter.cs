@@ -105,7 +105,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 await transaction.CommitAsync(ct);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
                 MoexWriterLogMessages.WriteCompleted(_logger, table, processedCount, elapsed);
-                return new DbWriteResult(table, days.Count, processedCount, elapsed);
+                return new DbWriteResult(days.Count, processedCount, elapsed);
             }
             catch(Exception ex)
             {

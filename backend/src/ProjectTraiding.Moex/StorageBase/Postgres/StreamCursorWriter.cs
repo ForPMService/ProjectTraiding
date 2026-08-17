@@ -79,7 +79,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         {
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
             await using NpgsqlCommand cmd = new NpgsqlCommand("""
-                SELECT last_source_time, last_trade_no
+                SELECT last_trade_no
                 FROM moex_stream_cursors
                 WHERE secid = @secid
                   AND market = @market
@@ -100,8 +100,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 return null;
 
             return new StreamCursorState(
-                LastSourceTime: ToMoscow(reader.GetFieldValue<DateTime>(0)),
-                LastTradeNo: reader.IsDBNull(1) ? null : reader.GetInt64(1));
+                LastTradeNo: reader.IsDBNull(0) ? null : reader.GetInt64(0));
         }
 
         private static DateTime ToUtc(DateTime value)
@@ -115,14 +114,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             return DateTime.SpecifyKind(value - MoexTime.Offset, DateTimeKind.Utc);
         }
 
-        private static DateTime ToMoscow(DateTime value)
-        {
-            DateTime utc = value.Kind == DateTimeKind.Utc
-                ? value
-                : value.ToUniversalTime();
-            return DateTime.SpecifyKind(utc + MoexTime.Offset, DateTimeKind.Unspecified);
-        }
     }
 
-    public readonly record struct StreamCursorState(DateTime LastSourceTime, long? LastTradeNo);
+    public readonly record struct StreamCursorState(long? LastTradeNo);
 }
