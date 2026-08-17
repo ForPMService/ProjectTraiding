@@ -119,32 +119,6 @@ namespace ProjectTraiding.Moex.Parsing
             });
  
         // ═══════════════════════════════════════════════════════════
-        // Карточка акции — marketdata
-        // Источник: тот же ответ, блок "marketdata"
-        // Probe: probe-13, 2026-06-01
-        // rootKey: "marketdata", columnCount: 56, используем: 12
-        // ═══════════════════════════════════════════════════════════
- 
-        public static readonly ExpectedSchema StockCardMarketdataSchema = new(
-            TotalColumns: 56,
-            RootKey: "marketdata",
-            Columns: new ExpectedColumn[]
-            {
-                new(2,  "BID"u8.ToArray()),            // case 0
-                new(4,  "OFFER"u8.ToArray()),          // case 1
-                new(6,  "SPREAD"u8.ToArray()),         // case 2
-                new(9,  "OPEN"u8.ToArray()),           // case 3
-                new(10, "LOW"u8.ToArray()),            // case 4
-                new(11, "HIGH"u8.ToArray()),           // case 5
-                new(12, "LAST"u8.ToArray()),           // case 6
-                new(26, "NUMTRADES"u8.ToArray()),      // case 7
-                new(27, "VOLTODAY"u8.ToArray()),       // case 8
-                new(28, "VALTODAY"u8.ToArray()),       // case 9
-                new(31, "TRADINGSTATUS"u8.ToArray()),  // case 10
-                new(32, "UPDATETIME"u8.ToArray()),     // case 11
-            });
- 
-        // ═══════════════════════════════════════════════════════════
         // Карточка фьючерса — securities
         // Источник: /engines/futures/markets/forts/boards/RFUD/securities.json
         // Probe: probe-14, 2026-06-01
@@ -174,32 +148,5 @@ namespace ProjectTraiding.Moex.Parsing
                 new(21, "BUYSELLFEE"u8.ToArray()),     // case 15
             });
  
-        // ═══════════════════════════════════════════════════════════
-        // Карточка фьючерса — marketdata
-        // Источник: тот же ответ, блок "marketdata"
-        // Probe: probe-14, 2026-06-01
-        // rootKey: "marketdata", columnCount: 37, используем: 14
-        // ═══════════════════════════════════════════════════════════
- 
-        public static readonly ExpectedSchema FuturesCardMarketdataSchema = new(
-            TotalColumns: 37,
-            RootKey: "marketdata",
-            Columns: new ExpectedColumn[]
-            {
-                new(2,  "BID"u8.ToArray()),            // case 0
-                new(3,  "OFFER"u8.ToArray()),          // case 1
-                new(4,  "SPREAD"u8.ToArray()),         // case 2
-                new(5,  "OPEN"u8.ToArray()),           // case 3
-                new(6,  "HIGH"u8.ToArray()),           // case 4
-                new(7,  "LOW"u8.ToArray()),            // case 5
-                new(8,  "LAST"u8.ToArray()),           // case 6
-                new(11, "SETTLEPRICE"u8.ToArray()),    // case 7
-                new(13, "OPENPOSITION"u8.ToArray()),   // case 8
-                new(14, "NUMTRADES"u8.ToArray()),      // case 9
-                new(15, "VOLTODAY"u8.ToArray()),       // case 10
-                new(16, "VALTODAY"u8.ToArray()),       // case 11
-                new(18, "UPDATETIME"u8.ToArray()),     // case 12
-                new(32, "OICHANGE"u8.ToArray()),       // case 13
-            });
     }
 }

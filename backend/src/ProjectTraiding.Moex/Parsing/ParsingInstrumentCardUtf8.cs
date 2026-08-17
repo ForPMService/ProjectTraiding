@@ -61,44 +61,6 @@ namespace ProjectTraiding.Moex.Parsing
                 ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, schema.RootKey);
             }
 
-            // Проход 2 — marketdata
-            {
-                var schema = ColumnAndNumbersForParsing.StockCardMarketdataSchema;
-                var reader = new Utf8JsonReader(jsonBytes);
-
-                ParseHelpersUtf8.SkipToRootObject(ref reader, schema.RootKey);
-
-                bool foundColumns = false;
-                bool foundData = false;
-
-                while (reader.Read())
-                {
-                    if (reader.TokenType == JsonTokenType.EndObject) break;
-                    if (reader.TokenType != JsonTokenType.PropertyName) continue;
-
-                    if (reader.ValueTextEquals("columns"u8))
-                    {
-                        foundColumns = true;
-                        ParseHelpersUtf8.ValidateColumnsUtf8(ref reader, schema);
-                    }
-                    else if (reader.ValueTextEquals("data"u8))
-                    {
-                        if (!foundColumns)
-                            ParseHelpersUtf8.SchemaMismatch(schema.RootKey,
-                                $"[{schema.RootKey}] Секция 'data' встретилась до 'columns'. Порядок columns → data обязателен.");
-
-                        foundData = true;
-                        ReadStockMarketdataInto(ref reader, list, schema);
-                    }
-                    else
-                    {
-                        reader.Skip();
-                    }
-                }
-
-                ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, schema.RootKey);
-            }
-
             return list;
         }
 
@@ -180,84 +142,6 @@ namespace ProjectTraiding.Moex.Parsing
             }
         }
 
-        // ── Чтение строк marketdata акций — 12 колонок из 56, дополняет list ──
-
-        private static void ReadStockMarketdataInto(
-            ref Utf8JsonReader reader,
-            List<StockInstrumentCardDTO> list,
-            ColumnAndNumbersForParsing.ExpectedSchema schema)
-        {
-            ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", schema.RootKey);
-
-            int rowIndex = 0;
-            while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
-            {
-                double? bid = null, offer = null, spread = null;
-                double? open = null, low = null, high = null, last = null;
-                int? numTrades = null;
-                long? volToday = null, valToday = null;
-                string? tradingStatus = null, updateTime = null;
-
-                {
-                    int expectedIdx = 0;
-                    for (int pos = 0; pos < schema.TotalColumns; pos++)
-                    {
-                        if (!reader.Read())
-                            ParseHelpersUtf8.SchemaMismatch(schema.RootKey,
-                                $"[{schema.RootKey}] Неожиданный конец JSON в строке {rowIndex}, позиция {pos}.");
-
-                        if (reader.TokenType == JsonTokenType.EndArray)
-                            ParseHelpersUtf8.SchemaMismatch(schema.RootKey,
-                                $"[{schema.RootKey}] Короткая строка данных: " +
-                                $"ожидалось {schema.TotalColumns} колонок, получено {pos} " +
-                                $"(строка {rowIndex}).");
-
-                        if (expectedIdx < schema.Columns.Length
-                            && pos == schema.Columns[expectedIdx].SourceIndex)
-                        {
-                            if (reader.TokenType != JsonTokenType.Null)
-                            {
-                                switch (expectedIdx)
-                                {
-                                    case 0:  bid           = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, expectedIdx, schema.RootKey); break; // BID [2]
-                                    case 1:  offer         = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, expectedIdx, schema.RootKey); break; // OFFER [4]
-                                    case 2:  spread        = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, expectedIdx, schema.RootKey); break; // SPREAD [6]
-                                    case 3:  open          = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, expectedIdx, schema.RootKey); break; // OPEN [9]
-                                    case 4:  low           = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, expectedIdx, schema.RootKey); break; // LOW [10]
-                                    case 5:  high          = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, expectedIdx, schema.RootKey); break; // HIGH [11]
-                                    case 6:  last          = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, expectedIdx, schema.RootKey); break; // LAST [12]
-                                    case 7:  numTrades     = ParseHelpersUtf8.ReadInt(ref reader, rowIndex, expectedIdx, schema.RootKey);    break; // NUMTRADES [26]
-                                    case 8:  volToday      = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, expectedIdx, schema.RootKey);   break; // VOLTODAY [27]
-                                    case 9:  valToday      = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, expectedIdx, schema.RootKey);   break; // VALTODAY [28]
-                                    case 10: tradingStatus = ParseHelpersUtf8.ReadString(ref reader, rowIndex, expectedIdx, schema.RootKey); break; // TRADINGSTATUS [31]
-                                    case 11: updateTime    = ParseHelpersUtf8.ReadString(ref reader, rowIndex, expectedIdx, schema.RootKey); break; // UPDATETIME [32]
-                                }
-                            }
-
-                            expectedIdx++;
-                        }
-                    }
-
-                    if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
-                        ParseHelpersUtf8.SchemaMismatch(schema.RootKey,
-                            $"[{schema.RootKey}] Ожидался EndArray после {schema.TotalColumns} колонок (строка {rowIndex}).");
-                }
-
-                if (rowIndex < list.Count)
-                {
-                    list[rowIndex] = list[rowIndex] with
-                    {
-                        Bid = bid, Offer = offer, Spread = spread,
-                        Open = open, Low = low, High = high, Last = last,
-                        NumTrades = numTrades, VolToday = volToday, ValToday = valToday,
-                        TradingStatus = tradingStatus, UpdateTime = updateTime,
-                    };
-                }
-
-                rowIndex++;
-            }
-        }
-
         // ═══════════════════════════════════════════════════════════
         // Фьючерсы — два прохода: securities(26) + marketdata(37)
         // ═══════════════════════════════════════════════════════════
@@ -293,44 +177,6 @@ namespace ProjectTraiding.Moex.Parsing
 
                         foundData = true;
                         ReadFuturesSecuritiesData(ref reader, list, schema);
-                    }
-                    else
-                    {
-                        reader.Skip();
-                    }
-                }
-
-                ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, schema.RootKey);
-            }
-
-            // Проход 2 — marketdata
-            {
-                var schema = ColumnAndNumbersForParsing.FuturesCardMarketdataSchema;
-                var reader = new Utf8JsonReader(jsonBytes);
-
-                ParseHelpersUtf8.SkipToRootObject(ref reader, schema.RootKey);
-
-                bool foundColumns = false;
-                bool foundData = false;
-
-                while (reader.Read())
-                {
-                    if (reader.TokenType == JsonTokenType.EndObject) break;
-                    if (reader.TokenType != JsonTokenType.PropertyName) continue;
-
-                    if (reader.ValueTextEquals("columns"u8))
-                    {
-                        foundColumns = true;
-                        ParseHelpersUtf8.ValidateColumnsUtf8(ref reader, schema);
-                    }
-                    else if (reader.ValueTextEquals("data"u8))
-                    {
-                        if (!foundColumns)
-                            ParseHelpersUtf8.SchemaMismatch(schema.RootKey,
-                                $"[{schema.RootKey}] Секция 'data' встретилась до 'columns'. Порядок columns → data обязателен.");
-
-                        foundData = true;
-                        ReadFuturesMarketdataInto(ref reader, list, schema);
                     }
                     else
                     {
@@ -425,86 +271,5 @@ namespace ProjectTraiding.Moex.Parsing
             }
         }
 
-        // ── Чтение строк marketdata фьючерсов — 14 колонок из 37, дополняет list ──
-
-        private static void ReadFuturesMarketdataInto(
-            ref Utf8JsonReader reader,
-            List<FuturesInstrumentCardDTO> list,
-            ColumnAndNumbersForParsing.ExpectedSchema schema)
-        {
-            ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", schema.RootKey);
-
-            int rowIndex = 0;
-            while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
-            {
-                double? bid = null, offer = null, spread = null;
-                double? open = null, high = null, low = null, last = null;
-                double? settlePrice = null, openPosition = null;
-                int? numTrades = null;
-                long? volToday = null, valToday = null, oiChange = null;
-                string? updateTime = null;
-
-                {
-                    int expectedIdx = 0;
-                    for (int pos = 0; pos < schema.TotalColumns; pos++)
-                    {
-                        if (!reader.Read())
-                            ParseHelpersUtf8.SchemaMismatch(schema.RootKey,
-                                $"[{schema.RootKey}] Неожиданный конец JSON в строке {rowIndex}, позиция {pos}.");
-
-                        if (reader.TokenType == JsonTokenType.EndArray)
-                            ParseHelpersUtf8.SchemaMismatch(schema.RootKey,
-                                $"[{schema.RootKey}] Короткая строка данных: " +
-                                $"ожидалось {schema.TotalColumns} колонок, получено {pos} " +
-                                $"(строка {rowIndex}).");
-
-                        if (expectedIdx < schema.Columns.Length
-                            && pos == schema.Columns[expectedIdx].SourceIndex)
-                        {
-                            if (reader.TokenType != JsonTokenType.Null)
-                            {
-                                switch (expectedIdx)
-                                {
-                                    case 0:  bid          = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, expectedIdx, schema.RootKey); break; // BID [2]
-                                    case 1:  offer        = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, expectedIdx, schema.RootKey); break; // OFFER [3]
-                                    case 2:  spread       = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, expectedIdx, schema.RootKey); break; // SPREAD [4]
-                                    case 3:  open         = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, expectedIdx, schema.RootKey); break; // OPEN [5]
-                                    case 4:  high         = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, expectedIdx, schema.RootKey); break; // HIGH [6]
-                                    case 5:  low          = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, expectedIdx, schema.RootKey); break; // LOW [7]
-                                    case 6:  last         = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, expectedIdx, schema.RootKey); break; // LAST [8]
-                                    case 7:  settlePrice  = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, expectedIdx, schema.RootKey); break; // SETTLEPRICE [11]
-                                    case 8:  openPosition = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, expectedIdx, schema.RootKey); break; // OPENPOSITION [13]
-                                    case 9:  numTrades    = ParseHelpersUtf8.ReadInt(ref reader, rowIndex, expectedIdx, schema.RootKey);    break; // NUMTRADES [14]
-                                    case 10: volToday     = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, expectedIdx, schema.RootKey);   break; // VOLTODAY [15]
-                                    case 11: valToday     = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, expectedIdx, schema.RootKey);   break; // VALTODAY [16]
-                                    case 12: updateTime   = ParseHelpersUtf8.ReadString(ref reader, rowIndex, expectedIdx, schema.RootKey); break; // UPDATETIME [18]
-                                    case 13: oiChange     = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, expectedIdx, schema.RootKey);   break; // OICHANGE [32]
-                                }
-                            }
-
-                            expectedIdx++;
-                        }
-                    }
-
-                    if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
-                        ParseHelpersUtf8.SchemaMismatch(schema.RootKey,
-                            $"[{schema.RootKey}] Ожидался EndArray после {schema.TotalColumns} колонок (строка {rowIndex}).");
-                }
-
-                if (rowIndex < list.Count)
-                {
-                    list[rowIndex] = list[rowIndex] with
-                    {
-                        Bid = bid, Offer = offer, Spread = spread,
-                        Open = open, High = high, Low = low, Last = last,
-                        SettlePrice = settlePrice, OpenPosition = openPosition,
-                        NumTrades = numTrades, VolToday = volToday, ValToday = valToday,
-                        UpdateTime = updateTime, OiChange = oiChange,
-                    };
-                }
-
-                rowIndex++;
-            }
-        }
     }
 }
