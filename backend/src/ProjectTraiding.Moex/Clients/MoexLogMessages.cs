@@ -62,13 +62,6 @@ namespace ProjectTraiding.Moex.Clients
         public static partial void DaySplitCompleted(ILogger logger, string endpoint, string from, string till, int daysProcessed, int totalRows);
 
         /// <summary>
-        /// Логирует успешно полученный и распарсенный одностраничный ответ.
-        /// Постраничная запись относится к отладке; счёт страниц и строк ведут метрики.
-        /// </summary>
-        [LoggerMessage(EventId = 125, EventName = "MoexSinglePageReceived", Level = LogLevel.Debug, Message = "MOEX single page processed: endpoint={Endpoint}, rows={Rows}, time={ElapsedMs}.")]
-        public static partial void SinglePageReceived(ILogger logger, string endpoint, int rows, TimeSpan elapsedMs);
-
-        /// <summary>
         /// Логирует типизированную ошибку HTTP/source уровня после классификации ответа MOEX.
         /// </summary>
         [LoggerMessage(EventId = 130, EventName = "MoexRequestFailed", Level = LogLevel.Error, Message = "MOEX request failed: source={Source}, endpoint={Endpoint}, error={ErrorCategory}, status={StatusCode}, timeoutSource={TimeoutSource}, message={ErrorMessage}.")]

@@ -5,7 +5,6 @@ using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Parsing;
 using ProjectTraiding.Moex.Parsing.Errors;
 using ProjectTraiding.Moex.Realtime.Series;
-using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 
@@ -88,7 +87,6 @@ namespace ProjectTraiding.Moex.Clients
             queryParams.TryAdd("dataversion.columns", DataVersionColumnsParam);
 
             string endpoint = BuildEndpoint(market, ticker, "/trades.json");
-            long startTimestamp = Stopwatch.GetTimestamp();
             using HttpResponseMessage response =
                 await _transport.SendAsync(endpoint, queryParams, cancellationToken);
             using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
@@ -97,11 +95,6 @@ namespace ProjectTraiding.Moex.Clients
             {
                 RealtimeParsedPage result =
                     MoexRealtimeParser.ParsePage(rentedArr.Span, spec, ticker);
-                MoexLogMessages.SinglePageReceived(
-                    _logger,
-                    endpoint,
-                    result.Rows.Count,
-                    Stopwatch.GetElapsedTime(startTimestamp));
                 return result;
             }
             catch (MoexSchemaMismatchException ex)
@@ -127,7 +120,6 @@ namespace ProjectTraiding.Moex.Clients
             };
 
             string endpoint = BuildEndpoint(market, ticker, "/orderbook.json");
-            long startTimestamp = Stopwatch.GetTimestamp();
             using HttpResponseMessage response =
                 await _transport.SendAsync(endpoint, queryParams, cancellationToken);
             using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
@@ -136,11 +128,6 @@ namespace ProjectTraiding.Moex.Clients
             {
                 RealtimeParsedPage result =
                     MoexRealtimeParser.ParsePage(rentedArr.Span, spec, ticker);
-                MoexLogMessages.SinglePageReceived(
-                    _logger,
-                    endpoint,
-                    result.Rows.Count,
-                    Stopwatch.GetElapsedTime(startTimestamp));
                 return result;
             }
             catch (MoexSchemaMismatchException ex)
@@ -193,7 +180,6 @@ namespace ProjectTraiding.Moex.Clients
                 if (start > 0)
                     queryParams["start"] = start.ToString(CultureInfo.InvariantCulture);
 
-                long startTimestamp = Stopwatch.GetTimestamp();
                 using HttpResponseMessage response =
                     await _transport.SendAsync(endpoint, queryParams, cancellationToken);
                 using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
@@ -203,11 +189,6 @@ namespace ProjectTraiding.Moex.Clients
                 try
                 {
                     page = MoexRealtimeParser.ParseCandles(rentedArr.Span, spec, ticker);
-                    MoexLogMessages.SinglePageReceived(
-                        _logger,
-                        endpoint,
-                        page.Count,
-                        Stopwatch.GetElapsedTime(startTimestamp));
                 }
                 catch (MoexSchemaMismatchException ex)
                 {

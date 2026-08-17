@@ -69,7 +69,6 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 long inserted = await _client.InsertBinaryAsync(table, columns, rows, options, ct);
 
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
-                ClickHouseWriterLogMessages.WriteCompleted(_logger, table, inserted, elapsed);
 
                 RecordInsert(in insertContext, MoexOutcomes.Success, inserted, elapsed);
                 insertActivity?.SetStatus(ActivityStatusCode.Ok);

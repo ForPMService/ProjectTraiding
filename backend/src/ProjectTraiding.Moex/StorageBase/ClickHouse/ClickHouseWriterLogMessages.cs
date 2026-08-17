@@ -13,11 +13,6 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
         public static partial void WriteStarted(ILogger logger, string table, int rowCount);
 
         [LoggerMessage(
-            EventId = 181, EventName = "ClickHouseWriteCompleted", Level = LogLevel.Information,
-            Message = "ClickHouse write completed: table={Table}, rows={RowsWritten}, elapsed={Elapsed}.")]
-        public static partial void WriteCompleted(ILogger logger, string table, long rowsWritten, TimeSpan elapsed);
-
-        [LoggerMessage(
             EventId = 182, EventName = "ClickHouseWriteFailed", Level = LogLevel.Error,
             Message = "ClickHouse write failed: table={Table}, errorType={ErrorType}.")]
         public static partial void WriteFailed(ILogger logger, Exception exception, string table, string errorType);

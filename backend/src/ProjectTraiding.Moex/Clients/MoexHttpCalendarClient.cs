@@ -57,7 +57,6 @@ namespace ProjectTraiding.Moex.Clients
             try
             {
             const string endpoint = "/calendars/stock.json";
-            long startTimestamp = Stopwatch.GetTimestamp();
             using var response = await _transport.SendAsync(
                 endpoint, cancellationToken: cancellationToken);
             using var rentedArr = await RentedBuffer.RentFromResponseAsync(
@@ -65,7 +64,6 @@ namespace ProjectTraiding.Moex.Clients
             try
             {
                 List<CalendarOffDaysMarketDTO> result = ParsingCalendarUtf8.ParseOffDaysMarket(rentedArr.Span);
-                MoexLogMessages.SinglePageReceived(_logger, endpoint, result.Count, Stopwatch.GetElapsedTime(startTimestamp));
                 MoexMetrics.RecordOperationSuccess(
                     in operationTags, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);
                 activity?.SetStatus(ActivityStatusCode.Ok);
@@ -113,7 +111,6 @@ namespace ProjectTraiding.Moex.Clients
             try
             {
             const string endpoint = "/calendars/futures.json";
-            long startTimestamp = Stopwatch.GetTimestamp();
             using var response = await _transport.SendAsync(
                 endpoint, cancellationToken: cancellationToken);
             using var rentedArr = await RentedBuffer.RentFromResponseAsync(
@@ -121,7 +118,6 @@ namespace ProjectTraiding.Moex.Clients
             try
             {
                 List<CalendarOffDaysMarketDTO> result = ParsingCalendarUtf8.ParseOffDaysMarket(rentedArr.Span);
-                MoexLogMessages.SinglePageReceived(_logger, endpoint, result.Count, Stopwatch.GetElapsedTime(startTimestamp));
                 MoexMetrics.RecordOperationSuccess(
                     in operationTags, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);
                 activity?.SetStatus(ActivityStatusCode.Ok);

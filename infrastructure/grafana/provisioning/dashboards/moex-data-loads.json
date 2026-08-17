@@ -312,7 +312,7 @@
       "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
-          "expr": "{service_name=\"ProjectTraiding.Api\"} |~ \"paging stopped|daily load completed|single page processed\"",
+          "expr": "{service_name=\"ProjectTraiding.Api\"} |~ \"paging stopped|daily load completed\"",
           "refId": "A"
         }
       ],
