@@ -32,7 +32,7 @@ namespace ProjectTraiding.Moex.Parsing
         /// data before columns, missing cursor block, wrong token type structural. Lock §10.
         /// </summary>
         [DoesNotReturn]
-        internal static void SchemaMismatch(string rootKey, string message)
+        internal static void SchemaMismatch(string message)
         {
             throw new MoexSchemaMismatchException(message: message);
         }
@@ -69,7 +69,7 @@ namespace ProjectTraiding.Moex.Parsing
             {
                 if (reader.TokenType == JsonTokenType.EndObject)
                 {
-                    SchemaMismatch(rootKey,
+                    SchemaMismatch(
                         $"MOEX ответ не содержит корневой ключ '{rootKey}'.");
                 }
 
@@ -80,7 +80,7 @@ namespace ProjectTraiding.Moex.Parsing
                 {
                     if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
                     {
-                        SchemaMismatch(rootKey,
+                        SchemaMismatch(
                             $"[{rootKey}] Ожидался объект (StartObject), " +
                             $"получено {reader.TokenType}.");
                     }
@@ -91,7 +91,7 @@ namespace ProjectTraiding.Moex.Parsing
                 reader.Skip();
             }
 
-            SchemaMismatch(rootKey,
+            SchemaMismatch(
                 $"MOEX ответ не содержит корневой ключ '{rootKey}'.");
         }
 
@@ -138,12 +138,12 @@ namespace ProjectTraiding.Moex.Parsing
             }
 
             if (position != schema.TotalColumns)
-                SchemaMismatch(schema.RootKey,
+                SchemaMismatch(
                     $"[{schema.RootKey}] Количество колонок не совпадает: " +
                     $"ожидалось {schema.TotalColumns}, получено {position}.");
 
             if (expectedIdx != schema.Columns.Length)
-                SchemaMismatch(schema.RootKey,
+                SchemaMismatch(
                     $"[{schema.RootKey}] Не все ожидаемые колонки найдены: " +
                     $"ожидалось {schema.Columns.Length}, проверено {expectedIdx}.");
         }
@@ -162,11 +162,11 @@ namespace ProjectTraiding.Moex.Parsing
             string rootKey)
         {
             if (!foundColumns)
-                SchemaMismatch(rootKey,
+                SchemaMismatch(
                     $"[{rootKey}] Блок не содержит секцию 'columns'.");
 
             if (!foundData)
-                SchemaMismatch(rootKey,
+                SchemaMismatch(
                     $"[{rootKey}] Блок не содержит секцию 'data'.");
         }
 
@@ -188,7 +188,7 @@ namespace ProjectTraiding.Moex.Parsing
             string rootKey)
         {
             if (!reader.Read() || reader.TokenType != expectedType)
-                SchemaMismatch(rootKey,
+                SchemaMismatch(
                     $"[{rootKey}] Ожидался {expectedType} для '{context}', " +
                     $"получено {reader.TokenType}.");
         }
@@ -373,7 +373,7 @@ namespace ProjectTraiding.Moex.Parsing
                 else if (reader.ValueTextEquals("data"u8))
                 {
                     if (!foundColumns)
-                        SchemaMismatch(cursorKey,
+                        SchemaMismatch(
                             $"[{cursorKey}] Секция 'data' встретилась до 'columns'. " +
                             $"Порядок columns → data обязателен.");
 
@@ -389,11 +389,11 @@ namespace ProjectTraiding.Moex.Parsing
                             for (int pos = 0; pos < schema.TotalColumns; pos++)
                             {
                                 if (!reader.Read())
-                                    SchemaMismatch(schema.RootKey,
+                                    SchemaMismatch(
                                         $"[{schema.RootKey}] Неожиданный конец JSON в строке {rowIndex}, позиция {pos}.");
 
                                 if (reader.TokenType == JsonTokenType.EndArray)
-                                    SchemaMismatch(schema.RootKey,
+                                    SchemaMismatch(
                                         $"[{schema.RootKey}] Короткая строка данных: " +
                                         $"ожидалось {schema.TotalColumns} колонок, получено {pos} " +
                                         $"(строка {rowIndex}).");
@@ -416,7 +416,7 @@ namespace ProjectTraiding.Moex.Parsing
                             }
 
                             if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
-                                SchemaMismatch(schema.RootKey,
+                                SchemaMismatch(
                                     $"[{schema.RootKey}] Ожидался EndArray после {schema.TotalColumns} колонок (строка {rowIndex}).");
                         }
 

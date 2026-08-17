@@ -61,7 +61,6 @@ public static class MoexRealtimeParser
                 if (!foundColumns)
                 {
                     ParseHelpersUtf8.SchemaMismatch(
-                        spec.RootKey,
                         $"[{spec.RootKey}] Секция 'data' встретилась до 'columns'. " +
                         "Порядок columns → data обязателен.");
                 }
@@ -134,7 +133,6 @@ public static class MoexRealtimeParser
                 if (!foundColumns)
                 {
                     ParseHelpersUtf8.SchemaMismatch(
-                        spec.RootKey,
                         $"[{spec.RootKey}] Секция 'data' встретилась до 'columns'. " +
                         "Порядок columns → data обязателен.");
                 }
@@ -184,7 +182,6 @@ public static class MoexRealtimeParser
                 if (!foundColumns)
                 {
                     ParseHelpersUtf8.SchemaMismatch(
-                        schema.RootKey,
                         $"[{schema.RootKey}] Секция 'data' встретилась до 'columns'. " +
                         "Порядок columns → data обязателен.");
                 }
@@ -206,7 +203,6 @@ public static class MoexRealtimeParser
         if (rowCount == 0)
         {
             ParseHelpersUtf8.SchemaMismatch(
-                schema.RootKey,
                 $"[{schema.RootKey}] Блок dataversion не содержит ни одной строки.");
         }
 
@@ -237,7 +233,6 @@ public static class MoexRealtimeParser
             if (rowCount > 0)
             {
                 ParseHelpersUtf8.SchemaMismatch(
-                    schema.RootKey,
                     $"[{schema.RootKey}] Ожидалась ровно 1 строка в dataversion, " +
                     "но найдено больше.");
             }
@@ -247,7 +242,6 @@ public static class MoexRealtimeParser
                 if (!reader.Read())
                 {
                     ParseHelpersUtf8.SchemaMismatch(
-                        schema.RootKey,
                         $"[{schema.RootKey}] Неожиданный конец JSON в строке {rowCount}, " +
                         $"позиция {position}.");
                 }
@@ -255,7 +249,6 @@ public static class MoexRealtimeParser
                 if (reader.TokenType == JsonTokenType.EndArray)
                 {
                     ParseHelpersUtf8.SchemaMismatch(
-                        schema.RootKey,
                         $"[{schema.RootKey}] Короткая строка данных: ожидалось " +
                         $"{schema.TotalColumns} колонок, получено {position} " +
                         $"(строка {rowCount}).");
@@ -291,7 +284,6 @@ public static class MoexRealtimeParser
             if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
             {
                 ParseHelpersUtf8.SchemaMismatch(
-                    schema.RootKey,
                     $"[{schema.RootKey}] Ожидался EndArray после " +
                     $"{schema.TotalColumns} колонок (строка {rowCount}).");
             }
@@ -330,7 +322,6 @@ public static class MoexRealtimeParser
             if (reader.TokenType != JsonTokenType.StartArray)
             {
                 ParseHelpersUtf8.SchemaMismatch(
-                    spec.RootKey,
                     $"[{spec.RootKey}] Ожидался StartArray строки {rowIndex}, " +
                     $"получено {reader.TokenType}.");
             }
@@ -472,7 +463,6 @@ public static class MoexRealtimeParser
             if (reader.TokenType != JsonTokenType.StartArray)
             {
                 ParseHelpersUtf8.SchemaMismatch(
-                    spec.RootKey,
                     $"[{spec.RootKey}] Ожидался StartArray строки {rowIndex}, " +
                     $"получено {reader.TokenType}.");
             }
@@ -520,7 +510,6 @@ public static class MoexRealtimeParser
             if (!reader.Read())
             {
                 ParseHelpersUtf8.SchemaMismatch(
-                    spec.RootKey,
                     $"[{spec.RootKey}] Неожиданный конец JSON в строке {rowIndex}, " +
                     $"позиция {position}.");
             }
@@ -528,7 +517,6 @@ public static class MoexRealtimeParser
             if (reader.TokenType == JsonTokenType.EndArray)
             {
                 ParseHelpersUtf8.SchemaMismatch(
-                    spec.RootKey,
                     $"[{spec.RootKey}] Короткая строка данных: ожидалось " +
                     $"{spec.SourceColumns.Length} колонок, получено {position} " +
                     $"(строка {rowIndex}).");
@@ -543,7 +531,6 @@ public static class MoexRealtimeParser
         if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
         {
             ParseHelpersUtf8.SchemaMismatch(
-                spec.RootKey,
                 $"[{spec.RootKey}] Ожидался EndArray после " +
                 $"{spec.SourceColumns.Length} колонок (строка {rowIndex}).");
         }
@@ -671,7 +658,6 @@ public static class MoexRealtimeParser
         if (position != spec.SourceColumns.Length)
         {
             ParseHelpersUtf8.SchemaMismatch(
-                spec.RootKey,
                 $"[{spec.RootKey}] Количество колонок не совпадает: " +
                 $"ожидалось {spec.SourceColumns.Length}, получено {position}.");
         }
@@ -679,7 +665,6 @@ public static class MoexRealtimeParser
         if (expectedIndex != spec.SourceColumns.Length)
         {
             ParseHelpersUtf8.SchemaMismatch(
-                spec.RootKey,
                 $"[{spec.RootKey}] Не все ожидаемые колонки найдены: " +
                 $"ожидалось {spec.SourceColumns.Length}, проверено {expectedIndex}.");
         }

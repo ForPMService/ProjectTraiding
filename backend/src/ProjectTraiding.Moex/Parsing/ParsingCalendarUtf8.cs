@@ -38,7 +38,7 @@ namespace ProjectTraiding.Moex.Parsing
                 else if (reader.ValueTextEquals("data"u8))
                 {
                     if (!foundColumns)
-                        ParseHelpersUtf8.SchemaMismatch(schema.RootKey,
+                        ParseHelpersUtf8.SchemaMismatch(
                             $"[{schema.RootKey}] Секция 'data' встретилась до 'columns'. Порядок columns → data обязателен.");
 
                     foundData = true;
@@ -80,11 +80,11 @@ namespace ProjectTraiding.Moex.Parsing
                     for (int pos = 0; pos < schema.TotalColumns; pos++)
                     {
                         if (!reader.Read())
-                            ParseHelpersUtf8.SchemaMismatch(schema.RootKey,
+                            ParseHelpersUtf8.SchemaMismatch(
                                 $"[{schema.RootKey}] Неожиданный конец JSON в строке {rowIndex}, позиция {pos}.");
 
                         if (reader.TokenType == JsonTokenType.EndArray)
-                            ParseHelpersUtf8.SchemaMismatch(schema.RootKey,
+                            ParseHelpersUtf8.SchemaMismatch(
                                 $"[{schema.RootKey}] Короткая строка данных: " +
                                 $"ожидалось {schema.TotalColumns} колонок, получено {pos} " +
                                 $"(строка {rowIndex}).");
@@ -109,7 +109,7 @@ namespace ProjectTraiding.Moex.Parsing
                     }
 
                     if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
-                        ParseHelpersUtf8.SchemaMismatch(schema.RootKey,
+                        ParseHelpersUtf8.SchemaMismatch(
                             $"[{schema.RootKey}] Ожидался EndArray после {schema.TotalColumns} колонок (строка {rowIndex}).");
                 }
 

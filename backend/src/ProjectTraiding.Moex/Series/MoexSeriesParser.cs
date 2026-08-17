@@ -40,7 +40,6 @@ public sealed class MoexSeriesParser
                 if (!foundColumns)
                 {
                     ParseHelpersUtf8.SchemaMismatch(
-                        spec.RootKey,
                         $"[{spec.RootKey}] Секция 'data' встретилась до 'columns'. " +
                         "Порядок columns → data обязателен.");
                 }
@@ -76,7 +75,7 @@ public sealed class MoexSeriesParser
                     }
                     catch (InvalidOperationException ex)
                     {
-                        ParseHelpersUtf8.SchemaMismatch("data.cursor", ex.Message);
+                        ParseHelpersUtf8.SchemaMismatch(ex.Message);
                     }
 
                     break;
@@ -124,7 +123,6 @@ public sealed class MoexSeriesParser
         if (position != spec.SourceColumns.Length)
         {
             ParseHelpersUtf8.SchemaMismatch(
-                spec.RootKey,
                 $"[{spec.RootKey}] Количество колонок не совпадает: " +
                 $"ожидалось {spec.SourceColumns.Length}, получено {position}.");
         }
@@ -132,7 +130,6 @@ public sealed class MoexSeriesParser
         if (expectedIndex != spec.SourceColumns.Length)
         {
             ParseHelpersUtf8.SchemaMismatch(
-                spec.RootKey,
                 $"[{spec.RootKey}] Не все ожидаемые колонки найдены: " +
                 $"ожидалось {spec.SourceColumns.Length}, проверено {expectedIndex}.");
         }
@@ -153,7 +150,6 @@ public sealed class MoexSeriesParser
             if (reader.TokenType != JsonTokenType.StartArray)
             {
                 ParseHelpersUtf8.SchemaMismatch(
-                    spec.RootKey,
                     $"[{spec.RootKey}] Ожидался StartArray строки {rowIndex}, " +
                     $"получено {reader.TokenType}.");
             }
@@ -164,7 +160,6 @@ public sealed class MoexSeriesParser
                 if (!reader.Read())
                 {
                     ParseHelpersUtf8.SchemaMismatch(
-                        spec.RootKey,
                         $"[{spec.RootKey}] Неожиданный конец JSON в строке {rowIndex}, " +
                         $"позиция {position}.");
                 }
@@ -172,7 +167,6 @@ public sealed class MoexSeriesParser
                 if (reader.TokenType == JsonTokenType.EndArray)
                 {
                     ParseHelpersUtf8.SchemaMismatch(
-                        spec.RootKey,
                         $"[{spec.RootKey}] Короткая строка данных: ожидалось " +
                         $"{spec.SourceColumns.Length} колонок, получено {position} " +
                         $"(строка {rowIndex}).");
@@ -188,7 +182,6 @@ public sealed class MoexSeriesParser
             if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
             {
                 ParseHelpersUtf8.SchemaMismatch(
-                    spec.RootKey,
                     $"[{spec.RootKey}] Ожидался EndArray после " +
                     $"{spec.SourceColumns.Length} колонок (строка {rowIndex}).");
             }
@@ -224,7 +217,7 @@ public sealed class MoexSeriesParser
         }
         catch (InvalidOperationException ex)
         {
-            ParseHelpersUtf8.SchemaMismatch(rootKey, ex.Message);
+            ParseHelpersUtf8.SchemaMismatch(ex.Message);
             throw;
         }
     }
