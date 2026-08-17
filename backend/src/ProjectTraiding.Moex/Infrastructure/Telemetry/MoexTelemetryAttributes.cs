@@ -23,10 +23,6 @@ public static class MoexTelemetryAttributes
     /// <summary>Рынок: stock, futures.</summary>
     public const string Market = "market";
 
-    /// <summary>Нормализованный шаблон endpoint-а для метрик (не полный PathAndQuery).
-    /// В логах допустим полный endpoint; в метриках — только шаблон (кардинальность).</summary>
-    public const string EndpointTemplate = "endpoint_template";
-
     /// <summary>
     /// Категория ошибки. Стабильные значения определены в
     /// <see cref="MoexErrorTypes"/>.

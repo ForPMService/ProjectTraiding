@@ -21,20 +21,5 @@ public sealed class MoexAuthException : MoexHttpException
         IsRetryable = false;
     }
 
-    /// <summary>
-    /// Инициализирует новый экземпляр с явно заданным сообщением.
-    /// Используется при прямом создании исключения с контролируемым текстом.
-    /// </summary>
-    /// <param name="message">Описание ошибки (не должно содержать токены или заголовки).</param>
-    /// <param name="endpoint">Адрес эндпоинта, вернувшего 401 или 403.</param>
-    /// <param name="statusCode">Конкретный статус-код (401 или 403).</param>
-    public MoexAuthException(string message, string endpoint, int statusCode)
-        : base(message)
-    {
-        StatusCode = statusCode;
-        Endpoint = endpoint;
-        IsRetryable = false;
-    }
-
     public override string ErrorCategory => MoexErrorTypes.Auth;
 }

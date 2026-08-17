@@ -8,11 +8,6 @@ namespace ProjectTraiding.Moex.Infrastructure.Telemetry;
 public static class MoexDataKinds
 {
     public const string Candles = "candles";
-    public const string TradeStats = "tradestats";
-    public const string OBStats = "obstats";
-    public const string OrderStats = "orderstats";
-    public const string Futoi = "futoi";
-    public const string Hi2 = "hi2";
     public const string MegaAlerts = "alerts";
     public const string OffDays = "offdays";
     public const string Trades = "trades";

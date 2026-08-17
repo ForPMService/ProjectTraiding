@@ -23,21 +23,5 @@ public sealed class MoexRateLimitException : MoexHttpException
         RetryAfter = retryAfter;
     }
 
-    /// <summary>
-    /// Инициализирует новый экземпляр с явно заданным сообщением.
-    /// Используется при прямом создании исключения с контролируемым текстом.
-    /// </summary>
-    /// <param name="message">Описание ошибки (не должно содержать токены или заголовки).</param>
-    /// <param name="endpoint">Адрес эндпоинта, вернувшего 429.</param>
-    /// <param name="retryAfter">Задержка перед повторным запросом (null если не указана сервером).</param>
-    public MoexRateLimitException(string message, string endpoint, TimeSpan? retryAfter = null)
-        : base(message)
-    {
-        StatusCode = 429;
-        Endpoint = endpoint;
-        IsRetryable = true;
-        RetryAfter = retryAfter;
-    }
-
     public override string ErrorCategory => MoexErrorTypes.RateLimit;
 }

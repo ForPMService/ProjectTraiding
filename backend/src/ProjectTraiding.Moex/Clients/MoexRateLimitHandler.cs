@@ -118,10 +118,7 @@ namespace ProjectTraiding.Moex.Clients
                 // Всегда пишем Debug-лог.
                 MoexLogMessages.RateLimitAcquired(_logger, endpoint, waitMs);
 
-                // Метрики: permit получен + время ожидания.
-                MoexMetrics.RateLimitAcquired.Add(
-                    1,
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, _source));
+                // Метрика: время ожидания permit.
                 MoexMetrics.RateLimitWaitDuration.Record(
                     waitMs,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, _source));

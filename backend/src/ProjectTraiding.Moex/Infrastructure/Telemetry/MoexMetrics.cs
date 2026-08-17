@@ -43,10 +43,6 @@ public static class MoexMetrics
     // Rate limiter
     // ══════════════════════════════════════════════
 
-    /// <summary>Количество выданных permit-ов.</summary>
-    public static readonly Counter<long> RateLimitAcquired =
-        Meter.CreateCounter<long>("moex.ratelimit.acquired", description: "MOEX rate limit permits acquired");
-
     /// <summary>Время ожидания permit (мс).</summary>
     public static readonly Histogram<double> RateLimitWaitDuration =
         Meter.CreateHistogram<double>("moex.ratelimit.wait.duration", unit: "ms", description: "MOEX rate limit wait duration");

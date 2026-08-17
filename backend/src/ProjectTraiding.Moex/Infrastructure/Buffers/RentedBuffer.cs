@@ -27,13 +27,6 @@ namespace ProjectTraiding.Moex.Infrastructure.Buffers
 
         public ReadOnlySpan<byte> Span => _buffer.AsSpan(0, _length);
 
-        /// <summary>
-        /// Read-only memory view над тем же арендованным массивом и длиной, что и Span.
-        /// Подходит для API, которым нужен ReadOnlyMemory&lt;byte&gt;, и позволяет передать
-        /// содержимое без .ToArray() и без лишнего копирования буфера.
-        /// </summary>
-        public ReadOnlyMemory<byte> Memory => _buffer.AsMemory(0, _length);
-
         public void Dispose()
         {
             if (_buffer != null)

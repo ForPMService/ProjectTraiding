@@ -92,18 +92,6 @@ namespace ProjectTraiding.Moex.Clients
         //[LoggerMessage(EventId = 140, EventName = "MoexEmptyPageReceived", Level = LogLevel.Information, Message = "MOEX empty page received: endpoint={Endpoint}, page={PageNumber}, reason={Reason}.")]
         //public static partial void EmptyPageReceived(ILogger logger, string endpoint, int pageNumber, string reason);
 
-        /// <summary>
-        /// Логирует срабатывание защитного лимита страниц, чтобы не уйти в бесконечную пагинацию.
-        /// </summary>
-        [LoggerMessage(EventId = 141, EventName = "MoexSafetyCapHit", Level = LogLevel.Warning, Message = "MOEX page limit reached: endpoint={Endpoint}, pages={TotalPages}, limit={MaxPages}.")]
-        public static partial void SafetyCapHit(ILogger logger, string endpoint, int totalPages, int maxPages);
-
-        /// <summary>
-        /// Логирует использование fallback-размера буфера, когда MOEX не вернул Content-Length.
-        /// </summary>
-        [LoggerMessage(EventId = 142, EventName = "MoexContentLengthFallbackUsed", Level = LogLevel.Debug, Message = "MOEX response size is unknown, using fallback buffer: endpoint={Endpoint}, fallbackBytes={FallbackBytes}.")]
-        public static partial void ContentLengthFallbackUsed(ILogger logger, string endpoint, int fallbackBytes);
-
         // ── Rate Limiter ────────────────────────────────────────
 
         /// <summary>
