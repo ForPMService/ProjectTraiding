@@ -374,9 +374,6 @@ public sealed class MoexHistoryPageReader
             ["iss.meta"] = "off",
         };
 
-        query.Remove("start");
-        query.Remove("offset");
-
         int dayIndex = 0;
         int totalRows = 0;
         DateTime fromDate = from.ToDateTime(TimeOnly.MinValue);

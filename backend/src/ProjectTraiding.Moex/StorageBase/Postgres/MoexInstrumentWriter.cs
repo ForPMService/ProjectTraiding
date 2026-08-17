@@ -97,8 +97,8 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
 
                     detailsCommand.Parameters.Add("@secid", NpgsqlDbType.Text).Value = stock.SecId;
                     detailsCommand.Parameters.Add("@boardid", NpgsqlDbType.Text).Value = stock.BoardId;
-                    detailsCommand.Parameters.Add("@shortname", NpgsqlDbType.Text).Value = (object?)stock.ShortName ?? DBNull.Value;
-                    detailsCommand.Parameters.Add("@secname", NpgsqlDbType.Text).Value = (object?)stock.SecName ?? DBNull.Value;
+                    detailsCommand.Parameters.Add("@shortname", NpgsqlDbType.Text).Value = stock.ShortName;
+                    detailsCommand.Parameters.Add("@secname", NpgsqlDbType.Text).Value = stock.SecName;
                     detailsCommand.Parameters.Add("@sectype", NpgsqlDbType.Text).Value = (object?)stock.SecType ?? DBNull.Value;
                     detailsCommand.Parameters.Add("@isin", NpgsqlDbType.Text).Value = (object?)stock.Isin ?? DBNull.Value;
                     detailsCommand.Parameters.Add("@lotsize", NpgsqlDbType.Integer).Value = (object?)stock.LotSize ?? DBNull.Value;
@@ -211,8 +211,8 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
 
                     detailsCommand.Parameters.Add("@secid", NpgsqlDbType.Text).Value = future.SecId;
                     detailsCommand.Parameters.Add("@boardid", NpgsqlDbType.Text).Value = future.BoardId;
-                    detailsCommand.Parameters.Add("@shortname", NpgsqlDbType.Text).Value = (object?)future.ShortName ?? DBNull.Value;
-                    detailsCommand.Parameters.Add("@secname", NpgsqlDbType.Text).Value = (object?)future.SecName ?? DBNull.Value;
+                    detailsCommand.Parameters.Add("@shortname", NpgsqlDbType.Text).Value = future.ShortName;
+                    detailsCommand.Parameters.Add("@secname", NpgsqlDbType.Text).Value = future.SecName;
                     detailsCommand.Parameters.Add("@sectype", NpgsqlDbType.Text).Value = (object?)future.SecType ?? DBNull.Value;
                     detailsCommand.Parameters.Add("@asset_code", NpgsqlDbType.Text).Value = (object?)future.AssetCode ?? DBNull.Value;
                     detailsCommand.Parameters.Add("@initial_margin", NpgsqlDbType.Numeric).Value = (object?)future.InitialMargin ?? DBNull.Value;

@@ -63,13 +63,11 @@ namespace ProjectTraiding.Moex.Loading
 
             bool metadataResolved = false;
             bool activeCounted = false;
-            bool completionRecorded = false;
 
             string dataKind = string.Empty;
             string market = string.Empty;
             string outcome = MoexOutcomes.Error;
 
-            bool summaryAvailable = false;
             long rowsForTelemetry = 0;
             string? stopReasonForTelemetry = null;
             string? errorTypeForTelemetry = null;
@@ -164,7 +162,6 @@ namespace ProjectTraiding.Moex.Loading
 
                 linkedCts.Token.ThrowIfCancellationRequested();
 
-                summaryAvailable = true;
                 rowsForTelemetry = summary.RowsRead;
 
                 // Настоящая причина из потока; пустой держатель трактуем как штатное исчерпание.
@@ -245,15 +242,14 @@ namespace ProjectTraiding.Moex.Loading
             }
             finally
             {
-                if (metadataResolved && !completionRecorded)
+                if (metadataResolved)
                 {
-                    completionRecorded = true;
                     CompleteTask(
                         taskId,
                         dataKind,
                         market,
                         outcome,
-                        summaryAvailable ? rowsForTelemetry : 0,
+                        rowsForTelemetry,
                         taskStart,
                         stopReasonForTelemetry,
                         errorTypeForTelemetry,
