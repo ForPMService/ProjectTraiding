@@ -32,11 +32,13 @@ namespace ProjectTraiding.Moex.Clients
         }
 
         /// <summary>
-        /// Карточки всех акций TQBR — securities + marketdata одним запросом.
+        /// Карточки всех акций TQBR — паспортный блок securities.
         ///
         /// Источник: /engines/stock/markets/shares/boards/tqbr/securities.json?iss.meta=off
         /// Режим: ISS (публичный, без ключа).
-        /// Парсер: ParsingInstrumentCardUtf8.ParseStockCards (два прохода: securities + marketdata).
+        /// Парсер: ParsingInstrumentCardUtf8.ParseStockCards (один проход: securities).
+        /// Источник продолжает отдавать блок marketdata, он не разбирается:
+        /// ценовые поля — данные реального времени и в PostgreSQL не хранятся.
         /// </summary>
         public async Task<List<StockInstrumentCardDTO>> GetStockInstrumentCards(
             CancellationToken cancellationToken = default)

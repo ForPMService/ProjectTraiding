@@ -55,11 +55,13 @@ namespace ProjectTraiding.Moex.Clients
         }
 
         // <summary>
-        /// Карточки всех фьючерсов RFUD — securities + marketdata одним запросом.
+        /// Карточки всех фьючерсов RFUD — паспортный блок securities.
         ///
         /// Источник: /engines/futures/markets/forts/boards/RFUD/securities.json?iss.meta=off
-        /// Режим: APIM (платный, Bearer). ISS отдаёт пустые BID/OFFER по фьючерсам.
-        /// Парсер: ParsingInstrumentCardUtf8.ParseFuturesCards (два прохода: securities + marketdata).
+        /// Режим: APIM (платный, Bearer).
+        /// Парсер: ParsingInstrumentCardUtf8.ParseFuturesCards (один проход: securities).
+        /// Источник продолжает отдавать блок marketdata, он не разбирается:
+        /// ценовые поля — данные реального времени и в PostgreSQL не хранятся.
         /// </summary>
         public async Task<List<FuturesInstrumentCardDTO>> GetFuturesInstrumentCards(
             CancellationToken cancellationToken = default)

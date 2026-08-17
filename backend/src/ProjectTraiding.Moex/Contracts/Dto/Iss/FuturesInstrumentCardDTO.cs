@@ -5,12 +5,12 @@ namespace ProjectTraiding.Moex.Contracts.Dto.Iss
     ///
     /// Источник: GET /engines/futures/markets/forts/boards/RFUD/securities.json?iss.meta=off
     /// Режим: APIM (платный, Bearer). ISS отдаёт пустые BID/OFFER — подтверждено пробником.
-    /// Блоки: securities (паспорт) + marketdata (цена/объёмы).
+    /// Блок: securities (паспорт).
     ///
     /// Карточка конкретного инструмента = строка из списочного ответа по SECID.
     /// Отдельный пер-тикерный вызов не нужен (решение из MOEX_Cards_Handoff_v0_1).
     ///
-    /// Probe: probe-14, 2026-06-01. Securities 16 из 26 колонок, marketdata 14 из 37.
+    /// Probe: probe-14, 2026-06-01. Securities 16 из 26 колонок.
     /// </summary>
     public record FuturesInstrumentCardDTO
     {
@@ -70,48 +70,5 @@ namespace ProjectTraiding.Moex.Contracts.Dto.Iss
         /// <summary>Комиссия за сделку. MOEX: BUYSELLFEE [21]. Пример: 3.34.</summary>
         public double? BuySellFee { get; init; }
 
-        // ── marketdata (14 полей) ──────────────────────────────
-
-        /// <summary>Лучшая цена покупки. MOEX: BID [2].</summary>
-        public double? Bid { get; init; }
-
-        /// <summary>Лучшая цена продажи. MOEX: OFFER [3].</summary>
-        public double? Offer { get; init; }
-
-        /// <summary>Спред. MOEX: SPREAD [4].</summary>
-        public double? Spread { get; init; }
-
-        /// <summary>Цена открытия. MOEX: OPEN [5].</summary>
-        public double? Open { get; init; }
-
-        /// <summary>Максимальная цена. MOEX: HIGH [6].</summary>
-        public double? High { get; init; }
-
-        /// <summary>Минимальная цена. MOEX: LOW [7].</summary>
-        public double? Low { get; init; }
-
-        /// <summary>Последняя цена. MOEX: LAST [8].</summary>
-        public double? Last { get; init; }
-
-        /// <summary>Расчётная цена. MOEX: SETTLEPRICE [11].</summary>
-        public double? SettlePrice { get; init; }
-
-        /// <summary>Открытые позиции. MOEX: OPENPOSITION [13].</summary>
-        public double? OpenPosition { get; init; }
-
-        /// <summary>Количество сделок. MOEX: NUMTRADES [14].</summary>
-        public int? NumTrades { get; init; }
-
-        /// <summary>Объём в контрактах. MOEX: VOLTODAY [15].</summary>
-        public long? VolToday { get; init; }
-
-        /// <summary>Объём в валюте рынка. MOEX: VALTODAY [16].</summary>
-        public long? ValToday { get; init; }
-
-        /// <summary>Время обновления. MOEX: UPDATETIME [18]. Пример: "14:06:21".</summary>
-        public string? UpdateTime { get; init; }
-
-        /// <summary>Изменение открытых позиций. MOEX: OICHANGE [32].</summary>
-        public long? OiChange { get; init; }
     }
 }

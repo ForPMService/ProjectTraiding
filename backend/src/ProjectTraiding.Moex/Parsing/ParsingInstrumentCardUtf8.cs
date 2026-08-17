@@ -4,20 +4,18 @@ using System.Text.Json;
 namespace ProjectTraiding.Moex.Parsing
 {
     /// <summary>
-    /// Разбор карточек инструментов — securities + marketdata из списочного ответа.
+    /// Разбор карточек инструментов — паспортный блок securities из списочного ответа.
     ///
     /// Акции:    /engines/stock/markets/shares/boards/tqbr/securities.json
     /// Фьючерсы: /engines/futures/markets/forts/boards/RFUD/securities.json
     ///
-    /// Паттерн: два прохода по одним байтам (securities → marketdata), как в
-    /// ParsingCalendarUtf8.ParseStockSession.
-    ///
-    /// Блоки dataversion и marketdata_yields — пропускаются (парсер их не ищет).
+    /// Блоки dataversion, marketdata и marketdata_yields — пропускаются
+    /// (парсер их не ищет; ценовые поля не хранятся).
     /// </summary>
     public static class ParsingInstrumentCardUtf8
     {
         // ═══════════════════════════════════════════════════════════
-        // Акции — два прохода: securities(27) + marketdata(56)
+        // Акции — один проход: securities(27)
         // ═══════════════════════════════════════════════════════════
 
         public static List<StockInstrumentCardDTO> ParseStockCards(ReadOnlySpan<byte> jsonBytes)
@@ -143,7 +141,7 @@ namespace ProjectTraiding.Moex.Parsing
         }
 
         // ═══════════════════════════════════════════════════════════
-        // Фьючерсы — два прохода: securities(26) + marketdata(37)
+        // Фьючерсы — один проход: securities(26)
         // ═══════════════════════════════════════════════════════════
 
         public static List<FuturesInstrumentCardDTO> ParseFuturesCards(ReadOnlySpan<byte> jsonBytes)

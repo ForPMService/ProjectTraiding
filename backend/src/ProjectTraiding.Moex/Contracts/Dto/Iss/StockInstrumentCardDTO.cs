@@ -5,12 +5,12 @@ namespace ProjectTraiding.Moex.Contracts.Dto.Iss
     ///
     /// Источник: GET /engines/stock/markets/shares/boards/tqbr/securities.json?iss.meta=off
     /// Режим: ISS (публичный, без ключа).
-    /// Блоки: securities (паспорт) + marketdata (цена/объёмы).
+    /// Блок: securities (паспорт).
     ///
     /// Карточка конкретного инструмента = строка из списочного ответа по SECID.
     /// Отдельный пер-тикерный вызов не нужен (решение из MOEX_Cards_Handoff_v0_1).
     ///
-    /// Probe: probe-13, 2026-06-01. Securities 13 из 27 колонок, marketdata 12 из 56.
+    /// Probe: probe-13, 2026-06-01. Securities 13 из 27 колонок.
     /// </summary>
     public record StockInstrumentCardDTO
     {
@@ -55,42 +55,5 @@ namespace ProjectTraiding.Moex.Contracts.Dto.Iss
         /// <summary>Уровень листинга. MOEX: LISTLEVEL [25]. Пример: 1.</summary>
         public int? ListLevel { get; init; }
 
-        // ── marketdata (12 полей) ──────────────────────────────
-
-        /// <summary>Лучшая цена покупки. MOEX: BID [2].</summary>
-        public double? Bid { get; init; }
-
-        /// <summary>Лучшая цена продажи. MOEX: OFFER [4].</summary>
-        public double? Offer { get; init; }
-
-        /// <summary>Спред. MOEX: SPREAD [6].</summary>
-        public double? Spread { get; init; }
-
-        /// <summary>Цена открытия. MOEX: OPEN [9].</summary>
-        public double? Open { get; init; }
-
-        /// <summary>Минимальная цена. MOEX: LOW [10].</summary>
-        public double? Low { get; init; }
-
-        /// <summary>Максимальная цена. MOEX: HIGH [11].</summary>
-        public double? High { get; init; }
-
-        /// <summary>Последняя цена. MOEX: LAST [12].</summary>
-        public double? Last { get; init; }
-
-        /// <summary>Количество сделок. MOEX: NUMTRADES [26].</summary>
-        public int? NumTrades { get; init; }
-
-        /// <summary>Объём в лотах. MOEX: VOLTODAY [27].</summary>
-        public long? VolToday { get; init; }
-
-        /// <summary>Объём в валюте рынка. MOEX: VALTODAY [28].</summary>
-        public long? ValToday { get; init; }
-
-        /// <summary>Статус торгов. MOEX: TRADINGSTATUS [31]. Пример: "T".</summary>
-        public string? TradingStatus { get; init; }
-
-        /// <summary>Время обновления. MOEX: UPDATETIME [32]. Пример: "13:51:45".</summary>
-        public string? UpdateTime { get; init; }
     }
 }
