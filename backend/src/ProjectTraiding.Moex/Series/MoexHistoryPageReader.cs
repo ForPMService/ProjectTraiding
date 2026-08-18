@@ -196,12 +196,14 @@ public sealed class MoexHistoryPageReader
                 pageActivity?.SetStatus(ActivityStatusCode.Ok);
             }
 
-            yield return rows;
-
+            // Решение об остановке принимается до обрезки: последняя страница отдаётся
+            // целиком, иначе её хвостовая группа была бы отброшена безвозвратно.
             PaginationStep step = MoexCursorPagination.Next(
                 cursor, pagesElapsed, _options.MaxPagesPerLoad);
             if (step.IsStop)
             {
+                yield return rows;
+
                 MoexLogMessages.PaginationStopped(
                     _logger, method, step.StopReason!, pagesElapsed, totalRows);
                 stopOutcome.Complete(
@@ -210,7 +212,31 @@ public sealed class MoexHistoryPageReader
                 break;
             }
 
-            query["start"] = step.NextStart.ToString();
+            int nextStart = step.NextStart;
+
+            // Граница страницы не должна рассекать группу строк одного момента: порядок
+            // внутри группы источник не гарантирует, и рассечённая группа теряет строку.
+            // Хвост отбрасывается и дочитывается следующей страницей целиком.
+            if (spec.PreserveCursorTimeGroup && rows.Count > 0)
+            {
+                DateTime lastTime = rows[^1].Time;
+                int tailStart = rows.Count - 1;
+                while (tailStart > 0 && rows[tailStart - 1].Time == lastTime)
+                    tailStart--;
+
+                if (tailStart == 0)
+                    throw new InvalidOperationException(
+                        $"Страница {method} целиком занята одной временной группой "
+                        + $"({rows.Count} строк на момент {lastTime:yyyy-MM-dd HH:mm:ss}), "
+                        + "продолжение чтения не гарантирует полноты.");
+
+                nextStart = cursor.Index!.Value + tailStart;
+                rows = rows.GetRange(0, tailStart);
+            }
+
+            yield return rows;
+
+            query["start"] = nextStart.ToString(CultureInfo.InvariantCulture);
         }
     }
 

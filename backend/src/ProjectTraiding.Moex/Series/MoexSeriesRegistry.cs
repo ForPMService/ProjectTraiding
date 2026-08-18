@@ -401,6 +401,7 @@ public static class MoexSeriesRegistry
         ],
         TokenPrefix = "hi2:1d:stock",
         Pagination = PaginationKind.Cursor,
+        PreserveCursorTimeGroup = true,
     };
 
     public static readonly MoexSeriesSpec Hi2Futures = new()
@@ -435,6 +436,7 @@ public static class MoexSeriesRegistry
         ],
         TokenPrefix = "hi2:1d:futures",
         Pagination = PaginationKind.Cursor,
+        PreserveCursorTimeGroup = true,
     };
 
     public static readonly MoexSeriesSpec MegaAlertsStock = new()
@@ -469,6 +471,7 @@ public static class MoexSeriesRegistry
         ],
         TokenPrefix = "megaalerts:event:stock",
         Pagination = PaginationKind.Cursor,
+        PreserveCursorTimeGroup = true,
     };
 
     public static readonly MoexSeriesSpec MegaAlertsFutures = new()
@@ -505,6 +508,7 @@ public static class MoexSeriesRegistry
         ],
         TokenPrefix = "megaalerts:event:futures",
         Pagination = PaginationKind.Cursor,
+        PreserveCursorTimeGroup = true,
     };
 
     public static readonly MoexSeriesSpec Futoi = new()
