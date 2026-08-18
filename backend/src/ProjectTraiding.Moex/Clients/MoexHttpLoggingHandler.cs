@@ -14,6 +14,29 @@ namespace ProjectTraiding.Moex.Clients
             _source = source;
         }
 
+        // Значение метки метрики имеет тип объекта, поэтому числовой код состояния при
+        // каждой записи упаковывался бы в кучу. Множество кодов замкнуто и известно
+        // заранее, поэтому упакованные значения создаются один раз на процесс.
+        private static readonly object[] BoxedStatusCodes = CreateBoxedStatusCodes();
+
+        private static object[] CreateBoxedStatusCodes()
+        {
+            object[] boxed = new object[500];
+            for (int i = 0; i < boxed.Length; i++)
+                boxed[i] = i + 100;
+
+            return boxed;
+        }
+
+        // На пределами известного диапазона значение упаковывается обычным образом:
+        // такой код состояния — сам по себе аномалия, и оптимизировать его незачем.
+        private static object BoxStatusCode(int statusCode)
+        {
+            return statusCode is >= 100 and <= 599
+                ? BoxedStatusCodes[statusCode - 100]
+                : statusCode;
+        }
+
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
@@ -55,7 +78,7 @@ namespace ProjectTraiding.Moex.Clients
 
             MoexMetrics.HttpRequestDuration.Record(elapsed.TotalMilliseconds,
                 new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, _source),
-                new KeyValuePair<string, object?>(MoexTelemetryAttributes.StatusCode, (int)response.StatusCode));
+                new KeyValuePair<string, object?>(MoexTelemetryAttributes.StatusCode, BoxStatusCode((int)response.StatusCode)));
 
             // Серверные ответы (5xx) и объявленный источником тайм-аут (408) считаем
             // в метрику ошибок. Прочие 4xx могут быть нормальным поведением — не считаем.
@@ -67,14 +90,14 @@ namespace ProjectTraiding.Moex.Clients
                 MoexMetrics.HttpErrors.Add(1,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, _source),
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.ErrorType, MoexErrorTypes.Timeout),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.StatusCode, statusCode));
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.StatusCode, BoxStatusCode(statusCode)));
             }
             else if (statusCode is >= 500 and <= 599)
             {
                 MoexMetrics.HttpErrors.Add(1,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, _source),
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.ErrorType, MoexErrorTypes.ServerError),
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.StatusCode, statusCode));
+                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.StatusCode, BoxStatusCode(statusCode)));
             }
 
             return response;

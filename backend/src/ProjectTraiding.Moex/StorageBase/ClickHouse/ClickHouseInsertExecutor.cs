@@ -15,6 +15,11 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
     /// </summary>
     public sealed class ClickHouseInsertExecutor
     {
+        // Значения настроек имеют тип объекта: числовые литералы упаковывались бы в кучу
+        // на каждую вставку. Оба значения постоянны, поэтому упакованы один раз.
+        private static readonly object DisabledSetting = 0;
+        private static readonly object EnabledSetting = 1;
+
         private readonly ClickHouseClient _client;
         private readonly ILogger<ClickHouseInsertExecutor> _logger;
 
@@ -52,8 +57,8 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 ColumnTypes = columnTypes,
                 CustomSettings = new Dictionary<string, object>
                 {
-                    ["async_insert"] = 0,
-                    ["insert_deduplicate"] = 1,
+                    ["async_insert"] = DisabledSetting,
+                    ["insert_deduplicate"] = EnabledSetting,
                     ["insert_deduplication_token"] = deduplicationToken,
                 },
             };
