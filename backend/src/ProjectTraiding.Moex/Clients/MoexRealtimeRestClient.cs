@@ -40,6 +40,20 @@ namespace ProjectTraiding.Moex.Clients
         private static readonly string DataVersionColumnsParam =
             ColumnAndNumbersForParsing.RealtimeDataVersionSchema.BuildColumnsParam();
 
+        // Набор параметров запроса стакана постоянен и не зависит от вызова: собирать
+        // одинаковый словарь на каждый опрос каждого инструмента незачем.
+        //
+        // Этот словарь не изменяет никто и никогда. Тип оставлен обычным намеренно:
+        // замороженный словарь не определяет порядок ключей, а порядок пар задаёт вид
+        // адреса, который попадает в события журнала обращений. Поиска по ключу здесь
+        // нет — набор только перечисляется при сборке адреса, поэтому менять тип не на что.
+        private static readonly Dictionary<string, string> OrderbookQueryParams = new()
+        {
+            ["iss.meta"] = "off",
+            ["iss.only"] = "orderbook,dataversion",
+            ["orderbook.columns"] = MoexRealtimeRegistry.Orderbook.ColumnsParam,
+            ["dataversion.columns"] = DataVersionColumnsParam,
+        };
 
         private readonly MoexOptions _options;
         private readonly ILogger<MoexRealtimeRestClient> _logger;
@@ -111,17 +125,9 @@ namespace ProjectTraiding.Moex.Clients
             CancellationToken cancellationToken = default)
         {
             MoexRealtimeSpec spec = MoexRealtimeRegistry.Orderbook;
-            Dictionary<string, string> queryParams = new Dictionary<string, string>
-            {
-                ["iss.meta"] = "off",
-                ["iss.only"] = "orderbook,dataversion",
-                ["orderbook.columns"] = spec.ColumnsParam,
-                ["dataversion.columns"] = DataVersionColumnsParam,
-            };
-
             string endpoint = BuildEndpoint(market, ticker, "/orderbook.json");
             using HttpResponseMessage response =
-                await _transport.SendAsync(endpoint, queryParams, cancellationToken);
+                await _transport.SendAsync(endpoint, OrderbookQueryParams, cancellationToken);
             using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
                 response, _options.BodyReadTimeout, endpoint, cancellationToken);
             try

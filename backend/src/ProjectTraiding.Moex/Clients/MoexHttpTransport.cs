@@ -28,6 +28,14 @@ namespace ProjectTraiding.Moex.Clients
         private readonly string _logSource;
         private readonly bool _requiresApiKey;
 
+        /// <summary>
+        /// Готовое значение заголовка доступа. Собирается один раз на транспорт: склейка
+        /// на каждый запрос создавала бы в куче строку с ключом на каждое обращение к бирже.
+        /// Пусто, когда ключ не требуется или не настроен; проверку настроенности
+        /// по-прежнему выполняет EnsureApiKeyConfigured в момент создания запроса.
+        /// </summary>
+        private readonly string? _authorizationHeader;
+
         /// <param name="baseUrl">Базовый адрес: APIM для платного доступа, ISS для публичного.</param>
         /// <param name="logSource">Константа источника из <see cref="MoexLogSources"/>.</param>
         /// <param name="requiresApiKey">
@@ -48,6 +56,9 @@ namespace ProjectTraiding.Moex.Clients
             _baseUrl = baseUrl;
             _logSource = logSource;
             _requiresApiKey = requiresApiKey;
+            _authorizationHeader = requiresApiKey && !string.IsNullOrWhiteSpace(options.AlgKey)
+                ? "Bearer " + options.AlgKey
+                : null;
         }
 
         /// <summary>
@@ -115,15 +126,14 @@ namespace ProjectTraiding.Moex.Clients
 
         private string BuildRequestUrl(string method, Dictionary<string, string>? queryParams)
         {
-            string requestUrl = _baseUrl + method;
-            queryParams ??= new Dictionary<string, string>();
-            if (queryParams.Count > 0)
-            {
-                QueryString queryString = QueryString.Create(queryParams);
-                requestUrl += queryString.ToString();
-            }
+            // Пустой словарь ради проверки числа записей больше не создаётся. Обращения без
+            // параметров есть у карточек инструментов и календаря, и их готовые пути уже
+            // содержат знак вопроса — дописывать к ним нечего.
+            if (queryParams is not { Count: > 0 })
+                return _baseUrl + method;
 
-            return requestUrl;
+            QueryString queryString = QueryString.Create(queryParams);
+            return _baseUrl + method + queryString.ToString();
         }
 
         private HttpRequestMessage CreateRequest(string requestUrl)
@@ -133,7 +143,7 @@ namespace ProjectTraiding.Moex.Clients
 
             HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
             if (_requiresApiKey)
-                request.Headers.Add("Authorization", $"Bearer {_options.AlgKey}");
+                request.Headers.Add("Authorization", _authorizationHeader!);
 
             return request;
         }
