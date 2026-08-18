@@ -42,6 +42,7 @@ public sealed class SpecLoadHandler
 
     public async Task<RowWriteSummary> LoadAsync(
         MoexLoadTask task,
+        string dataGeneration,
         LoadStopOutcome stopOutcome,
         CancellationToken cancellationToken)
     {
@@ -80,6 +81,7 @@ public sealed class SpecLoadHandler
         return await _writer.WriteRangeAsync(
             spec,
             task.Secid,
+            dataGeneration,
             task.SourceContractVersion,
             task.WriterVersion,
             pages,

@@ -29,6 +29,7 @@ namespace ProjectTraiding.Moex.Loading
         private readonly MoexLoadTaskReader _taskReader;
         private readonly MoexLoadTaskWriter _taskWriter;
         private readonly MoexLoadedRangeWriter _rangeWriter;
+        private readonly MoexDataGenerationReader _generationReader;
         private readonly SpecLoadHandler _loader;
         private readonly ProjectTraiding.Moex.StorageBase.Redis.LoadedRangeEventPublisher _rangeEventPublisher;
         private readonly ILogger<LoadRunner> _logger;
@@ -37,6 +38,7 @@ namespace ProjectTraiding.Moex.Loading
             MoexLoadTaskReader taskReader,
             MoexLoadTaskWriter taskWriter,
             MoexLoadedRangeWriter rangeWriter,
+            MoexDataGenerationReader generationReader,
             SpecLoadHandler loader,
             ProjectTraiding.Moex.StorageBase.Redis.LoadedRangeEventPublisher rangeEventPublisher,
             ILogger<LoadRunner> logger)
@@ -44,6 +46,7 @@ namespace ProjectTraiding.Moex.Loading
             _taskReader = taskReader;
             _taskWriter = taskWriter;
             _rangeWriter = rangeWriter;
+            _generationReader = generationReader;
             _loader = loader;
             _rangeEventPublisher = rangeEventPublisher;
             _logger = logger;
@@ -134,6 +137,12 @@ namespace ProjectTraiding.Moex.Loading
                     throw new InvalidOperationException(
                         $"Задача {taskId} не нацелена на ClickHouse (storage_target={task.StorageTarget}).");
 
+                // Поколение читается здесь: задача уже принадлежит загрузчику (ручной путь прошёл
+                // MarkRunningAsync, фоновый пришёл захваченным), но спутник отмены ещё не запущен.
+                // Отказ чтения на этом месте выходит через общий обработчик, ничего не оставляя
+                // работать в фоне.
+                string dataGeneration = await _generationReader.GetAsync(task.Secid, ct);
+
                 LoadStopOutcome stopOutcome = new LoadStopOutcome();
 
                 using CancellationTokenSource operatorCts = new CancellationTokenSource();
@@ -146,7 +155,7 @@ namespace ProjectTraiding.Moex.Loading
                 RowWriteSummary summary;
                 try
                 {
-                    summary = await _loader.LoadAsync(task, stopOutcome, linkedCts.Token);
+                    summary = await _loader.LoadAsync(task, dataGeneration, stopOutcome, linkedCts.Token);
                 }
                 finally
                 {

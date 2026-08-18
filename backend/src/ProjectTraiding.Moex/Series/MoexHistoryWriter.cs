@@ -28,6 +28,7 @@ public sealed class MoexHistoryWriter
     public async Task<RowWriteSummary> WriteRangeAsync(
         MoexSeriesSpec spec,
         string secid,
+        string dataGeneration,
         string sourceContractVersion,
         string writerVersion,
         IAsyncEnumerable<List<(object?[] Row, DateTime Time)>> pages,
@@ -70,6 +71,7 @@ public sealed class MoexHistoryWriter
                     (lastToken, long reported) = await FlushAsync(
                         spec,
                         secid,
+                        dataGeneration,
                         sourceContractVersion,
                         writerVersion,
                         columns,
@@ -90,6 +92,7 @@ public sealed class MoexHistoryWriter
             (lastToken, long reported) = await FlushAsync(
                 spec,
                 secid,
+                dataGeneration,
                 sourceContractVersion,
                 writerVersion,
                 columns,
@@ -127,6 +130,7 @@ public sealed class MoexHistoryWriter
     private async Task<(string Token, long Reported)> FlushAsync(
         MoexSeriesSpec spec,
         string secid,
+        string dataGeneration,
         string sourceContractVersion,
         string writerVersion,
         IReadOnlyList<string> columns,
@@ -137,9 +141,13 @@ public sealed class MoexHistoryWriter
         StorageInsertContext insertContext,
         CancellationToken cancellationToken)
     {
+        // Поколение данных стоит в токене, потому что контрольные суммы блоков в ClickHouse
+        // переживают удаление строк мутацией ALTER ... DELETE: без него повторная загрузка удалённого диапазона
+        // отсекается как повтор. Внутри одного поколения токен остаётся детерминированным —
+        // повтор той же пачки другим заданием по-прежнему отсекается, и это проверяемое свойство.
         string token = string.Create(
             CultureInfo.InvariantCulture,
-            $"{spec.TokenPrefix}:{secid}:{firstTime:yyyy-MM-ddTHH:mm:ss.fff}:{lastTime:yyyy-MM-ddTHH:mm:ss.fff}:{batch.Count}:{sourceContractVersion}:{writerVersion}");
+            $"{spec.TokenPrefix}:{secid}:{dataGeneration}:{firstTime:yyyy-MM-ddTHH:mm:ss.fff}:{lastTime:yyyy-MM-ddTHH:mm:ss.fff}:{batch.Count}:{sourceContractVersion}:{writerVersion}");
         long reported = await _executor.InsertAsync(
             spec.Table,
             columns,

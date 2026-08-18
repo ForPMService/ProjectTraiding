@@ -31,6 +31,7 @@ public sealed class RealtimeSpecRowWriter
     public async Task WriteAsync(
         MoexRealtimeSpec spec,
         string secid,
+        string dataGeneration,
         List<object?[]> rows,
         DateTime firstTime,
         DateTime lastTime,
@@ -43,18 +44,20 @@ public sealed class RealtimeSpecRowWriter
         if (string.IsNullOrWhiteSpace(secid))
             throw new InvalidOperationException(spec.EmptySecidMessage);
 
-        string token = BuildToken(spec.TokenPrefix, secid, firstTime, lastTime, rows.Count);
+        string token = BuildToken(spec.TokenPrefix, secid, dataGeneration, firstTime, lastTime, rows.Count);
 
         await _executor.InsertAsync(
             spec.Table, spec.Columns, spec.ColumnTypes, rows, token, insertContext, ct);
     }
 
-    // {префикс}:{secid}:{время первой}:{время последней}:{число строк}.
-    // Формат времени инвариантный — границы пачки воспроизводимы при повторе.
+    // {префикс}:{secid}:{поколение}:{время первой}:{время последней}:{число строк}.
+    // Формат времени инвариантный — границы пачки воспроизводимы при повторе. Поколение
+    // приходит из состояния сеанса и разрывает связь с операциями, оставшимися от данных,
+    // удалённых мутацией: контрольные суммы блоков переживают ALTER ... DELETE.
     private static string BuildToken(
-        string tokenPrefix, string secid, DateTime first, DateTime last, int count)
+        string tokenPrefix, string secid, string dataGeneration, DateTime first, DateTime last, int count)
     {
         return string.Create(CultureInfo.InvariantCulture,
-            $"{tokenPrefix}:{secid}:{first:yyyyMMddHHmmssfff}:{last:yyyyMMddHHmmssfff}:{count}");
+            $"{tokenPrefix}:{secid}:{dataGeneration}:{first:yyyyMMddHHmmssfff}:{last:yyyyMMddHHmmssfff}:{count}");
     }
 }

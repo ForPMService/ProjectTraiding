@@ -26,9 +26,9 @@ namespace ProjectTraiding.Api.Infrastructure
                     replenishmentSeconds: 2));
 
                 options.AddPolicy(ManagementPolicy, PartitionByClient(
-                    tokenLimit: 120,
+                    tokenLimit: 300,
                     tokensPerPeriod: 1,
-                    replenishmentSeconds: 30));
+                    replenishmentSeconds: 2));
 
                 options.OnRejected = OnRejectedStatic;
             });

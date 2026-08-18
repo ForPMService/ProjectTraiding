@@ -55,7 +55,7 @@ namespace ProjectTraiding.Moex.Endpoints
                 LoadResultDto result = await LoadStockCalendarAsync(client, writer, ct);
                 return Results.Json(result, AppJsonContext.Default.LoadResultDto);
             });
-
+            
             routes.MapPost("/management/moex/sync/calendar/futures", async (
                 HttpContext httpContext,
                 MoexHttpCalendarClient client,

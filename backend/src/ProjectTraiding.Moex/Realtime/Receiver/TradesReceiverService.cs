@@ -146,6 +146,13 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 services.GetRequiredService<StreamCoverageWriter>();
             MoexRealtimeRestClient client =
                 services.GetRequiredService<MoexRealtimeRestClient>();
+            MoexDataGenerationReader generationReader =
+                services.GetRequiredService<MoexDataGenerationReader>();
+
+            // Чтение идёт до курсора, холодного старта и открытия сеанса: отказ здесь
+            // не обесценивает уже проделанную работу и не оставляет открытой строки покрытия.
+            string dataGeneration = await generationReader.GetAsync(instrument.Secid, ct);
+
             StreamCursorState? cursor = await cursorWriter.TryGetAsync(
                 instrument.Secid,
                 instrument.Market,
@@ -192,7 +199,10 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     sessionId,
                     instrument.Market,
                     boardId,
-                    heartbeatTimestamp));
+                    heartbeatTimestamp)
+                {
+                    DataGeneration = dataGeneration,
+                });
             MoexRealtimeReceiverLogMessages.TradesInstrumentPrepared(
                 _logger, instrument.Secid, instrument.Market, sessionId);
         }
@@ -317,6 +327,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     await writer.WriteAsync(
                         spec,
                         secid,
+                        state.DataGeneration,
                         page.Rows,
                         page.FirstTime,
                         page.LastTime,
