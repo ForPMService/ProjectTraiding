@@ -85,7 +85,20 @@ public sealed class MoexSeriesSpec
     /// </summary>
     public bool PreserveCursorTimeGroup { get; init; }
 
-    public string BuildColumnsParam()
+    private string? _columnsParam;
+
+    /// <summary>
+    /// Готовое значение параметра запроса с перечнем колонок. Собирается при первом
+    /// обращении и запоминается: декларации живут в статическом реестре всё время работы
+    /// процесса, а сборка перечня раскодирует каждое имя из двоичного представления и
+    /// склеивает результат — делать это на каждую страницу загрузки незачем.
+    /// Одновременный первый доступ из двух потоков безвреден: оба соберут одинаковую
+    /// строку, и запись ссылки атомарна. Замок здесь был бы платой без причины.
+    /// Такое же готовое значение есть у декларации приёма — MoexRealtimeSpec.ColumnsParam.
+    /// </summary>
+    public string ColumnsParam => _columnsParam ??= BuildColumnsParam();
+
+    private string BuildColumnsParam()
     {
         string[] names = new string[SourceColumns.Length];
         for (int i = 0; i < SourceColumns.Length; i++)

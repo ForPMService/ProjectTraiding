@@ -13,7 +13,7 @@ namespace ProjectTraiding.Moex.Parsing
     {
         private static readonly ColumnAndNumbersForParsing.ExpectedSchema CursorSchema = new(
             TotalColumns: 3,
-            RootKey: "cursor",
+            RootKey: "data.cursor",
             Columns: new ColumnAndNumbersForParsing.ExpectedColumn[]
             {
                 new(0, "INDEX"u8.ToArray()),
@@ -55,8 +55,6 @@ namespace ProjectTraiding.Moex.Parsing
             ref Utf8JsonReader reader,
             string rootKey)
         {
-            ReadOnlySpan<byte> rootKeyUtf8 = System.Text.Encoding.UTF8.GetBytes(rootKey);
-
             // Пройти до StartObject верхнего уровня
             while (reader.Read())
             {
@@ -76,7 +74,11 @@ namespace ProjectTraiding.Moex.Parsing
                 if (reader.TokenType != JsonTokenType.PropertyName)
                     continue;
 
-                if (reader.ValueTextEquals(rootKeyUtf8))
+                // Сравнение с именем в виде строки перекодирует короткое имя во временный
+                // буфер на стеке и кучу не задействует. Прежний приём создавал массив байтов
+                // на каждый разбор страницы. Раскодирование экранированных имён свойств
+                // обе перегрузки выполняют одинаково.
+                if (reader.ValueTextEquals(rootKey))
                 {
                     if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
                     {
@@ -334,7 +336,7 @@ namespace ProjectTraiding.Moex.Parsing
         /// Читает cursor-блок (columns + data) из текущей позиции reader.
         /// 
         /// Вызывающий код уже прошёл верхний уровень JSON и встретил PropertyName
-        /// совпадающее с cursorKey (например "data.cursor"). Reader стоит на этом PropertyName.
+        /// совпадающее с постоянным ключом "data.cursor". Reader стоит на этом PropertyName.
         /// 
         /// Метод:
         /// 1. Читает StartObject
@@ -346,12 +348,13 @@ namespace ProjectTraiding.Moex.Parsing
         /// Этот метод вызывается только когда PropertyName уже совпало.
         /// </summary>
         internal static PaginationCursorDTO ReadCursorRootObject(
-            ref Utf8JsonReader reader,
-            string cursorKey)
+            ref Utf8JsonReader reader)
         {
-            var schema = CursorSchema with { RootKey = cursorKey };
+            // Клон схемы ради подстановки корневого ключа больше не создаётся: ключ
+            // постоянен и объявлен в самой схеме, единственным источником правды.
+            ColumnAndNumbersForParsing.ExpectedSchema schema = CursorSchema;
 
-            ReadAndExpect(ref reader, JsonTokenType.StartObject, cursorKey, cursorKey);
+            ReadAndExpect(ref reader, JsonTokenType.StartObject, schema.RootKey, schema.RootKey);
 
             bool foundColumns = false;
             bool foundData = false;
@@ -374,11 +377,11 @@ namespace ProjectTraiding.Moex.Parsing
                 {
                     if (!foundColumns)
                         SchemaMismatch(
-                            $"[{cursorKey}] Секция 'data' встретилась до 'columns'. " +
+                            $"[{schema.RootKey}] Секция 'data' встретилась до 'columns'. " +
                             $"Порядок columns → data обязателен.");
 
                     foundData = true;
-                    ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", cursorKey);
+                    ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", schema.RootKey);
 
                     int rowIndex = 0;
                     while (reader.Read() && reader.TokenType == JsonTokenType.StartArray)
@@ -430,7 +433,7 @@ namespace ProjectTraiding.Moex.Parsing
                 }
             }
 
-            ValidateStructure(foundColumns, foundData, cursorKey);
+            ValidateStructure(foundColumns, foundData, schema.RootKey);
 
             return new PaginationCursorDTO
             {

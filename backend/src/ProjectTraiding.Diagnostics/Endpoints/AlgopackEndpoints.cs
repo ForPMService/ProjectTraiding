@@ -70,7 +70,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/eq/tradestats/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.TradeStatsStock.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.TradeStatsStock.ColumnsParam);
                 return await ExecuteRawAsync("tradestats", "stock", ticker, client, method, queryParams, ct);
             });
 
@@ -88,7 +88,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/fo/tradestats/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.TradeStatsFutures.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.TradeStatsFutures.ColumnsParam);
                 return await ExecuteRawAsync("tradestats", "futures", ticker, client, method, queryParams, ct);
             });
 
@@ -106,7 +106,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/eq/obstats/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.ObStatsStock.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.ObStatsStock.ColumnsParam);
                 return await ExecuteRawAsync("obstats", "stock", ticker, client, method, queryParams, ct);
             });
 
@@ -124,7 +124,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/fo/obstats/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.ObStatsFutures.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.ObStatsFutures.ColumnsParam);
                 return await ExecuteRawAsync("obstats", "futures", ticker, client, method, queryParams, ct);
             });
 
@@ -142,7 +142,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/eq/orderstats/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.OrderStatsStock.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.OrderStatsStock.ColumnsParam);
                 return await ExecuteRawAsync("orderstats", "stock", ticker, client, method, queryParams, ct);
             });
 
@@ -178,7 +178,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/eq/hi2/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.Hi2Stock.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.Hi2Stock.ColumnsParam);
                 return await ExecuteRawAsync("hi2", "stock", ticker, client, method, queryParams, ct);
             });
 
@@ -196,7 +196,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/fo/hi2/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.Hi2Futures.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.Hi2Futures.ColumnsParam);
                 return await ExecuteRawAsync("hi2", "futures", ticker, client, method, queryParams, ct);
             });
 
@@ -214,7 +214,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/eq/alerts/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.MegaAlertsStock.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.MegaAlertsStock.ColumnsParam);
                 return await ExecuteRawAsync("alerts", "stock", ticker, client, method, queryParams, ct);
             });
 
@@ -232,7 +232,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 }
 
                 string method = $"/datashop/algopack/fo/alerts/{ticker}.json";
-                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.MegaAlertsFutures.BuildColumnsParam());
+                Dictionary<string, string> queryParams = CreateRawDataQuery(from!, till!, MoexSeriesRegistry.MegaAlertsFutures.ColumnsParam);
                 return await ExecuteRawAsync("alerts", "futures", ticker, client, method, queryParams, ct);
             });
 

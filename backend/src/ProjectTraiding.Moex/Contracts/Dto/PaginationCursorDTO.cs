@@ -5,7 +5,7 @@ namespace ProjectTraiding.Moex.Contracts.Dto
     /// Используется, когда источник возвращает служебные поля INDEX, TOTAL и PAGESIZE.
     /// См. MoexPaginationKind.Cursor.
     /// </summary>
-    public record PaginationCursorDTO
+    public readonly record struct PaginationCursorDTO
     {
         /// <summary>
         /// Начальный индекс текущей страницы.

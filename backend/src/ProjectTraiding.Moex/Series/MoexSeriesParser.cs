@@ -70,8 +70,7 @@ public sealed class MoexSeriesParser
                 {
                     try
                     {
-                        cursor = ParseHelpersUtf8.ReadCursorRootObject(
-                            ref reader, "data.cursor");
+                        cursor = ParseHelpersUtf8.ReadCursorRootObject(ref reader);
                     }
                     catch (InvalidOperationException ex)
                     {
@@ -144,6 +143,11 @@ public sealed class MoexSeriesParser
         ParseHelpersUtf8.ReadAndExpect(
             ref reader, JsonTokenType.StartArray, "data", spec.RootKey);
 
+        // Один рабочий массив переиспользуется всеми строками страницы. Каждая позиция
+        // ниже присваивается заново, включая пустое значение, чтобы значения строк
+        // не смешивались.
+        object?[] sourceValues = new object?[spec.SourceColumns.Length];
+
         int rowIndex = 0;
         while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
         {
@@ -154,7 +158,6 @@ public sealed class MoexSeriesParser
                     $"получено {reader.TokenType}.");
             }
 
-            object?[] sourceValues = new object?[spec.SourceColumns.Length];
             for (int position = 0; position < spec.SourceColumns.Length; position++)
             {
                 if (!reader.Read())
@@ -172,11 +175,10 @@ public sealed class MoexSeriesParser
                         $"(строка {rowIndex}).");
                 }
 
-                if (reader.TokenType != JsonTokenType.Null)
-                {
-                    sourceValues[position] = ReadValue(
+                sourceValues[position] = reader.TokenType == JsonTokenType.Null
+                    ? null
+                    : ReadValue(
                         ref reader, spec.SourceColumns[position], rowIndex, spec.RootKey);
-                }
             }
 
             if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
