@@ -30,7 +30,8 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
             services.AddSingleton<MoexReceiverInstrumentReader>();
             services.AddSingleton<StreamCursorWriter>();
             services.AddSingleton<StreamCoverageWriter>();
-            services.AddTransient<RealtimeSpecRowWriter>();
+            // Писатель строк приёма состояния не хранит: у него только исполнитель вставки.
+            services.AddSingleton<RealtimeSpecRowWriter>();
 
             services.AddHostedService(sp =>
             {

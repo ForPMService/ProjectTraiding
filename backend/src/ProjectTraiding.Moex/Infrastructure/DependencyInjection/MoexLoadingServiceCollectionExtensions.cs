@@ -24,7 +24,9 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
         {
             int batchSize = configuration.GetValue<int>("ClickHouse:CandlesBatchSize", 10000);
 
-            services.AddTransient<ClickHouseInsertExecutor>();
+            // Исполнитель вставки не хранит состояния: у него только клиент ClickHouse
+            // и журнал, оба одиночки. Создавать его заново на каждое обращение незачем.
+            services.AddSingleton<ClickHouseInsertExecutor>();
             services.AddSingleton<MoexSeriesParser>();
             services.AddTransient<MoexHistoryPageReader>();
             services.AddTransient(sp => new MoexHistoryWriter(

@@ -106,7 +106,7 @@ public sealed class MoexHistoryPageReader
             ["till"] = till.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             ["iss.meta"] = "off",
             ["iss.only"] = "data,data.cursor",
-            ["data.columns"] = spec.BuildColumnsParam(),
+            ["data.columns"] = spec.ColumnsParam,
         };
 
         int pagesElapsed = 0;
@@ -367,7 +367,7 @@ public sealed class MoexHistoryPageReader
             if (rows.Count >= FixedPageSize)
             {
                 queryStart += FixedPageSize;
-                query["start"] = queryStart.ToString();
+                query["start"] = queryStart.ToString(CultureInfo.InvariantCulture);
             }
             else
             {
@@ -408,8 +408,8 @@ public sealed class MoexHistoryPageReader
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            query["from"] = date.ToString("yyyy-MM-dd");
-            query["till"] = date.ToString("yyyy-MM-dd");
+            query["from"] = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            query["till"] = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             long pageStart = Stopwatch.GetTimestamp();
 
             List<(object?[] Row, DateTime Time)> page;
@@ -461,7 +461,7 @@ public sealed class MoexHistoryPageReader
                 MoexLogMessages.DaySplitPageReceived(
                     _logger,
                     method,
-                    date.ToString("yyyy-MM-dd"),
+                    date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                     page.Count,
                     Stopwatch.GetElapsedTime(pageStart));
 
