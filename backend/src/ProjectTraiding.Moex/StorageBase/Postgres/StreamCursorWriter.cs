@@ -61,6 +61,10 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             cmd.Parameters.Add("@last_trade_no", NpgsqlDbType.Bigint).Value =
                 (object?)lastTradeNo ?? DBNull.Value;
 
+            // Текст команды постоянен, а сама команда повторяется на каждую пачку приёма:
+            // подготовка снимает разбор и построение плана на стороне базы. Подготовленное
+            // выражение живёт на физическом соединении и переживает возврат в пул.
+            await cmd.PrepareAsync(ct);
             await cmd.ExecuteNonQueryAsync(ct);
             MoexStreamCursorLogMessages.CursorUpserted(_logger, secid, dataKind, lastSourceTime);
         }

@@ -154,6 +154,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             cmd.Parameters.Add("@now", NpgsqlDbType.TimestampTz).Value = ToUtc(MoexTime.Now);
             cmd.Parameters.Add("@rows", NpgsqlDbType.Bigint).Value = rowsTotal;
 
+            await cmd.PrepareAsync(ct);
             await cmd.ExecuteNonQueryAsync(ct);
         }
 

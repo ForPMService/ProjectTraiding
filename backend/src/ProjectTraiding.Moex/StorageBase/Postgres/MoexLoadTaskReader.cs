@@ -66,6 +66,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 """, connection);
             cmd.Parameters.Add("@id", NpgsqlDbType.Uuid).Value = taskId;
 
+            await cmd.PrepareAsync(ct);
             object? requested = await cmd.ExecuteScalarAsync(ct);
             return requested is bool value && value;
         }
@@ -113,6 +114,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 RETURNING id
                 """, connection);
 
+            await cmd.PrepareAsync(ct);
             object? idObj = await cmd.ExecuteScalarAsync(ct);
             return idObj is Guid id ? id : null;
         }
