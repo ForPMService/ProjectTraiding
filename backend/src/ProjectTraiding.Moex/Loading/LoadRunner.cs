@@ -52,15 +52,55 @@ namespace ProjectTraiding.Moex.Loading
             _logger = logger;
         }
 
-        public async Task<LoadOutcome> RunAsync(Guid taskId, CancellationToken ct, bool alreadyClaimed = false)
+        /// <summary>
+        /// Ручной путь: задача приходит идентификатором и ещё не захвачена. Строка читается,
+        /// задача переводится в рабочее состояние, и только после этого начинается общая часть.
+        /// Отсчёт длительности задания начинается после успешного перевода: чтение строки
+        /// и попытка захвата в длительность не входят — как и прежде.
+        /// </summary>
+        public async Task<LoadOutcome> RunAsync(Guid taskId, CancellationToken ct)
         {
-            bool ownsRunningTask = alreadyClaimed;
+            MoexLoadTask? task = await _taskReader.GetByIdAsync(taskId, ct);
+            if (task is null)
+                return new LoadOutcome(LoadStatus.NotFound, 0);
 
-            // Замер начинается с момента владения задачей, а не с входа в метод. На фоновом пути
-            // задача захвачена подбором ещё до вызова, поэтому отсчёт идёт сразу. На ручном пути
-            // владение наступает только после успешного перевода в рабочее состояние, и чтение
-            // строки с попыткой захвата в длительность задания не входят.
-            long taskStart = Stopwatch.GetTimestamp();
+            bool claimed = await _taskWriter.MarkRunningAsync(taskId, ct);
+            if (!claimed)
+                return new LoadOutcome(LoadStatus.NotClaimed, 0);
+
+            return await RunCoreAsync(task, Stopwatch.GetTimestamp(), ct);
+        }
+
+        /// <summary>
+        /// Фоновый путь: задача пришла готовой строкой из самого захвата и уже находится
+        /// в рабочем состоянии. Повторного чтения по идентификатору здесь нет и быть не должно.
+        /// Отсчёт длительности идёт с момента входа — как и прежде на этом пути.
+        ///
+        /// Повторное чтение после захвата исчезает сознательно, и у этого есть граница.
+        /// Прежде между захватом и чтением существовало окно: если строку задачи в этот
+        /// промежуток удаляла очистка данных инструмента, чтение возвращало пусто и загрузка
+        /// не начиналась вовсе. Теперь загрузка пойдёт по снимку, полученному самим захватом.
+        ///
+        /// Это та же граница, которую контур удаления уже описал и принял: признак начатого
+        /// удаления отсекает подбор и ручной запуск, начатые после его фиксации, а команды,
+        /// начатые раньше фиксации, не останавливает. За пределами этой границы поведение
+        /// фонового пути прежнее.
+        /// </summary>
+        public Task<LoadOutcome> RunClaimedAsync(MoexLoadTask task, CancellationToken ct)
+        {
+            return RunCoreAsync(task, Stopwatch.GetTimestamp(), ct);
+        }
+
+        /// <summary>
+        /// Общая часть обоих путей. К моменту входа задача заведомо принадлежит загрузчику:
+        /// ручной путь прошёл перевод в рабочее состояние, фоновый пришёл захваченным.
+        /// </summary>
+        private async Task<LoadOutcome> RunCoreAsync(
+            MoexLoadTask task,
+            long taskStart,
+            CancellationToken ct)
+        {
+            Guid taskId = task.Id;
 
             Activity? taskActivity = null;
 
@@ -77,24 +117,6 @@ namespace ProjectTraiding.Moex.Loading
 
             try
             {
-                MoexLoadTask? task = await _taskReader.GetByIdAsync(taskId, ct);
-                if (task is null)
-                    return new LoadOutcome(LoadStatus.NotFound, 0);
-
-                // Фоновый подбор уже перевёл задачу в running одним атомарным запросом — повторный
-                // claim не нужен. Ручной запуск через операторскую точку приходит без захвата.
-                if (!alreadyClaimed)
-                {
-                    bool claimed = await _taskWriter.MarkRunningAsync(taskId, ct);
-                    if (!claimed)
-                        return new LoadOutcome(LoadStatus.NotClaimed, 0);
-
-                    ownsRunningTask = true;
-
-                    // Ручной путь: владение получено только сейчас — отсчёт начинается заново.
-                    taskStart = Stopwatch.GetTimestamp();
-                }
-
                 dataKind = MoexDataKinds.FromTaskDataKind(task.DataKind);
                 market = task.Market;
                 metadataResolved = true;
@@ -209,19 +231,16 @@ namespace ProjectTraiding.Moex.Loading
                 outcome = MoexOutcomes.Cancelled;
                 errorTypeForTelemetry = null;
 
-                string? finalStatus = null;
-                if (ownsRunningTask)
+                string? finalStatus;
+                try
                 {
-                    try
-                    {
-                        finalStatus = await _taskWriter.FinalizeCancellationAsync(taskId, CancellationToken.None);
-                    }
-                    catch (Exception closeException)
-                    {
-                        outcome = MoexOutcomes.Error;
-                        errorTypeForTelemetry = MoexMetrics.ClassifyError(closeException);
-                        throw;
-                    }
+                    finalStatus = await _taskWriter.FinalizeCancellationAsync(taskId, CancellationToken.None);
+                }
+                catch (Exception closeException)
+                {
+                    outcome = MoexOutcomes.Error;
+                    errorTypeForTelemetry = MoexMetrics.ClassifyError(closeException);
+                    throw;
                 }
 
                 bool operatorCancelled = finalStatus == "cancelled";
@@ -244,8 +263,7 @@ namespace ProjectTraiding.Moex.Loading
                 stopReasonForTelemetry = null;
                 errorTypeForTelemetry = MoexMetrics.ClassifyError(ex);
 
-                if (ownsRunningTask)
-                    await _taskWriter.MarkErrorAsync(taskId, ex.Message, null, CancellationToken.None);
+                await _taskWriter.MarkErrorAsync(taskId, ex.Message, null, CancellationToken.None);
 
                 throw;
             }

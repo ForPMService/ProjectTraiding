@@ -93,14 +93,14 @@ namespace ProjectTraiding.Moex.Loading
             await using AsyncServiceScope scope = _scopeFactory.CreateAsyncScope();
 
             MoexLoadTaskReader reader = scope.ServiceProvider.GetRequiredService<MoexLoadTaskReader>();
-            Guid? taskId = await reader.ClaimNextPendingTaskIdAsync(ct);
-            if (taskId is null)
+            MoexLoadTask? task = await reader.ClaimNextPendingTaskAsync(ct);
+            if (task is null)
                 return false;
 
             LoadRunner runner = scope.ServiceProvider.GetRequiredService<LoadRunner>();
             try
             {
-                await runner.RunAsync(taskId.Value, ct, alreadyClaimed: true);
+                await runner.RunClaimedAsync(task, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -112,7 +112,7 @@ namespace ProjectTraiding.Moex.Loading
             {
                 // Сбой загрузки. RunAsync уже пометил задачу error и записал причину.
                 // Исполнитель не падает — берёт следующую.
-                MoexLoadTaskLogMessages.BackgroundTaskFailed(_logger, taskId.Value);
+                MoexLoadTaskLogMessages.BackgroundTaskFailed(_logger, task.Id);
             }
 
             return true;
