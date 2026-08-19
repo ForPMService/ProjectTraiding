@@ -65,30 +65,52 @@ namespace ProjectTraiding.Moex.Clients
             //
             // Если очередь полна — AcquireAsync возвращает lease с IsAcquired = false
             // мгновенно, без ожидания.
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeoutCts.CancelAfter(_options.RateLimitAcquireTimeout);
+            // Быстрый путь: жетон доступен прямо сейчас. Синхронная попытка не создаёт ни
+            // связанного источника отмены, ни таймера и очередь не обгоняет — ограничитель
+            // выдаёт жетон синхронно только при пустой очереди. Неуспешная попытка
+            // освобождается и отказом не считается: ниже начинается прежнее ожидание.
+            //
+            // Уже отменённый вызов быстрый путь пропускает. Асинхронное получение проверяет
+            // отмену до обращения к ограничителю и жетон не расходует; синхронная попытка
+            // токена отмены не знает и израсходовала бы его, а обработчик записал бы
+            // телеметрию успешного получения на запрос, который всё равно не уйдёт в сеть.
+            RateLimitLease? fastLease = cancellationToken.IsCancellationRequested
+                ? null
+                : _limiter.AttemptAcquire(permitCount: 1);
 
             RateLimitLease lease;
-            try
+            if (fastLease is { IsAcquired: true })
             {
-                lease = await _limiter.AcquireAsync(
-                    permitCount: 1,
-                    cancellationToken: timeoutCts.Token);
+                lease = fastLease;
             }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            else
             {
-                // Таймаут acquire (наш CTS сработал), а не отмена вызывающего кода.
-                TimeSpan waitTime = Stopwatch.GetElapsedTime(waitStart);
-                MoexMetrics.RateLimitRejected.Add(
-                    1,
-                    new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, _source),
-                    new KeyValuePair<string, object?>("reason", "acquire_timeout"));
-                MoexLogMessages.RateLimitRejected(
-                    _logger, _source, endpoint, "acquire_timeout", waitTime.TotalMilliseconds);
-                throw new MoexRateLimitRejectedException(
-                    endpoint,
-                    reason: "acquire_timeout",
-                    waitTime: waitTime);
+                fastLease?.Dispose();
+
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeoutCts.CancelAfter(_options.RateLimitAcquireTimeout);
+
+                try
+                {
+                    lease = await _limiter.AcquireAsync(
+                        permitCount: 1,
+                        cancellationToken: timeoutCts.Token);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    // Таймаут acquire (наш CTS сработал), а не отмена вызывающего кода.
+                    TimeSpan waitTime = Stopwatch.GetElapsedTime(waitStart);
+                    MoexMetrics.RateLimitRejected.Add(
+                        1,
+                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, _source),
+                        new KeyValuePair<string, object?>("reason", "acquire_timeout"));
+                    MoexLogMessages.RateLimitRejected(
+                        _logger, _source, endpoint, "acquire_timeout", waitTime.TotalMilliseconds);
+                    throw new MoexRateLimitRejectedException(
+                        endpoint,
+                        reason: "acquire_timeout",
+                        waitTime: waitTime);
+                }
             }
             // Если cancellationToken отменён — OperationCanceledException пролетает наверх как есть.
             // Это правильно: вызывающий код сам отменил операцию.
