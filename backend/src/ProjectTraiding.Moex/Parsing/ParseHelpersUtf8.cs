@@ -51,9 +51,11 @@ namespace ProjectTraiding.Moex.Parsing
         /// — rootKey не найден до конца JSON;
         /// — значение rootKey не является объектом.
         /// </summary>
-        internal static void SkipToRootObject(
-            ref Utf8JsonReader reader,
-            string rootKey)
+        /// <summary>
+        /// Входит во внешний объект ответа. Отдельный метод нужен одиночному проходу,
+        /// который дальше сам разбирает свойства верхнего уровня по мере встречи.
+        /// </summary>
+        internal static void EnterResponseObject(ref Utf8JsonReader reader)
         {
             // Пройти до StartObject верхнего уровня
             while (reader.Read())
@@ -61,15 +63,41 @@ namespace ProjectTraiding.Moex.Parsing
                 if (reader.TokenType == JsonTokenType.StartObject)
                     break;
             }
+        }
+
+        /// <summary>
+        /// Сверяет, что за именем блока следует объект. Текст отказа объявлен здесь
+        /// и в других местах не дублируется.
+        /// </summary>
+        internal static void ExpectObjectStart(ref Utf8JsonReader reader, string rootKey)
+        {
+            if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
+            {
+                SchemaMismatch(
+                    $"[{rootKey}] Ожидался объект (StartObject), " +
+                    $"получено {reader.TokenType}.");
+            }
+        }
+
+        /// <summary>
+        /// Текст отказа об отсутствующем корневом ключе. Объявлен здесь и не дублируется.
+        /// </summary>
+        internal static void RootKeyMissing(string rootKey)
+        {
+            SchemaMismatch($"MOEX ответ не содержит корневой ключ '{rootKey}'.");
+        }
+
+        internal static void SkipToRootObject(
+            ref Utf8JsonReader reader,
+            string rootKey)
+        {
+            EnterResponseObject(ref reader);
 
             // Внутри корневого объекта JSON — ищем свойство rootKey
             while (reader.Read())
             {
                 if (reader.TokenType == JsonTokenType.EndObject)
-                {
-                    SchemaMismatch(
-                        $"MOEX ответ не содержит корневой ключ '{rootKey}'.");
-                }
+                    RootKeyMissing(rootKey);
 
                 if (reader.TokenType != JsonTokenType.PropertyName)
                     continue;
@@ -80,21 +108,14 @@ namespace ProjectTraiding.Moex.Parsing
                 // обе перегрузки выполняют одинаково.
                 if (reader.ValueTextEquals(rootKey))
                 {
-                    if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
-                    {
-                        SchemaMismatch(
-                            $"[{rootKey}] Ожидался объект (StartObject), " +
-                            $"получено {reader.TokenType}.");
-                    }
-
+                    ExpectObjectStart(ref reader, rootKey);
                     return;
                 }
 
                 reader.Skip();
             }
 
-            SchemaMismatch(
-                $"MOEX ответ не содержит корневой ключ '{rootKey}'.");
+            RootKeyMissing(rootKey);
         }
 
         // ═══════════════════════════════════════════════════════════

@@ -17,7 +17,11 @@ public static class MoexRealtimeParser
     public static RealtimeParsedPage ParsePage(
         ReadOnlySpan<byte> body, MoexRealtimeSpec spec, string secid)
     {
-        DateOnly? sessionDate = ParseSessionDate(body, out Exception? sessionDateFailure);
+        // Дата сессии читается тем же проходом, что и таблица: источник отдаёт блок версии
+        // данных после таблицы, и отдельный проход ради него протаскивал читатель через всю
+        // таблицу впустую. Значения ниже заполняются, когда проход дойдёт до этого блока.
+        DateOnly? sessionDate = null;
+        Exception? sessionDateFailure = null;
 
         List<object?[]> rows = [];
         DateTime firstTime = default;
@@ -27,6 +31,10 @@ public static class MoexRealtimeParser
         DateTime? maxTradeNoTime = null;
         Exception? maxTradeNoTimeFailure = null;
         Exception? guardFailure = null;
+
+        // Первый отказ первой строки среди колонок до колонки даты сессии. Нужен, чтобы
+        // восстановить прежний порядок отсеянного отказа после разбора всего тела.
+        Exception? firstRowFailureBeforeSessionDate = null;
 
         // Один рабочий массив переиспользуется всеми строками страницы. Каждая позиция
         // ниже присваивается заново, включая null, чтобы значения строк не смешивались.
@@ -38,12 +46,26 @@ public static class MoexRealtimeParser
         DateTime? cachedSnapshotTime = null;
         Exception? cachedSnapshotFailure = null;
 
-        Utf8JsonReader reader = new(body);
-        ParseHelpersUtf8.SkipToRootObject(ref reader, spec.RootKey);
+        ColumnAndNumbersForParsing.ExpectedSchema dataVersionSchema =
+            ColumnAndNumbersForParsing.RealtimeDataVersionSchema;
 
+        Utf8JsonReader reader = new(body);
+        ParseHelpersUtf8.EnterResponseObject(ref reader);
+
+        bool foundTable = false;
+        bool foundDataVersion = false;
         bool foundColumns = false;
         bool foundData = false;
-        while (reader.Read())
+
+        // Свойства верхнего уровня разбираются по мере встречи, в любом порядке: от порядка
+        // блоков в ответе разбор не зависит, и требованием к источнику он не становится.
+        //
+        // Обход прекращается, как только разобраны оба нужных блока. Прежние два прохода
+        // тоже заканчивались на своём блоке и хвост ответа за ним не читали: без этого
+        // условия повреждённый хвост после двух исправных блоков начал бы отвергать ответ,
+        // которого прежний разбор даже не касался, а на диагностических ответах читатель
+        // зря протаскивался бы через секцию доходностей.
+        while (!(foundTable && foundDataVersion) && reader.Read())
         {
             if (reader.TokenType == JsonTokenType.EndObject)
                 break;
@@ -51,47 +73,104 @@ public static class MoexRealtimeParser
             if (reader.TokenType != JsonTokenType.PropertyName)
                 continue;
 
-            if (reader.ValueTextEquals("columns"u8))
+            // Разбирается только первое вхождение каждого блока. Прежний вход в корневой
+            // блок возвращал управление на первом совпадении и до повторов не доходил;
+            // без этих признаков одиночный проход разобрал бы вторую таблицу в те же строки
+            // и подменил бы дату сессии вторым блоком версии данных.
+            //
+            // Остановка обхода выше эти признаки не заменяет: повтор может встретиться
+            // раньше, чем найден второй нужный блок, — например при порядке
+            // «таблица, таблица, версия данных».
+            if (!foundDataVersion && reader.ValueTextEquals(dataVersionSchema.RootKey))
             {
-                foundColumns = true;
-                ValidateColumns(ref reader, spec);
+                foundDataVersion = true;
+                ParseHelpersUtf8.ExpectObjectStart(ref reader, dataVersionSchema.RootKey);
+                sessionDate = ReadDataVersionBlock(
+                    ref reader, dataVersionSchema, out sessionDateFailure);
+                continue;
             }
-            else if (reader.ValueTextEquals("data"u8))
-            {
-                if (!foundColumns)
-                {
-                    ParseHelpersUtf8.SchemaMismatch(
-                        $"[{spec.RootKey}] Секция 'data' встретилась до 'columns'. " +
-                        "Порядок columns → data обязателен.");
-                }
 
-                foundData = true;
-                ReadPageRows(
-                    ref reader,
-                    rows,
-                    sourceValues,
-                    spec,
-                    secid,
-                    sessionDate,
-                    sessionDateFailure,
-                    ref firstTime,
-                    ref lastTime,
-                    ref lastTradeNo,
-                    ref maxTradeNo,
-                    ref maxTradeNoTime,
-                    ref maxTradeNoTimeFailure,
-                    ref guardFailure,
-                    ref cachedSnapshotSeqNum,
-                    ref cachedSnapshotTime,
-                    ref cachedSnapshotFailure);
-            }
-            else
+            if (foundTable || !reader.ValueTextEquals(spec.RootKey))
             {
                 reader.Skip();
+                continue;
             }
+
+            foundTable = true;
+            ParseHelpersUtf8.ExpectObjectStart(ref reader, spec.RootKey);
+
+            while (reader.Read())
+            {
+                if (reader.TokenType == JsonTokenType.EndObject)
+                    break;
+
+                if (reader.TokenType != JsonTokenType.PropertyName)
+                    continue;
+
+                if (reader.ValueTextEquals("columns"u8))
+                {
+                    foundColumns = true;
+                    ValidateColumns(ref reader, spec);
+                }
+                else if (reader.ValueTextEquals("data"u8))
+                {
+                    if (!foundColumns)
+                    {
+                        ParseHelpersUtf8.SchemaMismatch(
+                            $"[{spec.RootKey}] Секция 'data' встретилась до 'columns'. " +
+                            "Порядок columns → data обязателен.");
+                    }
+
+                    foundData = true;
+                    ReadPageRows(
+                        ref reader,
+                        rows,
+                        sourceValues,
+                        spec,
+                        secid,
+                        ref firstTime,
+                        ref lastTime,
+                        ref lastTradeNo,
+                        ref maxTradeNo,
+                        ref maxTradeNoTime,
+                        ref maxTradeNoTimeFailure,
+                        ref guardFailure,
+                        ref firstRowFailureBeforeSessionDate,
+                        ref cachedSnapshotSeqNum,
+                        ref cachedSnapshotTime,
+                        ref cachedSnapshotFailure);
+                }
+                else
+                {
+                    reader.Skip();
+                }
+            }
+
+            ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, spec.RootKey);
         }
 
-        ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, spec.RootKey);
+        // Отсутствующий блок проверяется в прежнем порядке: сначала блок версии данных,
+        // затем таблица. Прежде первый проход искал блок версии данных и отказывал первым.
+        if (!foundDataVersion)
+            ParseHelpersUtf8.RootKeyMissing(dataVersionSchema.RootKey);
+
+        if (!foundTable)
+            ParseHelpersUtf8.RootKeyMissing(spec.RootKey);
+
+        // Дата сессии известна только после разбора блока версии данных, а строки к этому
+        // моменту уже собраны. Проставляется по ссылкам на готовые строки: повторного
+        // разбора тела нет, есть один проход по списку.
+        if (spec.SessionDateIndex >= 0 && sessionDate is not null)
+        {
+            for (int i = 0; i < rows.Count; i++)
+                rows[i][spec.SessionDateIndex] = sessionDate;
+        }
+
+        // Прежний порядок отсеянного отказа. Раньше отказ даты сессии участвовал в отборе
+        // на месте своей колонки в каждой строке, поэтому побеждал всё, что стоит после неё,
+        // и уступал тому, что стоит до неё в первой строке. Это правило и восстанавливается.
+        if (sessionDateFailure is not null && rows.Count > 0 && spec.SessionDateIndex >= 0)
+            guardFailure = firstRowFailureBeforeSessionDate ?? sessionDateFailure;
 
         return new RealtimeParsedPage(
             rows,
@@ -150,15 +229,16 @@ public static class MoexRealtimeParser
         return rows;
     }
 
-    private static DateOnly? ParseSessionDate(
-        ReadOnlySpan<byte> body, out Exception? failure)
+    /// <summary>
+    /// Читает блок версии данных с текущей позиции: читатель уже стоит на его StartObject.
+    /// Возвращает дату сессии; отказ разбора самой даты не бросается, а отдаётся наружу —
+    /// он занимает место колонки даты сессии в строке, как и прежде.
+    /// </summary>
+    private static DateOnly? ReadDataVersionBlock(
+        ref Utf8JsonReader reader,
+        ColumnAndNumbersForParsing.ExpectedSchema schema,
+        out Exception? failure)
     {
-        ColumnAndNumbersForParsing.ExpectedSchema schema =
-            ColumnAndNumbersForParsing.RealtimeDataVersionSchema;
-        Utf8JsonReader reader = new(body);
-
-        ParseHelpersUtf8.SkipToRootObject(ref reader, schema.RootKey);
-
         bool foundColumns = false;
         bool foundData = false;
         int rowCount = 0;
@@ -302,8 +382,6 @@ public static class MoexRealtimeParser
         object?[] sourceValues,
         MoexRealtimeSpec spec,
         string secid,
-        DateOnly? sessionDate,
-        Exception? sessionDateFailure,
         ref DateTime firstTime,
         ref DateTime lastTime,
         ref long? lastTradeNo,
@@ -311,6 +389,7 @@ public static class MoexRealtimeParser
         ref DateTime? maxTradeNoTime,
         ref Exception? maxTradeNoTimeFailure,
         ref Exception? guardFailure,
+        ref Exception? firstRowFailureBeforeSessionDate,
         ref long? cachedSnapshotSeqNum,
         ref DateTime? cachedSnapshotTime,
         ref Exception? cachedSnapshotFailure)
@@ -392,9 +471,12 @@ public static class MoexRealtimeParser
                         value = column.Constant;
                         break;
                     case FillRule.SessionDate:
-                        // Отказ даты сессии занимает её прежнее место между полями строки.
-                        valueFailure = sessionDateFailure;
-                        value = sessionDate;
+                        // Дата сессии на этот момент ещё не прочитана: её блок источник
+                        // отдаёт после таблицы. Место колонки занимает пустое значение,
+                        // а дата и её отказ проставляются после разбора всего тела.
+                        // Обязательной эта колонка не объявлена ни в одной декларации,
+                        // поэтому пустое значение здесь отказа не порождает.
+                        value = null;
                         break;
                     case FillRule.SnapshotTimeFromSeqNum:
                         value = ReadSnapshotTime(
@@ -419,6 +501,17 @@ public static class MoexRealtimeParser
 
                 guardFailure ??= valueFailure;
                 row[i] = value;
+
+                // Отказы первой строки до колонки даты сессии запоминаются отдельно:
+                // из них и из отказа даты сессии восстанавливается прежний порядок отбора.
+                //
+                // Первая строка определяется по числу уже собранных строк, а не по счётчику
+                // строк этого вызова: счётчик местный и обнуляется на каждой секции 'data',
+                // а секций внутри блока может встретиться несколько — разбор их допускает.
+                // Соседняя строка метода уже определяет первую строку страницы этим же
+                // способом: по нулевому числу собранных строк выставляется время первой строки.
+                if (rows.Count == 0 && spec.SessionDateIndex >= 0 && i < spec.SessionDateIndex)
+                    firstRowFailureBeforeSessionDate ??= valueFailure;
 
                 if (i == spec.KeyTimeIndex)
                 {

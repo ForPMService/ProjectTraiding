@@ -41,6 +41,7 @@ public sealed class MoexRealtimeSpec
         string[] columns = new string[targetColumns.Length];
         Dictionary<string, string> columnTypes = new(targetColumns.Length);
         bool[] sourceUsed = new bool[sourceColumns.Length];
+        int sessionDateIndex = -1;
         for (int i = 0; i < targetColumns.Length; i++)
         {
             columns[i] = targetColumns[i].Name;
@@ -50,11 +51,15 @@ public sealed class MoexRealtimeSpec
                 sourceUsed[targetColumns[i].SourceIndex] = true;
             if (targetColumns[i].SecondSourceIndex >= 0)
                 sourceUsed[targetColumns[i].SecondSourceIndex] = true;
+
+            if (targetColumns[i].FillRule == FillRule.SessionDate)
+                sessionDateIndex = i;
         }
 
         Columns = columns;
         ColumnTypes = columnTypes;
         SourceColumnUsed = sourceUsed;
+        SessionDateIndex = sessionDateIndex;
     }
 
     /// <summary>Имя корневого блока ответа: "trades", "orderbook" или "candles".</summary>
@@ -98,4 +103,11 @@ public sealed class MoexRealtimeSpec
     /// никуда, поэтому разборщик сверяет вид её токена, но строку из неё не создаёт.
     /// </summary>
     public bool[] SourceColumnUsed { get; }
+
+    /// <summary>
+    /// Положение колонки даты сессии в целевой строке или −1, если такой колонки нет.
+    /// Дата сессии приходит отдельным блоком ответа, который источник отдаёт после таблицы,
+    /// поэтому её значение проставляется в готовые строки после разбора всего тела.
+    /// </summary>
+    public int SessionDateIndex { get; }
 }
