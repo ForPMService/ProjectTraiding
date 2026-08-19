@@ -7,6 +7,7 @@ using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Parsing;
 using ProjectTraiding.Moex.Parsing.Errors;
 using System.Diagnostics;
+using System.Text;
 
 
 namespace ProjectTraiding.Moex.Clients
@@ -29,6 +30,27 @@ namespace ProjectTraiding.Moex.Clients
                 _options.IssBaseUrl,
                 MoexLogSources.Iss,
                 requiresApiKey: false);
+        }
+
+        /// <summary>
+        /// Диагностическое получение исходного тела ответа ISS. Успешность статуса
+        /// намеренно не проверяется: сырая точка существует ради того, чтобы увидеть тело
+        /// ошибки Московской биржи так же, как тело успешного ответа. Освобождение запроса
+        /// и ответа происходит после полного чтения тела — область using закрывается только
+        /// при выходе из метода, то есть после завершения чтения.
+        /// </summary>
+        public async Task<string> GetRaw(
+            string method,
+            Dictionary<string, string>? queryParams = null,
+            CancellationToken cancellationToken = default)
+        {
+            using HttpResponseMessage response =
+                await _transport.SendWithoutStatusCheckAsync(method, queryParams, cancellationToken);
+
+            using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
+                response, _options.BodyReadTimeout, method, cancellationToken);
+
+            return Encoding.UTF8.GetString(rentedArr.Span);
         }
 
         /// <summary>
