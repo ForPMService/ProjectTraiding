@@ -67,8 +67,12 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             cmd.Parameters.Add("@id", NpgsqlDbType.Uuid).Value = taskId;
 
             await cmd.PrepareAsync(ct);
-            object? requested = await cmd.ExecuteScalarAsync(ct);
-            return requested is bool value && value;
+
+            // Типизированное чтение вместо возврата через объект: логическое значение
+            // упаковывалось бы в кучу на каждую проверку. Отсутствующая строка даст ложь,
+            // как и прежде: выражение сравнения с пустым значением само пустым не бывает.
+            await using NpgsqlDataReader reader = await cmd.ExecuteReaderAsync(ct);
+            return await reader.ReadAsync(ct) && reader.GetBoolean(0);
         }
 
         /// <summary>
