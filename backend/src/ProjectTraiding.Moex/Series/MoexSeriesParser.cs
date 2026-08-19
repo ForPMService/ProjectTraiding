@@ -178,7 +178,8 @@ public sealed class MoexSeriesParser
                 sourceValues[position] = reader.TokenType == JsonTokenType.Null
                     ? null
                     : ReadValue(
-                        ref reader, spec.SourceColumns[position], rowIndex, spec.RootKey);
+                        ref reader, spec.SourceColumns[position], spec.SourceColumnUsed[position],
+                        rowIndex, spec.RootKey);
             }
 
             if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
@@ -196,32 +197,55 @@ public sealed class MoexSeriesParser
     private static object? ReadValue(
         ref Utf8JsonReader reader,
         SourceColumn column,
+        bool used,
         int rowIndex,
         string rootKey)
     {
         try
         {
-            return column.Kind switch
+            if (used)
+                return ReadUsedValue(ref reader, column, rowIndex, rootKey);
+
+            // На эту колонку не ссылается ни одна целевая колонка. Сверка вида токена
+            // остаётся, строка не создаётся. У истории такая колонка одна — код инструмента,
+            // и он берётся из задачи, а не из ответа.
+            if (column.Kind == ColumnKind.String)
             {
-                ColumnKind.String => ParseHelpersUtf8.ReadString(
-                    ref reader, rowIndex, column.Position, rootKey),
-                ColumnKind.Int32 => ParseHelpersUtf8.ReadInt(
-                    ref reader, rowIndex, column.Position, rootKey),
-                ColumnKind.Int64 => ParseHelpersUtf8.ReadLong(
-                    ref reader, rowIndex, column.Position, rootKey),
-                ColumnKind.Double => ParseHelpersUtf8.ReadDouble(
-                    ref reader, rowIndex, column.Position, rootKey),
-                ColumnKind.DateTime => ParseHelpersUtf8.ReadDateTimeUtf8(
-                    ref reader, rowIndex, column.Position, rootKey),
-                _ => throw new ArgumentOutOfRangeException(
-                    nameof(column), column.Kind, "Неизвестный тип колонки источника."),
-            };
+                ParseHelpersUtf8.ExpectString(ref reader, rowIndex, column.Position, rootKey);
+                return null;
+            }
+
+            _ = ReadUsedValue(ref reader, column, rowIndex, rootKey);
+            return null;
         }
         catch (InvalidOperationException ex)
         {
             ParseHelpersUtf8.SchemaMismatch(ex.Message);
             throw;
         }
+    }
+
+    private static object? ReadUsedValue(
+        ref Utf8JsonReader reader,
+        SourceColumn column,
+        int rowIndex,
+        string rootKey)
+    {
+        return column.Kind switch
+        {
+            ColumnKind.String => ParseHelpersUtf8.ReadString(
+                ref reader, rowIndex, column.Position, rootKey),
+            ColumnKind.Int32 => ParseHelpersUtf8.ReadInt(
+                ref reader, rowIndex, column.Position, rootKey),
+            ColumnKind.Int64 => ParseHelpersUtf8.ReadLong(
+                ref reader, rowIndex, column.Position, rootKey),
+            ColumnKind.Double => ParseHelpersUtf8.ReadDouble(
+                ref reader, rowIndex, column.Position, rootKey),
+            ColumnKind.DateTime => ParseHelpersUtf8.ReadDateTimeUtf8(
+                ref reader, rowIndex, column.Position, rootKey),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(column), column.Kind, "Неизвестный тип колонки источника."),
+        };
     }
 
     private static (object?[] Row, DateTime Time) BuildTargetRow(

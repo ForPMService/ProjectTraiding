@@ -247,9 +247,16 @@ namespace ProjectTraiding.Moex.Parsing
         }
 
         /// <summary>
-        /// Прочитать string из текущего токена.
+        /// Предельная длина значения, которое сверяется на буфере стека. Значения источника
+        /// короткие; всё, что длиннее, берётся из пула, чтобы не раздувать кадр стека.
         /// </summary>
-        internal static string? ReadString(
+        private const int StackStringCheckLimit = 128;
+
+        /// <summary>
+        /// Общая сверка вида токена. Объявлена отдельно, чтобы текст отказа существовал
+        /// в одном месте и не мог разойтись между чтением строки и её проверкой.
+        /// </summary>
+        private static void ThrowIfNotString(
             ref Utf8JsonReader reader,
             int rowIndex,
             int columnIndex,
@@ -259,7 +266,60 @@ namespace ProjectTraiding.Moex.Parsing
                 throw new InvalidOperationException(
                     $"[{rootKey}] Ожидался String в строке {rowIndex}, колонка {columnIndex}, " +
                     $"получено {reader.TokenType}.");
+        }
 
+        /// <summary>
+        /// Проверяет значение строковой колонки, не создавая строку.
+        ///
+        /// Нужен колонкам, значение которых не попадает ни в одну целевую колонку. Сверяется
+        /// не только вид токена: значение раскодируется в собственный буфер, поэтому проверка
+        /// кодировки сохраняется целиком. Прежний путь через GetString отвергал недопустимые
+        /// последовательности UTF-8 и непарные суррогаты; CopyString отвергает их так же,
+        /// но строку в куче не создаёт. Выбрасывать саму проверку было бы сменой поведения:
+        /// повреждённое значение перестало бы отвергаться.
+        /// </summary>
+        internal static void ExpectString(
+            ref Utf8JsonReader reader,
+            int rowIndex,
+            int columnIndex,
+            string rootKey)
+        {
+            ThrowIfNotString(ref reader, rowIndex, columnIndex, rootKey);
+
+            // Раскодированное значение никогда не длиннее закодированного, поэтому длины
+            // исходного представления как размера буфера достаточно.
+            int encodedLength = reader.HasValueSequence
+                ? checked((int)reader.ValueSequence.Length)
+                : reader.ValueSpan.Length;
+
+            if (encodedLength <= StackStringCheckLimit)
+            {
+                Span<char> buffer = stackalloc char[StackStringCheckLimit];
+                _ = reader.CopyString(buffer);
+                return;
+            }
+
+            char[] rented = ArrayPool<char>.Shared.Rent(encodedLength);
+            try
+            {
+                _ = reader.CopyString(rented);
+            }
+            finally
+            {
+                ArrayPool<char>.Shared.Return(rented);
+            }
+        }
+
+        /// <summary>
+        /// Прочитать string из текущего токена.
+        /// </summary>
+        internal static string? ReadString(
+            ref Utf8JsonReader reader,
+            int rowIndex,
+            int columnIndex,
+            string rootKey)
+        {
+            ThrowIfNotString(ref reader, rowIndex, columnIndex, rootKey);
             return reader.GetString();
         }
 

@@ -268,7 +268,9 @@ public static class MoexRealtimeParser
                             ref reader, rowCount, position, schema.RootKey);
                         break;
                     case 2:
-                        _ = ParseHelpersUtf8.ReadString(
+                        // Значение отбрасывается — создавать из него строку незачем,
+                        // сверка вида токена остаётся прежней.
+                        ParseHelpersUtf8.ExpectString(
                             ref reader, rowCount, position, schema.RootKey);
                         break;
                     case 3:
@@ -525,7 +527,8 @@ public static class MoexRealtimeParser
             sourceValues[position] = reader.TokenType == JsonTokenType.Null
                 ? null
                 : ReadValue(
-                    ref reader, spec.SourceColumns[position], rowIndex, spec.RootKey);
+                    ref reader, spec.SourceColumns[position], spec.SourceColumnUsed[position],
+                    rowIndex, spec.RootKey);
         }
 
         if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
@@ -537,6 +540,31 @@ public static class MoexRealtimeParser
     }
 
     private static object? ReadValue(
+        ref Utf8JsonReader reader,
+        SourceColumn column,
+        bool used,
+        int rowIndex,
+        string rootKey)
+    {
+        if (used)
+            return ReadUsedValue(ref reader, column, rowIndex, rootKey);
+
+        // На эту колонку не ссылается ни одна целевая колонка. Сверка вида токена остаётся —
+        // она датчик дрейфа схемы источника, — но строка из значения не создаётся.
+        if (column.Kind == ColumnKind.String)
+        {
+            ParseHelpersUtf8.ExpectString(ref reader, rowIndex, column.Position, rootKey);
+            return null;
+        }
+
+        // Сегодня невостребованных колонок прочих видов нет ни в одной декларации. Ветвь
+        // существует ради будущих деклараций и читает значение тем же помощником, отбрасывая
+        // результат: так проверки и тексты исключений остаются буквально прежними.
+        _ = ReadUsedValue(ref reader, column, rowIndex, rootKey);
+        return null;
+    }
+
+    private static object? ReadUsedValue(
         ref Utf8JsonReader reader,
         SourceColumn column,
         int rowIndex,

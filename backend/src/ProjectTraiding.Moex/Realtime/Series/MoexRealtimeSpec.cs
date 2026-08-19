@@ -40,14 +40,21 @@ public sealed class MoexRealtimeSpec
 
         string[] columns = new string[targetColumns.Length];
         Dictionary<string, string> columnTypes = new(targetColumns.Length);
+        bool[] sourceUsed = new bool[sourceColumns.Length];
         for (int i = 0; i < targetColumns.Length; i++)
         {
             columns[i] = targetColumns[i].Name;
             columnTypes[columns[i]] = targetColumns[i].ColumnType;
+
+            if (targetColumns[i].SourceIndex >= 0)
+                sourceUsed[targetColumns[i].SourceIndex] = true;
+            if (targetColumns[i].SecondSourceIndex >= 0)
+                sourceUsed[targetColumns[i].SecondSourceIndex] = true;
         }
 
         Columns = columns;
         ColumnTypes = columnTypes;
+        SourceColumnUsed = sourceUsed;
     }
 
     /// <summary>Имя корневого блока ответа: "trades", "orderbook" или "candles".</summary>
@@ -84,4 +91,11 @@ public sealed class MoexRealtimeSpec
     public IReadOnlyList<string> Columns { get; }
 
     public IReadOnlyDictionary<string, string> ColumnTypes { get; }
+
+    /// <summary>
+    /// Признак востребованности колонки источника по её позиции: истина, если на позицию
+    /// ссылается хоть одна целевая колонка. Значение невостребованной колонки не попадает
+    /// никуда, поэтому разборщик сверяет вид её токена, но строку из неё не создаёт.
+    /// </summary>
+    public bool[] SourceColumnUsed { get; }
 }

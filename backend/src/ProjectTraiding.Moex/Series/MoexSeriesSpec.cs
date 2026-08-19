@@ -106,4 +106,31 @@ public sealed class MoexSeriesSpec
 
         return string.Join(',', names);
     }
+
+    private bool[]? _sourceColumnUsed;
+
+    /// <summary>
+    /// Признак востребованности колонки источника по её позиции: истина, если на позицию
+    /// ссылается хоть одна целевая колонка. Значение невостребованной колонки не попадает
+    /// никуда, поэтому разборщик сверяет вид её токена, но строку из неё не создаёт.
+    /// Вычисляется при первом обращении и запоминается: декларации живут в статическом
+    /// реестре всё время работы процесса. Одновременный первый доступ безвреден — оба
+    /// потока построят одинаковый массив.
+    /// </summary>
+    public bool[] SourceColumnUsed => _sourceColumnUsed ??= BuildSourceColumnUsed();
+
+    private bool[] BuildSourceColumnUsed()
+    {
+        bool[] used = new bool[SourceColumns.Length];
+        for (int i = 0; i < TargetColumns.Length; i++)
+        {
+            TargetColumn target = TargetColumns[i];
+            if (target.SourceIndex >= 0)
+                used[target.SourceIndex] = true;
+            if (target.SecondSourceIndex >= 0)
+                used[target.SecondSourceIndex] = true;
+        }
+
+        return used;
+    }
 }
