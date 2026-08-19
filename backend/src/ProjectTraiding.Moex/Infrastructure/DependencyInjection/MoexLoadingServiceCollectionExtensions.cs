@@ -37,7 +37,10 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
             services.AddScoped<SpecLoadHandler>();
 
             // Читатель и писатели задач, диспетчер и координатор.
-            services.AddTransient<MoexLoadTaskReader>();
+            // Читатель задач состояния не хранит: у него только источник данных-одиночка.
+            // Одиночкой он нужен фоновому исполнителю, который захватывает задачу до создания
+            // области — пока очередь пуста, область не создаётся вовсе.
+            services.AddSingleton<MoexLoadTaskReader>();
             services.AddTransient<MoexLoadTaskWriter>();
             services.AddTransient<MoexLoadedRangeWriter>();
             services.AddSingleton<ProjectTraiding.Moex.StorageBase.Redis.LoadedRangeEventPublisher>();
@@ -49,6 +52,7 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
                 MoexOptions moexOptions = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
                 return new MoexLoadBackgroundService(
                     sp.GetRequiredService<IServiceScopeFactory>(),
+                    sp.GetRequiredService<MoexLoadTaskReader>(),
                     sp.GetRequiredService<ILogger<MoexLoadBackgroundService>>(),
                     TimeSpan.FromSeconds(moexOptions.PollIntervalSeconds),
                     moexOptions.LoadWorkerConcurrency);

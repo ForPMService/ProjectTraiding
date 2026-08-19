@@ -10,19 +10,23 @@ namespace ProjectTraiding.Moex.Loading
     /// Фоновый исполнитель загрузок: подбирает ожидающие задачи любого вида из moex_load_tasks
     /// и гонит их через LoadRunner. Оператор создаёт задачу командой Management, исполнитель
     /// сам её подхватывает.
-    /// Берёт зависимости через область видимости на итерацию (сам — одиночка, runner/reader — Transient).
+    /// Читатель задач — одиночка и приходит через конструктор: захват выполняется до создания
+    /// области, поэтому пустая очередь не стоит ни области, ни её служб. Область создаётся
+    /// только под координатор и только после успешного захвата.
     /// Прерывание корректно на границе пачки (токен прокинут вглубь загрузки).
     /// Сбой одной задачи не валит сервис: RunAsync помечает error, исполнитель идёт дальше.
     /// </summary>
     public sealed class MoexLoadBackgroundService : BackgroundService
     {
         private readonly IServiceScopeFactory _scopeFactory;
+        private readonly MoexLoadTaskReader _taskReader;
         private readonly ILogger<MoexLoadBackgroundService> _logger;
         private readonly TimeSpan _pollInterval;
         private readonly int _concurrency;
 
         public MoexLoadBackgroundService(
             IServiceScopeFactory scopeFactory,
+            MoexLoadTaskReader taskReader,
             ILogger<MoexLoadBackgroundService> logger,
             TimeSpan pollInterval,
             int concurrency)
@@ -31,6 +35,7 @@ namespace ProjectTraiding.Moex.Loading
                 throw new ArgumentOutOfRangeException(nameof(concurrency), "Число дорожек должно быть положительным.");
 
             _scopeFactory = scopeFactory;
+            _taskReader = taskReader;
             _logger = logger;
             _pollInterval = pollInterval;
             _concurrency = concurrency;
@@ -90,13 +95,13 @@ namespace ProjectTraiding.Moex.Loading
         // true — задача была (выполнена или помечена error); false — очередь пуста.
         private async Task<bool> TryRunOneAsync(CancellationToken ct)
         {
-            await using AsyncServiceScope scope = _scopeFactory.CreateAsyncScope();
-
-            MoexLoadTaskReader reader = scope.ServiceProvider.GetRequiredService<MoexLoadTaskReader>();
-            MoexLoadTask? task = await reader.ClaimNextPendingTaskAsync(ct);
+            // Захват до создания области: пока очередь пуста, дорожка не создаёт ни области,
+            // ни её служб. Читатель — одиночка без состояния, области ему не требуется.
+            MoexLoadTask? task = await _taskReader.ClaimNextPendingTaskAsync(ct);
             if (task is null)
                 return false;
 
+            await using AsyncServiceScope scope = _scopeFactory.CreateAsyncScope();
             LoadRunner runner = scope.ServiceProvider.GetRequiredService<LoadRunner>();
             try
             {
