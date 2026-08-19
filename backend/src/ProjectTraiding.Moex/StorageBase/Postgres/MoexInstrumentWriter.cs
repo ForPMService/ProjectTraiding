@@ -36,8 +36,23 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
 
             try
             {
-                foreach (StockInstrumentCardDTO stock in stocks)
+                string[] secIds = new string[stocks.Count];
+                string[] boardIds = new string[stocks.Count];
+                string[] shortNames = new string[stocks.Count];
+                string[] secNames = new string[stocks.Count];
+                string?[] secTypes = new string?[stocks.Count];
+                string?[] isins = new string?[stocks.Count];
+                int?[] lotSizes = new int?[stocks.Count];
+                double?[] minSteps = new double?[stocks.Count];
+                int?[] decimalsValues = new int?[stocks.Count];
+                string?[] currencies = new string?[stocks.Count];
+                long?[] issueSizes = new long?[stocks.Count];
+                int?[] listLevels = new int?[stocks.Count];
+                string?[] statuses = new string?[stocks.Count];
+
+                for (int i = 0; i < stocks.Count; i++)
                 {
+                    StockInstrumentCardDTO stock = stocks[i];
                     currentKey = stock.SecId ?? "?";
                     // ── проверка NOT NULL полей до SQL ──
                     if (string.IsNullOrWhiteSpace(stock.SecId))
@@ -49,36 +64,69 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                     if (string.IsNullOrWhiteSpace(stock.SecName))
                         throw new InvalidOperationException($"SecName пустой у {stock.SecId}");
 
-                    // ── UPSERT 1: общая таблица moex_instruments ──
-                    await using NpgsqlCommand instrumentCommand = new NpgsqlCommand("""
-                INSERT INTO moex_instruments
-                    (secid, instrument_type, asset_code, shortname, secname, updated_at)
-                VALUES
-                    (@secid, @instrument_type, @asset_code, @shortname, @secname, now())
-                ON CONFLICT (secid) DO UPDATE SET
-                    instrument_type = EXCLUDED.instrument_type,
-                    asset_code      = EXCLUDED.asset_code,
-                    shortname       = EXCLUDED.shortname,
-                    secname         = EXCLUDED.secname,
-                    updated_at      = now()
-                """, connection, transaction);
+                    secIds[i] = stock.SecId;
+                    boardIds[i] = stock.BoardId;
+                    shortNames[i] = stock.ShortName;
+                    secNames[i] = stock.SecName;
+                    secTypes[i] = stock.SecType;
+                    isins[i] = stock.Isin;
+                    lotSizes[i] = stock.LotSize;
+                    minSteps[i] = stock.MinStep;
+                    decimalsValues[i] = stock.Decimals;
+                    currencies[i] = stock.Currency;
+                    issueSizes[i] = stock.IssueSize;
+                    listLevels[i] = stock.ListLevel;
+                    statuses[i] = stock.Status;
 
-                    instrumentCommand.Parameters.Add("@secid", NpgsqlDbType.Text).Value = stock.SecId;
-                    instrumentCommand.Parameters.Add("@instrument_type", NpgsqlDbType.Text).Value = "stock";
-                    instrumentCommand.Parameters.Add("@asset_code", NpgsqlDbType.Text).Value = DBNull.Value;
-                    instrumentCommand.Parameters.Add("@shortname", NpgsqlDbType.Text).Value = stock.ShortName;
-                    instrumentCommand.Parameters.Add("@secname", NpgsqlDbType.Text).Value = stock.SecName;
+                    processedCount++;
+                }
 
-                    await instrumentCommand.ExecuteNonQueryAsync(ct);
+                // Дальше идут обращения к базе: конкретная строка в отказе больше не видна.
+                currentKey = "<пачка>";
 
-                    // ── UPSERT 2: детали moex_stock_details ──
-                    await using NpgsqlCommand detailsCommand = new NpgsqlCommand("""
+                // ── UPSERT 1: общая таблица moex_instruments ──
+                await using NpgsqlCommand instrumentCommand = new NpgsqlCommand("""
+                    INSERT INTO moex_instruments
+                        (secid, instrument_type, asset_code, shortname, secname, updated_at)
+                    SELECT s.secid, 'stock', NULL, s.shortname, s.secname, now()
+                    FROM (
+                        SELECT DISTINCT ON (t.secid) t.secid, t.shortname, t.secname
+                        FROM unnest(@secid, @shortname, @secname)
+                             WITH ORDINALITY AS t(secid, shortname, secname, ord)
+                        ORDER BY t.secid, t.ord DESC
+                    ) AS s
+                    ON CONFLICT (secid) DO UPDATE SET
+                        instrument_type = EXCLUDED.instrument_type,
+                        asset_code      = EXCLUDED.asset_code,
+                        shortname       = EXCLUDED.shortname,
+                        secname         = EXCLUDED.secname,
+                        updated_at      = now()
+                    """, connection, transaction);
+
+                instrumentCommand.Parameters.Add("@secid", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = secIds;
+                instrumentCommand.Parameters.Add("@shortname", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = shortNames;
+                instrumentCommand.Parameters.Add("@secname", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = secNames;
+
+                await instrumentCommand.ExecuteNonQueryAsync(ct);
+
+                // ── UPSERT 2: детали moex_stock_details ──
+                await using NpgsqlCommand detailsCommand = new NpgsqlCommand("""
                     INSERT INTO moex_stock_details
                         (secid, boardid, shortname, secname, sectype, isin, lotsize,
                          minstep, decimals, currency_id, issue_size, list_level, status, updated_at)
-                    VALUES
-                        (@secid, @boardid, @shortname, @secname, @sectype, @isin, @lotsize,
-                         @minstep, @decimals, @currency_id, @issue_size, @list_level, @status, now())
+                    SELECT s.secid, s.boardid, s.shortname, s.secname, s.sectype, s.isin, s.lotsize,
+                           s.minstep, s.decimals, s.currency_id, s.issue_size, s.list_level, s.status, now()
+                    FROM (
+                        SELECT DISTINCT ON (t.secid)
+                               t.secid, t.boardid, t.shortname, t.secname, t.sectype, t.isin, t.lotsize,
+                               t.minstep, t.decimals, t.currency_id, t.issue_size, t.list_level, t.status
+                        FROM unnest(@secid, @boardid, @shortname, @secname, @sectype, @isin, @lotsize,
+                                    @minstep, @decimals, @currency_id, @issue_size, @list_level, @status)
+                             WITH ORDINALITY
+                             AS t(secid, boardid, shortname, secname, sectype, isin, lotsize,
+                                  minstep, decimals, currency_id, issue_size, list_level, status, ord)
+                        ORDER BY t.secid, t.ord DESC
+                    ) AS s
                     ON CONFLICT (secid) DO UPDATE SET
                         boardid     = EXCLUDED.boardid,
                         shortname   = EXCLUDED.shortname,
@@ -95,28 +143,26 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                         updated_at  = now()
                     """, connection, transaction);
 
-                    detailsCommand.Parameters.Add("@secid", NpgsqlDbType.Text).Value = stock.SecId;
-                    detailsCommand.Parameters.Add("@boardid", NpgsqlDbType.Text).Value = stock.BoardId;
-                    detailsCommand.Parameters.Add("@shortname", NpgsqlDbType.Text).Value = stock.ShortName;
-                    detailsCommand.Parameters.Add("@secname", NpgsqlDbType.Text).Value = stock.SecName;
-                    detailsCommand.Parameters.Add("@sectype", NpgsqlDbType.Text).Value = (object?)stock.SecType ?? DBNull.Value;
-                    detailsCommand.Parameters.Add("@isin", NpgsqlDbType.Text).Value = (object?)stock.Isin ?? DBNull.Value;
-                    detailsCommand.Parameters.Add("@lotsize", NpgsqlDbType.Integer).Value = (object?)stock.LotSize ?? DBNull.Value;
-                    detailsCommand.Parameters.Add("@minstep", NpgsqlDbType.Numeric).Value = (object?)stock.MinStep ?? DBNull.Value;
-                    detailsCommand.Parameters.Add("@decimals", NpgsqlDbType.Integer).Value = (object?)stock.Decimals ?? DBNull.Value;
-                    detailsCommand.Parameters.Add("@currency_id", NpgsqlDbType.Text).Value = (object?)stock.Currency ?? DBNull.Value;
-                    detailsCommand.Parameters.Add("@issue_size", NpgsqlDbType.Bigint).Value = (object?)stock.IssueSize ?? DBNull.Value;
-                    detailsCommand.Parameters.Add("@list_level", NpgsqlDbType.Integer).Value = (object?)stock.ListLevel ?? DBNull.Value;
-                    detailsCommand.Parameters.Add("@status", NpgsqlDbType.Text).Value = (object?)stock.Status ?? DBNull.Value;
+                detailsCommand.Parameters.Add("@secid", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = secIds;
+                detailsCommand.Parameters.Add("@boardid", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = boardIds;
+                detailsCommand.Parameters.Add("@shortname", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = shortNames;
+                detailsCommand.Parameters.Add("@secname", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = secNames;
+                detailsCommand.Parameters.Add("@sectype", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = secTypes;
+                detailsCommand.Parameters.Add("@isin", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = isins;
+                detailsCommand.Parameters.Add("@lotsize", NpgsqlDbType.Array | NpgsqlDbType.Integer).Value = lotSizes;
+                detailsCommand.Parameters.Add("@minstep", NpgsqlDbType.Array | NpgsqlDbType.Numeric).Value = minSteps;
+                detailsCommand.Parameters.Add("@decimals", NpgsqlDbType.Array | NpgsqlDbType.Integer).Value = decimalsValues;
+                detailsCommand.Parameters.Add("@currency_id", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = currencies;
+                detailsCommand.Parameters.Add("@issue_size", NpgsqlDbType.Array | NpgsqlDbType.Bigint).Value = issueSizes;
+                detailsCommand.Parameters.Add("@list_level", NpgsqlDbType.Array | NpgsqlDbType.Integer).Value = listLevels;
+                detailsCommand.Parameters.Add("@status", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = statuses;
 
-                    await detailsCommand.ExecuteNonQueryAsync(ct);
-                    processedCount++;
-                }
+                await detailsCommand.ExecuteNonQueryAsync(ct);
+
                 await transaction.CommitAsync(ct);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
                 MoexWriterLogMessages.WriteCompleted(_logger, table, processedCount, elapsed);
                 return new DbWriteResult(stocks.Count, processedCount, elapsed);
-
             }
             catch(Exception ex)
             {
