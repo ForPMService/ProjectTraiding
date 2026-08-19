@@ -191,8 +191,26 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
 
             try
             {
-                foreach (FuturesInstrumentCardDTO future in futures)
+                string[] secIds = new string[futures.Count];
+                string[] boardIds = new string[futures.Count];
+                string[] shortNames = new string[futures.Count];
+                string[] secNames = new string[futures.Count];
+                string?[] secTypes = new string?[futures.Count];
+                string?[] assetCodes = new string?[futures.Count];
+                double?[] initialMargins = new double?[futures.Count];
+                double?[] minSteps = new double?[futures.Count];
+                double?[] stepPrices = new double?[futures.Count];
+                int?[] lotVolumes = new int?[futures.Count];
+                int?[] decimalsValues = new int?[futures.Count];
+                DateOnly?[] lastTradeDates = new DateOnly?[futures.Count];
+                DateOnly?[] lastDelDates = new DateOnly?[futures.Count];
+                double?[] highLimits = new double?[futures.Count];
+                double?[] lowLimits = new double?[futures.Count];
+                double?[] buySellFees = new double?[futures.Count];
+
+                for (int i = 0; i < futures.Count; i++)
                 {
+                    FuturesInstrumentCardDTO future = futures[i];
                     currentKey = future.SecId ?? "?";
                     // ── проверка NOT NULL полей до SQL ──
                     if (string.IsNullOrWhiteSpace(future.SecId))
@@ -204,75 +222,24 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                     if (string.IsNullOrWhiteSpace(future.SecName))
                         throw new InvalidOperationException($"SecName пустой у {future.SecId}");
 
-                    // ── UPSERT 1: общая таблица moex_instruments ──
-                    await using NpgsqlCommand instrumentCommand = new NpgsqlCommand("""
-                        INSERT INTO moex_instruments
-                            (secid, instrument_type, asset_code, shortname, secname, updated_at)
-                        VALUES
-                            (@secid, @instrument_type, @asset_code, @shortname, @secname, now())
-                        ON CONFLICT (secid) DO UPDATE SET
-                            instrument_type = EXCLUDED.instrument_type,
-                            asset_code      = EXCLUDED.asset_code,
-                            shortname       = EXCLUDED.shortname,
-                            secname         = EXCLUDED.secname,
-                            updated_at      = now()
-                        """, connection, transaction);
-
-                    instrumentCommand.Parameters.Add("@secid", NpgsqlDbType.Text).Value = future.SecId;
-                    instrumentCommand.Parameters.Add("@instrument_type", NpgsqlDbType.Text).Value = "futures";
-                    instrumentCommand.Parameters.Add("@asset_code", NpgsqlDbType.Text).Value = (object?)future.AssetCode ?? DBNull.Value;
-                    instrumentCommand.Parameters.Add("@shortname", NpgsqlDbType.Text).Value = future.ShortName;
-                    instrumentCommand.Parameters.Add("@secname", NpgsqlDbType.Text).Value = future.SecName;
-
-                    await instrumentCommand.ExecuteNonQueryAsync(ct);
-
-                    // ── UPSERT 2: детали moex_futures_details ──
-                    await using NpgsqlCommand detailsCommand = new NpgsqlCommand("""
-                        INSERT INTO moex_futures_details
-                            (secid, boardid, shortname, secname, sectype, asset_code, initial_margin, minstep,
-                             stepprice, lotvolume, decimals, last_trade_date, last_del_date,
-                             high_limit, low_limit, buysell_fee, updated_at)
-                        VALUES
-                            (@secid, @boardid, @shortname, @secname, @sectype, @asset_code, @initial_margin, @minstep,
-                             @stepprice, @lotvolume, @decimals, @last_trade_date, @last_del_date,
-                             @high_limit, @low_limit, @buysell_fee, now())
-                        ON CONFLICT (secid) DO UPDATE SET
-                            boardid         = EXCLUDED.boardid,
-                            shortname       = EXCLUDED.shortname,
-                            secname         = EXCLUDED.secname,
-                            sectype         = EXCLUDED.sectype,
-                            asset_code      = EXCLUDED.asset_code,
-                            initial_margin  = EXCLUDED.initial_margin,
-                            minstep         = EXCLUDED.minstep,
-                            stepprice       = EXCLUDED.stepprice,
-                            lotvolume       = EXCLUDED.lotvolume,
-                            decimals        = EXCLUDED.decimals,
-                            last_trade_date = EXCLUDED.last_trade_date,
-                            last_del_date   = EXCLUDED.last_del_date,
-                            high_limit      = EXCLUDED.high_limit,
-                            low_limit       = EXCLUDED.low_limit,
-                            buysell_fee     = EXCLUDED.buysell_fee,
-                            updated_at      = now()
-                     """, connection, transaction);
-
-                    detailsCommand.Parameters.Add("@secid", NpgsqlDbType.Text).Value = future.SecId;
-                    detailsCommand.Parameters.Add("@boardid", NpgsqlDbType.Text).Value = future.BoardId;
-                    detailsCommand.Parameters.Add("@shortname", NpgsqlDbType.Text).Value = future.ShortName;
-                    detailsCommand.Parameters.Add("@secname", NpgsqlDbType.Text).Value = future.SecName;
-                    detailsCommand.Parameters.Add("@sectype", NpgsqlDbType.Text).Value = (object?)future.SecType ?? DBNull.Value;
-                    detailsCommand.Parameters.Add("@asset_code", NpgsqlDbType.Text).Value = (object?)future.AssetCode ?? DBNull.Value;
-                    detailsCommand.Parameters.Add("@initial_margin", NpgsqlDbType.Numeric).Value = (object?)future.InitialMargin ?? DBNull.Value;
-                    detailsCommand.Parameters.Add("@minstep", NpgsqlDbType.Numeric).Value = (object?)future.MinStep ?? DBNull.Value;
-                    detailsCommand.Parameters.Add("@stepprice", NpgsqlDbType.Numeric).Value = (object?)future.StepPrice ?? DBNull.Value;
-                    detailsCommand.Parameters.Add("@lotvolume", NpgsqlDbType.Integer).Value = (object?)future.LotVolume ?? DBNull.Value;
-                    detailsCommand.Parameters.Add("@decimals", NpgsqlDbType.Integer).Value = (object?)future.Decimals ?? DBNull.Value;
-                    detailsCommand.Parameters.Add("@last_trade_date", NpgsqlDbType.Date).Value = ParseNullableDateOrDbNull(future.LastTradeDate, table, "last_trade_date", future.SecId);
-                    detailsCommand.Parameters.Add("@last_del_date", NpgsqlDbType.Date).Value = ParseNullableDateOrDbNull(future.LastDelDate, table, "last_del_date", future.SecId);
-                    detailsCommand.Parameters.Add("@high_limit", NpgsqlDbType.Numeric).Value = (object?)future.HighLimit ?? DBNull.Value;
-                    detailsCommand.Parameters.Add("@low_limit", NpgsqlDbType.Numeric).Value = (object?)future.LowLimit ?? DBNull.Value;
-                    detailsCommand.Parameters.Add("@buysell_fee", NpgsqlDbType.Numeric).Value = (object?)future.BuySellFee ?? DBNull.Value;
-
-                    await detailsCommand.ExecuteNonQueryAsync(ct);
+                    secIds[i] = future.SecId;
+                    boardIds[i] = future.BoardId;
+                    shortNames[i] = future.ShortName;
+                    secNames[i] = future.SecName;
+                    secTypes[i] = future.SecType;
+                    assetCodes[i] = future.AssetCode;
+                    initialMargins[i] = future.InitialMargin;
+                    minSteps[i] = future.MinStep;
+                    stepPrices[i] = future.StepPrice;
+                    lotVolumes[i] = future.LotVolume;
+                    decimalsValues[i] = future.Decimals;
+                    lastTradeDates[i] = ParseNullableDate(
+                        future.LastTradeDate, table, "last_trade_date", future.SecId);
+                    lastDelDates[i] = ParseNullableDate(
+                        future.LastDelDate, table, "last_del_date", future.SecId);
+                    highLimits[i] = future.HighLimit;
+                    lowLimits[i] = future.LowLimit;
+                    buySellFees[i] = future.BuySellFee;
 
                     // Бессрочный фьючерс серии не имеет: открытый интерес по нему источник
                     // отдаёт по собственному коду, а по коду серии возвращает пустой набор.
@@ -285,33 +252,135 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                     processedCount++;
                 }
 
+                // Дальше идут обращения к базе: конкретная строка в отказе больше не видна.
+                currentKey = "<пачка контрактов>";
+
+                // ── UPSERT 1: общая таблица moex_instruments ──
+                await using NpgsqlCommand instrumentCommand = new NpgsqlCommand("""
+                    INSERT INTO moex_instruments
+                        (secid, instrument_type, asset_code, shortname, secname, updated_at)
+                    SELECT s.secid, 'futures', s.asset_code, s.shortname, s.secname, now()
+                    FROM (
+                        SELECT DISTINCT ON (t.secid) t.secid, t.asset_code, t.shortname, t.secname
+                        FROM unnest(@secid, @asset_code, @shortname, @secname)
+                             WITH ORDINALITY AS t(secid, asset_code, shortname, secname, ord)
+                        ORDER BY t.secid, t.ord DESC
+                    ) AS s
+                    ON CONFLICT (secid) DO UPDATE SET
+                        instrument_type = EXCLUDED.instrument_type,
+                        asset_code      = EXCLUDED.asset_code,
+                        shortname       = EXCLUDED.shortname,
+                        secname         = EXCLUDED.secname,
+                        updated_at      = now()
+                    """, connection, transaction);
+
+                instrumentCommand.Parameters.Add("@secid", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = secIds;
+                instrumentCommand.Parameters.Add("@asset_code", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = assetCodes;
+                instrumentCommand.Parameters.Add("@shortname", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = shortNames;
+                instrumentCommand.Parameters.Add("@secname", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = secNames;
+
+                await instrumentCommand.ExecuteNonQueryAsync(ct);
+
+                // ── UPSERT 2: детали moex_futures_details ──
+                await using NpgsqlCommand detailsCommand = new NpgsqlCommand("""
+                    INSERT INTO moex_futures_details
+                        (secid, boardid, shortname, secname, sectype, asset_code, initial_margin, minstep,
+                         stepprice, lotvolume, decimals, last_trade_date, last_del_date,
+                         high_limit, low_limit, buysell_fee, updated_at)
+                    SELECT s.secid, s.boardid, s.shortname, s.secname, s.sectype, s.asset_code,
+                           s.initial_margin, s.minstep, s.stepprice, s.lotvolume, s.decimals,
+                           s.last_trade_date, s.last_del_date,
+                           s.high_limit, s.low_limit, s.buysell_fee, now()
+                    FROM (
+                        SELECT DISTINCT ON (t.secid)
+                               t.secid, t.boardid, t.shortname, t.secname, t.sectype, t.asset_code,
+                               t.initial_margin, t.minstep, t.stepprice, t.lotvolume, t.decimals,
+                               t.last_trade_date, t.last_del_date,
+                               t.high_limit, t.low_limit, t.buysell_fee
+                        FROM unnest(@secid, @boardid, @shortname, @secname, @sectype, @asset_code,
+                                    @initial_margin, @minstep, @stepprice, @lotvolume, @decimals,
+                                    @last_trade_date, @last_del_date,
+                                    @high_limit, @low_limit, @buysell_fee)
+                             WITH ORDINALITY
+                             AS t(secid, boardid, shortname, secname, sectype, asset_code,
+                                  initial_margin, minstep, stepprice, lotvolume, decimals,
+                                  last_trade_date, last_del_date,
+                                  high_limit, low_limit, buysell_fee, ord)
+                        ORDER BY t.secid, t.ord DESC
+                    ) AS s
+                    ON CONFLICT (secid) DO UPDATE SET
+                        boardid         = EXCLUDED.boardid,
+                        shortname       = EXCLUDED.shortname,
+                        secname         = EXCLUDED.secname,
+                        sectype         = EXCLUDED.sectype,
+                        asset_code      = EXCLUDED.asset_code,
+                        initial_margin  = EXCLUDED.initial_margin,
+                        minstep         = EXCLUDED.minstep,
+                        stepprice       = EXCLUDED.stepprice,
+                        lotvolume       = EXCLUDED.lotvolume,
+                        decimals        = EXCLUDED.decimals,
+                        last_trade_date = EXCLUDED.last_trade_date,
+                        last_del_date   = EXCLUDED.last_del_date,
+                        high_limit      = EXCLUDED.high_limit,
+                        low_limit       = EXCLUDED.low_limit,
+                        buysell_fee     = EXCLUDED.buysell_fee,
+                        updated_at      = now()
+                    """, connection, transaction);
+
+                detailsCommand.Parameters.Add("@secid", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = secIds;
+                detailsCommand.Parameters.Add("@boardid", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = boardIds;
+                detailsCommand.Parameters.Add("@shortname", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = shortNames;
+                detailsCommand.Parameters.Add("@secname", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = secNames;
+                detailsCommand.Parameters.Add("@sectype", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = secTypes;
+                detailsCommand.Parameters.Add("@asset_code", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = assetCodes;
+                detailsCommand.Parameters.Add("@initial_margin", NpgsqlDbType.Array | NpgsqlDbType.Numeric).Value = initialMargins;
+                detailsCommand.Parameters.Add("@minstep", NpgsqlDbType.Array | NpgsqlDbType.Numeric).Value = minSteps;
+                detailsCommand.Parameters.Add("@stepprice", NpgsqlDbType.Array | NpgsqlDbType.Numeric).Value = stepPrices;
+                detailsCommand.Parameters.Add("@lotvolume", NpgsqlDbType.Array | NpgsqlDbType.Integer).Value = lotVolumes;
+                detailsCommand.Parameters.Add("@decimals", NpgsqlDbType.Array | NpgsqlDbType.Integer).Value = decimalsValues;
+                detailsCommand.Parameters.Add("@last_trade_date", NpgsqlDbType.Array | NpgsqlDbType.Date).Value = lastTradeDates;
+                detailsCommand.Parameters.Add("@last_del_date", NpgsqlDbType.Array | NpgsqlDbType.Date).Value = lastDelDates;
+                detailsCommand.Parameters.Add("@high_limit", NpgsqlDbType.Array | NpgsqlDbType.Numeric).Value = highLimits;
+                detailsCommand.Parameters.Add("@low_limit", NpgsqlDbType.Array | NpgsqlDbType.Numeric).Value = lowLimits;
+                detailsCommand.Parameters.Add("@buysell_fee", NpgsqlDbType.Array | NpgsqlDbType.Numeric).Value = buySellFees;
+
+                await detailsCommand.ExecuteNonQueryAsync(ct);
+
                 // ── UPSERT 3: строки серий ──
                 // Условие в ON CONFLICT защищает настоящий инструмент от затирания, если
                 // код серии когда-либо совпадёт с кодом контракта.
+                // Название серии собирается шаблоном в самом запросе, а не склейкой строк
+                // на каждую серию. Отбор по последнему вхождению здесь не нужен: ключи
+                // словаря серий уже неповторимы.
+                currentKey = "<пачка серий>";
+
+                string[] seriesCodes = new string[seriesByCode.Count];
+                string?[] seriesAssetCodes = new string?[seriesByCode.Count];
+                int seriesIndex = 0;
                 foreach (KeyValuePair<string, string?> series in seriesByCode)
                 {
-                    currentKey = series.Key;
-
-                    await using NpgsqlCommand seriesCommand = new NpgsqlCommand("""
-                        INSERT INTO moex_instruments
-                            (secid, instrument_type, asset_code, shortname, secname, updated_at)
-                        VALUES
-                            (@secid, 'futures_series', @asset_code, @secid, @secname, now())
-                        ON CONFLICT (secid) DO UPDATE SET
-                            asset_code = EXCLUDED.asset_code,
-                            secname    = EXCLUDED.secname,
-                            updated_at = now()
-                        WHERE moex_instruments.instrument_type = 'futures_series'
-                        """, connection, transaction);
-
-                    seriesCommand.Parameters.Add("@secid", NpgsqlDbType.Text).Value = series.Key;
-                    seriesCommand.Parameters.Add("@asset_code", NpgsqlDbType.Text).Value =
-                        (object?)series.Value ?? DBNull.Value;
-                    seriesCommand.Parameters.Add("@secname", NpgsqlDbType.Text).Value =
-                        "Серия срочных контрактов " + series.Key;
-
-                    await seriesCommand.ExecuteNonQueryAsync(ct);
+                    seriesCodes[seriesIndex] = series.Key;
+                    seriesAssetCodes[seriesIndex] = series.Value;
+                    seriesIndex++;
                 }
+
+                await using NpgsqlCommand seriesCommand = new NpgsqlCommand("""
+                    INSERT INTO moex_instruments
+                        (secid, instrument_type, asset_code, shortname, secname, updated_at)
+                    SELECT t.secid, 'futures_series', t.asset_code, t.secid,
+                           'Серия срочных контрактов ' || t.secid, now()
+                    FROM unnest(@secid, @asset_code) AS t(secid, asset_code)
+                    ON CONFLICT (secid) DO UPDATE SET
+                        asset_code = EXCLUDED.asset_code,
+                        secname    = EXCLUDED.secname,
+                        updated_at = now()
+                    WHERE moex_instruments.instrument_type = 'futures_series'
+                    """, connection, transaction);
+
+                seriesCommand.Parameters.Add("@secid", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = seriesCodes;
+                seriesCommand.Parameters.Add("@asset_code", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = seriesAssetCodes;
+
+                await seriesCommand.ExecuteNonQueryAsync(ct);
 
                 await transaction.CommitAsync(ct);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
@@ -339,11 +408,14 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 && parsed >= new DateOnly(2100, 1, 1);
         }
 
-        private object ParseNullableDateOrDbNull(string? raw, string table, string field, string key)
+        // Значение уходит в массив параметров, поэтому пустота выражается пустым значением
+        // типа, а не признаком отсутствия для отдельной команды. Событие неудачного разбора
+        // и его поля прежние.
+        private DateOnly? ParseNullableDate(string? raw, string table, string field, string key)
         {
             if (string.IsNullOrWhiteSpace(raw))
             {
-                return DBNull.Value;
+                return null;
             }
 
             if (DateOnly.TryParse(raw, out DateOnly parsed))
@@ -352,7 +424,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             }
 
             MoexWriterLogMessages.DateParseFailed(_logger, table, field, key, raw);
-            return DBNull.Value;
+            return null;
         }
     }
 }
