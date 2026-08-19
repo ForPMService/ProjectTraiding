@@ -44,6 +44,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         private readonly TimeSpan _instrumentFetchTimeout;
         private readonly TimeSpan _heartbeatMinInterval;
         private readonly TimeSpan _stalePollThreshold;
+        private readonly List<object?[]> _closed = new();
         private bool _initialized;
 
         public CandlesReceiverService(
@@ -275,7 +276,11 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             // Минута с началом B закрыта, когда московское время достигло B + интервал.
             // Границы отобранной пачки считаются этим же проходом: отдельный проход
             // по отобранным строкам не нужен.
-            List<object?[]> closed = new List<object?[]>(candles.Count);
+            // Тот же буфер на все опросы: очищается перед отбором. Предыдущая вставка к этому
+            // моменту уже завершена — она выполняется с ожиданием внутри того же опроса.
+            // Принадлежит одному обороту одной службы, см. предупреждение о пункте 8 плана.
+            _closed.Clear();
+            List<object?[]> closed = _closed;
             DateTime maxClosedBegin = state.LastClosedBegin ?? DateTime.MinValue;
             DateTime firstClosedBegin = default;
             DateTime lastClosedBegin = default;

@@ -26,6 +26,15 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
         private readonly TimeSpan _pollInterval;
 
+        // Рабочие наборы одного оборота согласования подписок и публикации снимков.
+        // Принадлежат одному обороту одной службы: опрос инструментов внутри оборота
+        // последователен. При появлении параллельного опроса (пункт 8 плана) эти поля
+        // обязаны быть пересмотрены раньше, чем параллелизм включится.
+        private readonly HashSet<string> _desired = new(StringComparer.Ordinal);
+        private readonly List<string> _stopping = new();
+        private readonly List<KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot>> _snapshots =
+            new(2);
+
         /// <summary>
         /// Состояния сеансов по коду инструмента. Ключи изменяются только в методах
         /// согласования подписок; предметный опрос меняет лишь значения.
@@ -174,14 +183,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             StreamCoverageWriter coverageWriter,
             CancellationToken ct)
         {
-            HashSet<string> desired = new(StringComparer.Ordinal);
+            _desired.Clear();
             for (int i = 0; i < instruments.Count; i++)
-                desired.Add(instruments[i].Secid);
+                _desired.Add(instruments[i].Secid);
 
             // Пометка. Изменяем только значения, ключи словаря не трогаем — перечисление безопасно.
             foreach (KeyValuePair<string, TState> pair in States)
             {
-                if (desired.Contains(pair.Key) || pair.Value.IsStopping)
+                if (_desired.Contains(pair.Key) || pair.Value.IsStopping)
                     continue;
 
                 pair.Value.IsStopping = true;
@@ -189,16 +198,16 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             }
 
             // Ключи собираем заранее: удалять из словаря во время перечисления нельзя.
-            List<string> stopping = new();
+            _stopping.Clear();
             foreach (KeyValuePair<string, TState> pair in States)
             {
                 if (pair.Value.IsStopping)
-                    stopping.Add(pair.Key);
+                    _stopping.Add(pair.Key);
             }
 
-            for (int i = 0; i < stopping.Count; i++)
+            for (int i = 0; i < _stopping.Count; i++)
             {
-                string secid = stopping[i];
+                string secid = _stopping[i];
                 TState state = States[secid];
                 try
                 {
@@ -260,13 +269,12 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         protected void PublishTelemetrySnapshots()
         {
             DateTimeOffset now = DateTimeOffset.UtcNow;
-            List<KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot>> snapshots =
-                new List<KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot>>(2);
+            _snapshots.Clear();
 
-            AddTelemetrySnapshot(MoexMarkets.Stock, now, snapshots);
-            AddTelemetrySnapshot(MoexMarkets.Futures, now, snapshots);
+            AddTelemetrySnapshot(MoexMarkets.Stock, now, _snapshots);
+            AddTelemetrySnapshot(MoexMarkets.Futures, now, _snapshots);
 
-            RealtimeTelemetryState.ReplaceForDataKind(DataKind, snapshots);
+            RealtimeTelemetryState.ReplaceForDataKind(DataKind, _snapshots);
         }
 
         private void AddTelemetrySnapshot(

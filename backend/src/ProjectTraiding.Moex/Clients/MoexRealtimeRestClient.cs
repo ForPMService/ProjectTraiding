@@ -169,20 +169,24 @@ namespace ProjectTraiding.Moex.Clients
             List<(object?[] Row, DateTime? Begin)> rows = [];
             int start = 0;
 
+            // Окно и перечень колонок на весь вызов одни: собирать словарь и форматировать
+            // границы окна на каждой странице незачем. Порядок ключей сохранён — от него
+            // зависит вид адреса, попадающего в события журнала обращений. Смещение
+            // добавляется со второй страницы, как и прежде.
+            Dictionary<string, string> queryParams = new Dictionary<string, string>
+            {
+                ["iss.meta"] = "off",
+                ["iss.only"] = "candles",
+                ["candles.columns"] = spec.ColumnsParam,
+                ["interval"] = interval.ToString(CultureInfo.InvariantCulture),
+                ["from"] = from.ToString(
+                    "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+                ["till"] = till.ToString(
+                    "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+            };
+
             for (int pageNumber = 1; pageNumber <= _options.MaxPagesPerLoad; pageNumber++)
             {
-                Dictionary<string, string> queryParams = new Dictionary<string, string>
-                {
-                    ["iss.meta"] = "off",
-                    ["iss.only"] = "candles",
-                    ["candles.columns"] = spec.ColumnsParam,
-                    ["interval"] = interval.ToString(CultureInfo.InvariantCulture),
-                    ["from"] = from.ToString(
-                        "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
-                    ["till"] = till.ToString(
-                        "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
-                };
-
                 if (start > 0)
                     queryParams["start"] = start.ToString(CultureInfo.InvariantCulture);
 
