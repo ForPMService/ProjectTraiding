@@ -49,8 +49,18 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
 
             try
             {
-                foreach (CalendarOffDaysMarketDTO day in days)
+                // Массивы значений по колонкам: одна ячейка на строку партии. Проверки
+                // обязательных полей остаются здесь, построчно — это чистые проверки без
+                // обращения к базе, и ключ отказавшей строки в журнале сохраняется.
+                DateOnly[] tradeDates = new DateOnly[days.Count];
+                int[] isTradedValues = new int[days.Count];
+                DateOnly?[] sessionDates = new DateOnly?[days.Count];
+                string?[] reasons = new string?[days.Count];
+                DateTime?[] updateTimes = new DateTime?[days.Count];
+
+                for (int i = 0; i < days.Count; i++)
                 {
+                    CalendarOffDaysMarketDTO day = days[i];
                     currentKey = day.TradeDate ?? "?";
                     // ── обязательные поля до SQL ──
                     if (string.IsNullOrWhiteSpace(day.TradeDate))
@@ -60,47 +70,61 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                         throw new InvalidOperationException(
                             $"IsTraded null у {day.TradeDate} (market={market})");
 
-                    await using NpgsqlCommand command = new NpgsqlCommand("""
-                        INSERT INTO moex_calendar_days
-                            (trade_date, market, is_traded, trade_session_date,
-                             reason, moex_update_time, updated_at)
-                        VALUES
-                            (@trade_date, @market, @is_traded, @trade_session_date,
-                             @reason, @moex_update_time, now())
-                        ON CONFLICT (trade_date, market) DO UPDATE SET
-                            is_traded          = EXCLUDED.is_traded,
-                            trade_session_date = EXCLUDED.trade_session_date,
-                            reason             = EXCLUDED.reason,
-                            moex_update_time   = EXCLUDED.moex_update_time,
-                            updated_at         = now()
-                        """, connection, transaction);
-
-                    // trade_date: date-колонка → DateOnly + Date (урок 42804). PK, не null.
-                    command.Parameters.Add("@trade_date", NpgsqlDbType.Date).Value =
-                        DateOnly.Parse(day.TradeDate);
-
-                    command.Parameters.Add("@market", NpgsqlDbType.Text).Value = market;
+                    // trade_date: date-колонка → DateOnly (урок 42804). PK, не null.
+                    tradeDates[i] = DateOnly.Parse(day.TradeDate);
 
                     // is_traded: NOT NULL в таблице, int? в DTO → .Value после проверки.
-                    command.Parameters.Add("@is_traded", NpgsqlDbType.Integer).Value =
-                        day.IsTraded.Value;
+                    isTradedValues[i] = day.IsTraded.Value;
 
                     // trade_session_date: date-колонка, nullable (null при is_traded=0).
-                    command.Parameters.Add("@trade_session_date", NpgsqlDbType.Date).Value =
-                        ParseNullableDateOrDbNull(day.TradeSessionDate, table, "trade_session_date", day.TradeDate);
+                    sessionDates[i] = ParseNullableDate(
+                        day.TradeSessionDate, table, "trade_session_date", day.TradeDate);
 
-                    command.Parameters.Add("@reason", NpgsqlDbType.Text).Value =
-                        (object?)day.Reason ?? DBNull.Value;
+                    reasons[i] = day.Reason;
 
-                    // moex_update_time: timestamp, в DTO уже DateTime? — НЕ парсить,
-                    // только null-guard и Timestamp (не Date!).
-                    command.Parameters.Add("@moex_update_time", NpgsqlDbType.Timestamp).Value =
-                        (object?)day.UpdateTime ?? DBNull.Value;
-
-                    await command.ExecuteNonQueryAsync(ct);
+                    // moex_update_time: timestamp, в DTO уже DateTime? — НЕ парсить.
+                    updateTimes[i] = day.UpdateTime;
 
                     processedCount++;
                 }
+
+                // Дальше идёт обращение к базе, и конкретная строка в отказе больше не видна:
+                // в событие отката пойдёт отметка пачки.
+                currentKey = "<пачка>";
+
+                await using NpgsqlCommand command = new NpgsqlCommand("""
+                    INSERT INTO moex_calendar_days
+                        (trade_date, market, is_traded, trade_session_date,
+                         reason, moex_update_time, updated_at)
+                    SELECT s.trade_date, @market, s.is_traded, s.trade_session_date,
+                           s.reason, s.moex_update_time, now()
+                    FROM (
+                        SELECT DISTINCT ON (t.trade_date)
+                               t.trade_date, t.is_traded, t.trade_session_date,
+                               t.reason, t.moex_update_time
+                        FROM unnest(@trade_date, @is_traded, @trade_session_date,
+                                    @reason, @moex_update_time)
+                             WITH ORDINALITY
+                             AS t(trade_date, is_traded, trade_session_date,
+                                  reason, moex_update_time, ord)
+                        ORDER BY t.trade_date, t.ord DESC
+                    ) AS s
+                    ON CONFLICT (trade_date, market) DO UPDATE SET
+                        is_traded          = EXCLUDED.is_traded,
+                        trade_session_date = EXCLUDED.trade_session_date,
+                        reason             = EXCLUDED.reason,
+                        moex_update_time   = EXCLUDED.moex_update_time,
+                        updated_at         = now()
+                    """, connection, transaction);
+
+                command.Parameters.Add("@market", NpgsqlDbType.Text).Value = market;
+                command.Parameters.Add("@trade_date", NpgsqlDbType.Array | NpgsqlDbType.Date).Value = tradeDates;
+                command.Parameters.Add("@is_traded", NpgsqlDbType.Array | NpgsqlDbType.Integer).Value = isTradedValues;
+                command.Parameters.Add("@trade_session_date", NpgsqlDbType.Array | NpgsqlDbType.Date).Value = sessionDates;
+                command.Parameters.Add("@reason", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = reasons;
+                command.Parameters.Add("@moex_update_time", NpgsqlDbType.Array | NpgsqlDbType.Timestamp).Value = updateTimes;
+
+                await command.ExecuteNonQueryAsync(ct);
 
                 await transaction.CommitAsync(ct);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
@@ -115,11 +139,14 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             }
         }
 
-        private object ParseNullableDateOrDbNull(string? raw, string table, string field, string key)
+        // Значение уходит в массив параметров, поэтому пустота выражается пустым значением
+        // типа, а не признаком отсутствия для отдельной команды. Событие неудачного разбора
+        // и его поля прежние.
+        private DateOnly? ParseNullableDate(string? raw, string table, string field, string key)
         {
             if (string.IsNullOrWhiteSpace(raw))
             {
-                return DBNull.Value;
+                return null;
             }
 
             if (DateOnly.TryParse(raw, out DateOnly parsed))
@@ -128,7 +155,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             }
 
             MoexWriterLogMessages.DateParseFailed(_logger, table, field, key, raw);
-            return DBNull.Value;
+            return null;
         }
     }
 }
