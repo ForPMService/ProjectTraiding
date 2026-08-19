@@ -80,9 +80,11 @@ namespace ProjectTraiding.Moex.Infrastructure.Buffers
             if (initialCapacity > MaxBufferBytes)
                 initialCapacity = MaxBufferBytes;
 
-            using CancellationTokenSource timeoutCts = new(bodyReadTimeout);
-            using CancellationTokenSource linkedCts =
-                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+            // Один источник вместо двух: связанный с внешним токеном и со своим сроком.
+            // Различить собственный сторож от внешней отмены это не мешает — ниже.
+            using CancellationTokenSource bodyReadCts =
+                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            bodyReadCts.CancelAfter(bodyReadTimeout);
 
             byte[] arr = ArrayPool<byte>.Shared.Rent(initialCapacity);
             int position = 0;
@@ -110,7 +112,7 @@ namespace ProjectTraiding.Moex.Infrastructure.Buffers
                     }
 
                     int read = await stream.ReadAsync(
-                        arr.AsMemory(position, arr.Length - position), linkedCts.Token);
+                        arr.AsMemory(position, arr.Length - position), bodyReadCts.Token);
 
                     if (read == 0)
                         break; // фактический конец потока
@@ -120,7 +122,7 @@ namespace ProjectTraiding.Moex.Infrastructure.Buffers
 
                 return new RentedBuffer(position, arr);
             }
-            catch (OperationCanceledException ex) when (timeoutCts.IsCancellationRequested
+            catch (OperationCanceledException ex) when (bodyReadCts.IsCancellationRequested
                                                         && !cancellationToken.IsCancellationRequested)
             {
                 // Отмена именно по нашему сторожу тела, а не по внешнему токену.
