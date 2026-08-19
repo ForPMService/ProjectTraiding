@@ -7,8 +7,10 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
     /// <summary>EventId 180–189: writer-контур ClickHouse.</summary>
     public static partial class ClickHouseWriterLogMessages
     {
+        // Событие пишется на каждую пачку вставки и ни одной панелью не используется.
+        // На уровне сведений оно давало строку журнала на каждую вставку без читателя.
         [LoggerMessage(
-            EventId = 180, EventName = "ClickHouseWriteStarted", Level = LogLevel.Information,
+            EventId = 180, EventName = "ClickHouseWriteStarted", Level = LogLevel.Debug,
             Message = "ClickHouse write started: table={Table}, rows={RowCount}.")]
         public static partial void WriteStarted(ILogger logger, string table, int rowCount);
 
