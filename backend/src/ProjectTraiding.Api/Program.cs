@@ -7,6 +7,7 @@ using ProjectTraiding.Moex.Contracts.Serialization;
 using ProjectTraiding.Moex.Endpoints;
 using ProjectTraiding.Moex.Infrastructure.DependencyInjection;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
+using ProjectTraiding.Moex.Loading;
 using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using ProjectTraiding.Moex.StorageBase.Redis;
@@ -30,6 +31,13 @@ builder.Services.AddRedis(builder.Configuration);
 builder.Services.AddTransient<MoexInstrumentWriter>();
 builder.Services.AddTransient<CatalogEventPublisher>();
 builder.Services.AddTransient<MoexCalendarWriter>();
+builder.Services.AddTransient<MoexInstrumentBoardIntervalWriter>();
+builder.Services.AddTransient<MoexTradingPeriodWriter>();
+builder.Services.AddTransient<MoexTradingPeriodTypeWriter>();
+builder.Services.AddTransient<MoexFuturesExpirationWriter>();
+builder.Services.AddTransient<MoexSplitWriter>();
+builder.Services.AddTransient<MoexManualEventWriter>();
+builder.Services.AddTransient<MoexCalendarLoader>();
 // Поколение данных инструмента для токена дедупликации: один читатель на оба
 // потребителя — историческую загрузку и приём реального времени.
 builder.Services.AddSingleton<MoexDataGenerationReader>();
