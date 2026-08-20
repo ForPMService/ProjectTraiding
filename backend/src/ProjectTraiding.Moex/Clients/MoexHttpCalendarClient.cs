@@ -9,6 +9,7 @@ using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Parsing;
 using ProjectTraiding.Moex.Parsing.Errors;
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
 
@@ -165,7 +166,117 @@ namespace ProjectTraiding.Moex.Clients
             }
         }
 
-        
+        public async Task<List<CalendarOffDaysMarketDTO>> GetStockOffDays(
+            DateOnly from,
+            DateOnly till,
+            CancellationToken ct)
+        {
+            const string endpoint = "/calendars/stock.json";
+            Dictionary<string, string> queryParams = CreateDateRangeQuery(from, till, true);
+            using HttpResponseMessage response = await _transport.SendAsync(endpoint, queryParams, ct);
+            using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
+                response, _options.BodyReadTimeout, endpoint, ct);
+            try
+            {
+                return ParsingCalendarUtf8.ParseOffDaysMarket(rentedArr.Span);
+            }
+            catch (MoexSchemaMismatchException ex)
+            {
+                MoexLogMessages.ParseFailed(_logger, ex, endpoint, MoexErrorTypes.SchemaMismatch, ex.Message);
+                throw;
+            }
+        }
+
+        public async Task<List<CalendarOffDaysMarketDTO>> GetFuturesOffDays(
+            DateOnly from,
+            DateOnly till,
+            CancellationToken ct)
+        {
+            const string endpoint = "/calendars/futures.json";
+            Dictionary<string, string> queryParams = CreateDateRangeQuery(from, till, true);
+            using HttpResponseMessage response = await _transport.SendAsync(endpoint, queryParams, ct);
+            using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
+                response, _options.BodyReadTimeout, endpoint, ct);
+            try
+            {
+                return ParsingCalendarUtf8.ParseOffDaysMarket(rentedArr.Span);
+            }
+            catch (MoexSchemaMismatchException ex)
+            {
+                MoexLogMessages.ParseFailed(_logger, ex, endpoint, MoexErrorTypes.SchemaMismatch, ex.Message);
+                throw;
+            }
+        }
+
+        public async Task<(List<CalendarStockSessionDTO> Sessions, List<CalendarSessionTypeDTO> Types)>
+            GetStockSession(CancellationToken ct)
+        {
+            const string endpoint = "/calendars/stock/session.json";
+            using HttpResponseMessage response = await _transport.SendAsync(endpoint, cancellationToken: ct);
+            using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
+                response, _options.BodyReadTimeout, endpoint, ct);
+            try
+            {
+                return ParsingCalendarUtf8.ParseStockSession(rentedArr.Span);
+            }
+            catch (MoexSchemaMismatchException ex)
+            {
+                MoexLogMessages.ParseFailed(_logger, ex, endpoint, MoexErrorTypes.SchemaMismatch, ex.Message);
+                throw;
+            }
+        }
+
+        public async Task<(List<CalendarFuturesSessionDTO> Sessions, List<CalendarSessionTypeDTO> Types)>
+            GetFuturesSession(CancellationToken ct)
+        {
+            const string endpoint = "/calendars/futures/session.json";
+            using HttpResponseMessage response = await _transport.SendAsync(endpoint, cancellationToken: ct);
+            using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
+                response, _options.BodyReadTimeout, endpoint, ct);
+            try
+            {
+                return ParsingCalendarUtf8.ParseFuturesSession(rentedArr.Span);
+            }
+            catch (MoexSchemaMismatchException ex)
+            {
+                MoexLogMessages.ParseFailed(_logger, ex, endpoint, MoexErrorTypes.SchemaMismatch, ex.Message);
+                throw;
+            }
+        }
+
+        public async Task<(List<CalendarFortsContractDTO> Forts, List<CalendarOptionsSeriesDTO> Options)>
+            GetFuturesSecurities(DateOnly from, DateOnly till, CancellationToken ct)
+        {
+            const string endpoint = "/calendars/futures/securities.json";
+            Dictionary<string, string> queryParams = CreateDateRangeQuery(from, till, false);
+            using HttpResponseMessage response = await _transport.SendAsync(endpoint, queryParams, ct);
+            using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
+                response, _options.BodyReadTimeout, endpoint, ct);
+            try
+            {
+                return ParsingCalendarUtf8.ParseFuturesSecurities(rentedArr.Span);
+            }
+            catch (MoexSchemaMismatchException ex)
+            {
+                MoexLogMessages.ParseFailed(_logger, ex, endpoint, MoexErrorTypes.SchemaMismatch, ex.Message);
+                throw;
+            }
+        }
+
+        private static Dictionary<string, string> CreateDateRangeQuery(
+            DateOnly from,
+            DateOnly till,
+            bool showAllDays)
+        {
+            Dictionary<string, string> queryParams = new Dictionary<string, string>
+            {
+                ["from"] = from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                ["till"] = till.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            };
+            if (showAllDays)
+                queryParams["show_all_days"] = "1";
+            return queryParams;
+        }
 
     }
 }

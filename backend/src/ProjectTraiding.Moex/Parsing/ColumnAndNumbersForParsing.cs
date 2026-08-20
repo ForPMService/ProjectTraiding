@@ -71,6 +71,79 @@ namespace ProjectTraiding.Moex.Parsing
                 new(4, "updatetime"u8.ToArray()),
             });
 
+        public static readonly ExpectedSchema CalendarStockSessionSchema = new(
+            TotalColumns: 8,
+            RootKey: "session_schedule",
+            Columns: new ExpectedColumn[]
+            {
+                new(0, "tradedate"u8.ToArray()),
+                new(1, "tradingsession"u8.ToArray()),
+                new(2, "boardid"u8.ToArray()),
+                new(3, "secid"u8.ToArray()),
+                new(4, "type"u8.ToArray()),
+                new(5, "time_from"u8.ToArray()),
+                new(6, "time_till"u8.ToArray()),
+                new(7, "updatetime"u8.ToArray()),
+            });
+
+        public static readonly ExpectedSchema CalendarFuturesSessionSchema = new(
+            TotalColumns: 7,
+            RootKey: "session_schedule",
+            Columns: new ExpectedColumn[]
+            {
+                new(0, "trade_session_date"u8.ToArray()),
+                new(1, "boardid"u8.ToArray()),
+                new(2, "secid"u8.ToArray()),
+                new(3, "type"u8.ToArray()),
+                new(4, "time_from"u8.ToArray()),
+                new(5, "time_till"u8.ToArray()),
+                new(6, "updatetime"u8.ToArray()),
+            });
+
+        public static readonly ExpectedSchema CalendarSessionTypesSchema = new(
+            TotalColumns: 2,
+            RootKey: "session_schedule.types",
+            Columns: new ExpectedColumn[]
+            {
+                new(0, "type"u8.ToArray()),
+                new(1, "title"u8.ToArray()),
+            });
+
+        public static readonly ExpectedSchema CalendarFortsContractsSchema = new(
+            TotalColumns: 10,
+            RootKey: "forts",
+            Columns: new ExpectedColumn[]
+            {
+                new(0, "secid"u8.ToArray()),
+                new(1, "asset_code"u8.ToArray()),
+                new(2, "shortname"u8.ToArray()),
+                new(3, "exec_type"u8.ToArray()),
+                new(4, "contract_name"u8.ToArray()),
+                new(5, "expiration_date"u8.ToArray()),
+                new(6, "end_date"u8.ToArray()),
+                new(7, "expiration_type"u8.ToArray()),
+                new(8, "expiration_time"u8.ToArray()),
+                new(9, "weekend_session"u8.ToArray()),
+            });
+
+        public static readonly ExpectedSchema CalendarOptionsSeriesSchema = new(
+            TotalColumns: 11,
+            RootKey: "options",
+            Columns: new ExpectedColumn[]
+            {
+                new(0, "asset_type_name"u8.ToArray()),
+                new(1, "asset_code"u8.ToArray()),
+                new(2, "series_name"u8.ToArray()),
+                new(3, "series_type"u8.ToArray()),
+                new(4, "exec_type"u8.ToArray()),
+                new(5, "margin_style"u8.ToArray()),
+                new(6, "contract_name"u8.ToArray()),
+                new(7, "expiration_date"u8.ToArray()),
+                new(8, "expiration_type"u8.ToArray()),
+                new(9, "expiration_time"u8.ToArray()),
+                new(10, "weekend_session"u8.ToArray()),
+            });
+
         // ═══════════════════════════════════════════════════════════
         // Real-time — DataVersion (служебный блок версии данных)
         // Источник: raw fixtures orderbook-*-raw.json, trades-*-raw.json

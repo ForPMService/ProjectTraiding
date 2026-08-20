@@ -7,6 +7,7 @@ using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Parsing;
 using ProjectTraiding.Moex.Parsing.Errors;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 
 
@@ -15,6 +16,7 @@ namespace ProjectTraiding.Moex.Clients
     public class MoexHttpIssClient
     {
         private readonly MoexOptions _options;
+        private readonly ILogger<MoexHttpIssClient> _logger;
         private readonly MoexHttpTransport _transport;
 
         public MoexHttpIssClient(
@@ -23,6 +25,7 @@ namespace ProjectTraiding.Moex.Clients
             ILogger<MoexHttpIssClient> logger)
         {
             _options = options.Value;
+            _logger = logger;
             _transport = new MoexHttpTransport(
                 httpClient,
                 logger,
@@ -97,6 +100,78 @@ namespace ProjectTraiding.Moex.Clients
             {
                 MoexMetrics.RecordOperationError(
                     in operationTags, ex, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);
+                throw;
+            }
+        }
+
+        public async Task<List<EngineDailyTableDTO>> GetEngine(
+            string engine,
+            CancellationToken ct)
+        {
+            string endpoint = $"/engines/{engine}.json";
+            using HttpResponseMessage response = await _transport.SendAsync(
+                endpoint, cancellationToken: ct);
+            using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
+                response, _options.BodyReadTimeout, endpoint, ct);
+            try
+            {
+                return ParsingIssCalendarUtf8.ParseEngine(rentedArr.Span);
+            }
+            catch (MoexSchemaMismatchException ex)
+            {
+                MoexLogMessages.ParseFailed(
+                    _logger, ex, endpoint, MoexErrorTypes.SchemaMismatch, ex.Message);
+                throw;
+            }
+        }
+
+        public async Task<List<ListingIntervalDTO>> GetListing(
+            string engine,
+            string market,
+            string? status,
+            int limit,
+            int start,
+            CancellationToken ct)
+        {
+            string endpoint = $"/history/engines/{engine}/markets/{market}/listing.json";
+            Dictionary<string, string> queryParams = new Dictionary<string, string>
+            {
+                ["limit"] = limit.ToString(CultureInfo.InvariantCulture),
+                ["start"] = start.ToString(CultureInfo.InvariantCulture),
+            };
+            if (status is not null)
+                queryParams["status"] = status;
+
+            using HttpResponseMessage response = await _transport.SendAsync(endpoint, queryParams, ct);
+            using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
+                response, _options.BodyReadTimeout, endpoint, ct);
+            try
+            {
+                return ParsingIssCalendarUtf8.ParseListing(rentedArr.Span);
+            }
+            catch (MoexSchemaMismatchException ex)
+            {
+                MoexLogMessages.ParseFailed(
+                    _logger, ex, endpoint, MoexErrorTypes.SchemaMismatch, ex.Message);
+                throw;
+            }
+        }
+
+        public async Task<List<SplitDTO>> GetSplits(CancellationToken ct)
+        {
+            const string endpoint = "/statistics/engines/stock/splits.json";
+            using HttpResponseMessage response = await _transport.SendAsync(
+                endpoint, cancellationToken: ct);
+            using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
+                response, _options.BodyReadTimeout, endpoint, ct);
+            try
+            {
+                return ParsingIssCalendarUtf8.ParseSplits(rentedArr.Span);
+            }
+            catch (MoexSchemaMismatchException ex)
+            {
+                MoexLogMessages.ParseFailed(
+                    _logger, ex, endpoint, MoexErrorTypes.SchemaMismatch, ex.Message);
                 throw;
             }
         }
