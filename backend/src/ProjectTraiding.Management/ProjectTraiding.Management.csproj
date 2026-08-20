@@ -11,6 +11,9 @@
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
 	</ItemGroup>
 	<ItemGroup>
+		<ProjectReference Include="..\ProjectTraiding.Moex\ProjectTraiding.Moex.csproj" />
+	</ItemGroup>
+	<ItemGroup>
 		<Using Include="Microsoft.AspNetCore.Builder" />
 		<Using Include="Microsoft.AspNetCore.Http" />
 		<Using Include="Microsoft.AspNetCore.Routing" />
