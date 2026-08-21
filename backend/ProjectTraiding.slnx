@@ -5,6 +5,5 @@
     <Project Path="src/ProjectTraiding.Management/ProjectTraiding.Management.csproj" />
     <Project Path="src/ProjectTraiding.Moex/ProjectTraiding.Moex.csproj" />
     <Project Path="src/ProjectTraiding.Observability/ProjectTraiding.Observability.csproj" />
-    <Project Path="src/ProjectTraiding.Vitrine/ProjectTraiding.Vitrine.csproj" />
   </Folder>
 </Solution>

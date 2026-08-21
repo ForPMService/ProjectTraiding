@@ -11,6 +11,5 @@ namespace ProjectTraiding.Management.Contracts.Dto
         int StreamCursorsDeleted,
         int LoadTasksDeleted,
         int ClickHouseTablesCleared,
-        long RedisKeysDeleted,
         double ElapsedMs);
 }

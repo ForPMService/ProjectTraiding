@@ -27,7 +27,6 @@ namespace ProjectTraiding.Moex.Loading
         private readonly MoexLoadedRangeWriter _rangeWriter;
         private readonly MoexDataGenerationReader _generationReader;
         private readonly SpecLoadHandler _loader;
-        private readonly ProjectTraiding.Moex.StorageBase.Redis.LoadedRangeEventPublisher _rangeEventPublisher;
         private readonly ILogger<LoadRunner> _logger;
 
         public LoadRunner(
@@ -36,7 +35,6 @@ namespace ProjectTraiding.Moex.Loading
             MoexLoadedRangeWriter rangeWriter,
             MoexDataGenerationReader generationReader,
             SpecLoadHandler loader,
-            ProjectTraiding.Moex.StorageBase.Redis.LoadedRangeEventPublisher rangeEventPublisher,
             ILogger<LoadRunner> logger)
         {
             _taskReader = taskReader;
@@ -44,7 +42,6 @@ namespace ProjectTraiding.Moex.Loading
             _rangeWriter = rangeWriter;
             _generationReader = generationReader;
             _loader = loader;
-            _rangeEventPublisher = rangeEventPublisher;
             _logger = logger;
         }
 
@@ -195,9 +192,8 @@ namespace ProjectTraiding.Moex.Loading
                 outcome = MoexOutcomes.Success;
                 stopReasonForTelemetry = stopReason;
 
-                // Штатное полное покрытие: журнал результата, извещение потребителя, закрытие успехом.
+                // Штатное полное покрытие: журнал результата и закрытие успехом.
                 await _rangeWriter.UpsertAsync(task, summary.RowsRead, summary.LastToken, CancellationToken.None);
-                await _rangeEventPublisher.PublishChangedAsync(task.Secid);
                 await _taskWriter.MarkDoneAsync(taskId, summary.RowsRead, stopReason, summary.LastToken, CancellationToken.None);
 
                 return;

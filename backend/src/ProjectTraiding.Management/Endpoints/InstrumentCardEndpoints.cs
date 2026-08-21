@@ -3,7 +3,6 @@ using ProjectTraiding.Management.Contracts.Dto;
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Dto.Iss;
 using ProjectTraiding.Moex.StorageBase.Postgres;
-using ProjectTraiding.Moex.StorageBase.Redis;
 
 namespace ProjectTraiding.Management.Endpoints
 {
@@ -41,7 +40,6 @@ namespace ProjectTraiding.Management.Endpoints
                 MoexHttpIssClient issClient,
                 MoexHttpAlgClient algClient,
                 MoexInstrumentWriter instrumentWriter,
-                CatalogEventPublisher catalogEventPublisher,
                 CancellationToken ct) =>
             {
                 httpContext.Response.Headers.CacheControl = "no-store";
@@ -51,8 +49,6 @@ namespace ProjectTraiding.Management.Endpoints
                     await LoadStockInstrumentsAsync(issClient, instrumentWriter, ct),
                     await LoadFuturesInstrumentsAsync(algClient, instrumentWriter, ct)
                 ];
-                await catalogEventPublisher.PublishChangedAsync();
-
                 return Results.Json(results, ManagementJsonContext.Default.LoadResultDtoArray);
             });
 

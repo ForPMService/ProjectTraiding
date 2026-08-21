@@ -77,7 +77,6 @@ namespace ProjectTraiding.Management.Endpoints
                             StreamCursorsDeleted: outcome.StreamCursorsDeleted,
                             LoadTasksDeleted: outcome.LoadTasksDeleted,
                             ClickHouseTablesCleared: outcome.ClickHouseTablesCleared,
-                            RedisKeysDeleted: outcome.RedisKeysDeleted,
                             ElapsedMs: outcome.Elapsed.TotalMilliseconds),
                         ManagementJsonContext.Default.InstrumentDataDeleteResponse),
                 };

@@ -1,6 +1,5 @@
 using ProjectTraiding.Management.StorageBase.ClickHouse;
 using ProjectTraiding.Management.StorageBase.Postgres;
-using ProjectTraiding.Management.StorageBase.Redis;
 using System.Diagnostics;
 
 namespace ProjectTraiding.Management.Deletion
@@ -21,7 +20,6 @@ namespace ProjectTraiding.Management.Deletion
         int StreamCursorsDeleted,
         int LoadTasksDeleted,
         int ClickHouseTablesCleared,
-        long RedisKeysDeleted,
         TimeSpan Elapsed);
 
     /// <summary>
@@ -44,14 +42,10 @@ namespace ProjectTraiding.Management.Deletion
     /// снимается — но только если его поставил этот запуск. Чужую строку продолжение
     /// не трогает никогда.
     ///
-    /// ПОРЯДОК ХРАНИЛИЩ: ClickHouse → PostgreSQL → Redis.
+    /// ПОРЯДОК ХРАНИЛИЩ: ClickHouse → PostgreSQL.
     /// ClickHouse первым, потому что при обрыве между ним и PostgreSQL карта
     /// покрытия останется полной при отсутствующих данных, а не наоборот:
     /// пустая карта над живыми данными пустила бы повторную загрузку поверх них.
-    /// Redis последним, потому что ключ vitrine:loaded-ranges — кеш поверх
-    /// moex_loaded_ranges со сроком жизни в сутки, и сброс раньше базы даёт
-    /// восстановление старого покрытия при первом же обращении витрины.
-    ///
     /// ПРОДОЛЖЕНИЕ ПОСЛЕ ОБРЫВА. При обрыве задание остаётся в статусе 'started':
     /// очистка не завершена, новые загрузки запрещены. Продолжить его командой
     /// с resume = true — единственный способ довести удаление до конца, и он же
@@ -73,20 +67,17 @@ namespace ProjectTraiding.Management.Deletion
         private readonly InstrumentDeletionWriter _deletionWriter;
         private readonly InstrumentClickHouseDataDeleter _clickHouseDeleter;
         private readonly InstrumentPostgresDataDeleter _postgresDeleter;
-        private readonly InstrumentRedisDataDeleter _redisDeleter;
 
         public InstrumentDataDeletionRunner(
             InstrumentDeletionGuardReader guard,
             InstrumentDeletionWriter deletionWriter,
             InstrumentClickHouseDataDeleter clickHouseDeleter,
-            InstrumentPostgresDataDeleter postgresDeleter,
-            InstrumentRedisDataDeleter redisDeleter)
+            InstrumentPostgresDataDeleter postgresDeleter)
         {
             _guard = guard;
             _deletionWriter = deletionWriter;
             _clickHouseDeleter = clickHouseDeleter;
             _postgresDeleter = postgresDeleter;
-            _redisDeleter = redisDeleter;
         }
 
         public async Task<DeletionOutcome> RunAsync(
@@ -139,7 +130,6 @@ namespace ProjectTraiding.Management.Deletion
 
             int tablesCleared = await _clickHouseDeleter.DeleteAsync(secid, ct);
             PostgresDeleteCounts postgres = await _postgresDeleter.DeleteAsync(secid, ct);
-            long redisKeysDeleted = await _redisDeleter.DeleteAsync(secid, ct);
 
             await _deletionWriter.MarkFinishedAsync(deletionId, ct);
 
@@ -149,7 +139,6 @@ namespace ProjectTraiding.Management.Deletion
                 StreamCursorsDeleted: postgres.StreamCursorsDeleted,
                 LoadTasksDeleted: postgres.LoadTasksDeleted,
                 ClickHouseTablesCleared: tablesCleared,
-                RedisKeysDeleted: redisKeysDeleted,
                 Elapsed: Stopwatch.GetElapsedTime(startTs));
         }
 
@@ -160,7 +149,6 @@ namespace ProjectTraiding.Management.Deletion
                 StreamCursorsDeleted: 0,
                 LoadTasksDeleted: 0,
                 ClickHouseTablesCleared: 0,
-                RedisKeysDeleted: 0,
                 Elapsed: Stopwatch.GetElapsedTime(startTs));
     }
 }

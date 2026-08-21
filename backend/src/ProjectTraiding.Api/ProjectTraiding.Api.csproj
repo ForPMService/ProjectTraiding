@@ -12,7 +12,6 @@
     <ProjectReference Include="..\ProjectTraiding.Moex\ProjectTraiding.Moex.csproj" />
     <ProjectReference Include="..\ProjectTraiding.Observability\ProjectTraiding.Observability.csproj" />
     <ProjectReference Include="..\ProjectTraiding.Management\ProjectTraiding.Management.csproj" />
-    <ProjectReference Include="..\ProjectTraiding.Vitrine\ProjectTraiding.Vitrine.csproj" />
     <ProjectReference Include="..\ProjectTraiding.Diagnostics\ProjectTraiding.Diagnostics.csproj" />
   </ItemGroup>
   <ItemGroup>

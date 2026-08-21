@@ -4,8 +4,7 @@ using Microsoft.AspNetCore.RateLimiting;
 namespace ProjectTraiding.Api.Infrastructure
 {
     /// <summary>
-    /// Ограничитель частоты входящих запросов. Две политики маркерного ведра:
-    /// витрина (частый публичный поток) и управление (редкие команды оператора).
+    /// Ограничитель частоты входящих запросов для команд управления.
     /// Ёмкость — прощаемый всплеск (загрузка страницы плюс сетевые повторы);
     /// пополнение — устойчивый темп. Очередь отключена: пустое ведро — сразу 429,
     /// без удержания соединения. Ключ — адрес клиента, у каждого своё ведро.
@@ -13,18 +12,12 @@ namespace ProjectTraiding.Api.Infrastructure
     /// </summary>
     public static class RateLimiting
     {
-        public const string VitrinePolicy = "vitrine";
         public const string ManagementPolicy = "management";
 
         public static void AddProjectTraidingRateLimiter(this IServiceCollection services)
         {
             services.AddRateLimiter(options =>
             {
-                options.AddPolicy(VitrinePolicy, PartitionByClient(
-                    tokenLimit: 400,
-                    tokensPerPeriod: 1,
-                    replenishmentSeconds: 2));
-
                 options.AddPolicy(ManagementPolicy, PartitionByClient(
                     tokenLimit: 300,
                     tokensPerPeriod: 1,
@@ -69,17 +62,14 @@ namespace ProjectTraiding.Api.Infrastructure
             HttpContext http = context.HttpContext;
             http.Response.StatusCode = StatusCodes.Status429TooManyRequests;
 
-            string group = http.Request.Path.StartsWithSegments("/management")
-                ? ManagementPolicy
-                : VitrinePolicy;
-
             ILogger logger = http.RequestServices
                 .GetRequiredService<ILoggerFactory>()
                 .CreateLogger("ProjectTraiding.Api.RateLimiting");
-            ApiRateLimitLogMessages.RequestRejected(logger, group, http.Request.Path.Value ?? "unknown");
+            ApiRateLimitLogMessages.RequestRejected(
+                logger, ManagementPolicy, http.Request.Path.Value ?? "unknown");
 
             ApiMetrics.RateLimitRejected.Add(1,
-                new KeyValuePair<string, object?>("group", group));
+                new KeyValuePair<string, object?>("group", ManagementPolicy));
 
             return ValueTask.CompletedTask;
         }

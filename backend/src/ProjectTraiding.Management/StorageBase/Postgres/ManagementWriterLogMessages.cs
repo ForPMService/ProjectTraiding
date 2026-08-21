@@ -108,10 +108,5 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
         public static partial void InstrumentClickHouseDataDeleted(
             ILogger logger, string secid, int tablesCleared, TimeSpan elapsed);
 
-        [LoggerMessage(
-            EventId = 256, EventName = "MgmtInstrumentRedisDataDeleted", Level = LogLevel.Warning,
-            Message = "Management instrument redis data deleted: secid={Secid}, keys={KeysDeleted}, time={Elapsed}.")]
-        public static partial void InstrumentRedisDataDeleted(
-            ILogger logger, string secid, long keysDeleted, TimeSpan elapsed);
     }
 }
