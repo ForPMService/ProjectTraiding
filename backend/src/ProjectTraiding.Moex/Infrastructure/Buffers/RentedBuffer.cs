@@ -27,6 +27,8 @@ namespace ProjectTraiding.Moex.Infrastructure.Buffers
 
         public ReadOnlySpan<byte> Span => _buffer.AsSpan(0, _length);
 
+        public ReadOnlyMemory<byte> Memory => _buffer.AsMemory(0, _length);
+
         public void Dispose()
         {
             if (_buffer != null)
