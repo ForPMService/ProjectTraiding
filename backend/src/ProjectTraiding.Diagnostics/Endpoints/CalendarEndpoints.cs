@@ -107,6 +107,16 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                     "/history/engines/stock/markets/shares/listing.json", ct);
             });
 
+            diagnosticsGroup.MapGet("/raw/history/futures/listing", async (
+                HttpRequest request,
+                MoexHttpIssClient issClient,
+                CancellationToken ct) =>
+            {
+                return await ExecuteIssRawAsync(
+                    "listing", "futures", request, issClient,
+                    "/history/engines/futures/markets/forts/listing.json", ct);
+            });
+
             diagnosticsGroup.MapGet("/raw/history/stock/listing/{board}", async (
                 string board,
                 HttpRequest request,
