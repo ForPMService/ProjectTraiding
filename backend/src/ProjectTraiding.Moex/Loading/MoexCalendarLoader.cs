@@ -53,42 +53,35 @@ namespace ProjectTraiding.Moex.Loading
             Dictionary<DateOnly, EngineDayTimes> futuresTimes = BuildEngineTimes(futuresEngineRows, "futures");
             List<CalendarDayWriteDTO> output = new List<CalendarDayWriteDTO>();
 
-            int year = dateFrom.Year;
-            while (year <= dateTill.Year)
+            List<(DateOnly From, DateOnly Till)> ranges = SplitByYears(dateFrom, dateTill);
+            for (int rangeIndex = 0; rangeIndex < ranges.Count; rangeIndex++)
             {
-                DateOnly yearFrom = year == dateFrom.Year
-                    ? dateFrom
-                    : new DateOnly(year, 1, 1);
-                DateOnly yearTill = year == dateTill.Year
-                    ? dateTill
-                    : new DateOnly(year, 12, 31);
+                (DateOnly From, DateOnly Till) range = ranges[rangeIndex];
 
                 List<CalendarOffDaysMarketDTO> stockRows =
-                    await _calendarClient.GetStockOffDays(yearFrom, yearTill, ct);
+                    await _calendarClient.GetStockOffDays(range.From, range.Till, ct);
                 List<CalendarOffDaysMarketDTO> futuresRows =
-                    await _calendarClient.GetFuturesOffDays(yearFrom, yearTill, ct);
+                    await _calendarClient.GetFuturesOffDays(range.From, range.Till, ct);
                 Dictionary<DateOnly, CalendarOffDaysMarketDTO> stockActual =
                     BuildActualDays(stockRows, "stock");
                 Dictionary<DateOnly, CalendarOffDaysMarketDTO> futuresActual =
                     BuildActualDays(futuresRows, "futures");
 
-                DateOnly date = yearFrom;
-                while (date <= yearTill)
+                DateOnly date = range.From;
+                while (date <= range.Till)
                 {
                     CalendarOffDaysMarketDTO? stockDay;
                     CalendarOffDaysMarketDTO? futuresDay;
                     bool hasStockDay = stockActual.TryGetValue(date, out stockDay);
                     bool hasFuturesDay = futuresActual.TryGetValue(date, out futuresDay);
 
-                    output.Add(CreateStockDay(
-                        date, hasStockDay ? stockDay : null,
+                    output.Add(CreateDay(
+                        date, "stock", hasStockDay ? stockDay : null,
                         hasFuturesDay ? futuresDay : null, stockTimes));
-                    output.Add(CreateFuturesDay(
-                        date, hasFuturesDay ? futuresDay : null, futuresTimes));
+                    output.Add(CreateDay(
+                        date, "futures", hasFuturesDay ? futuresDay : null, null, futuresTimes));
                     date = date.AddDays(1);
                 }
-
-                year++;
             }
 
             DbWriteResult result = await _calendarWriter.UpsertDaysAsync(output, ct);
@@ -139,18 +132,12 @@ namespace ProjectTraiding.Moex.Loading
             ValidateRange(dateFrom, dateTill);
             List<FuturesExpirationDTO> expirations = new List<FuturesExpirationDTO>();
 
-            int year = dateFrom.Year;
-            while (year <= dateTill.Year)
+            List<(DateOnly From, DateOnly Till)> ranges = SplitByYears(dateFrom, dateTill);
+            for (int rangeIndex = 0; rangeIndex < ranges.Count; rangeIndex++)
             {
-                DateOnly yearFrom = year == dateFrom.Year
-                    ? dateFrom
-                    : new DateOnly(year, 1, 1);
-                DateOnly yearTill = year == dateTill.Year
-                    ? dateTill
-                    : new DateOnly(year, 12, 31);
+                (DateOnly From, DateOnly Till) range = ranges[rangeIndex];
                 expirations.AddRange(
-                    await _calendarClient.GetFuturesSecurities(yearFrom, yearTill, ct));
-                year++;
+                    await _calendarClient.GetFuturesSecurities(range.From, range.Till, ct));
             }
 
             DbWriteResult result = await _expirationWriter.ReplaceRangeAsync(
@@ -230,10 +217,11 @@ namespace ProjectTraiding.Moex.Loading
             return result;
         }
 
-        private static CalendarDayWriteDTO CreateStockDay(
+        private static CalendarDayWriteDTO CreateDay(
             DateOnly date,
-            CalendarOffDaysMarketDTO? stockDay,
-            CalendarOffDaysMarketDTO? futuresDay,
+            string market,
+            CalendarOffDaysMarketDTO? ownDay,
+            CalendarOffDaysMarketDTO? borrowedDay,
             Dictionary<DateOnly, EngineDayTimes> times)
         {
             int isTraded;
@@ -241,17 +229,17 @@ namespace ProjectTraiding.Moex.Loading
             string? reason = null;
             string dataSource;
             DateTime? updateTime = null;
-            if (stockDay is not null)
+            if (ownDay is not null)
             {
-                isTraded = RequireIsTraded(stockDay, "stock");
-                tradeSessionDate = stockDay.TradeSessionDate;
-                reason = stockDay.Reason;
+                isTraded = RequireIsTraded(ownDay, market);
+                tradeSessionDate = ownDay.TradeSessionDate;
+                reason = ownDay.Reason;
                 dataSource = "calendar";
-                updateTime = stockDay.UpdateTime;
+                updateTime = ownDay.UpdateTime;
             }
-            else if (futuresDay is not null)
+            else if (borrowedDay is not null)
             {
-                isTraded = RequireIsTraded(futuresDay, "futures");
+                isTraded = RequireIsTraded(borrowedDay, "futures");
                 dataSource = "calendar_futures";
             }
             else
@@ -265,7 +253,7 @@ namespace ProjectTraiding.Moex.Loading
             return new CalendarDayWriteDTO
             {
                 TradeDate = date,
-                Market = "stock",
+                Market = market,
                 IsTraded = isTraded,
                 TradeSessionDate = tradeSessionDate,
                 Reason = reason,
@@ -276,44 +264,20 @@ namespace ProjectTraiding.Moex.Loading
             };
         }
 
-        private static CalendarDayWriteDTO CreateFuturesDay(
-            DateOnly date,
-            CalendarOffDaysMarketDTO? futuresDay,
-            Dictionary<DateOnly, EngineDayTimes> times)
+        private static List<(DateOnly From, DateOnly Till)> SplitByYears(
+            DateOnly dateFrom,
+            DateOnly dateTill)
         {
-            int isTraded;
-            DateOnly? tradeSessionDate = null;
-            string? reason = null;
-            string dataSource;
-            DateTime? updateTime = null;
-            if (futuresDay is not null)
+            List<(DateOnly From, DateOnly Till)> ranges = new List<(DateOnly, DateOnly)>();
+            int year = dateFrom.Year;
+            while (year <= dateTill.Year)
             {
-                isTraded = RequireIsTraded(futuresDay, "futures");
-                tradeSessionDate = futuresDay.TradeSessionDate;
-                reason = futuresDay.Reason;
-                dataSource = "calendar";
-                updateTime = futuresDay.UpdateTime;
+                ranges.Add((
+                    year == dateFrom.Year ? dateFrom : new DateOnly(year, 1, 1),
+                    year == dateTill.Year ? dateTill : new DateOnly(year, 12, 31)));
+                year++;
             }
-            else
-            {
-                isTraded = IsWeekday(date) ? 1 : 0;
-                dataSource = "weekday_rule";
-            }
-
-            EngineDayTimes engineTimes;
-            times.TryGetValue(date, out engineTimes);
-            return new CalendarDayWriteDTO
-            {
-                TradeDate = date,
-                Market = "futures",
-                IsTraded = isTraded,
-                TradeSessionDate = tradeSessionDate,
-                Reason = reason,
-                StartTime = engineTimes.StartTime,
-                StopTime = engineTimes.StopTime,
-                DataSource = dataSource,
-                MoexUpdateTime = updateTime,
-            };
+            return ranges;
         }
 
         private static void AppendIntervals(
