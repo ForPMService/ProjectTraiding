@@ -172,19 +172,9 @@ namespace ProjectTraiding.Moex.Clients
             CancellationToken ct)
         {
             const string endpoint = "/calendars/stock.json";
-            Dictionary<string, string> queryParams = CreateDateRangeQuery(from, till, true);
-            using HttpResponseMessage response = await _transport.SendAsync(endpoint, queryParams, ct);
-            using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
-                response, _options.BodyReadTimeout, endpoint, ct);
-            try
-            {
-                return ParsingCalendar.ParseOffDaysMarket(rentedArr.Memory);
-            }
-            catch (MoexSchemaMismatchException ex)
-            {
-                MoexLogMessages.ParseFailed(_logger, ex, endpoint, MoexErrorTypes.SchemaMismatch, ex.Message);
-                throw;
-            }
+            using RentedBuffer buffer = await RentAsync(
+                endpoint, CreateDateRangeQuery(from, till, true), ct);
+            return ParsingCalendar.ParseOffDaysMarket(buffer.Memory);
         }
 
         public async Task<List<CalendarOffDaysMarketDTO>> GetFuturesOffDays(
@@ -193,38 +183,28 @@ namespace ProjectTraiding.Moex.Clients
             CancellationToken ct)
         {
             const string endpoint = "/calendars/futures.json";
-            Dictionary<string, string> queryParams = CreateDateRangeQuery(from, till, true);
-            using HttpResponseMessage response = await _transport.SendAsync(endpoint, queryParams, ct);
-            using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
-                response, _options.BodyReadTimeout, endpoint, ct);
-            try
-            {
-                return ParsingCalendar.ParseOffDaysMarket(rentedArr.Memory);
-            }
-            catch (MoexSchemaMismatchException ex)
-            {
-                MoexLogMessages.ParseFailed(_logger, ex, endpoint, MoexErrorTypes.SchemaMismatch, ex.Message);
-                throw;
-            }
+            using RentedBuffer buffer = await RentAsync(
+                endpoint, CreateDateRangeQuery(from, till, true), ct);
+            return ParsingCalendar.ParseOffDaysMarket(buffer.Memory);
         }
 
         public async Task<List<FuturesExpirationDTO>>
             GetFuturesSecurities(DateOnly from, DateOnly till, CancellationToken ct)
         {
             const string endpoint = "/calendars/futures/securities.json";
-            Dictionary<string, string> queryParams = CreateDateRangeQuery(from, till, false);
+            using RentedBuffer buffer = await RentAsync(
+                endpoint, CreateDateRangeQuery(from, till, false), ct);
+            return ParsingCalendar.ParseFuturesSecurities(buffer.Memory);
+        }
+
+        private async Task<RentedBuffer> RentAsync(
+            string endpoint,
+            Dictionary<string, string>? queryParams,
+            CancellationToken ct)
+        {
             using HttpResponseMessage response = await _transport.SendAsync(endpoint, queryParams, ct);
-            using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
+            return await RentedBuffer.RentFromResponseAsync(
                 response, _options.BodyReadTimeout, endpoint, ct);
-            try
-            {
-                return ParsingCalendar.ParseFuturesSecurities(rentedArr.Memory);
-            }
-            catch (MoexSchemaMismatchException ex)
-            {
-                MoexLogMessages.ParseFailed(_logger, ex, endpoint, MoexErrorTypes.SchemaMismatch, ex.Message);
-                throw;
-            }
         }
 
         private static Dictionary<string, string> CreateDateRangeQuery(
