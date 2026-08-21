@@ -366,6 +366,8 @@ namespace ProjectTraiding.Moex.Loading
                 ListingIntervalDTO row = source[index];
                 if (string.IsNullOrWhiteSpace(row.SecId) || string.IsNullOrWhiteSpace(row.BoardId))
                     throw new InvalidOperationException($"Пустая пара secid/boardid в listing ({market}).");
+                if (string.IsNullOrWhiteSpace(row.HistoryFrom))
+                    continue;
                 InstrumentBoardKey key = new InstrumentBoardKey(row.SecId, row.BoardId);
                 output.Add(new InstrumentBoardIntervalDTO
                 {

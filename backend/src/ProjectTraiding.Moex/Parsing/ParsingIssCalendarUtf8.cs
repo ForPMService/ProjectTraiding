@@ -48,7 +48,7 @@ namespace ProjectTraiding.Moex.Parsing
 
         public static List<ListingIntervalDTO> ParseListing(ReadOnlySpan<byte> jsonBytes)
         {
-            const string rootKey = "listing";
+            const string rootKey = "securities";
             List<ListingIntervalDTO> result = new List<ListingIntervalDTO>();
             Utf8JsonReader reader = new Utf8JsonReader(jsonBytes);
             ParseHelpersUtf8.SkipToRootObject(ref reader, rootKey);
