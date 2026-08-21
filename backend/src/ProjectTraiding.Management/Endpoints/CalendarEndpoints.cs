@@ -1,6 +1,7 @@
 using ProjectTraiding.Management.Contracts;
 using ProjectTraiding.Management.Contracts.Dto;
 using ProjectTraiding.Moex.Contracts.Dto.Calendar;
+using ProjectTraiding.Moex.Infrastructure;
 using ProjectTraiding.Moex.Loading;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 
@@ -76,8 +77,7 @@ namespace ProjectTraiding.Management.Endpoints
             CalendarLoadRequest request)
         {
             DateOnly dateFrom = request.DateFrom ?? MoexCalendarLoader.GetDefaultDateFrom();
-            DateOnly dateTill = request.DateTill
-                ?? DateOnly.FromDateTime(DateTime.UtcNow + TimeSpan.FromHours(3));
+            DateOnly dateTill = request.DateTill ?? MoexTime.Today;
             return (dateFrom, dateTill);
         }
 
