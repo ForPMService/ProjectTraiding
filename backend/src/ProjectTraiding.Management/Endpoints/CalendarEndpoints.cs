@@ -8,8 +8,6 @@ namespace ProjectTraiding.Management.Endpoints
 {
     public static class CalendarEndpoints
     {
-        private const string DeferredAlgorithmMessage = "алгоритм выносится в отдельное задание";
-
         public static IEndpointRouteBuilder MapCalendarEndpoints(this IEndpointRouteBuilder routes)
         {
             routes.MapPost("/management/calendar/days", async (
@@ -51,18 +49,6 @@ namespace ProjectTraiding.Management.Endpoints
                 int rowsWritten = await loader.LoadSplitsAsync(ct);
                 return CalendarResponse(rowsWritten);
             });
-
-            routes.MapPost("/management/calendar/bounds/recalc", () =>
-                Results.Text(
-                    DeferredAlgorithmMessage,
-                    "text/plain",
-                    statusCode: StatusCodes.Status501NotImplemented));
-
-            routes.MapPost("/management/calendar/verify", () =>
-                Results.Text(
-                    DeferredAlgorithmMessage,
-                    "text/plain",
-                    statusCode: StatusCodes.Status501NotImplemented));
 
             routes.MapPost("/management/calendar/days/override", async (
                 CalendarDayOverrideRequest request,
