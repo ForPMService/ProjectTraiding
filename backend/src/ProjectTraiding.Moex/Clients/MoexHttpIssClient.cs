@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ProjectTraiding.Moex.Contracts.Dto.Calendar;
 using ProjectTraiding.Moex.Contracts.Dto.Iss;
 using ProjectTraiding.Moex.Infrastructure.Buffers;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
@@ -115,7 +116,7 @@ namespace ProjectTraiding.Moex.Clients
                 response, _options.BodyReadTimeout, endpoint, ct);
             try
             {
-                return ParsingIssCalendarUtf8.ParseEngine(rentedArr.Span);
+                return ParsingIssCalendar.ParseEngine(rentedArr.Memory);
             }
             catch (MoexSchemaMismatchException ex)
             {
@@ -147,7 +148,7 @@ namespace ProjectTraiding.Moex.Clients
                 response, _options.BodyReadTimeout, endpoint, ct);
             try
             {
-                return ParsingIssCalendarUtf8.ParseListing(rentedArr.Span);
+                return ParsingIssCalendar.ParseListing(rentedArr.Memory);
             }
             catch (MoexSchemaMismatchException ex)
             {
@@ -157,7 +158,7 @@ namespace ProjectTraiding.Moex.Clients
             }
         }
 
-        public async Task<List<SplitDTO>> GetSplits(CancellationToken ct)
+        public async Task<List<SplitWriteDTO>> GetSplits(CancellationToken ct)
         {
             const string endpoint = "/statistics/engines/stock/splits.json";
             using HttpResponseMessage response = await _transport.SendAsync(
@@ -166,7 +167,7 @@ namespace ProjectTraiding.Moex.Clients
                 response, _options.BodyReadTimeout, endpoint, ct);
             try
             {
-                return ParsingIssCalendarUtf8.ParseSplits(rentedArr.Span);
+                return ParsingIssCalendar.ParseSplits(rentedArr.Memory);
             }
             catch (MoexSchemaMismatchException ex)
             {

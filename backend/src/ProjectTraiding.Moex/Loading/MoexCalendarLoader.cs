@@ -2,7 +2,6 @@ using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Dto.Calendar;
 using ProjectTraiding.Moex.Contracts.Dto.Iss;
 using ProjectTraiding.Moex.StorageBase.Postgres;
-using System.Globalization;
 
 namespace ProjectTraiding.Moex.Loading
 {
@@ -161,33 +160,19 @@ namespace ProjectTraiding.Moex.Loading
 
         public async Task<int> LoadSplitsAsync(CancellationToken ct)
         {
-            List<SplitDTO> sourceRows = await _issClient.GetSplits(ct);
-            if (sourceRows.Count == 0)
+            List<SplitWriteDTO> splits = await _issClient.GetSplits(ct);
+            if (splits.Count == 0)
                 return 0;
 
-            List<SplitWriteDTO> splits = new List<SplitWriteDTO>(sourceRows.Count);
             DateOnly minDate = DateOnly.MaxValue;
             DateOnly maxDate = DateOnly.MinValue;
-            for (int index = 0; index < sourceRows.Count; index++)
+            for (int index = 0; index < splits.Count; index++)
             {
-                SplitDTO row = sourceRows[index];
-                if (string.IsNullOrWhiteSpace(row.SecId))
-                    throw new InvalidOperationException("Пустой secid в блоке splits.");
-                if (row.BeforeQty is null || row.AfterQty is null)
-                    throw new InvalidOperationException($"Пустое отношение дробления у {row.SecId}.");
-                DateOnly tradeDate = ParseRequiredDate(
-                    row.TradeDate, "splits.tradedate", row.SecId);
+                DateOnly tradeDate = splits[index].TradeDate;
                 if (tradeDate < minDate)
                     minDate = tradeDate;
                 if (tradeDate > maxDate)
                     maxDate = tradeDate;
-                splits.Add(new SplitWriteDTO
-                {
-                    TradeDate = tradeDate,
-                    SecId = row.SecId,
-                    BeforeQty = row.BeforeQty.Value,
-                    AfterQty = row.AfterQty.Value,
-                });
             }
 
             DbWriteResult result = await _splitWriter.ReplaceRangeAsync(
@@ -240,10 +225,7 @@ namespace ProjectTraiding.Moex.Loading
             for (int index = 0; index < rows.Count; index++)
             {
                 EngineDailyTableDTO row = rows[index];
-                DateOnly date = ParseRequiredDate(row.TradeDate, $"dailytable.{market}.date", market);
-                result[date] = new EngineDayTimes(
-                    ParseNullableTime(row.StartTime, $"dailytable.{market}.start_time", date),
-                    ParseNullableTime(row.StopTime, $"dailytable.{market}.stop_time", date));
+                result[row.TradeDate] = new EngineDayTimes(row.StartTime, row.StopTime);
             }
             return result;
         }
@@ -343,9 +325,7 @@ namespace ProjectTraiding.Moex.Loading
             for (int index = 0; index < source.Count; index++)
             {
                 ListingIntervalDTO row = source[index];
-                if (string.IsNullOrWhiteSpace(row.SecId) || string.IsNullOrWhiteSpace(row.BoardId))
-                    throw new InvalidOperationException($"Пустая пара secid/boardid в listing ({market}).");
-                if (string.IsNullOrWhiteSpace(row.HistoryFrom))
+                if (row.HistoryFrom is null)
                     continue;
                 InstrumentBoardKey key = new InstrumentBoardKey(row.SecId, row.BoardId);
                 output.Add(new InstrumentBoardIntervalDTO
@@ -353,10 +333,8 @@ namespace ProjectTraiding.Moex.Loading
                     Market = market,
                     SecId = row.SecId,
                     BoardId = row.BoardId,
-                    ValidFrom = ParseRequiredDate(row.HistoryFrom, "listing.history_from", row.SecId),
-                    ValidTill = active.Contains(key)
-                        ? null
-                        : ParseNullableDate(row.HistoryTill, "listing.history_till", row.SecId),
+                    ValidFrom = row.HistoryFrom.Value,
+                    ValidTill = active.Contains(key) ? null : row.HistoryTill,
                 });
             }
         }
@@ -366,44 +344,6 @@ namespace ProjectTraiding.Moex.Loading
             if (row.IsTraded is null)
                 throw new InvalidOperationException($"Пустой is_traded в календаре {market}.");
             return row.IsTraded.Value;
-        }
-
-        private static DateOnly ParseRequiredDate(string? value, string field, string key)
-        {
-            if (value is not null
-                && DateOnly.TryParseExact(
-                    value, "yyyy-MM-dd", CultureInfo.InvariantCulture,
-                    DateTimeStyles.None, out DateOnly parsed))
-            {
-                return parsed;
-            }
-            throw new InvalidOperationException($"Некорректная дата {field} у {key}: '{value}'.");
-        }
-
-        private static DateOnly? ParseNullableDate(string? value, string field, string key)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-                return null;
-            return ParseRequiredDate(value, field, key);
-        }
-
-        private static TimeOnly ParseRequiredTime(string? value, string field, string key)
-        {
-            if (value is not null
-                && TimeOnly.TryParseExact(
-                    value, "HH:mm:ss", CultureInfo.InvariantCulture,
-                    DateTimeStyles.None, out TimeOnly parsed))
-            {
-                return parsed;
-            }
-            throw new InvalidOperationException($"Некорректное время {field} у {key}: '{value}'.");
-        }
-
-        private static TimeOnly? ParseNullableTime(string? value, string field, object key)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-                return null;
-            return ParseRequiredTime(value, field, key.ToString() ?? "?");
         }
 
         private static bool IsWeekday(DateOnly date)
