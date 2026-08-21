@@ -19,7 +19,6 @@ namespace ProjectTraiding.Management.Contracts
     [JsonSerializable(typeof(InstrumentDataDeleteResponse))]
     [JsonSerializable(typeof(CalendarLoadRequest))]
     [JsonSerializable(typeof(CalendarDayOverrideRequest))]
-    [JsonSerializable(typeof(ManualEventCreateRequest))]
     [JsonSerializable(typeof(CalendarOperationResponse))]
     public partial class ManagementJsonContext : JsonSerializerContext;
     

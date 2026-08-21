@@ -40,17 +40,4 @@ namespace ProjectTraiding.Moex.Contracts.Dto.Calendar
         public int AfterQty { get; init; }
     }
 
-    public record ManualEventWriteDTO
-    {
-        public string SecId { get; init; } = string.Empty;
-        public string EventType { get; init; } = string.Empty;
-        public DateOnly EventDate { get; init; }
-        public DateOnly KnownFrom { get; init; }
-        public DateOnly? RecordDate { get; init; }
-        public DateOnly? LastTradeDate { get; init; }
-        public DateOnly? PaymentDate { get; init; }
-        public decimal? Amount { get; init; }
-        public string? Currency { get; init; }
-        public string? SourceNote { get; init; }
-    }
 }

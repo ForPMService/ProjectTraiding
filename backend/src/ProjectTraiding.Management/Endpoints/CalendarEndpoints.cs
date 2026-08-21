@@ -77,31 +77,6 @@ namespace ProjectTraiding.Management.Endpoints
                 return CalendarResponse(rowsWritten);
             });
 
-            routes.MapPost("/management/events", async (
-                ManualEventCreateRequest request,
-                MoexManualEventWriter writer,
-                CancellationToken ct) =>
-            {
-                string? validationError = ValidateManualEvent(request);
-                if (validationError is not null)
-                    return Results.BadRequest(validationError);
-                ManualEventWriteDTO manualEvent = new ManualEventWriteDTO
-                {
-                    SecId = request.SecId!,
-                    EventType = request.EventType!,
-                    EventDate = request.EventDate!.Value,
-                    KnownFrom = request.KnownFrom!.Value,
-                    RecordDate = request.RecordDate,
-                    LastTradeDate = request.LastTradeDate,
-                    PaymentDate = request.PaymentDate,
-                    Amount = request.Amount,
-                    Currency = request.Currency,
-                    SourceNote = request.SourceNote,
-                };
-                int rowsWritten = await writer.InsertAsync(manualEvent, ct);
-                return CalendarResponse(rowsWritten);
-            });
-
             return routes;
         }
 
@@ -131,22 +106,5 @@ namespace ProjectTraiding.Management.Endpoints
             return null;
         }
 
-        private static string? ValidateManualEvent(ManualEventCreateRequest request)
-        {
-            if (string.IsNullOrWhiteSpace(request.SecId))
-                return "secid обязателен";
-            if (request.EventType != "dividend"
-                && request.EventType != "meeting"
-                && request.EventType != "issue"
-                && request.EventType != "delisting_announced")
-            {
-                return "eventType должен быть dividend, meeting, issue или delisting_announced";
-            }
-            if (request.EventDate is null)
-                return "eventDate обязателен";
-            if (request.KnownFrom is null)
-                return "knownFrom обязателен";
-            return null;
-        }
     }
 }
