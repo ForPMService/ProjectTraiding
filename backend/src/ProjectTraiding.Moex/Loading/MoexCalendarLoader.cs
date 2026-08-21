@@ -18,8 +18,6 @@ namespace ProjectTraiding.Moex.Loading
         private readonly MoexInstrumentBoardIntervalWriter _intervalWriter;
         private readonly MoexFuturesExpirationWriter _expirationWriter;
         private readonly MoexSplitWriter _splitWriter;
-        private readonly MoexTradingPeriodWriter _periodWriter;
-        private readonly MoexTradingPeriodTypeWriter _periodTypeWriter;
 
         public MoexCalendarLoader(
             MoexHttpCalendarClient calendarClient,
@@ -28,9 +26,7 @@ namespace ProjectTraiding.Moex.Loading
             MoexCalendarWriter calendarWriter,
             MoexInstrumentBoardIntervalWriter intervalWriter,
             MoexFuturesExpirationWriter expirationWriter,
-            MoexSplitWriter splitWriter,
-            MoexTradingPeriodWriter periodWriter,
-            MoexTradingPeriodTypeWriter periodTypeWriter)
+            MoexSplitWriter splitWriter)
         {
             _calendarClient = calendarClient;
             _issClient = issClient;
@@ -39,8 +35,6 @@ namespace ProjectTraiding.Moex.Loading
             _intervalWriter = intervalWriter;
             _expirationWriter = expirationWriter;
             _splitWriter = splitWriter;
-            _periodWriter = periodWriter;
-            _periodTypeWriter = periodTypeWriter;
         }
 
         public static DateOnly GetDefaultDateFrom()
@@ -220,29 +214,6 @@ namespace ProjectTraiding.Moex.Loading
             return result.RowsWritten;
         }
 
-        public async Task<int> SnapshotPeriodsAsync(CancellationToken ct)
-        {
-            DateTimeOffset snapshotAt = DateTimeOffset.UtcNow;
-            (List<CalendarStockSessionDTO> Sessions, List<CalendarSessionTypeDTO> Types) stock =
-                await _calendarClient.GetStockSession(ct);
-            (List<CalendarFuturesSessionDTO> Sessions, List<CalendarSessionTypeDTO> Types) futures =
-                await _calendarClient.GetFuturesSession(ct);
-
-            List<TradingPeriodDTO> periods =
-                new List<TradingPeriodDTO>(stock.Sessions.Count + futures.Sessions.Count);
-            AppendStockPeriods(stock.Sessions, snapshotAt, periods);
-            AppendFuturesPeriods(futures.Sessions, snapshotAt, periods);
-
-            List<TradingPeriodTypeDTO> types =
-                new List<TradingPeriodTypeDTO>(stock.Types.Count + futures.Types.Count);
-            AppendPeriodTypes(stock.Types, "stock", types);
-            AppendPeriodTypes(futures.Types, "futures", types);
-
-            DbWriteResult periodResult = await _periodWriter.AppendAsync(periods, ct);
-            DbWriteResult typeResult = await _periodTypeWriter.UpsertAsync(types, ct);
-            return periodResult.RowsWritten + typeResult.RowsWritten;
-        }
-
         private async Task<List<ListingIntervalDTO>> LoadListingPagesAsync(
             string engine,
             string market,
@@ -409,98 +380,11 @@ namespace ProjectTraiding.Moex.Loading
             }
         }
 
-        private static void AppendStockPeriods(
-            IReadOnlyList<CalendarStockSessionDTO> source,
-            DateTimeOffset snapshotAt,
-            List<TradingPeriodDTO> output)
-        {
-            for (int index = 0; index < source.Count; index++)
-            {
-                CalendarStockSessionDTO row = source[index];
-                DateOnly tradeDate = ParseRequiredDate(
-                    row.TradeDate, "session_schedule.tradedate", "stock");
-                string boardId = RequireString(row.BoardId, "session_schedule.boardid", "stock");
-                string periodType = RequireString(row.Type, "session_schedule.type", boardId);
-                TimeOnly timeFrom = ParseRequiredTime(
-                    row.TimeFrom, "session_schedule.time_from", boardId);
-                TimeOnly? timeTill = ParseNullableTime(
-                    row.TimeTill, "session_schedule.time_till", tradeDate);
-                output.Add(new TradingPeriodDTO
-                {
-                    Market = "stock",
-                    TradeDate = tradeDate,
-                    SnapshotAt = snapshotAt,
-                    BoardId = boardId,
-                    SecId = row.SecId ?? string.Empty,
-                    Session = ToNullableInt16(row.TradingSession, "tradingsession", boardId),
-                    PeriodType = periodType,
-                    TimeFrom = tradeDate.ToDateTime(timeFrom),
-                    TimeTill = timeTill.HasValue
-                        ? tradeDate.ToDateTime(timeTill.Value)
-                        : null,
-                    MoexUpdateTime = row.UpdateTime,
-                });
-            }
-        }
-
-        private static void AppendFuturesPeriods(
-            IReadOnlyList<CalendarFuturesSessionDTO> source,
-            DateTimeOffset snapshotAt,
-            List<TradingPeriodDTO> output)
-        {
-            for (int index = 0; index < source.Count; index++)
-            {
-                CalendarFuturesSessionDTO row = source[index];
-                DateOnly tradeDate = ParseRequiredDate(
-                    row.TradeSessionDate, "session_schedule.trade_session_date", "futures");
-                string boardId = RequireString(row.BoardId, "session_schedule.boardid", "futures");
-                string periodType = RequireString(row.Type, "session_schedule.type", boardId);
-                if (row.TimeFrom is null)
-                    throw new InvalidOperationException($"Пустое time_from у {boardId}.");
-                output.Add(new TradingPeriodDTO
-                {
-                    Market = "futures",
-                    TradeDate = tradeDate,
-                    SnapshotAt = snapshotAt,
-                    BoardId = boardId,
-                    SecId = row.SecId ?? string.Empty,
-                    PeriodType = periodType,
-                    TimeFrom = row.TimeFrom.Value,
-                    TimeTill = row.TimeTill,
-                    MoexUpdateTime = row.UpdateTime,
-                });
-            }
-        }
-
-        private static void AppendPeriodTypes(
-            IReadOnlyList<CalendarSessionTypeDTO> source,
-            string market,
-            List<TradingPeriodTypeDTO> output)
-        {
-            for (int index = 0; index < source.Count; index++)
-            {
-                CalendarSessionTypeDTO row = source[index];
-                output.Add(new TradingPeriodTypeDTO
-                {
-                    Market = market,
-                    TypeCode = RequireString(row.Type, "session_schedule.types.type", market),
-                    Title = RequireString(row.Title, "session_schedule.types.title", market),
-                });
-            }
-        }
-
         private static int RequireIsTraded(CalendarOffDaysMarketDTO row, string market)
         {
             if (row.IsTraded is null)
                 throw new InvalidOperationException($"Пустой is_traded в календаре {market}.");
             return row.IsTraded.Value;
-        }
-
-        private static string RequireString(string? value, string field, string key)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-                throw new InvalidOperationException($"Пустое поле {field} у {key}.");
-            return value;
         }
 
         private static DateOnly ParseRequiredDate(string? value, string field, string key)

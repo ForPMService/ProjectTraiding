@@ -22,27 +22,6 @@ namespace ProjectTraiding.Moex.Contracts.Dto.Calendar
         public DateOnly? ValidTill { get; init; }
     }
 
-    public record TradingPeriodDTO
-    {
-        public string Market { get; init; } = string.Empty;
-        public DateOnly TradeDate { get; init; }
-        public DateTimeOffset SnapshotAt { get; init; }
-        public string BoardId { get; init; } = string.Empty;
-        public string SecId { get; init; } = string.Empty;
-        public short? Session { get; init; }
-        public string PeriodType { get; init; } = string.Empty;
-        public DateTime TimeFrom { get; init; }
-        public DateTime? TimeTill { get; init; }
-        public DateTime? MoexUpdateTime { get; init; }
-    }
-
-    public record TradingPeriodTypeDTO
-    {
-        public string Market { get; init; } = string.Empty;
-        public string TypeCode { get; init; } = string.Empty;
-        public string Title { get; init; } = string.Empty;
-    }
-
     public record FuturesExpirationDTO
     {
         public string SecId { get; init; } = string.Empty;

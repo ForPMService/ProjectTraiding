@@ -208,42 +208,6 @@ namespace ProjectTraiding.Moex.Clients
             }
         }
 
-        public async Task<(List<CalendarStockSessionDTO> Sessions, List<CalendarSessionTypeDTO> Types)>
-            GetStockSession(CancellationToken ct)
-        {
-            const string endpoint = "/calendars/stock/session.json";
-            using HttpResponseMessage response = await _transport.SendAsync(endpoint, cancellationToken: ct);
-            using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
-                response, _options.BodyReadTimeout, endpoint, ct);
-            try
-            {
-                return ParsingCalendarUtf8.ParseStockSession(rentedArr.Span);
-            }
-            catch (MoexSchemaMismatchException ex)
-            {
-                MoexLogMessages.ParseFailed(_logger, ex, endpoint, MoexErrorTypes.SchemaMismatch, ex.Message);
-                throw;
-            }
-        }
-
-        public async Task<(List<CalendarFuturesSessionDTO> Sessions, List<CalendarSessionTypeDTO> Types)>
-            GetFuturesSession(CancellationToken ct)
-        {
-            const string endpoint = "/calendars/futures/session.json";
-            using HttpResponseMessage response = await _transport.SendAsync(endpoint, cancellationToken: ct);
-            using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
-                response, _options.BodyReadTimeout, endpoint, ct);
-            try
-            {
-                return ParsingCalendarUtf8.ParseFuturesSession(rentedArr.Span);
-            }
-            catch (MoexSchemaMismatchException ex)
-            {
-                MoexLogMessages.ParseFailed(_logger, ex, endpoint, MoexErrorTypes.SchemaMismatch, ex.Message);
-                throw;
-            }
-        }
-
         public async Task<(List<CalendarFortsContractDTO> Forts, List<CalendarOptionsSeriesDTO> Options)>
             GetFuturesSecurities(DateOnly from, DateOnly till, CancellationToken ct)
         {

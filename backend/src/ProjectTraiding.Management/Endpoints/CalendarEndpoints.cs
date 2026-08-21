@@ -12,14 +12,6 @@ namespace ProjectTraiding.Management.Endpoints
 
         public static IEndpointRouteBuilder MapCalendarEndpoints(this IEndpointRouteBuilder routes)
         {
-            routes.MapPost("/management/calendar/periods/snapshot", async (
-                MoexCalendarLoader loader,
-                CancellationToken ct) =>
-            {
-                int rowsWritten = await loader.SnapshotPeriodsAsync(ct);
-                return CalendarResponse(rowsWritten);
-            });
-
             routes.MapPost("/management/calendar/days", async (
                 CalendarLoadRequest request,
                 MoexCalendarLoader loader,

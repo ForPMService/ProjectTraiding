@@ -71,44 +71,6 @@ namespace ProjectTraiding.Moex.Parsing
                 new(4, "updatetime"u8.ToArray()),
             });
 
-        public static readonly ExpectedSchema CalendarStockSessionSchema = new(
-            TotalColumns: 8,
-            RootKey: "session_schedule",
-            Columns: new ExpectedColumn[]
-            {
-                new(0, "tradedate"u8.ToArray()),
-                new(1, "tradingsession"u8.ToArray()),
-                new(2, "boardid"u8.ToArray()),
-                new(3, "secid"u8.ToArray()),
-                new(4, "type"u8.ToArray()),
-                new(5, "time_from"u8.ToArray()),
-                new(6, "time_till"u8.ToArray()),
-                new(7, "updatetime"u8.ToArray()),
-            });
-
-        public static readonly ExpectedSchema CalendarFuturesSessionSchema = new(
-            TotalColumns: 7,
-            RootKey: "session_schedule",
-            Columns: new ExpectedColumn[]
-            {
-                new(0, "trade_session_date"u8.ToArray()),
-                new(1, "boardid"u8.ToArray()),
-                new(2, "secid"u8.ToArray()),
-                new(3, "type"u8.ToArray()),
-                new(4, "time_from"u8.ToArray()),
-                new(5, "time_till"u8.ToArray()),
-                new(6, "updatetime"u8.ToArray()),
-            });
-
-        public static readonly ExpectedSchema CalendarSessionTypesSchema = new(
-            TotalColumns: 2,
-            RootKey: "session_schedule.types",
-            Columns: new ExpectedColumn[]
-            {
-                new(0, "type"u8.ToArray()),
-                new(1, "title"u8.ToArray()),
-            });
-
         public static readonly ExpectedSchema CalendarFortsContractsSchema = new(
             TotalColumns: 10,
             RootKey: "forts",

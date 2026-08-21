@@ -32,8 +32,6 @@ builder.Services.AddTransient<MoexInstrumentWriter>();
 builder.Services.AddTransient<CatalogEventPublisher>();
 builder.Services.AddTransient<MoexCalendarWriter>();
 builder.Services.AddTransient<MoexInstrumentBoardIntervalWriter>();
-builder.Services.AddTransient<MoexTradingPeriodWriter>();
-builder.Services.AddTransient<MoexTradingPeriodTypeWriter>();
 builder.Services.AddTransient<MoexFuturesExpirationWriter>();
 builder.Services.AddTransient<MoexSplitWriter>();
 builder.Services.AddTransient<MoexManualEventWriter>();
