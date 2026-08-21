@@ -18,44 +18,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             _dataSource = dataSource;
         }
 
-        public async Task<MoexLoadTask?> GetByIdAsync(Guid taskId, CancellationToken ct)
-        {
-            await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
-            await using NpgsqlCommand cmd = new NpgsqlCommand("""
-                SELECT t.id,
-                       t.secid,
-                       t.market,
-                       t.boardid,
-                       t.data_kind,
-                       t.candle_interval,
-                       t.date_from,
-                       t.date_till,
-                       t.storage_target,
-                       t.source_contract_version,
-                       t.writer_version
-                FROM moex_load_tasks t
-                WHERE t.id = @id
-                """, connection);
-            cmd.Parameters.Add("@id", NpgsqlDbType.Uuid).Value = taskId;
-
-            await using NpgsqlDataReader reader = await cmd.ExecuteReaderAsync(ct);
-            if (!await reader.ReadAsync(ct))
-                return null;
-
-            return new MoexLoadTask(
-                Id: reader.GetGuid(0),
-                Secid: reader.GetString(1),
-                Market: reader.GetString(2),
-                Boardid: reader.GetString(3),
-                DataKind: reader.GetString(4),
-                CandleInterval: reader.IsDBNull(5) ? null : reader.GetInt32(5),
-                DateFrom: reader.GetFieldValue<DateOnly>(6),
-                DateTill: reader.GetFieldValue<DateOnly>(7),
-                StorageTarget: reader.GetString(8),
-                SourceContractVersion: reader.GetString(9),
-                WriterVersion: reader.GetString(10));
-        }
-
         public async Task<bool> IsCancelRequestedAsync(Guid taskId, CancellationToken ct)
         {
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
@@ -73,6 +35,30 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             // как и прежде: выражение сравнения с пустым значением само пустым не бывает.
             await using NpgsqlDataReader reader = await cmd.ExecuteReaderAsync(ct);
             return await reader.ReadAsync(ct) && reader.GetBoolean(0);
+        }
+
+        /// <summary>
+        /// Возвращает после аварийной остановки незавершённые задачи в очередь, а задачи с
+        /// запросом отмены закрывает тем же правилом, что штатная отмена исполнителя.
+        /// </summary>
+        public async Task RecoverInterruptedTasksAsync(CancellationToken ct)
+        {
+            await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
+            await using NpgsqlCommand cmd = new NpgsqlCommand("""
+                UPDATE moex_load_tasks
+                SET status = CASE
+                        WHEN cancel_requested_at IS NOT NULL THEN 'cancelled'
+                        ELSE 'pending' END,
+                    finished_at = CASE
+                        WHEN cancel_requested_at IS NOT NULL THEN now()
+                        ELSE null END,
+                    stop_reason = CASE
+                        WHEN cancel_requested_at IS NOT NULL THEN 'operator_cancelled'
+                        ELSE null END,
+                    error_message = null
+                WHERE status = 'running'
+                """, connection);
+            await cmd.ExecuteNonQueryAsync(ct);
         }
 
         /// <summary>

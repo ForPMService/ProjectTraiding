@@ -61,6 +61,8 @@ namespace ProjectTraiding.Management.Endpoints
                     return Results.BadRequest(validationError);
                 int rowsWritten = await writer.OverrideDayAsync(
                     request.Market!, request.Date!.Value, request.IsTraded!.Value, request.Note, ct);
+                if (rowsWritten == 0)
+                    return Results.NotFound("Календарь для указанной даты ещё не загружен.");
                 return CalendarResponse(rowsWritten);
             });
 

@@ -43,6 +43,7 @@ namespace ProjectTraiding.Moex.Loading
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
+            await _taskReader.RecoverInterruptedTasksAsync(stoppingToken);
             MoexLoadTaskLogMessages.BackgroundStarted(_logger, _pollInterval);
 
             Task[] lanes = new Task[_concurrency];

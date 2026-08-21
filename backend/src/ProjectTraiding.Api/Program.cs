@@ -3,8 +3,6 @@ using ProjectTraiding.Api.Infrastructure;
 using ProjectTraiding.Diagnostics.DependencyInjection;
 using ProjectTraiding.Management.Contracts;
 using ProjectTraiding.Management.DependencyInjection;
-using ProjectTraiding.Moex.Contracts.Serialization;
-using ProjectTraiding.Moex.Endpoints;
 using ProjectTraiding.Moex.Infrastructure.DependencyInjection;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Loading;
@@ -43,7 +41,6 @@ builder.Services.AddMoexRealtimeReceiver(builder.Configuration);
 
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
-    options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default);
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, VitrineJsonContext.Default);
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, ManagementJsonContext.Default);
 });
@@ -61,15 +58,13 @@ using (IServiceScope startupScope = app.Services.CreateScope())
     MoexOptionsValidator.ValidateAndLog(moexOptions, startupLogger);
 }
 app.MapObservabilityEndpoints();
-app.MapMoexLoadRunEndpoints();
 
-// Управление — под ведро управления (редкие команды оператора, 1 в 30 с).
+// Управление — под ведро управления (редкие команды оператора).
 RouteGroupBuilder managementRoutes = app
     .MapGroup(string.Empty)
     .RequireRateLimiting(RateLimiting.ManagementPolicy);
 
 managementRoutes.MapManagementEndpoints();
-managementRoutes.MapMoexSyncEndpoints();
 
 // Витрина — под ведро витрины (частый публичный поток, 1 в 2 с, ёмкость под всплеск).
 app.MapGroup(string.Empty)
@@ -82,7 +77,6 @@ if (app.Environment.IsDevelopment())
     // безусловна, и сборка попадает в публикацию. Проверка гарантирует другое —
     // диагностические службы не регистрируются, маршруты не отображаются,
     // диагностический контекст не участвует в разрешении типов.
-    app.MapMoexDiagnosticEndpoints();   // остался только календарь
     app.MapDiagnosticsEndpoints();
     app.MapOpenApi();
 }

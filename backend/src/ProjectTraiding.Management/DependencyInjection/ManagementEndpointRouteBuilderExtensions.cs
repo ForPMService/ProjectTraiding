@@ -15,6 +15,7 @@ namespace ProjectTraiding.Management.DependencyInjection
             routes.MapRealtimeSubscriptionEndpoints();
             routes.MapInstrumentDataDeleteEndpoints();
             routes.MapCalendarEndpoints();
+            routes.MapInstrumentCardLoadEndpoints();
             return routes;
         }
     }

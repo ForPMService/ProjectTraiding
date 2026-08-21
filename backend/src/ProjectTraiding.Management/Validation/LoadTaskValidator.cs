@@ -13,7 +13,7 @@ namespace ProjectTraiding.Management.Validation
     public static class LoadTaskValidator
     {
         private static readonly string[] Markets = { "stock", "futures" };
-        private static readonly string[] StorageTargets = { "none", "file", "clickhouse" };
+        private static readonly string[] StorageTargets = { "clickhouse" };
         private static readonly string[] DataKinds =
         { "candles", "tradestats", "obstats", "orderstats", "futoi", "hi2", "mega_alerts" };
         // Допустимые рынки на каждый вид данных (без валюты).
@@ -55,7 +55,7 @@ namespace ProjectTraiding.Management.Validation
             }
 
             if (request.StorageTarget is null || Array.IndexOf(StorageTargets, request.StorageTarget) < 0)
-                result.Errors.Add("storage_target должен быть одним из: none, file, clickhouse");
+                result.Errors.Add("storage_target должен быть одним из: clickhouse");
 
             // Интервал осмыслен только для свечей: для candles обязателен, для прочих запрещён.
             // Коды интервала свечей MOEX: 1 — минута, 10 — десять минут, 60 — час, 24 — день.

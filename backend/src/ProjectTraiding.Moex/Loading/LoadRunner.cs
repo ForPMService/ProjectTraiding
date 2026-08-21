@@ -11,10 +11,6 @@ using System.Text;
 
 namespace ProjectTraiding.Moex.Loading
 {
-    public enum LoadStatus { NotFound, NotClaimed, Done, Failed, Cancelled }
-
-    public readonly record struct LoadOutcome(LoadStatus Status, long RowsCovered);
-
     /// <summary>
     /// Координатор исторической загрузки одной задачи любого вида: читает задачу, выбирает
     /// обработчик вида через диспетчер, берёт задачу в работу, гонит данные в ClickHouse, по
@@ -53,25 +49,6 @@ namespace ProjectTraiding.Moex.Loading
         }
 
         /// <summary>
-        /// Ручной путь: задача приходит идентификатором и ещё не захвачена. Строка читается,
-        /// задача переводится в рабочее состояние, и только после этого начинается общая часть.
-        /// Отсчёт длительности задания начинается после успешного перевода: чтение строки
-        /// и попытка захвата в длительность не входят — как и прежде.
-        /// </summary>
-        public async Task<LoadOutcome> RunAsync(Guid taskId, CancellationToken ct)
-        {
-            MoexLoadTask? task = await _taskReader.GetByIdAsync(taskId, ct);
-            if (task is null)
-                return new LoadOutcome(LoadStatus.NotFound, 0);
-
-            bool claimed = await _taskWriter.MarkRunningAsync(taskId, ct);
-            if (!claimed)
-                return new LoadOutcome(LoadStatus.NotClaimed, 0);
-
-            return await RunCoreAsync(task, Stopwatch.GetTimestamp(), ct);
-        }
-
-        /// <summary>
         /// Фоновый путь: задача пришла готовой строкой из самого захвата и уже находится
         /// в рабочем состоянии. Повторного чтения по идентификатору здесь нет и быть не должно.
         /// Отсчёт длительности идёт с момента входа — как и прежде на этом пути.
@@ -86,16 +63,15 @@ namespace ProjectTraiding.Moex.Loading
         /// начатые раньше фиксации, не останавливает. За пределами этой границы поведение
         /// фонового пути прежнее.
         /// </summary>
-        public Task<LoadOutcome> RunClaimedAsync(MoexLoadTask task, CancellationToken ct)
+        public Task RunClaimedAsync(MoexLoadTask task, CancellationToken ct)
         {
             return RunCoreAsync(task, Stopwatch.GetTimestamp(), ct);
         }
 
         /// <summary>
-        /// Общая часть обоих путей. К моменту входа задача заведомо принадлежит загрузчику:
-        /// ручной путь прошёл перевод в рабочее состояние, фоновый пришёл захваченным.
+        /// Общая часть исполнения. К моменту входа задача уже принадлежит загрузчику.
         /// </summary>
-        private async Task<LoadOutcome> RunCoreAsync(
+        private async Task RunCoreAsync(
             MoexLoadTask task,
             long taskStart,
             CancellationToken ct)
@@ -159,8 +135,8 @@ namespace ProjectTraiding.Moex.Loading
                     throw new InvalidOperationException(
                         $"Задача {taskId} не нацелена на ClickHouse (storage_target={task.StorageTarget}).");
 
-                // Поколение читается здесь: задача уже принадлежит загрузчику (ручной путь прошёл
-                // MarkRunningAsync, фоновый пришёл захваченным), но спутник отмены ещё не запущен.
+                // Поколение читается здесь: задача уже принадлежит загрузчику, но спутник отмены
+                // ещё не запущен.
                 // Отказ чтения на этом месте выходит через общий обработчик, ничего не оставляя
                 // работать в фоне.
                 string dataGeneration = await _generationReader.GetAsync(task.Secid, ct);
@@ -213,18 +189,18 @@ namespace ProjectTraiding.Moex.Loading
                         "диапазон превышает предел страниц: пересоздайте задачи с меньшим окном",
                         stopReason,
                         ct);
-                    return new LoadOutcome(LoadStatus.Failed, summary.RowsRead);
+                    return;
                 }
 
                 outcome = MoexOutcomes.Success;
                 stopReasonForTelemetry = stopReason;
 
-                // Штатное полное покрытие: журнал результата, извещение витрины, закрытие успехом.
+                // Штатное полное покрытие: журнал результата, извещение потребителя, закрытие успехом.
                 await _rangeWriter.UpsertAsync(task, summary.RowsRead, summary.LastToken, CancellationToken.None);
                 await _rangeEventPublisher.PublishChangedAsync(task.Secid);
                 await _taskWriter.MarkDoneAsync(taskId, summary.RowsRead, stopReason, summary.LastToken, CancellationToken.None);
 
-                return new LoadOutcome(LoadStatus.Done, summary.RowsRead);
+                return;
             }
             catch (OperationCanceledException)
             {
@@ -253,7 +229,7 @@ namespace ProjectTraiding.Moex.Loading
                 // исполнителе оба фильтра проверяют токен остановки приложения, который при операторской
                 // отмене не отменён, и отмена записалась бы в журнал как отказ загрузки.
                 if (operatorCancelled)
-                    return new LoadOutcome(LoadStatus.Cancelled, 0);
+                    return;
 
                 throw;
             }

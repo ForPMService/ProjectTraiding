@@ -16,25 +16,11 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             _logger = logger;
         }
 
-        public Task<DbWriteResult> UpsertStockOffDaysAsync(
-            IReadOnlyList<CalendarOffDaysMarketDTO> days,
-            CancellationToken ct)
-        {
-            return UpsertOffDaysAsync(days, "stock", ct);
-        }
-
-        public Task<DbWriteResult> UpsertFuturesOffDaysAsync(
-            IReadOnlyList<CalendarOffDaysMarketDTO> days,
-            CancellationToken ct)
-        {
-            return UpsertOffDaysAsync(days, "futures", ct);
-        }
-
         public Task<DbWriteResult> UpsertDaysAsync(
             IReadOnlyList<CalendarDayWriteDTO> days,
             CancellationToken ct)
         {
-            return UpsertDaysCoreAsync(days, preserveEngineIsWorkDay: false, ct);
+            return UpsertDaysCoreAsync(days, ct);
         }
 
         public async Task<int> OverrideDayAsync(
@@ -62,36 +48,8 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             return await command.ExecuteNonQueryAsync(ct);
         }
 
-        private Task<DbWriteResult> UpsertOffDaysAsync(
-            IReadOnlyList<CalendarOffDaysMarketDTO> days,
-            string market,
-            CancellationToken ct)
-        {
-            List<CalendarDayWriteDTO> rows = new List<CalendarDayWriteDTO>(days.Count);
-            for (int index = 0; index < days.Count; index++)
-            {
-                CalendarOffDaysMarketDTO day = days[index];
-                if (day.IsTraded is null)
-                    throw new InvalidOperationException(
-                        $"IsTraded null у {day.TradeDate} (market={market})");
-
-                rows.Add(new CalendarDayWriteDTO
-                {
-                    TradeDate = day.TradeDate,
-                    Market = market,
-                    IsTraded = day.IsTraded.Value,
-                    TradeSessionDate = day.TradeSessionDate,
-                    Reason = day.Reason,
-                    DataSource = "calendar",
-                    MoexUpdateTime = day.UpdateTime,
-                });
-            }
-            return UpsertDaysCoreAsync(rows, preserveEngineIsWorkDay: true, ct);
-        }
-
         private async Task<DbWriteResult> UpsertDaysCoreAsync(
             IReadOnlyList<CalendarDayWriteDTO> days,
-            bool preserveEngineIsWorkDay,
             CancellationToken ct)
         {
             const string table = "moex_calendar_days";
@@ -119,11 +77,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                         stop_time          = EXCLUDED.stop_time,
                         data_source        = EXCLUDED.data_source,
                         moex_update_time   = EXCLUDED.moex_update_time,
-                        engine_is_work_day = CASE
-                            WHEN @preserve_engine_is_work_day
-                                THEN moex_calendar_days.engine_is_work_day
-                            ELSE EXCLUDED.engine_is_work_day
-                        END,
+                        engine_is_work_day = EXCLUDED.engine_is_work_day,
                         updated_at         = now()
                     WHERE moex_calendar_days.data_source NOT IN ('observed', 'manual');
                     """, connection, transaction);
@@ -148,9 +102,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                     command.Parameters.Add("@moex_update_time", NpgsqlDbType.Timestamp);
                 NpgsqlParameter engineIsWorkDayParameter =
                     command.Parameters.Add("@engine_is_work_day", NpgsqlDbType.Integer);
-                command.Parameters.Add("@preserve_engine_is_work_day", NpgsqlDbType.Boolean).Value =
-                    preserveEngineIsWorkDay;
-
                 for (int index = 0; index < days.Count; index++)
                 {
                     CalendarDayWriteDTO day = days[index];

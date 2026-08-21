@@ -8,8 +8,8 @@ using System.Text;
 namespace ProjectTraiding.Moex.StorageBase.Postgres
 {
     /// <summary>
-    /// Писатель жизненного цикла задачи загрузки (moex_load_tasks): взять в работу,
-    /// закрыть успехом, закрыть отказом. Создание задачи — забота команды Management.
+    /// Писатель жизненного цикла задачи загрузки (moex_load_tasks): закрыть успехом
+    /// или отказом. Создание задачи и захват — забота контура Management и исполнителя.
     /// </summary>
     public sealed class MoexLoadTaskWriter
     {
@@ -20,52 +20,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         {
             _dataSource = dataSource;
             _logger = logger;
-        }
-
-        /// <summary>
-        /// Атомарно берёт задачу в работу: pending, error или partial → running.
-        /// Pending с незавершённым запросом отмены не запускается; явный повтор error или
-        /// partial начинает новую попытку и очищает запрос вместе с хвостом прошлой.
-        /// started_at = now(), attempt_count += 1.
-        /// Возврат true — взяли; false — задачи нет, она уже running/done либо по
-        /// инструменту идёт удаление данных.
-        /// </summary>
-        public async Task<bool> MarkRunningAsync(Guid taskId, CancellationToken ct)
-        {
-            long startTs = Stopwatch.GetTimestamp();
-            await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
-
-            await using NpgsqlCommand cmd = new NpgsqlCommand("""
-                UPDATE moex_load_tasks
-                SET status = 'running',
-                    started_at = now(),
-                    finished_at = null,
-                    error_message = null,
-                    stop_reason = null,
-                    rows_loaded = 0,
-                    last_insert_deduplication_token = null,
-                    cancel_requested_at = null,
-                    attempt_count = attempt_count + 1
-                WHERE id = @id AND status IN ('pending', 'error', 'partial')
-                  AND (status <> 'pending' OR cancel_requested_at IS NULL)
-                  AND NOT EXISTS (
-                      SELECT 1 FROM moex_instrument_data_deletions d
-                      WHERE d.secid = moex_load_tasks.secid AND d.status = 'started'
-                  )
-                """, connection);
-            cmd.Parameters.Add("@id", NpgsqlDbType.Uuid).Value = taskId;
-
-            int affected = await cmd.ExecuteNonQueryAsync(ct);
-            TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
-
-            if (affected == 1)
-            {
-                MoexLoadTaskLogMessages.TaskRunning(_logger, taskId, elapsed);
-                return true;
-            }
-
-            MoexLoadTaskLogMessages.TaskClaimMissed(_logger, taskId);
-            return false;
         }
 
         /// <summary>
@@ -141,7 +95,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         /// либо null, если строки в running уже нет.
         /// Пустой результат — не отказ, а безопасная гонка с естественным завершением: успевшее
         /// закрыться успехом задание остаётся успешным. При возврате в очередь причина остановки
-        /// и текст ошибки очищаются; MarkRunningAsync чистит те же поля при следующем захвате.
+        /// и текст ошибки очищаются; захват чистит те же поля при следующем запуске.
         /// </summary>
         public async Task<string?> FinalizeCancellationAsync(Guid taskId, CancellationToken ct)
         {

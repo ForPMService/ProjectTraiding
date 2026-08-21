@@ -1,22 +1,20 @@
+using ProjectTraiding.Management.Contracts;
+using ProjectTraiding.Management.Contracts.Dto;
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Dto.Iss;
-using ProjectTraiding.Moex.Contracts.Dto.Operations;
-using ProjectTraiding.Moex.Contracts.Serialization;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using ProjectTraiding.Moex.StorageBase.Redis;
 
-namespace ProjectTraiding.Moex.Endpoints
+namespace ProjectTraiding.Management.Endpoints
 {
     /// <summary>
-    /// Management sync endpoint-ы для карточек инструментов.
-    /// По запросу идут в MOEX, парсят ответ и синхронизируют данные в PostgreSQL.
+    /// Команды синхронизации справочника инструментов с Московской биржей.
     /// </summary>
     public static class InstrumentCardEndpoints
     {
-
         public static IEndpointRouteBuilder MapInstrumentCardLoadEndpoints(this IEndpointRouteBuilder routes)
         {
-            routes.MapPost("/management/moex/sync/instruments/stock", async (
+            routes.MapPost("/management/sync/instruments/stock", async (
                 HttpContext httpContext,
                 MoexHttpIssClient client,
                 MoexInstrumentWriter writer,
@@ -24,10 +22,10 @@ namespace ProjectTraiding.Moex.Endpoints
             {
                 httpContext.Response.Headers.CacheControl = "no-store";
                 LoadResultDto result = await LoadStockInstrumentsAsync(client, writer, ct);
-                return Results.Json(result, AppJsonContext.Default.LoadResultDto);
+                return Results.Json(result, ManagementJsonContext.Default.LoadResultDto);
             });
 
-            routes.MapPost("/management/moex/sync/instruments/futures", async (
+            routes.MapPost("/management/sync/instruments/futures", async (
                 HttpContext httpContext,
                 MoexHttpAlgClient client,
                 MoexInstrumentWriter writer,
@@ -35,33 +33,27 @@ namespace ProjectTraiding.Moex.Endpoints
             {
                 httpContext.Response.Headers.CacheControl = "no-store";
                 LoadResultDto result = await LoadFuturesInstrumentsAsync(client, writer, ct);
-                return Results.Json(result, AppJsonContext.Default.LoadResultDto);
+                return Results.Json(result, ManagementJsonContext.Default.LoadResultDto);
             });
 
-            routes.MapPost("/management/moex/sync/bootstrap", async (
+            routes.MapPost("/management/sync/bootstrap", async (
                 HttpContext httpContext,
                 MoexHttpIssClient issClient,
                 MoexHttpAlgClient algClient,
-                MoexHttpCalendarClient calendarClient,
                 MoexInstrumentWriter instrumentWriter,
                 CatalogEventPublisher catalogEventPublisher,
-                MoexCalendarWriter calendarWriter,
                 CancellationToken ct) =>
             {
                 httpContext.Response.Headers.CacheControl = "no-store";
 
-                LoadResultDto[] results = new LoadResultDto[]
-                {
+                LoadResultDto[] results =
+                [
                     await LoadStockInstrumentsAsync(issClient, instrumentWriter, ct),
-                    await LoadFuturesInstrumentsAsync(algClient, instrumentWriter, ct),
-                    await CalendarEndpoints.LoadStockCalendarAsync(calendarClient, calendarWriter, ct),
-                    await CalendarEndpoints.LoadFuturesCalendarAsync(calendarClient, calendarWriter, ct)
-                };
-                // Справочник успешно обновлён в базе истины — извещаем витрину одним событием.
-                // Стоит после загрузок: если любая из них бросит исключение, сюда не дойдём и событие не выйдет.
+                    await LoadFuturesInstrumentsAsync(algClient, instrumentWriter, ct)
+                ];
                 await catalogEventPublisher.PublishChangedAsync();
 
-                return Results.Json(results, AppJsonContext.Default.LoadResultDtoArray);
+                return Results.Json(results, ManagementJsonContext.Default.LoadResultDtoArray);
             });
 
             return routes;

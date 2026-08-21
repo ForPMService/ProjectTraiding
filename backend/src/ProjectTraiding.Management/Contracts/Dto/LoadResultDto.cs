@@ -1,4 +1,4 @@
-namespace ProjectTraiding.Moex.Contracts.Dto.Operations
+namespace ProjectTraiding.Management.Contracts.Dto
 {
     public sealed record LoadResultDto(
         string Operation,
