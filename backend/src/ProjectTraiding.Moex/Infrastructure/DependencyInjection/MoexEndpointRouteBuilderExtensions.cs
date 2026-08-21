@@ -7,7 +7,6 @@ public static class MoexEndpointRouteBuilderExtensions
     public static IEndpointRouteBuilder MapMoexSyncEndpoints(this IEndpointRouteBuilder routes)
     {
         routes.MapInstrumentCardLoadEndpoints();
-        routes.MapCalendarLoadEndpoints();
         return routes;
     }
 

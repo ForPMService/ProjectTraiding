@@ -43,11 +43,6 @@ namespace ProjectTraiding.Moex.Endpoints
 
             return routes;
         }
-        public static IEndpointRouteBuilder MapCalendarLoadEndpoints(this IEndpointRouteBuilder routes)
-        {
-            return routes;
-        }
-
         internal static async Task<LoadResultDto> LoadStockCalendarAsync(
             MoexHttpCalendarClient client,
             MoexCalendarWriter writer,
