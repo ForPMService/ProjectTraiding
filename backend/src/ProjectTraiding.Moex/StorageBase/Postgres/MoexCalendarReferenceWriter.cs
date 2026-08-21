@@ -30,6 +30,9 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 INSERT INTO moex_instrument_board_intervals
                     (market, secid, boardid, valid_from, valid_till)
                 VALUES (@market, @secid, @boardid, @valid_from, @valid_till)
+                ON CONFLICT (market, secid, boardid, valid_from) DO UPDATE SET
+                    valid_till = EXCLUDED.valid_till,
+                    updated_at = now()
                 """, connection, transaction);
             NpgsqlParameter marketParameter =
                 insertCommand.Parameters.Add("@market", NpgsqlDbType.Text);
@@ -81,6 +84,13 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 INSERT INTO moex_futures_expirations
                     (secid, asset_code, expiration_date, expiration_type, end_date, weekend_session)
                 VALUES (@secid, @asset_code, @expiration_date, @expiration_type, @end_date, @weekend_session)
+                ON CONFLICT (secid) DO UPDATE SET
+                    asset_code      = EXCLUDED.asset_code,
+                    expiration_date = EXCLUDED.expiration_date,
+                    expiration_type = EXCLUDED.expiration_type,
+                    end_date        = EXCLUDED.end_date,
+                    weekend_session = EXCLUDED.weekend_session,
+                    updated_at      = now()
                 """, connection, transaction);
             NpgsqlParameter secIdParameter = insertCommand.Parameters.Add("@secid", NpgsqlDbType.Text);
             NpgsqlParameter assetCodeParameter = insertCommand.Parameters.Add("@asset_code", NpgsqlDbType.Text);
@@ -128,6 +138,10 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             await using NpgsqlCommand insertCommand = new NpgsqlCommand("""
                 INSERT INTO moex_splits (trade_date, secid, before_qty, after_qty)
                 VALUES (@trade_date, @secid, @before_qty, @after_qty)
+                ON CONFLICT (trade_date, secid) DO UPDATE SET
+                    before_qty = EXCLUDED.before_qty,
+                    after_qty  = EXCLUDED.after_qty,
+                    updated_at = now()
                 """, connection, transaction);
             NpgsqlParameter tradeDateParameter = insertCommand.Parameters.Add("@trade_date", NpgsqlDbType.Date);
             NpgsqlParameter secIdParameter = insertCommand.Parameters.Add("@secid", NpgsqlDbType.Text);
