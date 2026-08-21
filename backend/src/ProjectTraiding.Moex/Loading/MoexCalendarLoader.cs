@@ -206,7 +206,7 @@ namespace ProjectTraiding.Moex.Loading
             for (int index = 0; index < rows.Count; index++)
             {
                 EngineDailyTableDTO row = rows[index];
-                result[row.TradeDate] = new EngineDayTimes(row.StartTime, row.StopTime);
+                result[row.TradeDate] = new EngineDayTimes(row.StartTime, row.StopTime, row.IsWorkDay);
             }
             return result;
         }
@@ -253,6 +253,7 @@ namespace ProjectTraiding.Moex.Loading
                 Reason = reason,
                 StartTime = engineTimes.StartTime,
                 StopTime = engineTimes.StopTime,
+                EngineIsWorkDay = engineTimes.IsWorkDay,
                 DataSource = dataSource,
                 MoexUpdateTime = updateTime,
             };
@@ -316,7 +317,8 @@ namespace ProjectTraiding.Moex.Loading
                 throw new ArgumentException("dateFrom не может быть позже dateTill.");
         }
 
-        private readonly record struct EngineDayTimes(TimeOnly? StartTime, TimeOnly? StopTime);
+        private readonly record struct EngineDayTimes(
+            TimeOnly? StartTime, TimeOnly? StopTime, int? IsWorkDay);
         private readonly record struct InstrumentBoardKey(string SecId, string BoardId);
     }
 }

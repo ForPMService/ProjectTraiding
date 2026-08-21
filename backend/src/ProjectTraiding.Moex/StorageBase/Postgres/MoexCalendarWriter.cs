@@ -34,7 +34,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             IReadOnlyList<CalendarDayWriteDTO> days,
             CancellationToken ct)
         {
-            return UpsertDaysCoreAsync(days, ct);
+            return UpsertDaysCoreAsync(days, preserveEngineIsWorkDay: false, ct);
         }
 
         public async Task<int> OverrideDayAsync(
@@ -86,11 +86,12 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                     MoexUpdateTime = day.UpdateTime,
                 });
             }
-            return UpsertDaysCoreAsync(rows, ct);
+            return UpsertDaysCoreAsync(rows, preserveEngineIsWorkDay: true, ct);
         }
 
         private async Task<DbWriteResult> UpsertDaysCoreAsync(
             IReadOnlyList<CalendarDayWriteDTO> days,
+            bool preserveEngineIsWorkDay,
             CancellationToken ct)
         {
             const string table = "moex_calendar_days";
@@ -106,9 +107,10 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 await using NpgsqlCommand command = new NpgsqlCommand("""
                     INSERT INTO moex_calendar_days
                         (trade_date, market, is_traded, trade_session_date, reason,
-                         start_time, stop_time, data_source, moex_update_time)
+                         start_time, stop_time, data_source, moex_update_time, engine_is_work_day)
                     VALUES (@trade_date, @market, @is_traded, @trade_session_date, @reason,
-                            @start_time, @stop_time, @data_source, @moex_update_time)
+                            @start_time, @stop_time, @data_source, @moex_update_time,
+                            @engine_is_work_day)
                     ON CONFLICT (trade_date, market) DO UPDATE SET
                         is_traded          = EXCLUDED.is_traded,
                         trade_session_date = EXCLUDED.trade_session_date,
@@ -117,6 +119,11 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                         stop_time          = EXCLUDED.stop_time,
                         data_source        = EXCLUDED.data_source,
                         moex_update_time   = EXCLUDED.moex_update_time,
+                        engine_is_work_day = CASE
+                            WHEN @preserve_engine_is_work_day
+                                THEN moex_calendar_days.engine_is_work_day
+                            ELSE EXCLUDED.engine_is_work_day
+                        END,
                         updated_at         = now()
                     WHERE moex_calendar_days.data_source NOT IN ('observed', 'manual');
                     """, connection, transaction);
@@ -139,6 +146,10 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                     command.Parameters.Add("@data_source", NpgsqlDbType.Text);
                 NpgsqlParameter updateTimeParameter =
                     command.Parameters.Add("@moex_update_time", NpgsqlDbType.Timestamp);
+                NpgsqlParameter engineIsWorkDayParameter =
+                    command.Parameters.Add("@engine_is_work_day", NpgsqlDbType.Integer);
+                command.Parameters.Add("@preserve_engine_is_work_day", NpgsqlDbType.Boolean).Value =
+                    preserveEngineIsWorkDay;
 
                 for (int index = 0; index < days.Count; index++)
                 {
@@ -154,6 +165,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                     stopTimeParameter.Value = (object?)day.StopTime ?? DBNull.Value;
                     dataSourceParameter.Value = day.DataSource;
                     updateTimeParameter.Value = (object?)day.MoexUpdateTime ?? DBNull.Value;
+                    engineIsWorkDayParameter.Value = (object?)day.EngineIsWorkDay ?? DBNull.Value;
                     rowsWritten += await command.ExecuteNonQueryAsync(ct);
                 }
 

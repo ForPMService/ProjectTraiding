@@ -34,6 +34,7 @@ namespace ProjectTraiding.Moex.Parsing
                 result.Add(new EngineDailyTableDTO
                 {
                     TradeDate = IssJson.RequiredDate(row, 0, rootKey, "date"),
+                    IsWorkDay = IssJson.Int(row, 1),
                     StartTime = IssJson.Time(row, 2, rootKey, "start_time"),
                     StopTime = IssJson.Time(row, 3, rootKey, "stop_time"),
                 });

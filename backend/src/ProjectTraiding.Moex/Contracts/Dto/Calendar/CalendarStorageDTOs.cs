@@ -9,6 +9,7 @@ namespace ProjectTraiding.Moex.Contracts.Dto.Calendar
         public string? Reason { get; init; }
         public TimeOnly? StartTime { get; init; }
         public TimeOnly? StopTime { get; init; }
+        public int? EngineIsWorkDay { get; init; }
         public string DataSource { get; init; } = string.Empty;
         public DateTime? MoexUpdateTime { get; init; }
     }
