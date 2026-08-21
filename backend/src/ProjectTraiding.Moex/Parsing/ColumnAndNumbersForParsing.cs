@@ -54,42 +54,6 @@ namespace ProjectTraiding.Moex.Parsing
         };
 
         // ═══════════════════════════════════════════════════════════
-        // Календарь — Выходные дни (один рынок: stock или futures)
-        // Источник: columns-map.json → "Calendar Stock OffDays", "Calendar Futures OffDays"
-        // rootKey: "off_days", columnCount: 5, используем: все 5
-        // ═══════════════════════════════════════════════════════════
-
-        public static readonly ExpectedSchema CalendarOffDaysMarketSchema = new(
-            TotalColumns: 5,
-            RootKey: "off_days",
-            Columns: new ExpectedColumn[]
-            {
-                new(0, "tradedate"u8.ToArray()),
-                new(1, "is_traded"u8.ToArray()),
-                new(2, "trade_session_date"u8.ToArray()),
-                new(3, "reason"u8.ToArray()),
-                new(4, "updatetime"u8.ToArray()),
-            });
-
-        public static readonly ExpectedSchema CalendarFortsContractsSchema = new(
-            TotalColumns: 10,
-            RootKey: "forts",
-            Columns: new ExpectedColumn[]
-            {
-                new(0, "secid"u8.ToArray()),
-                new(1, "asset_code"u8.ToArray()),
-                new(2, "shortname"u8.ToArray()),
-                new(3, "exec_type"u8.ToArray()),
-                new(4, "contract_name"u8.ToArray()),
-                new(5, "expiration_date"u8.ToArray()),
-                new(6, "end_date"u8.ToArray()),
-                new(7, "expiration_type"u8.ToArray()),
-                new(8, "expiration_time"u8.ToArray()),
-                new(9, "weekend_session"u8.ToArray()),
-            });
-
-
-        // ═══════════════════════════════════════════════════════════
         // Real-time — DataVersion (служебный блок версии данных)
         // Источник: raw fixtures orderbook-*-raw.json, trades-*-raw.json
         // rootKey: "dataversion", columnCount: 4, используем: все 4

@@ -84,7 +84,7 @@ namespace ProjectTraiding.Moex.Clients
                 response, _options.BodyReadTimeout, endpoint, cancellationToken);
             try
             {
-                List<CalendarOffDaysMarketDTO> result = ParsingCalendarUtf8.ParseOffDaysMarket(rentedArr.Span);
+                List<CalendarOffDaysMarketDTO> result = ParsingCalendar.ParseOffDaysMarket(rentedArr.Memory);
                 MoexMetrics.RecordOperationSuccess(
                     in operationTags, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);
                 activity?.SetStatus(ActivityStatusCode.Ok);
@@ -138,7 +138,7 @@ namespace ProjectTraiding.Moex.Clients
                 response, _options.BodyReadTimeout, endpoint, cancellationToken);
             try
             {
-                List<CalendarOffDaysMarketDTO> result = ParsingCalendarUtf8.ParseOffDaysMarket(rentedArr.Span);
+                List<CalendarOffDaysMarketDTO> result = ParsingCalendar.ParseOffDaysMarket(rentedArr.Memory);
                 MoexMetrics.RecordOperationSuccess(
                     in operationTags, Stopwatch.GetElapsedTime(operationStart).TotalSeconds);
                 activity?.SetStatus(ActivityStatusCode.Ok);
@@ -178,7 +178,7 @@ namespace ProjectTraiding.Moex.Clients
                 response, _options.BodyReadTimeout, endpoint, ct);
             try
             {
-                return ParsingCalendarUtf8.ParseOffDaysMarket(rentedArr.Span);
+                return ParsingCalendar.ParseOffDaysMarket(rentedArr.Memory);
             }
             catch (MoexSchemaMismatchException ex)
             {
@@ -199,7 +199,7 @@ namespace ProjectTraiding.Moex.Clients
                 response, _options.BodyReadTimeout, endpoint, ct);
             try
             {
-                return ParsingCalendarUtf8.ParseOffDaysMarket(rentedArr.Span);
+                return ParsingCalendar.ParseOffDaysMarket(rentedArr.Memory);
             }
             catch (MoexSchemaMismatchException ex)
             {
@@ -208,7 +208,7 @@ namespace ProjectTraiding.Moex.Clients
             }
         }
 
-        public async Task<List<CalendarFortsContractDTO>>
+        public async Task<List<FuturesExpirationDTO>>
             GetFuturesSecurities(DateOnly from, DateOnly till, CancellationToken ct)
         {
             const string endpoint = "/calendars/futures/securities.json";
@@ -218,7 +218,7 @@ namespace ProjectTraiding.Moex.Clients
                 response, _options.BodyReadTimeout, endpoint, ct);
             try
             {
-                return ParsingCalendarUtf8.ParseFuturesSecurities(rentedArr.Span);
+                return ParsingCalendar.ParseFuturesSecurities(rentedArr.Memory);
             }
             catch (MoexSchemaMismatchException ex)
             {

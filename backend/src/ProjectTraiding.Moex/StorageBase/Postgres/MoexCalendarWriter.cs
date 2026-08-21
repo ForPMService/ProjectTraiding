@@ -71,22 +71,16 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             for (int index = 0; index < days.Count; index++)
             {
                 CalendarOffDaysMarketDTO day = days[index];
-                if (string.IsNullOrWhiteSpace(day.TradeDate))
-                    throw new InvalidOperationException($"TradeDate пустой (market={market})");
                 if (day.IsTraded is null)
                     throw new InvalidOperationException(
                         $"IsTraded null у {day.TradeDate} (market={market})");
 
                 rows.Add(new CalendarDayWriteDTO
                 {
-                    TradeDate = DateOnly.Parse(day.TradeDate),
+                    TradeDate = day.TradeDate,
                     Market = market,
                     IsTraded = day.IsTraded.Value,
-                    TradeSessionDate = ParseNullableDate(
-                        day.TradeSessionDate,
-                        $"moex_calendar_days ({market})",
-                        "trade_session_date",
-                        day.TradeDate),
+                    TradeSessionDate = day.TradeSessionDate,
                     Reason = day.Reason,
                     DataSource = "calendar",
                     MoexUpdateTime = day.UpdateTime,
@@ -177,14 +171,5 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             }
         }
 
-        private DateOnly? ParseNullableDate(string? raw, string table, string field, string key)
-        {
-            if (string.IsNullOrWhiteSpace(raw))
-                return null;
-            if (DateOnly.TryParse(raw, out DateOnly parsed))
-                return parsed;
-            MoexWriterLogMessages.DateParseFailed(_logger, table, field, key, raw);
-            return null;
-        }
     }
 }

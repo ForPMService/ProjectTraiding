@@ -25,7 +25,7 @@ namespace ProjectTraiding.Moex.Contracts.Dto.Calendar
         ///
         /// Пример: 2026-01-01
         /// </summary>
-        public string? TradeDate { get; init; }
+        public DateOnly TradeDate { get; init; }
 
         /// <summary>
         /// Торгуется ли в этот день.
@@ -47,7 +47,7 @@ namespace ProjectTraiding.Moex.Contracts.Dto.Calendar
         /// Пример: суббота 2026-01-17 привязана к сессии 2026-01-19.
         /// null, если торгов нет (is_traded = 0).
         /// </summary>
-        public string? TradeSessionDate { get; init; }
+        public DateOnly? TradeSessionDate { get; init; }
 
         /// <summary>
         /// Причина нерабочего/особого дня.

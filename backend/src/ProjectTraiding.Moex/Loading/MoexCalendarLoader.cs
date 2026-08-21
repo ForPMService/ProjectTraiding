@@ -149,27 +149,8 @@ namespace ProjectTraiding.Moex.Loading
                 DateOnly yearTill = year == dateTill.Year
                     ? dateTill
                     : new DateOnly(year, 12, 31);
-                List<CalendarFortsContractDTO> contracts =
-                    await _calendarClient.GetFuturesSecurities(yearFrom, yearTill, ct);
-
-                for (int index = 0; index < contracts.Count; index++)
-                {
-                    CalendarFortsContractDTO contract = contracts[index];
-                    if (string.IsNullOrWhiteSpace(contract.SecId))
-                        throw new InvalidOperationException("Пустой secid в блоке forts.");
-                    DateOnly expirationDate = ParseRequiredDate(
-                        contract.ExpirationDate, "forts.expiration_date", contract.SecId);
-                    expirations.Add(new FuturesExpirationDTO
-                    {
-                        SecId = contract.SecId,
-                        AssetCode = contract.AssetCode,
-                        ExpirationDate = expirationDate,
-                        ExpirationType = contract.ExpirationType,
-                        EndDate = ParseNullableDate(contract.EndDate, "forts.end_date", contract.SecId),
-                        WeekendSession = ToNullableInt16(
-                            contract.WeekendSession, "forts.weekend_session", contract.SecId),
-                    });
-                }
+                expirations.AddRange(
+                    await _calendarClient.GetFuturesSecurities(yearFrom, yearTill, ct));
                 year++;
             }
 
@@ -245,7 +226,7 @@ namespace ProjectTraiding.Moex.Loading
                 CalendarOffDaysMarketDTO row = rows[index];
                 if (row.UpdateTime is null)
                     continue;
-                DateOnly date = ParseRequiredDate(row.TradeDate, $"calendar.{market}.tradedate", market);
+                DateOnly date = row.TradeDate;
                 result[date] = row;
             }
             return result;
@@ -281,8 +262,7 @@ namespace ProjectTraiding.Moex.Loading
             if (stockDay is not null)
             {
                 isTraded = RequireIsTraded(stockDay, "stock");
-                tradeSessionDate = ParseNullableDate(
-                    stockDay.TradeSessionDate, "calendar.stock.trade_session_date", date.ToString());
+                tradeSessionDate = stockDay.TradeSessionDate;
                 reason = stockDay.Reason;
                 dataSource = "calendar";
                 updateTime = stockDay.UpdateTime;
@@ -327,8 +307,7 @@ namespace ProjectTraiding.Moex.Loading
             if (futuresDay is not null)
             {
                 isTraded = RequireIsTraded(futuresDay, "futures");
-                tradeSessionDate = ParseNullableDate(
-                    futuresDay.TradeSessionDate, "calendar.futures.trade_session_date", date.ToString());
+                tradeSessionDate = futuresDay.TradeSessionDate;
                 reason = futuresDay.Reason;
                 dataSource = "calendar";
                 updateTime = futuresDay.UpdateTime;
@@ -425,15 +404,6 @@ namespace ProjectTraiding.Moex.Loading
             if (string.IsNullOrWhiteSpace(value))
                 return null;
             return ParseRequiredTime(value, field, key.ToString() ?? "?");
-        }
-
-        private static short? ToNullableInt16(int? value, string field, string key)
-        {
-            if (value is null)
-                return null;
-            if (value.Value < short.MinValue || value.Value > short.MaxValue)
-                throw new InvalidOperationException($"Значение {field} у {key} вне диапазона smallint.");
-            return (short)value.Value;
         }
 
         private static bool IsWeekday(DateOnly date)
