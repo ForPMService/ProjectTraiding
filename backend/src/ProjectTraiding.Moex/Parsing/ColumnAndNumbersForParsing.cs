@@ -88,23 +88,6 @@ namespace ProjectTraiding.Moex.Parsing
                 new(9, "weekend_session"u8.ToArray()),
             });
 
-        public static readonly ExpectedSchema CalendarOptionsSeriesSchema = new(
-            TotalColumns: 11,
-            RootKey: "options",
-            Columns: new ExpectedColumn[]
-            {
-                new(0, "asset_type_name"u8.ToArray()),
-                new(1, "asset_code"u8.ToArray()),
-                new(2, "series_name"u8.ToArray()),
-                new(3, "series_type"u8.ToArray()),
-                new(4, "exec_type"u8.ToArray()),
-                new(5, "margin_style"u8.ToArray()),
-                new(6, "contract_name"u8.ToArray()),
-                new(7, "expiration_date"u8.ToArray()),
-                new(8, "expiration_type"u8.ToArray()),
-                new(9, "expiration_time"u8.ToArray()),
-                new(10, "weekend_session"u8.ToArray()),
-            });
 
         // ═══════════════════════════════════════════════════════════
         // Real-time — DataVersion (служебный блок версии данных)

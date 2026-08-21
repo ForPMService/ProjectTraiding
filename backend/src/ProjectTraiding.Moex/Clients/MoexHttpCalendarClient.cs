@@ -208,7 +208,7 @@ namespace ProjectTraiding.Moex.Clients
             }
         }
 
-        public async Task<(List<CalendarFortsContractDTO> Forts, List<CalendarOptionsSeriesDTO> Options)>
+        public async Task<List<CalendarFortsContractDTO>>
             GetFuturesSecurities(DateOnly from, DateOnly till, CancellationToken ct)
         {
             const string endpoint = "/calendars/futures/securities.json";

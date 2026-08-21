@@ -149,12 +149,12 @@ namespace ProjectTraiding.Moex.Loading
                 DateOnly yearTill = year == dateTill.Year
                     ? dateTill
                     : new DateOnly(year, 12, 31);
-                (List<CalendarFortsContractDTO> Forts, List<CalendarOptionsSeriesDTO> Options) response =
+                List<CalendarFortsContractDTO> contracts =
                     await _calendarClient.GetFuturesSecurities(yearFrom, yearTill, ct);
 
-                for (int index = 0; index < response.Forts.Count; index++)
+                for (int index = 0; index < contracts.Count; index++)
                 {
-                    CalendarFortsContractDTO contract = response.Forts[index];
+                    CalendarFortsContractDTO contract = contracts[index];
                     if (string.IsNullOrWhiteSpace(contract.SecId))
                         throw new InvalidOperationException("Пустой secid в блоке forts.");
                     DateOnly expirationDate = ParseRequiredDate(

@@ -5,7 +5,7 @@ namespace ProjectTraiding.Moex.Parsing
 {
     public static class ParsingCalendarUtf8
     {
-        public static (List<CalendarFortsContractDTO> Forts, List<CalendarOptionsSeriesDTO> Options)
+        public static List<CalendarFortsContractDTO>
             ParseFuturesSecurities(ReadOnlySpan<byte> jsonBytes)
         {
             List<CalendarFortsContractDTO> forts = new List<CalendarFortsContractDTO>();
@@ -15,14 +15,7 @@ namespace ProjectTraiding.Moex.Parsing
             ParseHelpersUtf8.SkipToRootObject(ref fortsReader, fortsSchema.RootKey);
             ReadFortsBlock(ref fortsReader, forts, fortsSchema);
 
-            List<CalendarOptionsSeriesDTO> options = new List<CalendarOptionsSeriesDTO>();
-            ColumnAndNumbersForParsing.ExpectedSchema optionsSchema =
-                ColumnAndNumbersForParsing.CalendarOptionsSeriesSchema;
-            Utf8JsonReader optionsReader = new Utf8JsonReader(jsonBytes);
-            ParseHelpersUtf8.SkipToRootObject(ref optionsReader, optionsSchema.RootKey);
-            ReadOptionsBlock(ref optionsReader, options, optionsSchema);
-
-            return (forts, options);
+            return forts;
         }
 
         private static void ReadFortsBlock(
@@ -50,40 +43,6 @@ namespace ProjectTraiding.Moex.Parsing
                             $"[{schema.RootKey}] Секция 'data' встретилась до 'columns'.");
                     foundData = true;
                     ReadFortsData(ref reader, list, schema);
-                }
-                else
-                {
-                    reader.Skip();
-                }
-            }
-            ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, schema.RootKey);
-        }
-
-        private static void ReadOptionsBlock(
-            ref Utf8JsonReader reader,
-            List<CalendarOptionsSeriesDTO> list,
-            ColumnAndNumbersForParsing.ExpectedSchema schema)
-        {
-            bool foundColumns = false;
-            bool foundData = false;
-            while (reader.Read())
-            {
-                if (reader.TokenType == JsonTokenType.EndObject)
-                    break;
-                if (reader.TokenType != JsonTokenType.PropertyName)
-                    continue;
-                if (reader.ValueTextEquals("columns"u8))
-                {
-                    foundColumns = true;
-                    ParseHelpersUtf8.ValidateColumnsUtf8(ref reader, schema);
-                }
-                else if (reader.ValueTextEquals("data"u8))
-                {
-                    if (!foundColumns)
-                        ParseHelpersUtf8.SchemaMismatch(
-                            $"[{schema.RootKey}] Секция 'data' встретилась до 'columns'.");
-                    foundData = true;
-                    ReadOptionsData(ref reader, list, schema);
                 }
                 else
                 {
@@ -126,46 +85,6 @@ namespace ProjectTraiding.Moex.Parsing
                     EndDate = values[6],
                     ExpirationType = values[7],
                     ExpirationTime = values[8],
-                    WeekendSession = weekendSession,
-                });
-                rowIndex++;
-            }
-        }
-
-        private static void ReadOptionsData(
-            ref Utf8JsonReader reader,
-            List<CalendarOptionsSeriesDTO> list,
-            ColumnAndNumbersForParsing.ExpectedSchema schema)
-        {
-            ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", schema.RootKey);
-            int rowIndex = 0;
-            while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
-            {
-                string?[] values = new string?[10];
-                int? weekendSession = null;
-                for (int position = 0; position < schema.TotalColumns; position++)
-                {
-                    ReadRowValue(ref reader, schema, rowIndex, position);
-                    if (reader.TokenType == JsonTokenType.Null)
-                        continue;
-                    if (position < 10)
-                        values[position] = ParseHelpersUtf8.ReadString(ref reader, rowIndex, position, schema.RootKey);
-                    else
-                        weekendSession = ParseHelpersUtf8.ReadInt(ref reader, rowIndex, position, schema.RootKey);
-                }
-                ExpectRowEnd(ref reader, schema, rowIndex);
-                list.Add(new CalendarOptionsSeriesDTO
-                {
-                    AssetTypeName = values[0],
-                    AssetCode = values[1],
-                    SeriesName = values[2],
-                    SeriesType = values[3],
-                    ExecType = values[4],
-                    MarginStyle = values[5],
-                    ContractName = values[6],
-                    ExpirationDate = values[7],
-                    ExpirationType = values[8],
-                    ExpirationTime = values[9],
                     WeekendSession = weekendSession,
                 });
                 rowIndex++;
