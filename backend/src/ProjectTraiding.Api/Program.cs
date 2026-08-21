@@ -31,9 +31,7 @@ builder.Services.AddRedis(builder.Configuration);
 builder.Services.AddTransient<MoexInstrumentWriter>();
 builder.Services.AddTransient<CatalogEventPublisher>();
 builder.Services.AddTransient<MoexCalendarWriter>();
-builder.Services.AddTransient<MoexInstrumentBoardIntervalWriter>();
-builder.Services.AddTransient<MoexFuturesExpirationWriter>();
-builder.Services.AddTransient<MoexSplitWriter>();
+builder.Services.AddTransient<MoexCalendarReferenceWriter>();
 builder.Services.AddTransient<MoexCalendarLoader>();
 // Поколение данных инструмента для токена дедупликации: один читатель на оба
 // потребителя — историческую загрузку и приём реального времени.

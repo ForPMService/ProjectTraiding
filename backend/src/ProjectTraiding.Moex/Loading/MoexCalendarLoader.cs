@@ -14,26 +14,20 @@ namespace ProjectTraiding.Moex.Loading
         private readonly MoexHttpIssClient _issClient;
         private readonly MoexHttpAlgClient _algClient;
         private readonly MoexCalendarWriter _calendarWriter;
-        private readonly MoexInstrumentBoardIntervalWriter _intervalWriter;
-        private readonly MoexFuturesExpirationWriter _expirationWriter;
-        private readonly MoexSplitWriter _splitWriter;
+        private readonly MoexCalendarReferenceWriter _referenceWriter;
 
         public MoexCalendarLoader(
             MoexHttpCalendarClient calendarClient,
             MoexHttpIssClient issClient,
             MoexHttpAlgClient algClient,
             MoexCalendarWriter calendarWriter,
-            MoexInstrumentBoardIntervalWriter intervalWriter,
-            MoexFuturesExpirationWriter expirationWriter,
-            MoexSplitWriter splitWriter)
+            MoexCalendarReferenceWriter referenceWriter)
         {
             _calendarClient = calendarClient;
             _issClient = issClient;
             _algClient = algClient;
             _calendarWriter = calendarWriter;
-            _intervalWriter = intervalWriter;
-            _expirationWriter = expirationWriter;
-            _splitWriter = splitWriter;
+            _referenceWriter = referenceWriter;
         }
 
         public static DateOnly GetDefaultDateFrom()
@@ -120,7 +114,7 @@ namespace ProjectTraiding.Moex.Loading
             AppendIntervals(stockListing, "stock", activeStock, intervals);
             AppendIntervals(futuresListing, "futures", activeFuturesKeys, intervals);
 
-            DbWriteResult result = await _intervalWriter.ReplaceAllAsync(intervals, ct);
+            DbWriteResult result = await _referenceWriter.ReplaceIntervalsAsync(intervals, ct);
             return result.RowsWritten;
         }
 
@@ -140,7 +134,7 @@ namespace ProjectTraiding.Moex.Loading
                     await _calendarClient.GetFuturesSecurities(range.From, range.Till, ct));
             }
 
-            DbWriteResult result = await _expirationWriter.ReplaceRangeAsync(
+            DbWriteResult result = await _referenceWriter.ReplaceExpirationsAsync(
                 dateFrom, dateTill, expirations, ct);
             return result.RowsWritten;
         }
@@ -162,7 +156,7 @@ namespace ProjectTraiding.Moex.Loading
                     maxDate = tradeDate;
             }
 
-            DbWriteResult result = await _splitWriter.ReplaceRangeAsync(
+            DbWriteResult result = await _referenceWriter.ReplaceSplitsAsync(
                 minDate, maxDate, splits, ct);
             return result.RowsWritten;
         }
