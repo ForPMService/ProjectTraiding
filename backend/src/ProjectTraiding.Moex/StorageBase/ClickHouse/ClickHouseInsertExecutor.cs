@@ -46,7 +46,6 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 return 0;
 
             ClickHouseWriterLogMessages.WriteStarted(_logger, table, rows.Count);
-            long startTs = Stopwatch.GetTimestamp();
 
             // BatchSize = размер пачки + параллелизм 1 → ровно один INSERT = один токен.
             // ColumnTypes задан явно → драйвер не шлёт SELECT ... WHERE 1=0 перед вставкой.
@@ -63,29 +62,18 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 },
             };
 
-            using Activity? insertActivity =
-                MoexTelemetry.ActivitySource.StartActivity("storage.clickhouse.insert");
-            insertActivity?.SetTag(MoexTelemetryAttributes.DataKind, insertContext.DataKind);
-            insertActivity?.SetTag(MoexTelemetryAttributes.Market, insertContext.Market);
-            insertActivity?.SetTag(MoexTelemetryAttributes.Flow, insertContext.Flow);
-
+            // Собственного отрезка трассы у вставки нет намеренно: он создавался бы на
+            // каждый инструмент с новыми строками и на каждую страницу загрузки, а исход
+            // вставки и число строк несут счётчики, отказ — событие журнала.
             try
             {
                 long inserted = await _client.InsertBinaryAsync(table, columns, rows, options, ct);
 
-                TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
-
-                RecordInsert(in insertContext, MoexOutcomes.Success, inserted, elapsed);
-                insertActivity?.SetStatus(ActivityStatusCode.Ok);
+                RecordInsert(in insertContext, MoexOutcomes.Success, inserted);
                 return inserted;
             }
             catch (Exception ex)
             {
-                insertActivity?.SetStatus(
-                    ex is OperationCanceledException
-                        ? ActivityStatusCode.Ok
-                        : ActivityStatusCode.Error,
-                    ex is OperationCanceledException ? null : ex.Message);
                 ClickHouseWriterLogMessages.WriteFailed(_logger, ex, table, ex.GetType().Name);
 
                 // Обработчик остаётся один: разводить отмену в отдельный catch значило бы
@@ -96,7 +84,7 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                     : MoexOutcomes.Error;
 
                 // Число вставленных строк не записывается: драйвер его не подтвердил.
-                RecordInsert(in insertContext, outcome, null, Stopwatch.GetElapsedTime(startTs));
+                RecordInsert(in insertContext, outcome, null);
 
                 throw;
             }
@@ -105,8 +93,7 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
         private static void RecordInsert(
             in StorageInsertContext context,
             string outcome,
-            long? insertedRows,
-            TimeSpan elapsed)
+            long? insertedRows)
         {
             TagList operationTags = new TagList
             {
@@ -118,17 +105,11 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
 
             MoexMetrics.StorageInsertOperations.Add(1, operationTags);
 
+            // Число строк записывается только при подтверждении драйвером, а подтверждает
+            // он его лишь при успехе. Поэтому у счётчика строк метка исхода постоянна;
+            // различие исходов несёт счётчик операций строкой выше.
             if (insertedRows is long rows)
                 MoexMetrics.StorageInsertRows.Add(rows, operationTags);
-
-            TagList durationTags = new TagList
-            {
-                { MoexTelemetryAttributes.DataKind, context.DataKind },
-                { MoexTelemetryAttributes.Market, context.Market },
-                { MoexTelemetryAttributes.Flow, context.Flow },
-            };
-
-            MoexMetrics.StorageInsertDuration.Record(elapsed.TotalSeconds, durationTags);
         }
     }
 }

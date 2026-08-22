@@ -301,26 +301,6 @@ public static class MoexMetrics
             description: "ClickHouse inserted rows total");
 
     /// <summary>
-    /// Длительность одной вставки, в секундах. Собственного бюджета времени у вставки
-    /// нет: клиент хранилища создаётся из строки подключения без тайм-аута, и длительность
-    /// ограничена лишь токеном отмены вызывающей стороны. Поэтому верхняя граница взята
-    /// с запасом до пяти минут — иначе при деградации хранилища все наблюдения свалились бы
-    /// в переполнение, и процентиль потерял бы разрешение именно в аварийный период.
-    /// </summary>
-    public static readonly Histogram<double> StorageInsertDuration =
-        Meter.CreateHistogram<double>(
-            "storage.insert.duration",
-            unit: "s",
-            description: "ClickHouse insert duration",
-            advice: new InstrumentAdvice<double>
-            {
-                HistogramBucketBoundaries = new double[]
-                {
-                    0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 180, 300
-                }
-            });
-
-    /// <summary>
     /// Записывает успешный исход операции. Пустой, но корректно разобранный ответ —
     /// успех: отсутствие данных за период является нормальным состоянием источника.
     /// </summary>
