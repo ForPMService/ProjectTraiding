@@ -72,9 +72,13 @@ public static class ObservabilityServiceCollectionExtensions
                     metrics.AddMeter(meter);
                 }
 
+                // Автоинструментация исходящих запросов исключена из конвейера метрик:
+                // семейство http.client.* дублирует собственную гистограмму
+                // moex.http.request.duration и не читается ни одной панелью.
+                // В конвейере трассировки она остаётся — там от неё зависят
+                // родительские отрезки исходящих обращений.
                 metrics
                     .AddAspNetCoreInstrumentation()
-                    .AddHttpClientInstrumentation()
                     .AddRuntimeInstrumentation()
                     .AddOtlpExporter();
             });
