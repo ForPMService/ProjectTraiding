@@ -8,11 +8,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
     public static partial class MoexLoadTaskLogMessages
     {
         [LoggerMessage(
-            EventId = 190, EventName = "LoadTaskRunning", Level = LogLevel.Debug,
-            Message = "Load task status set to running: id={TaskId}, sqlTime={Elapsed}.")]
-        public static partial void TaskRunning(ILogger logger, Guid taskId, TimeSpan elapsed);
-
-        [LoggerMessage(
             EventId = 191, EventName = "LoadTaskDone", Level = LogLevel.Debug,
             Message = "Load task status set to done: id={TaskId}, rows={RowsLoaded}, sqlTime={Elapsed}.")]
         public static partial void TaskDone(ILogger logger, Guid taskId, long rowsLoaded, TimeSpan elapsed);
@@ -21,11 +16,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             EventId = 192, EventName = "LoadTaskError", Level = LogLevel.Debug,
             Message = "Load task status set to error: id={TaskId}, sqlTime={Elapsed}.")]
         public static partial void TaskError(ILogger logger, Guid taskId, TimeSpan elapsed);
-
-        [LoggerMessage(
-            EventId = 193, EventName = "LoadTaskClaimMissed", Level = LogLevel.Information,
-            Message = "Load task claim missed (already taken or absent): id={TaskId}.")]
-        public static partial void TaskClaimMissed(ILogger logger, Guid taskId);
 
         [LoggerMessage(
             EventId = 194, EventName = "LoadedRangeRecorded", Level = LogLevel.Information,

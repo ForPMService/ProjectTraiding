@@ -5,18 +5,6 @@ namespace ProjectTraiding.Moex.Clients
     public static partial class MoexLogMessages
     {
         /// <summary>
-        /// Логирует начало загрузки на уровне endpoint-а, до вызова MOEX-клиента.
-        /// </summary>
-        [LoggerMessage(EventId = 100, EventName = "MoexLoadStarted", Level = LogLevel.Information, Message = "MOEX load started: route={RouteName}, source={Source}, endpoint={Endpoint}, query={QuerySummary}.")]
-        public static partial void LoadStarted(ILogger logger, string routeName, string source, string endpoint, string querySummary);
-
-        /// <summary>
-        /// Логирует отправку исходящего HTTP-запроса в MOEX на уровне HttpClient handler-а.
-        /// </summary>
-        [LoggerMessage(EventId = 101, EventName = "MoexHttpRequestSent", Level = LogLevel.Debug, Message = "MOEX HTTP request sent: source={Source}, method={Method}, endpoint={Endpoint}.")]
-        public static partial void HttpRequestSent(ILogger logger, string source, string method, string endpoint);
-
-        /// <summary>
         /// Логирует получение HTTP-ответа от MOEX на уровне HttpClient handler-а.
         /// Постраничная запись относится к отладке; счёт ответов ведут метрики.
         /// </summary>
@@ -72,18 +60,6 @@ namespace ProjectTraiding.Moex.Clients
         /// </summary>
         [LoggerMessage(EventId = 131, EventName = "MoexParseFailed", Level = LogLevel.Error, Message = "MOEX response could not be read: endpoint={Endpoint}, error={ErrorCategory}, message={ErrorMessage}.")]
         public static partial void ParseFailed(ILogger logger, Exception exception, string endpoint, string errorCategory, string errorMessage);
-
-        /// <summary>
-        /// Логирует несовпадение схемы columns/data с ожидаемым контрактом парсера.
-        /// </summary>
-        //[LoggerMessage(EventId = 132, EventName = "MoexSchemaMismatch", Level = LogLevel.Error, Message = "MOEX response format is not expected: endpoint={Endpoint}, message={ErrorMessage}.")]
-        //public static partial void SchemaMismatch(ILogger logger, Exception exception, string endpoint, string errorMessage);
-
-        /// <summary>
-        /// Логирует пустую страницу данных, если это важно отличить от обычной остановки пагинации.
-        /// </summary>
-        //[LoggerMessage(EventId = 140, EventName = "MoexEmptyPageReceived", Level = LogLevel.Information, Message = "MOEX empty page received: endpoint={Endpoint}, page={PageNumber}, reason={Reason}.")]
-        //public static partial void EmptyPageReceived(ILogger logger, string endpoint, int pageNumber, string reason);
 
         // ── Rate Limiter ────────────────────────────────────────
 

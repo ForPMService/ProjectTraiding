@@ -45,7 +45,6 @@ namespace ProjectTraiding.Moex.Clients
             // рискует вынести в журнал то, что в него попадать не должно. Параметры запроса сохраняются.
             string endpoint = request.RequestUri?.PathAndQuery ?? "unknown";
 
-            MoexLogMessages.HttpRequestSent(_logger, _source, request.Method.Method, endpoint);
             MoexMetrics.HttpRequests.Add(1,
                 new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, _source));
 
