@@ -368,36 +368,22 @@ public static class MoexMetrics
         string? errorType,
         double seconds)
     {
-        // Категория ошибки добавляется только при отказе. Пустая строка вместо
-        // отсутствующей метки создала бы отдельный ряд с бессмысленным значением.
-        if (errorType is null)
-        {
-            TagList tagList = new TagList
-            {
-                { MoexTelemetryAttributes.Source, tags.Source },
-                { MoexTelemetryAttributes.Operation, tags.Operation },
-                { MoexTelemetryAttributes.DataKind, tags.DataKind },
-                { MoexTelemetryAttributes.Market, tags.Market },
-                { MoexTelemetryAttributes.Outcome, outcome },
-            };
-
-            OperationsCompleted.Add(1, tagList);
-            OperationDuration.Record(seconds, tagList);
-            return;
-        }
-
-        TagList errorTags = new TagList
+        TagList tagList = new TagList
         {
             { MoexTelemetryAttributes.Source, tags.Source },
             { MoexTelemetryAttributes.Operation, tags.Operation },
             { MoexTelemetryAttributes.DataKind, tags.DataKind },
             { MoexTelemetryAttributes.Market, tags.Market },
             { MoexTelemetryAttributes.Outcome, outcome },
-            { MoexTelemetryAttributes.ErrorType, errorType },
         };
 
-        OperationsCompleted.Add(1, errorTags);
-        OperationDuration.Record(seconds, errorTags);
+        // Категория ошибки добавляется только при отказе. Пустая строка вместо
+        // отсутствующей метки создала бы отдельный ряд с бессмысленным значением.
+        if (errorType is not null)
+            tagList.Add(MoexTelemetryAttributes.ErrorType, errorType);
+
+        OperationsCompleted.Add(1, tagList);
+        OperationDuration.Record(seconds, tagList);
     }
 
     /// <summary>
