@@ -17,3 +17,9 @@ storage:
       path: /var/tempo/traces
     wal:
       path: /var/tempo/wal
+
+compactor:
+  compaction:
+    # Глубина хранения трасс. Умолчание — четырнадцать суток; трёх достаточно
+    # для разбора недавнего случая, а объём на локальном диске ниже впятеро.
+    block_retention: 72h
