@@ -215,18 +215,6 @@ services:
     networks:
       - zitadel
 
-  otel-collector:
-    image: ${OTEL_COLLECTOR_IMAGE}
-    restart: unless-stopped
-    profiles:
-      - observability
-    command:
-      - --config=/etc/otelcol/config.yaml
-    volumes:
-      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
-    networks:
-      - zitadel
-
 networks:
   zitadel:
     name: zitadel
