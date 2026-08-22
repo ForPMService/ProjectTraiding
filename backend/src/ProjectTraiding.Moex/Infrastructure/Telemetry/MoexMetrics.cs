@@ -98,12 +98,15 @@ public static class MoexMetrics
             "moex.realtime.poll.completed",
             description: "MOEX realtime instrument polls completed total");
 
-    /// <summary>Записывает исход полного опроса текущего инструмента.</summary>
+    /// <summary>
+    /// Записывает исход полного опроса текущего инструмента. Метка источника не
+    /// записывается: у приёма реального времени источник ровно один, и метка была бы
+    /// постоянной величиной, добавляющей ряд без различающего смысла.
+    /// </summary>
     public static void RecordRealtimePoll(in MoexOperationTags tags, string outcome)
     {
         RealtimePollCompleted.Add(
             1,
-            new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, tags.Source),
             new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, tags.DataKind),
             new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, tags.Market),
             new KeyValuePair<string, object?>(MoexTelemetryAttributes.Outcome, outcome));

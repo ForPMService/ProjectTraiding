@@ -75,9 +75,13 @@ namespace ProjectTraiding.Moex.Clients
                 _logger, _source, request.Method.Method, endpoint,
                 response.StatusCode, elapsed, response.Content.Headers.ContentLength);
 
+            // Код состояния на гистограмму не записывается: он умножал бы число рядов
+            // гистограммы на число встреченных кодов, а разбивка длительности по коду
+            // не запрашивается.
+            // Диагностическая разбивка по коду сохраняется на счётчике moex.http.errors,
+            // где объём записей несопоставимо меньше.
             MoexMetrics.HttpRequestDuration.Record(elapsed.TotalMilliseconds,
-                new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, _source),
-                new KeyValuePair<string, object?>(MoexTelemetryAttributes.StatusCode, BoxStatusCode((int)response.StatusCode)));
+                new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, _source));
 
             // Серверные ответы (5xx) и объявленный источником тайм-аут (408) считаем
             // в метрику ошибок. Прочие 4xx могут быть нормальным поведением — не считаем.
