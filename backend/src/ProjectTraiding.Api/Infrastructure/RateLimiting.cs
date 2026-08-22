@@ -68,9 +68,6 @@ namespace ProjectTraiding.Api.Infrastructure
             ApiRateLimitLogMessages.RequestRejected(
                 logger, ManagementPolicy, http.Request.Path.Value ?? "unknown");
 
-            ApiMetrics.RateLimitRejected.Add(1,
-                new KeyValuePair<string, object?>("group", ManagementPolicy));
-
             return ValueTask.CompletedTask;
         }
     }
