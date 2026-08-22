@@ -60,19 +60,9 @@ namespace ProjectTraiding.Moex.Loading
         /// начатые раньше фиксации, не останавливает. За пределами этой границы поведение
         /// фонового пути прежнее.
         /// </summary>
-        public Task RunClaimedAsync(MoexLoadTask task, CancellationToken ct)
+        public async Task RunClaimedAsync(MoexLoadTask task, CancellationToken ct)
         {
-            return RunCoreAsync(task, Stopwatch.GetTimestamp(), ct);
-        }
-
-        /// <summary>
-        /// Общая часть исполнения. К моменту входа задача уже принадлежит загрузчику.
-        /// </summary>
-        private async Task RunCoreAsync(
-            MoexLoadTask task,
-            long taskStart,
-            CancellationToken ct)
-        {
+            long taskStart = Stopwatch.GetTimestamp();
             Guid taskId = task.Id;
 
             Activity? taskActivity = null;

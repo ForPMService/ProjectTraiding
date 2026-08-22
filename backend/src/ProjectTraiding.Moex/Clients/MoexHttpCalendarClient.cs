@@ -18,7 +18,6 @@ namespace ProjectTraiding.Moex.Clients
     public class MoexHttpCalendarClient
     {
         private readonly MoexOptions _options;
-        private readonly ILogger<MoexHttpCalendarClient> _logger;
         private readonly MoexHttpTransport _transport;
 
         public MoexHttpCalendarClient(
@@ -27,7 +26,6 @@ namespace ProjectTraiding.Moex.Clients
             ILogger<MoexHttpCalendarClient> logger)
         {
             _options = options.Value;
-            _logger = logger;
             _transport = new MoexHttpTransport(
                 httpClient,
                 logger,

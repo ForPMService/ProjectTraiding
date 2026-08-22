@@ -43,8 +43,8 @@ namespace ProjectTraiding.Moex.Loading
             ValidateRange(dateFrom, dateTill);
             List<EngineDailyTableDTO> stockEngineRows = await _issClient.GetEngine("stock", ct);
             List<EngineDailyTableDTO> futuresEngineRows = await _issClient.GetEngine("futures", ct);
-            Dictionary<DateOnly, EngineDayTimes> stockTimes = BuildEngineTimes(stockEngineRows, "stock");
-            Dictionary<DateOnly, EngineDayTimes> futuresTimes = BuildEngineTimes(futuresEngineRows, "futures");
+            Dictionary<DateOnly, EngineDayTimes> stockTimes = BuildEngineTimes(stockEngineRows);
+            Dictionary<DateOnly, EngineDayTimes> futuresTimes = BuildEngineTimes(futuresEngineRows);
             List<CalendarDayWriteDTO> output = new List<CalendarDayWriteDTO>();
 
             List<(DateOnly From, DateOnly Till)> ranges = SplitByYears(dateFrom, dateTill);
@@ -57,9 +57,9 @@ namespace ProjectTraiding.Moex.Loading
                 List<CalendarOffDaysMarketDTO> futuresRows =
                     await _calendarClient.GetFuturesOffDays(range.From, range.Till, ct);
                 Dictionary<DateOnly, CalendarOffDaysMarketDTO> stockActual =
-                    BuildActualDays(stockRows, "stock");
+                    BuildActualDays(stockRows);
                 Dictionary<DateOnly, CalendarOffDaysMarketDTO> futuresActual =
-                    BuildActualDays(futuresRows, "futures");
+                    BuildActualDays(futuresRows);
 
                 DateOnly date = range.From;
                 while (date <= range.Till)
@@ -182,8 +182,7 @@ namespace ProjectTraiding.Moex.Loading
         }
 
         private static Dictionary<DateOnly, CalendarOffDaysMarketDTO> BuildActualDays(
-            IReadOnlyList<CalendarOffDaysMarketDTO> rows,
-            string market)
+            IReadOnlyList<CalendarOffDaysMarketDTO> rows)
         {
             Dictionary<DateOnly, CalendarOffDaysMarketDTO> result =
                 new Dictionary<DateOnly, CalendarOffDaysMarketDTO>();
@@ -199,8 +198,7 @@ namespace ProjectTraiding.Moex.Loading
         }
 
         private static Dictionary<DateOnly, EngineDayTimes> BuildEngineTimes(
-            IReadOnlyList<EngineDailyTableDTO> rows,
-            string market)
+            IReadOnlyList<EngineDailyTableDTO> rows)
         {
             Dictionary<DateOnly, EngineDayTimes> result = new Dictionary<DateOnly, EngineDayTimes>();
             for (int index = 0; index < rows.Count; index++)

@@ -16,39 +16,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             _logger = logger;
         }
 
-        public Task<DbWriteResult> UpsertDaysAsync(
-            IReadOnlyList<CalendarDayWriteDTO> days,
-            CancellationToken ct)
-        {
-            return UpsertDaysCoreAsync(days, ct);
-        }
-
-        public async Task<int> OverrideDayAsync(
-            string market,
-            DateOnly date,
-            int isTraded,
-            string? note,
-            CancellationToken ct)
-        {
-            await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
-            await using NpgsqlCommand command = new NpgsqlCommand("""
-                UPDATE moex_calendar_days
-                SET is_traded = @is_traded,
-                    data_source = 'manual',
-                    note = @note,
-                    updated_at = now()
-                WHERE market = @market
-                  AND trade_date = @trade_date
-                """, connection);
-            command.Parameters.Add("@market", NpgsqlDbType.Text).Value = market;
-            command.Parameters.Add("@trade_date", NpgsqlDbType.Date).Value = date;
-            command.Parameters.Add("@is_traded", NpgsqlDbType.Integer).Value = isTraded;
-            command.Parameters.Add("@note", NpgsqlDbType.Text).Value =
-                (object?)note ?? DBNull.Value;
-            return await command.ExecuteNonQueryAsync(ct);
-        }
-
-        private async Task<DbWriteResult> UpsertDaysCoreAsync(
+        public async Task<DbWriteResult> UpsertDaysAsync(
             IReadOnlyList<CalendarDayWriteDTO> days,
             CancellationToken ct)
         {
@@ -132,6 +100,31 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 await transaction.RollbackAsync(CancellationToken.None);
                 throw;
             }
+        }
+
+        public async Task<int> OverrideDayAsync(
+            string market,
+            DateOnly date,
+            int isTraded,
+            string? note,
+            CancellationToken ct)
+        {
+            await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
+            await using NpgsqlCommand command = new NpgsqlCommand("""
+                UPDATE moex_calendar_days
+                SET is_traded = @is_traded,
+                    data_source = 'manual',
+                    note = @note,
+                    updated_at = now()
+                WHERE market = @market
+                  AND trade_date = @trade_date
+                """, connection);
+            command.Parameters.Add("@market", NpgsqlDbType.Text).Value = market;
+            command.Parameters.Add("@trade_date", NpgsqlDbType.Date).Value = date;
+            command.Parameters.Add("@is_traded", NpgsqlDbType.Integer).Value = isTraded;
+            command.Parameters.Add("@note", NpgsqlDbType.Text).Value =
+                (object?)note ?? DBNull.Value;
+            return await command.ExecuteNonQueryAsync(ct);
         }
 
     }
