@@ -331,14 +331,9 @@ namespace ProjectTraiding.Management.Endpoints
             return routes;
         }
 
-        private static ValidationResult ValidateBulkRequestShape(LoadTaskBulkCreateRequest? request)
+        private static ValidationResult ValidateBulkRequestShape(LoadTaskBulkCreateRequest request)
         {
             ValidationResult result = new();
-            if (request is null)
-            {
-                result.Errors.Add("body обязателен");
-                return result;
-            }
 
             if (request.Instruments is null || request.Instruments.Count == 0)
                 result.Errors.Add("instruments обязателен и не может быть пустым");

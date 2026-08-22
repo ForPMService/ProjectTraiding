@@ -7,8 +7,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
     public readonly record struct PostgresDeleteCounts(
         int LoadedRangesDeleted,
         int StreamCursorsDeleted,
-        int LoadTasksDeleted,
-        TimeSpan Elapsed);
+        int LoadTasksDeleted);
 
     /// <summary>
     /// Удаление рабочих данных инструмента из PostgreSQL: покрытие, отметки приёма,
@@ -69,7 +68,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                     _logger, secid, rangesDeleted, cursorsDeleted, tasksDeleted, elapsed);
 
                 return new PostgresDeleteCounts(
-                    rangesDeleted, cursorsDeleted, tasksDeleted, elapsed);
+                    rangesDeleted, cursorsDeleted, tasksDeleted);
             }
             catch (Exception ex)
             {

@@ -7,46 +7,6 @@ namespace ProjectTraiding.Management.Expansion
 {
     public static class LoadTaskBulkExpander
     {
-        public static IReadOnlyList<LoadTaskCreateRequest> Expand(LoadTaskBulkCreateRequest request)
-        {
-            List<LoadTaskCreateRequest> tasks = new();
-
-            for (int instrumentIndex = 0; instrumentIndex < request.Instruments.Count; instrumentIndex++)
-            {
-                LoadTaskBulkInstrumentRequest instrument = request.Instruments[instrumentIndex];
-                string[] dataKinds = instrument.Market == "stock"
-                    ? request.StockDataKinds
-                    : request.FuturesDataKinds;
-
-                for (int intervalIndex = 0; intervalIndex < request.CandleIntervals.Length; intervalIndex++)
-                {
-                    int candleWeeks = ResolveSliceWeeks(request.SliceWeeks, "candles", instrument.Market);
-                    AddWindows(
-                        tasks,
-                        instrument,
-                        dataKind: "candles",
-                        candleInterval: request.CandleIntervals[intervalIndex],
-                        storageTarget: request.StorageTarget,
-                        sliceDays: candleWeeks * 7);
-                }
-
-                for (int dataKindIndex = 0; dataKindIndex < dataKinds.Length; dataKindIndex++)
-                {
-                    string dataKind = dataKinds[dataKindIndex];
-                    int weeks = ResolveSliceWeeks(request.SliceWeeks, dataKind, instrument.Market);
-                    AddWindows(
-                        tasks,
-                        instrument,
-                        dataKind: dataKind,
-                        candleInterval: null,
-                        storageTarget: request.StorageTarget,
-                        sliceDays: weeks * 7);
-                }
-            }
-
-            return tasks;
-        }
-
         public static int AddMissingWindows(
             List<LoadTaskCreateRequest> tasks,
             LoadTaskBulkInstrumentRequest instrument,
@@ -98,25 +58,6 @@ namespace ProjectTraiding.Management.Expansion
                 return 1;
 
             return 52;
-        }
-
-        private static void AddWindows(
-            List<LoadTaskCreateRequest> tasks,
-            LoadTaskBulkInstrumentRequest instrument,
-            string dataKind,
-            int? candleInterval,
-            string storageTarget,
-            int sliceDays)
-        {
-            AddWindows(
-                tasks,
-                instrument,
-                dataKind,
-                candleInterval,
-                storageTarget,
-                sliceDays,
-                instrument.DateFrom,
-                instrument.DateTill);
         }
 
         private static void AddWindows(

@@ -12,7 +12,6 @@ namespace ProjectTraiding.Management.Contracts
     [JsonSerializable(typeof(LoadTaskCreateRequest))]
     [JsonSerializable(typeof(LoadTaskBulkCreateRequest))]
     [JsonSerializable(typeof(LoadTaskBulkCreateResponse))]
-    [JsonSerializable(typeof(LoadTaskBulkInstrumentRequest))]
     [JsonSerializable(typeof(RealtimeSubscriptionResultDto))]
     [JsonSerializable(typeof(RealtimeSubscriptionsDisableAllResponse))]
     [JsonSerializable(typeof(LoadTasksCancelResponse))]
@@ -26,7 +25,6 @@ namespace ProjectTraiding.Management.Contracts
     [JsonSerializable(typeof(TradingPeriodTypeCreateRequest))]
     [JsonSerializable(typeof(LoadResultDto))]
     [JsonSerializable(typeof(LoadResultDto[]))]
-    [JsonSerializable(typeof(bool?))]
     public partial class ManagementJsonContext : JsonSerializerContext;
     
 }
