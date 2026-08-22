@@ -11,8 +11,10 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
     /// </summary>
     public static partial class ManagementWriterLogMessages
     {
+        // Событие несёт только имя таблицы. Завершение каждой операции пишется
+        // отдельным событием этого же класса со строго большим набором сведений.
         [LoggerMessage(
-        EventId = 200, EventName = "MgmtWriteStarted", Level = LogLevel.Information,
+        EventId = 200, EventName = "MgmtWriteStarted", Level = LogLevel.Debug,
         Message = "Management DB write started: table={Table}.")]
         public static partial void WriteStarted(ILogger logger, string table);
 

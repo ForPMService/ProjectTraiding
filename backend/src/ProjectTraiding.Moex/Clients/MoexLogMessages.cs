@@ -77,14 +77,16 @@ namespace ProjectTraiding.Moex.Clients
 
         /// <summary>
         /// Логирует запрос, который ждал в очереди rate limiter дольше порога.
-        /// Information-уровень: сигнал, что мы подходим к пределу пропускной способности.
-        /// Если таких записей много — нужно разобраться: слишком агрессивная пагинация,
-        /// параллельные загрузки или лимит занижен.
+        /// Уровень отладки: событие пишется на каждый ожидавший запрос, а при массовой
+        /// загрузке ожидание — норма, а не исключение. Сигнал приближения к пределу
+        /// пропускной способности снимается двумя метриками, записываемыми рядом:
+        /// гистограммой moex.ratelimit.wait.duration и счётчиком moex.ratelimit.queued.
+        /// Обе читаются панелями дашборда moex-source-health.
         /// </summary>
         [LoggerMessage(
             EventId = 151,
             EventName = "MoexRateLimitQueued",
-            Level = LogLevel.Information,
+            Level = LogLevel.Debug,
             Message = "MOEX rate limit queued: endpoint={Endpoint}, waitMs={WaitMs}.")]
         public static partial void RateLimitQueued(ILogger logger, string endpoint, double waitMs);
         [LoggerMessage(

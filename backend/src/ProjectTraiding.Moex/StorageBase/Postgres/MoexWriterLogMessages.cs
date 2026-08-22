@@ -10,8 +10,10 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
     /// </summary>
     public static partial class MoexWriterLogMessages
     {
+        // Событие сменяется парным MoexWriteCompleted (EventId 171) со строго большим
+        // набором сведений. Уровень понижен по прецеденту ClickHouseWriteStarted (180).
         [LoggerMessage(
-           EventId = 170, EventName = "MoexWriteStarted", Level = LogLevel.Information,
+           EventId = 170, EventName = "MoexWriteStarted", Level = LogLevel.Debug,
            Message = "DB write started: table={Table}, input={InputCount}.")]
         public static partial void WriteStarted(ILogger logger, string table, int inputCount);
 
