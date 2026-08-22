@@ -39,7 +39,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
             _logger = logger;
         }
 
-        public async Task<DbWriteResult> CreateAsync(BrokerTariffCreateRequest request, CancellationToken ct)
+        public async Task<ManagementWriteResult> CreateAsync(BrokerTariffCreateRequest request, CancellationToken ct)
         {
             const string table = "moex_broker_tariffs";
             ManagementWriterLogMessages.WriteStarted(_logger, table);
@@ -75,8 +75,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
                 ManagementWriterLogMessages.WriteCompleted(_logger, table, id, 1, elapsed);
 
-                return new DbWriteResult(
-                    Table: table, InputCount: 1, RowsWritten: 1, Elapsed: elapsed, Id: id);
+                return new ManagementWriteResult(Id: id, RowsWritten: 1, Elapsed: elapsed);
             }
             catch (Exception ex)
             {

@@ -12,8 +12,9 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
     /// Создание и операторское снятие заданий загрузки (moex_load_tasks).
     ///
     /// При создании статус и версии не задаются — берутся DEFAULT схемы. id генерирует
-    /// база (uuidv7()), возвращаем его через RETURNING. Возврат — Guid, а не DbWriteResult:
-    /// идентификатор задачи это uuid, а общий DbWriteResult.Id рассчитан на bigint-таблицы.
+    /// база (uuidv7()), возвращаем его через RETURNING. Возврат — Guid, а не общий
+    /// ManagementWriteResult: идентификатор задачи это uuid, а поле Id общего типа
+    /// рассчитано на таблицы с целочисленным ключом.
     ///
     /// Команды отмены переводят pending и partial в cancelled, а для running фиксируют
     /// запрос остановки. Финальный статус выполняющегося задания устанавливает контур Moex.

@@ -22,7 +22,7 @@ namespace ProjectTraiding.Management.Endpoints
 
                 try
                 {
-                    SubscriptionWriteResult w = await writer.EnableTradesAsync(secid, ct);
+                    ManagementWriteResult w = await writer.EnableTradesAsync(secid, ct);
                     if (w.RowsWritten == 0)
                     {
                         ManagementEndpointLogMessages.WriteBlockedByDeletion(logger, route, secid);
@@ -62,7 +62,7 @@ namespace ProjectTraiding.Management.Endpoints
 
                 try
                 {
-                    SubscriptionWriteResult w = await writer.DisableTradesAsync(secid, ct);
+                    ManagementWriteResult w = await writer.DisableTradesAsync(secid, ct);
                     RealtimeSubscriptionResultDto dto = new(
                         "disable_trades", secid, "trades", false, w.RowsWritten, w.Elapsed.TotalMilliseconds);
                     return Results.Json(dto, ManagementJsonContext.Default.RealtimeSubscriptionResultDto);
@@ -94,7 +94,7 @@ namespace ProjectTraiding.Management.Endpoints
 
                 try
                 {
-                    SubscriptionWriteResult w = await writer.EnableOrderbookAsync(secid, ct);
+                    ManagementWriteResult w = await writer.EnableOrderbookAsync(secid, ct);
                     if (w.RowsWritten == 0)
                     {
                         ManagementEndpointLogMessages.WriteBlockedByDeletion(logger, route, secid);
@@ -134,7 +134,7 @@ namespace ProjectTraiding.Management.Endpoints
 
                 try
                 {
-                    SubscriptionWriteResult w = await writer.DisableOrderbookAsync(secid, ct);
+                    ManagementWriteResult w = await writer.DisableOrderbookAsync(secid, ct);
                     RealtimeSubscriptionResultDto dto = new(
                         "disable_orderbook", secid, "orderbook", false, w.RowsWritten, w.Elapsed.TotalMilliseconds);
                     return Results.Json(dto, ManagementJsonContext.Default.RealtimeSubscriptionResultDto);
@@ -166,7 +166,7 @@ namespace ProjectTraiding.Management.Endpoints
 
                 try
                 {
-                    SubscriptionWriteResult w = await writer.EnableCandlesAsync(secid, ct);
+                    ManagementWriteResult w = await writer.EnableCandlesAsync(secid, ct);
                     if (w.RowsWritten == 0)
                     {
                         ManagementEndpointLogMessages.WriteBlockedByDeletion(logger, route, secid);
@@ -206,7 +206,7 @@ namespace ProjectTraiding.Management.Endpoints
 
                 try
                 {
-                    SubscriptionWriteResult w = await writer.DisableCandlesAsync(secid, ct);
+                    ManagementWriteResult w = await writer.DisableCandlesAsync(secid, ct);
                     RealtimeSubscriptionResultDto dto = new(
                         "disable_candles", secid, "candles", false, w.RowsWritten, w.Elapsed.TotalMilliseconds);
                     return Results.Json(dto, ManagementJsonContext.Default.RealtimeSubscriptionResultDto);
@@ -238,7 +238,7 @@ namespace ProjectTraiding.Management.Endpoints
 
                 try
                 {
-                    SubscriptionWriteResult w = await writer.DisableInstrumentAsync(secid, ct);
+                    ManagementWriteResult w = await writer.DisableInstrumentAsync(secid, ct);
                     RealtimeSubscriptionResultDto dto = new(
                         "disable_instrument", secid, "all", false, w.RowsWritten, w.Elapsed.TotalMilliseconds);
                     return Results.Json(dto, ManagementJsonContext.Default.RealtimeSubscriptionResultDto);
@@ -267,7 +267,7 @@ namespace ProjectTraiding.Management.Endpoints
                 const string route = "POST /management/realtime-subscriptions/disable-all";
                 ManagementEndpointLogMessages.OperationStarted(logger, route);
 
-                SubscriptionWriteResult w = await writer.DisableAllAsync(ct);
+                ManagementWriteResult w = await writer.DisableAllAsync(ct);
                 RealtimeSubscriptionsDisableAllResponse dto = new(
                     "disable_all", w.RowsWritten, w.Elapsed.TotalMilliseconds);
                 return Results.Json(

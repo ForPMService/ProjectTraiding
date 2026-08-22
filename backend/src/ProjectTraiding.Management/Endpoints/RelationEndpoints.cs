@@ -36,12 +36,12 @@ namespace ProjectTraiding.Management.Endpoints
                 // 2. Запись. PostgresException приходит из writer'а (rollback там уже залогирован).
                 try
                 {
-                    DbWriteResult w = await writer.UpsertAsync(request, ct);
+                    ManagementWriteResult w = await writer.UpsertAsync(request, ct);
                     ManagementResultDto dto = new(
                         Operation: "upsert_instrument_relation",
                         Target: "moex_instrument_relations",
                         Status: "ok",
-                        Id: w.Id,
+                        Id: w.Id.Value,
                         RowsWritten: w.RowsWritten,
                         ElapsedMs: w.Elapsed.TotalMilliseconds);
                     return Results.Json(dto, ManagementJsonContext.Default.ManagementResultDto);

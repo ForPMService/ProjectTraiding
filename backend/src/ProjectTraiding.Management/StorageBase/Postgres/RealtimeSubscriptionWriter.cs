@@ -4,10 +4,6 @@ using System.Diagnostics;
 
 namespace ProjectTraiding.Management.StorageBase.Postgres
 {
-    public readonly record struct SubscriptionWriteResult(
-        int RowsWritten,
-        TimeSpan Elapsed);
-
     public sealed class RealtimeSubscriptionWriter
     {
         private const string Table = "moex_realtime_subscriptions";
@@ -26,7 +22,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
         /// при обычном ходе строка либо вставляется, либо обновляется через ON CONFLICT,
         /// и ноль затронутых строк невозможен. Отсекающее условие стоит внутри вставки,
         /// потому что проверка отдельным запросом перед ней оставляет окно шире.
-        public async Task<SubscriptionWriteResult> EnableTradesAsync(string secid, CancellationToken ct)
+        public async Task<ManagementWriteResult> EnableTradesAsync(string secid, CancellationToken ct)
         {
             ManagementWriterLogMessages.WriteStarted(_logger, Table);
             long startTs = Stopwatch.GetTimestamp();
@@ -50,7 +46,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                 int rowsWritten = await cmd.ExecuteNonQueryAsync(ct);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
                 ManagementWriterLogMessages.RealtimeTradesEnabled(_logger, secid, rowsWritten, elapsed);
-                return new SubscriptionWriteResult(rowsWritten, elapsed);
+                return new ManagementWriteResult(null, rowsWritten, elapsed);
             }
             catch (Exception ex)
             {
@@ -63,7 +59,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
         /// при обычном ходе строка либо вставляется, либо обновляется через ON CONFLICT,
         /// и ноль затронутых строк невозможен. Отсекающее условие стоит внутри вставки,
         /// потому что проверка отдельным запросом перед ней оставляет окно шире.
-        public async Task<SubscriptionWriteResult> EnableOrderbookAsync(string secid, CancellationToken ct)
+        public async Task<ManagementWriteResult> EnableOrderbookAsync(string secid, CancellationToken ct)
         {
             ManagementWriterLogMessages.WriteStarted(_logger, Table);
             long startTs = Stopwatch.GetTimestamp();
@@ -87,7 +83,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                 int rowsWritten = await cmd.ExecuteNonQueryAsync(ct);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
                 ManagementWriterLogMessages.RealtimeOrderbookEnabled(_logger, secid, rowsWritten, elapsed);
-                return new SubscriptionWriteResult(rowsWritten, elapsed);
+                return new ManagementWriteResult(null, rowsWritten, elapsed);
             }
             catch (Exception ex)
             {
@@ -100,7 +96,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
         /// при обычном ходе строка либо вставляется, либо обновляется через ON CONFLICT,
         /// и ноль затронутых строк невозможен. Отсекающее условие стоит внутри вставки,
         /// потому что проверка отдельным запросом перед ней оставляет окно шире.
-        public async Task<SubscriptionWriteResult> EnableCandlesAsync(string secid, CancellationToken ct)
+        public async Task<ManagementWriteResult> EnableCandlesAsync(string secid, CancellationToken ct)
         {
             ManagementWriterLogMessages.WriteStarted(_logger, Table);
             long startTs = Stopwatch.GetTimestamp();
@@ -124,7 +120,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                 int rowsWritten = await cmd.ExecuteNonQueryAsync(ct);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
                 ManagementWriterLogMessages.RealtimeCandlesEnabled(_logger, secid, rowsWritten, elapsed);
-                return new SubscriptionWriteResult(rowsWritten, elapsed);
+                return new ManagementWriteResult(null, rowsWritten, elapsed);
             }
             catch (Exception ex)
             {
@@ -133,7 +129,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
             }
         }
 
-        public async Task<SubscriptionWriteResult> DisableTradesAsync(string secid, CancellationToken ct)
+        public async Task<ManagementWriteResult> DisableTradesAsync(string secid, CancellationToken ct)
         {
             ManagementWriterLogMessages.WriteStarted(_logger, Table);
             long startTs = Stopwatch.GetTimestamp();
@@ -151,7 +147,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                 int rowsWritten = await cmd.ExecuteNonQueryAsync(ct);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
                 ManagementWriterLogMessages.RealtimeTradesDisabled(_logger, secid, rowsWritten, elapsed);
-                return new SubscriptionWriteResult(rowsWritten, elapsed);
+                return new ManagementWriteResult(null, rowsWritten, elapsed);
             }
             catch (Exception ex)
             {
@@ -160,7 +156,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
             }
         }
 
-        public async Task<SubscriptionWriteResult> DisableOrderbookAsync(string secid, CancellationToken ct)
+        public async Task<ManagementWriteResult> DisableOrderbookAsync(string secid, CancellationToken ct)
         {
             ManagementWriterLogMessages.WriteStarted(_logger, Table);
             long startTs = Stopwatch.GetTimestamp();
@@ -178,7 +174,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                 int rowsWritten = await cmd.ExecuteNonQueryAsync(ct);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
                 ManagementWriterLogMessages.RealtimeOrderbookDisabled(_logger, secid, rowsWritten, elapsed);
-                return new SubscriptionWriteResult(rowsWritten, elapsed);
+                return new ManagementWriteResult(null, rowsWritten, elapsed);
             }
             catch (Exception ex)
             {
@@ -187,7 +183,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
             }
         }
 
-        public async Task<SubscriptionWriteResult> DisableCandlesAsync(string secid, CancellationToken ct)
+        public async Task<ManagementWriteResult> DisableCandlesAsync(string secid, CancellationToken ct)
         {
             ManagementWriterLogMessages.WriteStarted(_logger, Table);
             long startTs = Stopwatch.GetTimestamp();
@@ -205,7 +201,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                 int rowsWritten = await cmd.ExecuteNonQueryAsync(ct);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
                 ManagementWriterLogMessages.RealtimeCandlesDisabled(_logger, secid, rowsWritten, elapsed);
-                return new SubscriptionWriteResult(rowsWritten, elapsed);
+                return new ManagementWriteResult(null, rowsWritten, elapsed);
             }
             catch (Exception ex)
             {
@@ -214,7 +210,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
             }
         }
 
-        public async Task<SubscriptionWriteResult> DisableInstrumentAsync(string secid, CancellationToken ct)
+        public async Task<ManagementWriteResult> DisableInstrumentAsync(string secid, CancellationToken ct)
         {
             ManagementWriterLogMessages.WriteStarted(_logger, Table);
             long startTs = Stopwatch.GetTimestamp();
@@ -232,7 +228,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                 int rowsWritten = await cmd.ExecuteNonQueryAsync(ct);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
                 ManagementWriterLogMessages.RealtimeInstrumentDisabled(_logger, secid, rowsWritten, elapsed);
-                return new SubscriptionWriteResult(rowsWritten, elapsed);
+                return new ManagementWriteResult(null, rowsWritten, elapsed);
             }
             catch (Exception ex)
             {
@@ -248,7 +244,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
         /// Повторный вызов при неизменившемся состоянии возвращает ноль изменённых строк;
         /// если между вызовами подписки снова включили, ненулевой результат штатен.
         /// </summary>
-        public async Task<SubscriptionWriteResult> DisableAllAsync(CancellationToken ct)
+        public async Task<ManagementWriteResult> DisableAllAsync(CancellationToken ct)
         {
             ManagementWriterLogMessages.WriteStarted(_logger, Table);
             long startTs = Stopwatch.GetTimestamp();
@@ -265,7 +261,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                 int rowsWritten = await cmd.ExecuteNonQueryAsync(ct);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
                 ManagementWriterLogMessages.RealtimeAllDisabled(_logger, rowsWritten, elapsed);
-                return new SubscriptionWriteResult(rowsWritten, elapsed);
+                return new ManagementWriteResult(null, rowsWritten, elapsed);
             }
             catch (Exception ex)
             {

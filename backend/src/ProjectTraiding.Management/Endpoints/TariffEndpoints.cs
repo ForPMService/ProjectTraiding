@@ -33,12 +33,12 @@ namespace ProjectTraiding.Management.Endpoints
 
                 try
                 {
-                    DbWriteResult w = await writer.CreateAsync(request, ct);
+                    ManagementWriteResult w = await writer.CreateAsync(request, ct);
                     ManagementResultDto dto = new(
                         Operation: "create_broker_tariff",
                         Target: "moex_broker_tariffs",
                         Status: "ok",
-                        Id: w.Id,
+                        Id: w.Id.Value,
                         RowsWritten: w.RowsWritten,
                         ElapsedMs: w.Elapsed.TotalMilliseconds);
                     return Results.Json(dto, ManagementJsonContext.Default.ManagementResultDto);
