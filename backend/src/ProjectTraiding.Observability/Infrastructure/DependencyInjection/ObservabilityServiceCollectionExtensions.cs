@@ -98,7 +98,7 @@ public static class ObservabilityServiceCollectionExtensions
 
         // ══════════════════════════════════════════════
         // Health checks — базовый механизм.
-        // Конкретные проверки (PostgreSQL, Collector, ClickHouse, Redis)
+        // Конкретные проверки (PostgreSQL, Collector, ClickHouse)
         // добавляются в хосте или в модулях, которые владеют этими зависимостями.
         // ══════════════════════════════════════════════
         builder.Services.AddHealthChecks();

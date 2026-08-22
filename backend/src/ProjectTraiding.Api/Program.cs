@@ -22,7 +22,6 @@ builder.AddProjectTraidingObservability(
 builder.Services.AddMoexClients(builder.Configuration);
 builder.Services.AddClickHouse(builder.Configuration);
 builder.Services.AddPostgre(builder.Configuration);
-builder.Services.AddRedis(builder.Configuration);
 builder.Services.AddTransient<MoexInstrumentWriter>();
 builder.Services.AddTransient<MoexCalendarWriter>();
 builder.Services.AddTransient<MoexCalendarReferenceWriter>();

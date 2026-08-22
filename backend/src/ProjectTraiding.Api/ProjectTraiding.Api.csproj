@@ -23,6 +23,5 @@
     </PackageReference>
     <PackageReference Include="Microsoft.OpenApi" Version="2.11.0" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
-    <PackageReference Include="StackExchange.Redis" Version="3.0.17" />
   </ItemGroup>
 </Project>
