@@ -6,12 +6,13 @@ namespace ProjectTraiding.Moex.Clients.Errors
     /// <summary>
     /// Локальный rate limiter не выдал permit — запрос НЕ отправлен в MOEX.
     ///
-    /// Отличие от MoexRateLimitException:
-    /// - MoexRateLimitException — MOEX ответил 429, HTTP-запрос состоялся.
+    /// Отличие от ответа биржи со статусом 429:
+    /// - MoexHttpStatusException с категорией rate_limit — MOEX ответил 429,
+    ///   HTTP-запрос состоялся.
     /// - MoexRateLimitRejectedException — HTTP-запроса не было, наш limiter не пропустил.
     ///
-    /// Не наследует MoexHttpException, потому что HTTP-взаимодействия не было.
-    /// StatusCode, RetryAfter, IsRetryable — не применимы.
+    /// Не наследует MoexHttpException, потому что HTTP-взаимодействия не было:
+    /// код состояния и адрес по построению отсутствуют.
     /// </summary>
     public sealed class MoexRateLimitRejectedException : MoexException
     {

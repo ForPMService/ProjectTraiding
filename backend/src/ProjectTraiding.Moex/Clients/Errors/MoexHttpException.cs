@@ -14,12 +14,6 @@ public abstract class MoexHttpException : MoexException
     /// <summary>Адрес эндпоинта, вызов которого привёл к ошибке.</summary>
     public string? Endpoint { get; init; }
 
-    /// <summary>Признак того, что запрос можно повторить после ошибки.</summary>
-    public bool IsRetryable { get; init; }
-
-    /// <summary>Рекомендуемая задержка перед повторным запросом (null если не указана).</summary>
-    public TimeSpan? RetryAfter { get; init; }
-
     /// <summary>
     /// Инициализирует новый экземпляр с сообщением и опциональным внутренним исключением.
     /// </summary>

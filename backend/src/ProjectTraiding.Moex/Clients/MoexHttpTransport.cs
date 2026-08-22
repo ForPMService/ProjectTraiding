@@ -82,7 +82,7 @@ namespace ProjectTraiding.Moex.Clients
             catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
             {
                 MoexTimeoutException timeoutEx = new MoexTimeoutException(
-                    $"MOEX request timeout for {method}", method, "http_client", null, ex);
+                    $"MOEX request timeout for {method}", method, "http_client", ex);
                 MoexLogMessages.RequestFailed(_logger, timeoutEx, _logSource, method,
                     timeoutEx.ErrorCategory, null, timeoutEx.TimeoutSource, timeoutEx.Message);
                 throw timeoutEx;
@@ -90,7 +90,7 @@ namespace ProjectTraiding.Moex.Clients
             catch (TimeoutRejectedException ex)
             {
                 MoexTimeoutException timeoutEx = new MoexTimeoutException(
-                    $"MOEX attempt timeout for {method}", method, "polly_attempt", null, ex);
+                    $"MOEX attempt timeout for {method}", method, "polly_attempt", ex);
                 MoexLogMessages.RequestFailed(_logger, timeoutEx, _logSource, method,
                     timeoutEx.ErrorCategory, null, timeoutEx.TimeoutSource, timeoutEx.Message);
                 throw timeoutEx;

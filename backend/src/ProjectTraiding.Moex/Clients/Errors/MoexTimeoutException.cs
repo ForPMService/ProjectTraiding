@@ -10,12 +10,6 @@ namespace ProjectTraiding.Moex.Clients.Errors;
 public sealed class MoexTimeoutException : MoexHttpException
 {
     /// <summary>
-    /// Настроенный тайм-аут запроса или чтения тела. При статусе 408 равен null,
-    /// поскольку настроенного нами бюджета в этом случае нет.
-    /// </summary>
-    public TimeSpan? Timeout { get; init; }
-
-    /// <summary>
     /// Источник тайм-аута:
     /// "http_client" — истёк тайм-аут транспортного запроса;
     /// "polly_attempt" — истёк предел одной попытки слоя устойчивости;
@@ -32,14 +26,11 @@ public sealed class MoexTimeoutException : MoexHttpException
     /// <param name="timeoutSource">
     /// Источник тайм-аута: "http_client", "polly_attempt", "body_read" или "http_status".
     /// </param>
-    /// <param name="timeout">Настроенное время ожидания запроса (null если неизвестно).</param>
     /// <param name="inner">Исходное исключение таймаута (например, <see cref="TaskCanceledException"/>).</param>
-    public MoexTimeoutException(string message, string endpoint, string timeoutSource, TimeSpan? timeout = null, Exception? inner = null)
+    public MoexTimeoutException(string message, string endpoint, string timeoutSource, Exception? inner = null)
         : base(message, inner)
     {
         Endpoint = endpoint;
-        IsRetryable = true;
-        Timeout = timeout;
         TimeoutSource = timeoutSource;
     }
 
@@ -50,14 +41,11 @@ public sealed class MoexTimeoutException : MoexHttpException
     /// а StatusCode заполнен фактическим кодом ответа.
     /// </summary>
     /// <param name="endpoint">Адрес эндпоинта, вернувшего 408.</param>
-    /// <param name="retryAfter">Задержка перед повтором (null если не указана сервером).</param>
-    public MoexTimeoutException(string endpoint, TimeSpan? retryAfter = null)
+    public MoexTimeoutException(string endpoint)
         : base($"MOEX request timeout (408) for {endpoint}")
     {
         StatusCode = 408;
         Endpoint = endpoint;
-        IsRetryable = true;
-        RetryAfter = retryAfter;
         TimeoutSource = "http_status";
     }
 

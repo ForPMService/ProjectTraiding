@@ -1,4 +1,5 @@
 using ProjectTraiding.Moex.Clients.Errors;
+using ProjectTraiding.Moex.Infrastructure.Telemetry;
 
 namespace ProjectTraiding.Moex.Clients;
 
@@ -23,21 +24,20 @@ public static class HttpClientHelpers
             return;
         }
 
-        TimeSpan? retryAfter = TryParseRetryAfter(response);
         int status = (int)response.StatusCode;
 
         response.Dispose();
 
         throw status switch
         {
-            429 => new MoexRateLimitException(endpoint, retryAfter),
-            408 => new MoexTimeoutException(endpoint, retryAfter),
-            401 or 403 => new MoexAuthException(endpoint, status),
-            400 => new MoexBadRequestException(endpoint),
-            404 => new MoexNotFoundException(endpoint),
-            >= 500 => new MoexServerException(endpoint, status),
-            >= 400 => new MoexClientException(endpoint, status),
-            _ => new MoexUnexpectedStatusException(endpoint, status)
+            429 => new MoexHttpStatusException(endpoint, status, MoexErrorTypes.RateLimit),
+            408 => new MoexTimeoutException(endpoint),
+            401 or 403 => new MoexHttpStatusException(endpoint, status, MoexErrorTypes.Auth),
+            400 => new MoexHttpStatusException(endpoint, status, MoexErrorTypes.BadRequest),
+            404 => new MoexHttpStatusException(endpoint, status, MoexErrorTypes.NotFound),
+            >= 500 => new MoexHttpStatusException(endpoint, status, MoexErrorTypes.ServerError),
+            >= 400 => new MoexHttpStatusException(endpoint, status, MoexErrorTypes.ClientError),
+            _ => new MoexHttpStatusException(endpoint, status, MoexErrorTypes.UnexpectedStatus)
         };
     }
 

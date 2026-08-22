@@ -133,7 +133,6 @@ namespace ProjectTraiding.Moex.Infrastructure.Buffers
                     $"MOEX body read exceeded {bodyReadTimeout.TotalSeconds:0.#}s for {endpoint}",
                     endpoint,
                     "body_read",
-                    bodyReadTimeout,
                     ex);
             }
             catch
