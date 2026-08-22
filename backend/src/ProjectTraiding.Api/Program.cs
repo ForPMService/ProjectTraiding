@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Options;
 using ProjectTraiding.Api.Infrastructure;
+#if DEBUG
 using ProjectTraiding.Diagnostics.DependencyInjection;
+#endif
 using ProjectTraiding.Management.Contracts;
 using ProjectTraiding.Management.DependencyInjection;
 using ProjectTraiding.Moex.Infrastructure.DependencyInjection;
@@ -67,11 +69,11 @@ managementRoutes.MapManagementEndpoints();
 
 if (app.Environment.IsDevelopment())
 {
-    // Проверка среды не убирает сборку Diagnostics из поставки: ссылка Api → Diagnostics
-    // безусловна, и сборка попадает в публикацию. Проверка гарантирует другое —
-    // диагностические службы не регистрируются, маршруты не отображаются,
-    // диагностический контекст не участвует в разрешении типов.
+#if DEBUG
+    // Диагностический контур отсекается на этапе компиляции: в сборке поставки
+    // ссылки на него нет, поэтому и вызова быть не может.
     app.MapDiagnosticsEndpoints();
+#endif
     app.MapOpenApi();
 }
 

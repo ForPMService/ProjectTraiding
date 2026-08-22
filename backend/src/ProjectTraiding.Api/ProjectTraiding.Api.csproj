@@ -12,7 +12,10 @@
     <ProjectReference Include="..\ProjectTraiding.Moex\ProjectTraiding.Moex.csproj" />
     <ProjectReference Include="..\ProjectTraiding.Observability\ProjectTraiding.Observability.csproj" />
     <ProjectReference Include="..\ProjectTraiding.Management\ProjectTraiding.Management.csproj" />
-    <ProjectReference Include="..\ProjectTraiding.Diagnostics\ProjectTraiding.Diagnostics.csproj" />
+    <!-- Диагностический контур не входит в поставку: тридцать семь сквозных
+         обращений к бирже, включая тракт с платным ключом. Ссылка только для отладки. -->
+    <ProjectReference Include="..\ProjectTraiding.Diagnostics\ProjectTraiding.Diagnostics.csproj"
+                      Condition="'$(Configuration)' == 'Debug'" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="ClickHouse.Driver" Version="1.3.0" />
