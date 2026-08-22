@@ -22,9 +22,6 @@ public static class MoexOperations
     /// <summary>Дневная страница открытого интереса.</summary>
     public const string HistoryFutoiFetch = "history.futoi.fetch";
 
-    /// <summary>Нерабочие дни торгового календаря.</summary>
-    public const string CalendarOffDaysFetch = "calendar.offdays.fetch";
-
     /// <summary>Опрос ленты сделок одного инструмента.</summary>
     public const string RealtimeTradesPoll = "realtime.trades.poll";
 

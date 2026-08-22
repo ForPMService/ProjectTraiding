@@ -9,7 +9,6 @@ public static class MoexDataKinds
 {
     public const string Candles = "candles";
     public const string MegaAlerts = "alerts";
-    public const string OffDays = "offdays";
     public const string Trades = "trades";
     public const string Orderbook = "orderbook";
     public const string Instruments = "instruments";
