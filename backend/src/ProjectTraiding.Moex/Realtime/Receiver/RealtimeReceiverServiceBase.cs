@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.StorageBase.Postgres;
-using System.Diagnostics;
 
 namespace ProjectTraiding.Moex.Realtime.Receiver
 {
@@ -53,26 +52,25 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
             try
             {
+                // Собственного отрезка трассы у оборота нет намеренно. Он не отвечал ни
+                // на один вопрос оператора: свежесть приёма показывают метрики возраста
+                // опроса и данных, предметные действия — вложенные отрезки опроса
+                // инструмента и обращения к источнику, отказ оборота — событие журнала
+                // уровня ошибки. Отрезок сообщал лишь, что случился очередной оборот,
+                // и в простое такие отрезки составляли весь поток трасс службы.
                 while (!stoppingToken.IsCancellationRequested)
                 {
-                    using (Activity? turnActivity =
-                           MoexTelemetry.ActivitySource.StartActivity("moex.realtime.turn"))
-                    {
                     try
                     {
                         await RunTurnAsync(stoppingToken);
-                        turnActivity?.SetStatus(ActivityStatusCode.Ok);
                     }
                     catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                     {
-                        turnActivity?.SetStatus(ActivityStatusCode.Ok);
                         break;
                     }
                     catch (Exception ex)
                     {
-                        turnActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                         LogTurnFailed(ex);
-                    }
                     }
 
                     try
