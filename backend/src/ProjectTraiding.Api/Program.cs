@@ -37,7 +37,13 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, ManagementJsonContext.Default);
 });
-builder.Services.AddOpenApi();
+// Граф генерации описания интерфейса собирается только в среде разработки:
+// маршрут MapOpenApi отображается там же, в поставке он недостижим.
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddOpenApi();
+}
+
 builder.Services.AddProjectTraidingRateLimiter();
 
 var app = builder.Build();
