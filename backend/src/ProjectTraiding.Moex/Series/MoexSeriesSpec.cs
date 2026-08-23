@@ -188,15 +188,10 @@ public sealed class MoexSeriesSpec
     /// <summary>Тип хранения по имени целевой колонки — второй довод вставки.</summary>
     public IReadOnlyDictionary<string, string> ColumnTypes => _columnTypes ??= BuildColumnTypes();
 
-    private (int Date, int Time)? _sourceTimeIndexes;
+    private bool? _sourceColumnKindsValid;
 
-    /// <summary>
-    /// Позиции колонок источника, из которых собирается момент строки. Обе равны -1,
-    /// если целевой колонки с таким правилом заполнения у декларации нет. Нужны разбору
-    /// для отвергнутых строк: момент такой строки иначе взять неоткуда.
-    /// </summary>
-    public (int Date, int Time) SourceTimeIndexes =>
-        _sourceTimeIndexes ??= BuildSourceTimeIndexes();
+    public bool SourceColumnKindsValid =>
+        _sourceColumnKindsValid ??= BuildSourceColumnKindsValid();
 
     private string[] BuildColumns()
     {
@@ -217,15 +212,65 @@ public sealed class MoexSeriesSpec
         return columnTypes;
     }
 
-    private (int Date, int Time) BuildSourceTimeIndexes()
+    private bool BuildSourceColumnKindsValid()
     {
         for (int i = 0; i < TargetColumns.Length; i++)
         {
-            if (TargetColumns[i].FillRule == FillRule.SourceDateTime)
-                return (TargetColumns[i].SourceIndex, TargetColumns[i].SecondSourceIndex);
+            TargetColumn target = TargetColumns[i];
+            ColumnKind? sourceKind = GetSourceColumnKind(target.SourceIndex);
+            ColumnKind? secondSourceKind = GetSourceColumnKind(target.SecondSourceIndex);
+
+            if (target.FillRule == FillRule.SourceDateTime)
+            {
+                EnsureSourceColumnKind(target, target.SourceIndex, sourceKind, ColumnKind.MomentDate);
+                EnsureSourceColumnKind(
+                    target, target.SecondSourceIndex, secondSourceKind, ColumnKind.MomentTime);
+            }
+            else
+            {
+                if (sourceKind is ColumnKind.MomentDate or ColumnKind.MomentTime)
+                    ThrowInvalidSourceColumnKind(target, target.SourceIndex, sourceKind.Value);
+
+                if (secondSourceKind is ColumnKind.MomentDate or ColumnKind.MomentTime)
+                    ThrowInvalidSourceColumnKind(target, target.SecondSourceIndex, secondSourceKind.Value);
+            }
         }
 
-        return (-1, -1);
+        return true;
+    }
+
+    private ColumnKind? GetSourceColumnKind(int index)
+    {
+        return index >= 0 && index < SourceColumns.Length
+            ? SourceColumns[index].Kind
+            : null;
+    }
+
+    private void EnsureSourceColumnKind(
+        TargetColumn target,
+        int sourceIndex,
+        ColumnKind? actual,
+        ColumnKind expected)
+    {
+        if (actual != expected)
+        {
+            string actualText = actual?.ToString() ?? "отсутствует";
+            throw new InvalidOperationException(
+                $"Ошибка декларации {Market}/{DataKind}: колонка {target.Name} " +
+                $"ожидала источник вида {expected} на позиции {sourceIndex}, " +
+                $"получен {actualText}.");
+        }
+    }
+
+    private void ThrowInvalidSourceColumnKind(
+        TargetColumn target,
+        int sourceIndex,
+        ColumnKind actual)
+    {
+        throw new InvalidOperationException(
+            $"Ошибка декларации {Market}/{DataKind}: колонка {target.Name} " +
+            $"ссылается на источник вида {actual} на позиции {sourceIndex}, " +
+            "хотя такой источник разрешён только для момента строки.");
     }
 
     private int[] BuildRequiredIndexes(FillRule fillRule)

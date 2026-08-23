@@ -19,6 +19,7 @@ public sealed class MoexSeriesParser
         Utf8JsonReader reader = new(body);
 
         ParseHelpersUtf8.SkipToRootObject(ref reader, spec.RootKey);
+        _ = spec.SourceColumnKindsValid;
 
         bool foundColumns = false;
         bool foundData = false;
@@ -104,6 +105,7 @@ public sealed class MoexSeriesParser
         // ниже присваивается заново, включая пустое значение, чтобы значения строк
         // не смешивались.
         object?[] sourceValues = new object?[spec.SourceColumns.Length];
+        SourceTimeParts sourceTimeParts = default;
 
         while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
         {
@@ -113,6 +115,8 @@ public sealed class MoexSeriesParser
                     $"[{spec.RootKey}] Ожидался StartArray строки {sourceRowIndex}, " +
                     $"получено {reader.TokenType}.");
             }
+
+            sourceTimeParts.Reset();
 
             for (int position = 0; position < spec.SourceColumns.Length; position++)
             {
@@ -131,11 +135,13 @@ public sealed class MoexSeriesParser
                         $"(строка {sourceRowIndex}).");
                 }
 
-                sourceValues[position] = reader.TokenType == JsonTokenType.Null
-                    ? null
-                    : ReadValue(
+                sourceValues[position] = null;
+                if (reader.TokenType != JsonTokenType.Null)
+                {
+                    sourceValues[position] = ReadValue(
                         ref reader, spec.SourceColumns[position], spec.SourceColumnUsed[position],
-                        sourceRowIndex, spec.RootKey);
+                        ref sourceTimeParts, sourceRowIndex, spec.RootKey);
+                }
             }
 
             if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
@@ -151,14 +157,14 @@ public sealed class MoexSeriesParser
             // и тихо пропускать из-за неё данные нельзя.
             try
             {
-                rows.Add(BuildTargetRow(sourceValues, spec, taskSecId));
+                rows.Add(BuildTargetRow(sourceValues, in sourceTimeParts, spec, taskSecId));
             }
             catch (Exception ex) when (
                 ex is InvalidOperationException or FormatException)
             {
                 skippedSourceRows ??= new List<SkippedSourceRow>();
                 skippedSourceRows.Add(new SkippedSourceRow(
-                    sourceRowIndex, TryReadSourceTime(sourceValues, spec)));
+                    sourceRowIndex, TryReadSourceTime(in sourceTimeParts)));
             }
 
             sourceRowIndex++;
@@ -169,13 +175,14 @@ public sealed class MoexSeriesParser
         ref Utf8JsonReader reader,
         SourceColumn column,
         bool used,
+        ref SourceTimeParts sourceTimeParts,
         int rowIndex,
         string rootKey)
     {
         try
         {
             if (used)
-                return ReadUsedValue(ref reader, column, rowIndex, rootKey);
+                return ReadUsedValue(ref reader, column, ref sourceTimeParts, rowIndex, rootKey);
 
             // На эту колонку не ссылается ни одна целевая колонка. Сверка вида токена
             // остаётся, строка не создаётся. У истории такая колонка одна — код инструмента,
@@ -186,7 +193,7 @@ public sealed class MoexSeriesParser
                 return null;
             }
 
-            _ = ReadUsedValue(ref reader, column, rowIndex, rootKey);
+            _ = ReadUsedValue(ref reader, column, ref sourceTimeParts, rowIndex, rootKey);
             return null;
         }
         catch (InvalidOperationException ex)
@@ -199,6 +206,7 @@ public sealed class MoexSeriesParser
     private static object? ReadUsedValue(
         ref Utf8JsonReader reader,
         SourceColumn column,
+        ref SourceTimeParts sourceTimeParts,
         int rowIndex,
         string rootKey)
     {
@@ -214,6 +222,10 @@ public sealed class MoexSeriesParser
                 ref reader, rowIndex, column.Position, rootKey),
             ColumnKind.DateTime => ParseHelpersUtf8.ReadDateTimeUtf8(
                 ref reader, rowIndex, column.Position, rootKey),
+            ColumnKind.MomentDate => ReadMomentDate(
+                ref reader, column, ref sourceTimeParts, rowIndex, rootKey),
+            ColumnKind.MomentTime => ReadMomentTime(
+                ref reader, column, ref sourceTimeParts, rowIndex, rootKey),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(column), column.Kind, "Неизвестный тип колонки источника."),
         };
@@ -221,6 +233,7 @@ public sealed class MoexSeriesParser
 
     private static (object?[] Row, DateTime Time) BuildTargetRow(
         object?[] sourceValues,
+        in SourceTimeParts sourceTimeParts,
         MoexSeriesSpec spec,
         string taskSecId)
     {
@@ -234,9 +247,7 @@ public sealed class MoexSeriesParser
             {
                 FillRule.TaskSecId => taskSecId,
                 FillRule.Direct => sourceValues[column.SourceIndex],
-                FillRule.SourceDateTime => MoexClickHouseTime.BuildSourceTime(
-                    sourceValues[column.SourceIndex] as string,
-                    sourceValues[column.SecondSourceIndex] as string),
+                FillRule.SourceDateTime => MoexClickHouseTime.BuildSourceTime(in sourceTimeParts),
                 // Значение уже прочитано разбором по байтам с видом «неопределённый»,
                 // и помощник проставлял бы ровно его же. Берётся готовый объект:
                 // распаковка с повторной упаковкой давала вторую упаковку на строку.
@@ -272,22 +283,41 @@ public sealed class MoexSeriesParser
     /// разбора ничего не тратит. Непрочитанный момент — не отказ: строка уже отвергнута,
     /// а неизвестный момент обход границы группы обрабатывает сам.
     /// </summary>
-    private static DateTime? TryReadSourceTime(object?[] sourceValues, MoexSeriesSpec spec)
+    private static DateTime? TryReadSourceTime(in SourceTimeParts sourceTimeParts)
     {
-        (int dateIndex, int timeIndex) = spec.SourceTimeIndexes;
-        if (dateIndex < 0 || timeIndex < 0)
-            return null;
-
         try
         {
-            return MoexClickHouseTime.BuildSourceTime(
-                sourceValues[dateIndex] as string, sourceValues[timeIndex] as string);
+            return MoexClickHouseTime.BuildSourceTime(in sourceTimeParts);
         }
         catch (Exception ex) when (
             ex is InvalidOperationException or FormatException)
         {
             return null;
         }
+    }
+
+    private static object? ReadMomentDate(
+        ref Utf8JsonReader reader,
+        SourceColumn column,
+        ref SourceTimeParts sourceTimeParts,
+        int rowIndex,
+        string rootKey)
+    {
+        sourceTimeParts.Date = ParseHelpersUtf8.ReadMomentDateUtf8(
+            ref reader, rowIndex, column.Position, rootKey, out sourceTimeParts.RawDate);
+        return null;
+    }
+
+    private static object? ReadMomentTime(
+        ref Utf8JsonReader reader,
+        SourceColumn column,
+        ref SourceTimeParts sourceTimeParts,
+        int rowIndex,
+        string rootKey)
+    {
+        sourceTimeParts.Time = ParseHelpersUtf8.ReadMomentTimeUtf8(
+            ref reader, rowIndex, column.Position, rootKey, out sourceTimeParts.RawTime);
+        return null;
     }
 
     private static void ValidateRequired(

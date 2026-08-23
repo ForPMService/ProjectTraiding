@@ -10,8 +10,8 @@ public static class MoexSeriesRegistry
         RootKey = "data",
         SourceColumns =
         [
-            new(0, "tradedate"u8.ToArray(), ColumnKind.String),
-            new(1, "tradetime"u8.ToArray(), ColumnKind.String),
+            new(0, "tradedate"u8.ToArray(), ColumnKind.MomentDate),
+            new(1, "tradetime"u8.ToArray(), ColumnKind.MomentTime),
             new(2, "secid"u8.ToArray(), ColumnKind.String),
             new(3, "pr_open"u8.ToArray(), ColumnKind.Double),
             new(4, "pr_high"u8.ToArray(), ColumnKind.Double),
@@ -81,8 +81,8 @@ public static class MoexSeriesRegistry
         RootKey = "data",
         SourceColumns =
         [
-            new(0, "tradedate"u8.ToArray(), ColumnKind.String),
-            new(1, "tradetime"u8.ToArray(), ColumnKind.String),
+            new(0, "tradedate"u8.ToArray(), ColumnKind.MomentDate),
+            new(1, "tradetime"u8.ToArray(), ColumnKind.MomentTime),
             new(2, "secid"u8.ToArray(), ColumnKind.String),
             new(3, "asset_code"u8.ToArray(), ColumnKind.String),
             new(4, "pr_open"u8.ToArray(), ColumnKind.Double),
@@ -164,8 +164,8 @@ public static class MoexSeriesRegistry
         RootKey = "data",
         SourceColumns =
         [
-            new(0, "tradedate"u8.ToArray(), ColumnKind.String),
-            new(1, "tradetime"u8.ToArray(), ColumnKind.String),
+            new(0, "tradedate"u8.ToArray(), ColumnKind.MomentDate),
+            new(1, "tradetime"u8.ToArray(), ColumnKind.MomentTime),
             new(2, "secid"u8.ToArray(), ColumnKind.String),
             new(3, "spread_bbo"u8.ToArray(), ColumnKind.Double),
             new(4, "spread_lv10"u8.ToArray(), ColumnKind.Double),
@@ -223,8 +223,8 @@ public static class MoexSeriesRegistry
         RootKey = "data",
         SourceColumns =
         [
-            new(0, "tradedate"u8.ToArray(), ColumnKind.String),
-            new(1, "tradetime"u8.ToArray(), ColumnKind.String),
+            new(0, "tradedate"u8.ToArray(), ColumnKind.MomentDate),
+            new(1, "tradetime"u8.ToArray(), ColumnKind.MomentTime),
             new(2, "secid"u8.ToArray(), ColumnKind.String),
             new(3, "asset_code"u8.ToArray(), ColumnKind.String),
             new(4, "mid_price"u8.ToArray(), ColumnKind.Double),
@@ -310,8 +310,8 @@ public static class MoexSeriesRegistry
         RootKey = "data",
         SourceColumns =
         [
-            new(0, "tradedate"u8.ToArray(), ColumnKind.String),
-            new(1, "tradetime"u8.ToArray(), ColumnKind.String),
+            new(0, "tradedate"u8.ToArray(), ColumnKind.MomentDate),
+            new(1, "tradetime"u8.ToArray(), ColumnKind.MomentTime),
             new(2, "secid"u8.ToArray(), ColumnKind.String),
             new(3, "put_orders_b"u8.ToArray(), ColumnKind.Int32),
             new(4, "put_orders_s"u8.ToArray(), ColumnKind.Int32),
@@ -379,8 +379,8 @@ public static class MoexSeriesRegistry
         RootKey = "data",
         SourceColumns =
         [
-            new(0, "tradedate"u8.ToArray(), ColumnKind.String),
-            new(1, "tradetime"u8.ToArray(), ColumnKind.String),
+            new(0, "tradedate"u8.ToArray(), ColumnKind.MomentDate),
+            new(1, "tradetime"u8.ToArray(), ColumnKind.MomentTime),
             new(2, "secid"u8.ToArray(), ColumnKind.String),
             new(3, "metric"u8.ToArray(), ColumnKind.String),
             new(4, "value"u8.ToArray(), ColumnKind.Double),
@@ -412,8 +412,8 @@ public static class MoexSeriesRegistry
         RootKey = "data",
         SourceColumns =
         [
-            new(0, "tradedate"u8.ToArray(), ColumnKind.String),
-            new(1, "tradetime"u8.ToArray(), ColumnKind.String),
+            new(0, "tradedate"u8.ToArray(), ColumnKind.MomentDate),
+            new(1, "tradetime"u8.ToArray(), ColumnKind.MomentTime),
             new(2, "secid"u8.ToArray(), ColumnKind.String),
             new(3, "asset_code"u8.ToArray(), ColumnKind.String),
             new(4, "metric"u8.ToArray(), ColumnKind.String),
@@ -447,8 +447,8 @@ public static class MoexSeriesRegistry
         RootKey = "data",
         SourceColumns =
         [
-            new(0, "tradedate"u8.ToArray(), ColumnKind.String),
-            new(1, "tradetime"u8.ToArray(), ColumnKind.String),
+            new(0, "tradedate"u8.ToArray(), ColumnKind.MomentDate),
+            new(1, "tradetime"u8.ToArray(), ColumnKind.MomentTime),
             new(2, "secid"u8.ToArray(), ColumnKind.String),
             new(3, "alert_type"u8.ToArray(), ColumnKind.String),
             new(4, "threshold"u8.ToArray(), ColumnKind.Double),
@@ -482,8 +482,8 @@ public static class MoexSeriesRegistry
         RootKey = "data",
         SourceColumns =
         [
-            new(0, "tradedate"u8.ToArray(), ColumnKind.String),
-            new(1, "tradetime"u8.ToArray(), ColumnKind.String),
+            new(0, "tradedate"u8.ToArray(), ColumnKind.MomentDate),
+            new(1, "tradetime"u8.ToArray(), ColumnKind.MomentTime),
             new(2, "secid"u8.ToArray(), ColumnKind.String),
             new(3, "asset_code"u8.ToArray(), ColumnKind.String),
             new(4, "alert_type"u8.ToArray(), ColumnKind.String),
@@ -521,8 +521,8 @@ public static class MoexSeriesRegistry
         [
             new(0, "sess_id"u8.ToArray(), ColumnKind.Int32),
             new(1, "seqnum"u8.ToArray(), ColumnKind.Int32),
-            new(2, "tradedate"u8.ToArray(), ColumnKind.String),
-            new(3, "tradetime"u8.ToArray(), ColumnKind.String),
+            new(2, "tradedate"u8.ToArray(), ColumnKind.MomentDate),
+            new(3, "tradetime"u8.ToArray(), ColumnKind.MomentTime),
             new(4, "ticker"u8.ToArray(), ColumnKind.String),
             new(5, "clgroup"u8.ToArray(), ColumnKind.String),
             new(6, "pos"u8.ToArray(), ColumnKind.Int64),
