@@ -424,15 +424,29 @@ namespace ProjectTraiding.Moex.Parsing
                     $"[{rootKey}] Ожидался String (datetime) в строке {rowIndex}, колонка {columnIndex}, " +
                     $"получено {reader.TokenType}.");
 
-            // ValueSpan доступен когда JSON не фрагментирован (ReadOnlySpan<byte> вход).
-            // Для PipeReader/Stream в будущем (D1) может понадобиться fallback на GetString().
-            ReadOnlySpan<byte> span = reader.HasValueSequence
-                ? reader.ValueSequence.ToArray()
-                : reader.ValueSpan;
-
             // "yyyy-MM-dd HH:mm:ss" = 19 байт
-            if (span.Length != 19)
-                return null;
+            //
+            // Сплошной буфер отдаёт значение без копии. Разорванный буфер сегодня не
+            // встречается — все обращения идут по сплошному входу, — но встретится при
+            // переходе на потоковое чтение, и тогда копия на стеке избавит от массива
+            // в куче на каждую дату. Длина известна заранее, поэтому размер копии
+            // постоянен, а всё, что в него не укладывается, отбрасывается сразу.
+            Span<byte> sequenceBuffer = stackalloc byte[19];
+            scoped ReadOnlySpan<byte> span;
+            if (reader.HasValueSequence)
+            {
+                if (reader.ValueSequence.Length != 19)
+                    return null;
+
+                reader.ValueSequence.CopyTo(sequenceBuffer);
+                span = sequenceBuffer;
+            }
+            else
+            {
+                span = reader.ValueSpan;
+                if (span.Length != 19)
+                    return null;
+            }
 
             // Парсим компоненты напрямую из UTF-8 байт.
             // Формат фиксированный — позиции гарантированы:

@@ -55,6 +55,36 @@ namespace ProjectTraiding.Moex.Clients
             ["dataversion.columns"] = DataVersionColumnsParam,
         };
 
+        // Набор параметров запроса сделок постоянен, пока не задан номер сделки: он
+        // зависит только от рынка через перечень колонок декларации. Готовые словари
+        // собираются по одному на рынок и никем не изменяются — их только перечисляют
+        // при сборке адреса. Порядок пар тот же, что был у сборки на месте.
+        private static readonly Dictionary<string, string> TradesStockQueryParams =
+            BuildTradesQueryParams(MoexRealtimeRegistry.TradesStock);
+
+        private static readonly Dictionary<string, string> TradesFuturesQueryParams =
+            BuildTradesQueryParams(MoexRealtimeRegistry.TradesFutures);
+
+        private static Dictionary<string, string> BuildTradesQueryParams(MoexRealtimeSpec spec) =>
+            new()
+            {
+                ["iss.meta"] = "off",
+                ["iss.only"] = "trades,dataversion",
+                ["trades.columns"] = spec.ColumnsParam,
+                ["dataversion.columns"] = DataVersionColumnsParam,
+            };
+
+        private static Dictionary<string, string> TradesQueryParamsFor(string market)
+        {
+            if (market == MoexMarkets.Stock)
+                return TradesStockQueryParams;
+            if (market == MoexMarkets.Futures)
+                return TradesFuturesQueryParams;
+
+            throw new InvalidOperationException(
+                $"Неизвестный рынок инструмента приёмника: '{market}'.");
+        }
+
         private readonly MoexOptions _options;
         private readonly ILogger<MoexRealtimeRestClient> _logger;
         private readonly MoexHttpTransport _transport;
@@ -87,18 +117,28 @@ namespace ProjectTraiding.Moex.Clients
             CancellationToken cancellationToken = default)
         {
             MoexRealtimeSpec spec = MoexRealtimeRegistry.TradesFor(market);
-            queryParams ??= new Dictionary<string, string>();
-            if (afterTradeNo is not null)
+            if (queryParams is null && afterTradeNo is null)
             {
-                queryParams["tradeno"] =
-                    afterTradeNo.Value.ToString(CultureInfo.InvariantCulture);
-                queryParams["next_trade"] = "1";
+                // Ни один ключ не зависит от вызова — берётся готовый словарь рынка.
+                // Дополнять его нечем, поэтому ветка дополнения обходится: запись
+                // в общий словарь была бы недопустима при нескольких приёмниках.
+                queryParams = TradesQueryParamsFor(market);
             }
+            else
+            {
+                queryParams ??= new Dictionary<string, string>(6);
+                if (afterTradeNo is not null)
+                {
+                    queryParams["tradeno"] =
+                        afterTradeNo.Value.ToString(CultureInfo.InvariantCulture);
+                    queryParams["next_trade"] = "1";
+                }
 
-            queryParams.TryAdd("iss.meta", "off");
-            queryParams.TryAdd("iss.only", "trades,dataversion");
-            queryParams.TryAdd("trades.columns", spec.ColumnsParam);
-            queryParams.TryAdd("dataversion.columns", DataVersionColumnsParam);
+                queryParams.TryAdd("iss.meta", "off");
+                queryParams.TryAdd("iss.only", "trades,dataversion");
+                queryParams.TryAdd("trades.columns", spec.ColumnsParam);
+                queryParams.TryAdd("dataversion.columns", DataVersionColumnsParam);
+            }
 
             string endpoint = BuildEndpoint(market, ticker, "/trades.json");
             using HttpResponseMessage response =

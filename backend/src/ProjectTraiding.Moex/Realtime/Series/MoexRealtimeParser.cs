@@ -161,8 +161,11 @@ public static class MoexRealtimeParser
         // разбора тела нет, есть один проход по списку.
         if (spec.SessionDateIndex >= 0 && sessionDate is not null)
         {
+            // Значение одно на всю страницу, а ячейка строки хранит ссылку: без вынесенной
+            // упаковки на каждую строку приходился бы отдельный ящик с одной и той же датой.
+            object boxedSessionDate = sessionDate.Value;
             for (int i = 0; i < rows.Count; i++)
-                rows[i][spec.SessionDateIndex] = sessionDate;
+                rows[i][spec.SessionDateIndex] = boxedSessionDate;
         }
 
         // Прежний порядок отсеянного отказа. Раньше отказ даты сессии участвовал в отборе
