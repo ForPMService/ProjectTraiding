@@ -14,7 +14,7 @@ public static class MoexRealtimeRegistry
         sourceColumns:
         [
             new(0, "TRADENO"u8.ToArray(), ColumnKind.Int64),
-            new(1, "TRADETIME"u8.ToArray(), ColumnKind.String),
+            new(1, "TRADETIME"u8.ToArray(), ColumnKind.MomentTime),
             new(2, "SECID"u8.ToArray(), ColumnKind.String),
             new(3, "PRICE"u8.ToArray(), ColumnKind.Double),
             new(4, "QUANTITY"u8.ToArray(), ColumnKind.Int64),
@@ -28,7 +28,7 @@ public static class MoexRealtimeRegistry
             new(9, "BUYSELL"u8.ToArray(), ColumnKind.String),
             new(10, "DECIMALS"u8.ToArray(), ColumnKind.Int32),
             new(11, "TRADINGSESSION"u8.ToArray(), ColumnKind.String),
-            new(12, "TRADEDATE"u8.ToArray(), ColumnKind.String),
+            new(12, "TRADEDATE"u8.ToArray(), ColumnKind.MomentDate),
             new(13, "TRADE_SESSION_DATE"u8.ToArray(), ColumnKind.String),
         ],
         table: "moex_trades_stock",
@@ -63,8 +63,8 @@ public static class MoexRealtimeRegistry
             new(0, "TRADENO"u8.ToArray(), ColumnKind.Int64),
             new(1, "BOARDNAME"u8.ToArray(), ColumnKind.String),
             new(2, "SECID"u8.ToArray(), ColumnKind.String),
-            new(3, "TRADEDATE"u8.ToArray(), ColumnKind.String),
-            new(4, "TRADETIME"u8.ToArray(), ColumnKind.String),
+            new(3, "TRADEDATE"u8.ToArray(), ColumnKind.MomentDate),
+            new(4, "TRADETIME"u8.ToArray(), ColumnKind.MomentTime),
             new(5, "PRICE"u8.ToArray(), ColumnKind.Double),
             new(6, "QUANTITY"u8.ToArray(), ColumnKind.Int64),
             // Разбор по байтам вместо строки: временной строки на каждую сделку больше

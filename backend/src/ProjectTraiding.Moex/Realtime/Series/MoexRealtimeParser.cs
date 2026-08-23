@@ -401,6 +401,7 @@ public static class MoexRealtimeParser
             ref reader, JsonTokenType.StartArray, "data", spec.RootKey);
 
         int rowIndex = 0;
+        SourceTimeParts sourceTimeParts = default;
         while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
         {
             if (reader.TokenType != JsonTokenType.StartArray)
@@ -410,7 +411,7 @@ public static class MoexRealtimeParser
                     $"получено {reader.TokenType}.");
             }
 
-            ReadSourceValues(ref reader, sourceValues, spec, rowIndex);
+            ReadSourceValues(ref reader, sourceValues, spec, ref sourceTimeParts, rowIndex);
 
             object?[] row = new object?[spec.TargetColumns.Length];
             DateTime? rowKeyTime = null;
@@ -434,9 +435,7 @@ public static class MoexRealtimeParser
                     case FillRule.SourceDateTime:
                         try
                         {
-                            value = MoexClickHouseTime.BuildSourceTime(
-                                sourceValues[column.SourceIndex] as string,
-                                sourceValues[column.SecondSourceIndex] as string);
+                            value = MoexClickHouseTime.BuildSourceTime(in sourceTimeParts);
                         }
                         catch (Exception ex) when (
                             ex is InvalidOperationException or FormatException
@@ -558,6 +557,7 @@ public static class MoexRealtimeParser
             ref reader, JsonTokenType.StartArray, "data", spec.RootKey);
 
         int rowIndex = 0;
+        SourceTimeParts sourceTimeParts = default;
         while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
         {
             if (reader.TokenType != JsonTokenType.StartArray)
@@ -567,7 +567,7 @@ public static class MoexRealtimeParser
                     $"получено {reader.TokenType}.");
             }
 
-            ReadSourceValues(ref reader, sourceValues, spec, rowIndex);
+            ReadSourceValues(ref reader, sourceValues, spec, ref sourceTimeParts, rowIndex);
 
             object?[] row = new object?[spec.TargetColumns.Length];
             for (int i = 0; i < spec.TargetColumns.Length; i++)
@@ -602,8 +602,10 @@ public static class MoexRealtimeParser
         ref Utf8JsonReader reader,
         object?[] sourceValues,
         MoexRealtimeSpec spec,
+        ref SourceTimeParts sourceTimeParts,
         int rowIndex)
     {
+        sourceTimeParts.Reset();
         for (int position = 0; position < spec.SourceColumns.Length; position++)
         {
             if (!reader.Read())
@@ -621,11 +623,13 @@ public static class MoexRealtimeParser
                     $"(строка {rowIndex}).");
             }
 
-            sourceValues[position] = reader.TokenType == JsonTokenType.Null
-                ? null
-                : ReadValue(
+            sourceValues[position] = null;
+            if (reader.TokenType != JsonTokenType.Null)
+            {
+                sourceValues[position] = ReadValue(
                     ref reader, spec.SourceColumns[position], spec.SourceColumnUsed[position],
-                    rowIndex, spec.RootKey);
+                    ref sourceTimeParts, rowIndex, spec.RootKey);
+            }
         }
 
         if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
@@ -640,11 +644,12 @@ public static class MoexRealtimeParser
         ref Utf8JsonReader reader,
         SourceColumn column,
         bool used,
+        ref SourceTimeParts sourceTimeParts,
         int rowIndex,
         string rootKey)
     {
         if (used)
-            return ReadUsedValue(ref reader, column, rowIndex, rootKey);
+            return ReadUsedValue(ref reader, column, ref sourceTimeParts, rowIndex, rootKey);
 
         // На эту колонку не ссылается ни одна целевая колонка. Сверка вида токена остаётся —
         // она датчик дрейфа схемы источника, — но строка из значения не создаётся.
@@ -657,13 +662,14 @@ public static class MoexRealtimeParser
         // Сегодня невостребованных колонок прочих видов нет ни в одной декларации. Ветвь
         // существует ради будущих деклараций и читает значение тем же помощником, отбрасывая
         // результат: так проверки и тексты исключений остаются буквально прежними.
-        _ = ReadUsedValue(ref reader, column, rowIndex, rootKey);
+        _ = ReadUsedValue(ref reader, column, ref sourceTimeParts, rowIndex, rootKey);
         return null;
     }
 
     private static object? ReadUsedValue(
         ref Utf8JsonReader reader,
         SourceColumn column,
+        ref SourceTimeParts sourceTimeParts,
         int rowIndex,
         string rootKey)
     {
@@ -679,9 +685,37 @@ public static class MoexRealtimeParser
                 ref reader, rowIndex, column.Position, rootKey),
             ColumnKind.DateTime => ParseHelpersUtf8.ReadDateTimeUtf8(
                 ref reader, rowIndex, column.Position, rootKey),
+            ColumnKind.MomentDate => ReadMomentDate(
+                ref reader, column, ref sourceTimeParts, rowIndex, rootKey),
+            ColumnKind.MomentTime => ReadMomentTime(
+                ref reader, column, ref sourceTimeParts, rowIndex, rootKey),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(column), column.Kind, "Неизвестный тип колонки источника."),
         };
+    }
+
+    private static object? ReadMomentDate(
+        ref Utf8JsonReader reader,
+        SourceColumn column,
+        ref SourceTimeParts sourceTimeParts,
+        int rowIndex,
+        string rootKey)
+    {
+        sourceTimeParts.Date = ParseHelpersUtf8.ReadMomentDateUtf8(
+            ref reader, rowIndex, column.Position, rootKey, out sourceTimeParts.RawDate);
+        return null;
+    }
+
+    private static object? ReadMomentTime(
+        ref Utf8JsonReader reader,
+        SourceColumn column,
+        ref SourceTimeParts sourceTimeParts,
+        int rowIndex,
+        string rootKey)
+    {
+        sourceTimeParts.Time = ParseHelpersUtf8.ReadMomentTimeUtf8(
+            ref reader, rowIndex, column.Position, rootKey, out sourceTimeParts.RawTime);
+        return null;
     }
 
     private static DateTime? ReadSnapshotTime(
