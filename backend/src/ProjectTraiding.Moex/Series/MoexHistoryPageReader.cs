@@ -19,6 +19,12 @@ public sealed class MoexHistoryPageReader
     private readonly MoexOptions _options;
     private readonly ILogger<MoexHistoryPageReader> _logger;
 
+    /// <summary>Итог получения одной страницы: строки, курсор ответа и затраченное время.</summary>
+    private readonly record struct PageFetchResult(
+        List<(object?[] Row, DateTime Time)> Rows,
+        PaginationCursorDTO Cursor,
+        TimeSpan Elapsed);
+
     public MoexHistoryPageReader(
         MoexHttpAlgClient client,
         MoexSeriesParser parser,
@@ -114,87 +120,15 @@ public sealed class MoexHistoryPageReader
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            long pageStart = Stopwatch.GetTimestamp();
+            PageFetchResult page = await FetchPageAsync(
+                spec, method, query, secId, operationTags, cancellationToken);
+            List<(object?[] Row, DateTime Time)> rows = page.Rows;
+            PaginationCursorDTO cursor = page.Cursor;
 
-            List<(object?[] Row, DateTime Time)> rows;
-            PaginationCursorDTO cursor;
-            using (Activity? pageActivity =
-                   MoexTelemetry.ActivitySource.StartActivity("moex.history.fetch"))
-            {
-                pageActivity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
-                pageActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
-                pageActivity?.SetTag(MoexTelemetryAttributes.Market, spec.Market);
-
-                try
-                {
-                    using HttpResponseMessage response = await _client.SendRequestAsync(
-                        method, query, cancellationToken);
-                    using RentedBuffer body = await RentedBuffer.RentFromResponseAsync(
-                        response, _options.BodyReadTimeout, method, cancellationToken);
-
-                    try
-                    {
-                        rows = _parser.Parse(body.Span, spec, secId, out cursor);
-                    }
-                    catch (MoexSchemaMismatchException ex)
-                    {
-                        MoexLogMessages.ParseFailed(
-                            _logger, ex, method, MoexErrorTypes.SchemaMismatch, ex.Message);
-                        throw;
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    pageActivity?.SetStatus(ActivityStatusCode.Ok);
-                    MoexMetrics.RecordOperationCancelled(
-                        in operationTags,
-                        Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    pageActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                    MoexMetrics.RecordOperationError(
-                        in operationTags,
-                        ex,
-                        Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
-                    throw;
-                }
-
-                pagesElapsed++;
-                totalRows += rows.Count;
-                MoexLogMessages.PageReceived(
-                    _logger,
-                    method,
-                    pagesElapsed,
-                    rows.Count,
-                    Stopwatch.GetElapsedTime(pageStart));
-
-                MoexMetrics.PagesReceived.Add(
-                    1,
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.Source, operationTags.Source),
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.DataKind, operationTags.DataKind),
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.Market, operationTags.Market));
-
-                MoexMetrics.RowsReceived.Add(
-                    rows.Count,
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.Source, operationTags.Source),
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.DataKind, operationTags.DataKind),
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.Market, operationTags.Market),
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.Flow, operationTags.Flow));
-
-                MoexMetrics.RecordOperationSuccess(
-                    in operationTags,
-                    Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
-                pageActivity?.SetStatus(ActivityStatusCode.Ok);
-            }
+            pagesElapsed++;
+            totalRows += rows.Count;
+            MoexLogMessages.PageReceived(
+                _logger, method, pagesElapsed, rows.Count, page.Elapsed);
 
             // Решение об остановке принимается до обрезки: последняя страница отдаётся
             // целиком, иначе её хвостовая группа была бы отброшена безвозвратно.
@@ -281,86 +215,14 @@ public sealed class MoexHistoryPageReader
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            long pageStart = Stopwatch.GetTimestamp();
+            PageFetchResult page = await FetchPageAsync(
+                spec, method, query, secId, operationTags, cancellationToken);
+            List<(object?[] Row, DateTime Time)> rows = page.Rows;
 
-            List<(object?[] Row, DateTime Time)> rows;
-            using (Activity? pageActivity =
-                   MoexTelemetry.ActivitySource.StartActivity("moex.history.fetch"))
-            {
-                pageActivity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
-                pageActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
-                pageActivity?.SetTag(MoexTelemetryAttributes.Market, spec.Market);
-
-                try
-                {
-                    using HttpResponseMessage response = await _client.SendRequestAsync(
-                        method, query, cancellationToken);
-                    using RentedBuffer body = await RentedBuffer.RentFromResponseAsync(
-                        response, _options.BodyReadTimeout, method, cancellationToken);
-
-                    try
-                    {
-                        rows = _parser.Parse(body.Span, spec, secId, out _);
-                    }
-                    catch (MoexSchemaMismatchException ex)
-                    {
-                        MoexLogMessages.ParseFailed(
-                            _logger, ex, method, MoexErrorTypes.SchemaMismatch, ex.Message);
-                        throw;
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    pageActivity?.SetStatus(ActivityStatusCode.Ok);
-                    MoexMetrics.RecordOperationCancelled(
-                        in operationTags,
-                        Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    pageActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                    MoexMetrics.RecordOperationError(
-                        in operationTags,
-                        ex,
-                        Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
-                    throw;
-                }
-
-                pagesElapsed++;
-                totalRows += rows.Count;
-                MoexLogMessages.PageReceived(
-                    _logger,
-                    method,
-                    pagesElapsed,
-                    rows.Count,
-                    Stopwatch.GetElapsedTime(pageStart));
-
-                MoexMetrics.PagesReceived.Add(
-                    1,
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.Source, operationTags.Source),
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.DataKind, operationTags.DataKind),
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.Market, operationTags.Market));
-
-                MoexMetrics.RowsReceived.Add(
-                    rows.Count,
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.Source, operationTags.Source),
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.DataKind, operationTags.DataKind),
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.Market, operationTags.Market),
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.Flow, operationTags.Flow));
-
-                MoexMetrics.RecordOperationSuccess(
-                    in operationTags,
-                    Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
-                pageActivity?.SetStatus(ActivityStatusCode.Ok);
-            }
+            pagesElapsed++;
+            totalRows += rows.Count;
+            MoexLogMessages.PageReceived(
+                _logger, method, pagesElapsed, rows.Count, page.Elapsed);
 
             yield return rows;
 
@@ -410,86 +272,18 @@ public sealed class MoexHistoryPageReader
 
             query["from"] = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             query["till"] = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-            long pageStart = Stopwatch.GetTimestamp();
+            PageFetchResult fetched = await FetchPageAsync(
+                spec, method, query, secId, operationTags, cancellationToken);
+            List<(object?[] Row, DateTime Time)> page = fetched.Rows;
 
-            List<(object?[] Row, DateTime Time)> page;
-            using (Activity? pageActivity =
-                   MoexTelemetry.ActivitySource.StartActivity("moex.history.fetch"))
-            {
-                pageActivity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
-                pageActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
-                pageActivity?.SetTag(MoexTelemetryAttributes.Market, spec.Market);
-
-                try
-                {
-                    using HttpResponseMessage response = await _client.SendRequestAsync(
-                        method, query, cancellationToken);
-                    using RentedBuffer body = await RentedBuffer.RentFromResponseAsync(
-                        response, _options.BodyReadTimeout, method, cancellationToken);
-
-                    try
-                    {
-                        page = _parser.Parse(body.Span, spec, secId, out _);
-                    }
-                    catch (MoexSchemaMismatchException ex)
-                    {
-                        MoexLogMessages.ParseFailed(
-                            _logger, ex, method, MoexErrorTypes.SchemaMismatch, ex.Message);
-                        throw;
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    pageActivity?.SetStatus(ActivityStatusCode.Ok);
-                    MoexMetrics.RecordOperationCancelled(
-                        in operationTags,
-                        Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    pageActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                    MoexMetrics.RecordOperationError(
-                        in operationTags,
-                        ex,
-                        Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
-                    throw;
-                }
-
-                dayIndex++;
-                totalRows += page.Count;
-                MoexLogMessages.DaySplitPageReceived(
-                    _logger,
-                    method,
-                    date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                    page.Count,
-                    Stopwatch.GetElapsedTime(pageStart));
-
-                MoexMetrics.PagesReceived.Add(
-                    1,
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.Source, operationTags.Source),
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.DataKind, operationTags.DataKind),
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.Market, operationTags.Market));
-
-                MoexMetrics.RowsReceived.Add(
-                    page.Count,
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.Source, operationTags.Source),
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.DataKind, operationTags.DataKind),
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.Market, operationTags.Market),
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.Flow, operationTags.Flow));
-
-                MoexMetrics.RecordOperationSuccess(
-                    in operationTags,
-                    Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
-                pageActivity?.SetStatus(ActivityStatusCode.Ok);
-            }
+            dayIndex++;
+            totalRows += page.Count;
+            MoexLogMessages.DaySplitPageReceived(
+                _logger,
+                method,
+                date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                page.Count,
+                fetched.Elapsed);
 
             if (page.Count > 0)
                 yield return page;
@@ -498,5 +292,100 @@ public sealed class MoexHistoryPageReader
         MoexLogMessages.DaySplitCompleted(
             _logger, method, fromText, tillText, dayIndex, totalRows);
         stopOutcome.Complete("range_exhausted", isPartial: false);
+    }
+
+    /// <summary>
+    /// Получает и разбирает одну страницу: спан, обработка отмены и ошибки, метрики страницы.
+    /// Стратегиям пагинации остаётся только правило продвижения и запись в журнал —
+    /// форма записи у них разная, поэтому она наверху, а не здесь.
+    /// </summary>
+    private async Task<PageFetchResult> FetchPageAsync(
+        MoexSeriesSpec spec,
+        string method,
+        Dictionary<string, string> query,
+        string secId,
+        MoexOperationTags operationTags,
+        CancellationToken cancellationToken)
+    {
+        long pageStart = Stopwatch.GetTimestamp();
+
+        List<(object?[] Row, DateTime Time)> rows;
+        PaginationCursorDTO cursor;
+        TimeSpan elapsed;
+        using (Activity? pageActivity =
+               MoexTelemetry.ActivitySource.StartActivity("moex.history.fetch"))
+        {
+            pageActivity?.SetTag(MoexTelemetryAttributes.Source, MoexLogSources.Algopack);
+            pageActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
+            pageActivity?.SetTag(MoexTelemetryAttributes.Market, spec.Market);
+
+            try
+            {
+                using HttpResponseMessage response = await _client.SendRequestAsync(
+                    method, query, cancellationToken);
+                using RentedBuffer body = await RentedBuffer.RentFromResponseAsync(
+                    response, _options.BodyReadTimeout, method, cancellationToken);
+
+                try
+                {
+                    rows = _parser.Parse(body.Span, spec, secId, out cursor);
+                }
+                catch (MoexSchemaMismatchException ex)
+                {
+                    MoexLogMessages.ParseFailed(
+                        _logger, ex, method, MoexErrorTypes.SchemaMismatch, ex.Message);
+                    throw;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                pageActivity?.SetStatus(ActivityStatusCode.Ok);
+                MoexMetrics.RecordOperationCancelled(
+                    in operationTags,
+                    Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                pageActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                MoexMetrics.RecordOperationError(
+                    in operationTags,
+                    ex,
+                    Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
+                throw;
+            }
+
+            // Время страницы фиксируется здесь — в той же точке, где сегодня вызывается
+            // запись в журнал, то есть до метрик. Иначе в журнал попадала бы длительность,
+            // включающая запись метрик, и смысл поля изменился бы.
+            elapsed = Stopwatch.GetElapsedTime(pageStart);
+
+            MoexMetrics.PagesReceived.Add(
+                1,
+                new KeyValuePair<string, object?>(
+                    MoexTelemetryAttributes.Source, operationTags.Source),
+                new KeyValuePair<string, object?>(
+                    MoexTelemetryAttributes.DataKind, operationTags.DataKind),
+                new KeyValuePair<string, object?>(
+                    MoexTelemetryAttributes.Market, operationTags.Market));
+
+            MoexMetrics.RowsReceived.Add(
+                rows.Count,
+                new KeyValuePair<string, object?>(
+                    MoexTelemetryAttributes.Source, operationTags.Source),
+                new KeyValuePair<string, object?>(
+                    MoexTelemetryAttributes.DataKind, operationTags.DataKind),
+                new KeyValuePair<string, object?>(
+                    MoexTelemetryAttributes.Market, operationTags.Market),
+                new KeyValuePair<string, object?>(
+                    MoexTelemetryAttributes.Flow, operationTags.Flow));
+
+            MoexMetrics.RecordOperationSuccess(
+                in operationTags,
+                Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
+            pageActivity?.SetStatus(ActivityStatusCode.Ok);
+        }
+
+        return new PageFetchResult(rows, cursor, elapsed);
     }
 }
