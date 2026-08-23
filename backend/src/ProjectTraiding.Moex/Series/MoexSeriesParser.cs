@@ -1,8 +1,6 @@
-using System.Text;
 using System.Text.Json;
 using ProjectTraiding.Moex.Contracts.Dto;
 using ProjectTraiding.Moex.Parsing;
-using ProjectTraiding.Moex.Parsing.Errors;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 
 namespace ProjectTraiding.Moex.Series;
@@ -33,7 +31,8 @@ public sealed class MoexSeriesParser
             if (reader.ValueTextEquals("columns"u8))
             {
                 foundColumns = true;
-                ValidateColumns(ref reader, spec);
+                ParseHelpersUtf8.ValidateSourceColumnsUtf8(
+                    ref reader, spec.SourceColumns, spec.RootKey);
             }
             else if (reader.ValueTextEquals("data"u8))
             {
@@ -85,53 +84,6 @@ public sealed class MoexSeriesParser
         }
 
         return rows;
-    }
-
-    private static void ValidateColumns(ref Utf8JsonReader reader, MoexSeriesSpec spec)
-    {
-        ParseHelpersUtf8.ReadAndExpect(
-            ref reader, JsonTokenType.StartArray, "columns", spec.RootKey);
-
-        int position = 0;
-        int expectedIndex = 0;
-        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
-        {
-            if (expectedIndex < spec.SourceColumns.Length
-                && position == spec.SourceColumns[expectedIndex].Position)
-            {
-                SourceColumn column = spec.SourceColumns[expectedIndex];
-                if (reader.TokenType != JsonTokenType.String
-                    || !reader.ValueTextEquals(column.Name))
-                {
-                    string actual = reader.TokenType == JsonTokenType.String
-                        ? reader.GetString() ?? "<null>"
-                        : $"<{reader.TokenType}>";
-                    string expected = Encoding.UTF8.GetString(column.Name);
-
-                    throw new MoexSchemaMismatchException(
-                        $"[{spec.RootKey}] Колонка не совпала на позиции {position}: " +
-                        $"ожидалось '{expected}', получено '{actual}'.");
-                }
-
-                expectedIndex++;
-            }
-
-            position++;
-        }
-
-        if (position != spec.SourceColumns.Length)
-        {
-            ParseHelpersUtf8.SchemaMismatch(
-                $"[{spec.RootKey}] Количество колонок не совпадает: " +
-                $"ожидалось {spec.SourceColumns.Length}, получено {position}.");
-        }
-
-        if (expectedIndex != spec.SourceColumns.Length)
-        {
-            ParseHelpersUtf8.SchemaMismatch(
-                $"[{spec.RootKey}] Не все ожидаемые колонки найдены: " +
-                $"ожидалось {spec.SourceColumns.Length}, проверено {expectedIndex}.");
-        }
     }
 
     private static void ReadRows(

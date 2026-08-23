@@ -1,6 +1,7 @@
 
 using ProjectTraiding.Moex.Contracts.Dto;
 using ProjectTraiding.Moex.Parsing.Errors;
+using ProjectTraiding.Moex.Series;
 using System.Buffers.Text;
 using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
@@ -169,6 +170,60 @@ namespace ProjectTraiding.Moex.Parsing
                 SchemaMismatch(
                     $"[{schema.RootKey}] Не все ожидаемые колонки найдены: " +
                     $"ожидалось {schema.Columns.Length}, проверено {expectedIdx}.");
+        }
+
+        /// <summary>
+        /// Проверяет массив колонок ответа по декларации источника: имена на объявленных
+        /// позициях и общее число колонок. Форма колонки одна и та же у исторической
+        /// загрузки и у приёма реального времени, поэтому проверка общая.
+        /// </summary>
+        internal static void ValidateSourceColumnsUtf8(
+            ref Utf8JsonReader reader,
+            SourceColumn[] columns,
+            string rootKey)
+        {
+            ReadAndExpect(ref reader, JsonTokenType.StartArray, "columns", rootKey);
+
+            int position = 0;
+            int expectedIndex = 0;
+            while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+            {
+                if (expectedIndex < columns.Length
+                    && position == columns[expectedIndex].Position)
+                {
+                    SourceColumn column = columns[expectedIndex];
+                    if (reader.TokenType != JsonTokenType.String
+                        || !reader.ValueTextEquals(column.Name))
+                    {
+                        string actual = reader.TokenType == JsonTokenType.String
+                            ? reader.GetString() ?? "<null>"
+                            : $"<{reader.TokenType}>";
+                        string expected = System.Text.Encoding.UTF8.GetString(column.Name);
+
+                        throw new MoexSchemaMismatchException(
+                            $"[{rootKey}] Колонка не совпала на позиции {position}: " +
+                            $"ожидалось '{expected}', получено '{actual}'.");
+                    }
+
+                    expectedIndex++;
+                }
+
+                position++;
+            }
+
+            if (position != columns.Length)
+            {
+                SchemaMismatch(
+                    $"[{rootKey}] Количество колонок не совпадает: " +
+                    $"ожидалось {columns.Length}, получено {position}.");
+            }
+
+            if (expectedIndex != columns.Length)
+            {
+                SchemaMismatch(
+                    $"[{rootKey}] Не все ожидаемые колонки найдены: " +
+                    $"ожидалось {columns.Length}, проверено {expectedIndex}.");
+            }
         }
 
         // ═══════════════════════════════════════════════════════════
