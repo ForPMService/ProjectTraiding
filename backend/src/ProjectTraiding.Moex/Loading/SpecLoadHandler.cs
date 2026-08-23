@@ -63,7 +63,7 @@ public sealed class SpecLoadHandler
             spec.Market,
             MoexFlows.History);
 
-        IAsyncEnumerable<List<(object?[] Row, DateTime Time)>> pages = _reader.ReadPages(
+        IAsyncEnumerable<SeriesParsedPage> pages = _reader.ReadPages(
             spec,
             task.Secid,
             task.Boardid,

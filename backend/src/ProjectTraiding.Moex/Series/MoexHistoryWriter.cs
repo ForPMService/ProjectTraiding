@@ -31,7 +31,7 @@ public sealed class MoexHistoryWriter
         string dataGeneration,
         string sourceContractVersion,
         string writerVersion,
-        IAsyncEnumerable<List<(object?[] Row, DateTime Time)>> pages,
+        IAsyncEnumerable<SeriesParsedPage> pages,
         StorageInsertContext insertContext,
         CancellationToken cancellationToken)
     {
@@ -44,18 +44,21 @@ public sealed class MoexHistoryWriter
         long rowsInsertedReported = 0;
         string? lastToken = null;
 
-        await foreach (List<(object?[] Row, DateTime Time)> page
+        await foreach (SeriesParsedPage page
                        in pages.WithCancellation(cancellationToken))
         {
-            foreach ((object?[] row, DateTime time) in page)
+            // Покрытый объём считается по строкам источника, а не по принятым: отвергнутая
+            // строка прочитана и входит в диапазон, просто не записана. Иначе rows_total
+            // изменил бы смысл — сегодня в нём число прочитанных строк.
+            rowsRead += page.SourceRowsCount;
+
+            foreach ((object?[] row, DateTime time) in page.Rows)
             {
                 if (batch.Count == 0)
                     batchFirstTime = time;
 
                 batchLastTime = time;
                 batch.Add(row);
-                rowsRead++;
-
                 if (batch.Count >= _batchSize)
                 {
                     (lastToken, long reported) = await FlushAsync(

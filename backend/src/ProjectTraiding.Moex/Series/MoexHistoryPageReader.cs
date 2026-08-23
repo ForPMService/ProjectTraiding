@@ -21,7 +21,7 @@ public sealed class MoexHistoryPageReader
 
     /// <summary>Итог получения одной страницы: строки, курсор ответа и затраченное время.</summary>
     private readonly record struct PageFetchResult(
-        List<(object?[] Row, DateTime Time)> Rows,
+        SeriesParsedPage Rows,
         PaginationCursorDTO Cursor,
         TimeSpan Elapsed);
 
@@ -46,7 +46,7 @@ public sealed class MoexHistoryPageReader
     /// Проверок доводов и иных побочных действий в нём нет, поэтому наблюдаемое поведение
     /// не меняется.
     /// </summary>
-    public IAsyncEnumerable<List<(object?[] Row, DateTime Time)>> ReadPages(
+    public IAsyncEnumerable<SeriesParsedPage> ReadPages(
         MoexSeriesSpec spec,
         string secId,
         string boardId,
@@ -72,7 +72,7 @@ public sealed class MoexHistoryPageReader
             spec, secId, from, till, stopOutcome, operationTags, cancellationToken);
     }
 
-    private async IAsyncEnumerable<List<(object?[] Row, DateTime Time)>> ReadCursorPages(
+    private async IAsyncEnumerable<SeriesParsedPage> ReadCursorPages(
         MoexSeriesSpec spec,
         string secId,
         DateOnly from,
@@ -99,13 +99,13 @@ public sealed class MoexHistoryPageReader
             cancellationToken.ThrowIfCancellationRequested();
             PageFetchResult page = await FetchPageAsync(
                 spec, method, query, secId, operationTags, cancellationToken);
-            List<(object?[] Row, DateTime Time)> rows = page.Rows;
+            SeriesParsedPage parsed = page.Rows;
             PaginationCursorDTO cursor = page.Cursor;
 
             pagesElapsed++;
-            totalRows += rows.Count;
+            totalRows += parsed.Rows.Count;
             MoexLogMessages.PageReceived(
-                _logger, method, pagesElapsed, rows.Count, page.Elapsed);
+                _logger, method, pagesElapsed, parsed.Rows.Count, page.Elapsed);
 
             // Решение об остановке принимается до обрезки: последняя страница отдаётся
             // целиком, иначе её хвостовая группа была бы отброшена безвозвратно.
@@ -113,7 +113,7 @@ public sealed class MoexHistoryPageReader
                 cursor, pagesElapsed, _options.MaxPagesPerLoad);
             if (step.IsStop)
             {
-                yield return rows;
+                yield return parsed;
 
                 MoexLogMessages.PaginationStopped(
                     _logger, method, step.StopReason!, pagesElapsed, totalRows);
@@ -128,30 +128,34 @@ public sealed class MoexHistoryPageReader
             // Граница страницы не должна рассекать группу строк одного момента: порядок
             // внутри группы источник не гарантирует, и рассечённая группа теряет строку.
             // Хвост отбрасывается и дочитывается следующей страницей целиком.
-            if (spec.PreserveCursorTimeGroup && rows.Count > 0)
+            if (spec.PreserveCursorTimeGroup && parsed.SourceRowsCount > 0)
             {
-                DateTime lastTime = rows[^1].Time;
-                int tailStart = rows.Count - 1;
-                while (tailStart > 0 && rows[tailStart - 1].Time == lastTime)
-                    tailStart--;
+                // Границу группы ищем по позициям ответа источника, а не по списку принятых
+                // строк. Отвергнутая строка тоже занимает позицию и несёт свой момент,
+                // поэтому участвует в поиске наравне с принятой: группа может начинаться
+                // именно с неё, и перезапуск после неё рассёк бы группу — ровно то,
+                // ради чего признак и введён.
+                (int sourceTailStart, int acceptedTailStart, DateTime? groupTime) =
+                    FindTailGroupStart(parsed);
 
-                if (tailStart == 0)
+                if (sourceTailStart == 0)
                     throw new InvalidOperationException(
                         $"Страница {method} целиком занята одной временной группой "
-                        + $"({rows.Count} строк на момент {lastTime:yyyy-MM-dd HH:mm:ss}), "
+                        + $"({parsed.SourceRowsCount} строк источника на момент "
+                        + $"{groupTime:yyyy-MM-dd HH:mm:ss}), "
                         + "продолжение чтения не гарантирует полноты.");
 
-                nextStart = cursor.Index!.Value + tailStart;
-                rows = rows.GetRange(0, tailStart);
+                nextStart = cursor.Index!.Value + sourceTailStart;
+                parsed = TrimToSourceIndex(parsed, acceptedTailStart, sourceTailStart);
             }
 
-            yield return rows;
+            yield return parsed;
 
             query["start"] = nextStart.ToString(CultureInfo.InvariantCulture);
         }
     }
 
-    private async IAsyncEnumerable<List<(object?[] Row, DateTime Time)>> ReadFixedPages(
+    private async IAsyncEnumerable<SeriesParsedPage> ReadFixedPages(
         MoexSeriesSpec spec,
         string secId,
         string boardId,
@@ -194,16 +198,16 @@ public sealed class MoexHistoryPageReader
             cancellationToken.ThrowIfCancellationRequested();
             PageFetchResult page = await FetchPageAsync(
                 spec, method, query, secId, operationTags, cancellationToken);
-            List<(object?[] Row, DateTime Time)> rows = page.Rows;
+            SeriesParsedPage parsed = page.Rows;
 
             pagesElapsed++;
-            totalRows += rows.Count;
+            totalRows += parsed.Rows.Count;
             MoexLogMessages.PageReceived(
-                _logger, method, pagesElapsed, rows.Count, page.Elapsed);
+                _logger, method, pagesElapsed, parsed.Rows.Count, page.Elapsed);
 
-            yield return rows;
+            yield return parsed;
 
-            if (rows.Count >= FixedPageSize)
+            if (parsed.SourceRowsCount >= FixedPageSize)
             {
                 queryStart += FixedPageSize;
                 query["start"] = queryStart.ToString(CultureInfo.InvariantCulture);
@@ -212,14 +216,14 @@ public sealed class MoexHistoryPageReader
             {
                 MoexLogMessages.FixedPagePaginationStopped(
                     _logger, method, "last_page_incomplete",
-                    pagesElapsed, totalRows, rows.Count, FixedPageSize);
+                    pagesElapsed, totalRows, parsed.Rows.Count, FixedPageSize);
                 stopOutcome.Complete("range_exhausted", isPartial: false);
                 break;
             }
         }
     }
 
-    private async IAsyncEnumerable<List<(object?[] Row, DateTime Time)>> ReadDaySplitPages(
+    private async IAsyncEnumerable<SeriesParsedPage> ReadDaySplitPages(
         MoexSeriesSpec spec,
         string secId,
         DateOnly from,
@@ -251,24 +255,105 @@ public sealed class MoexHistoryPageReader
             query["till"] = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             PageFetchResult fetched = await FetchPageAsync(
                 spec, method, query, secId, operationTags, cancellationToken);
-            List<(object?[] Row, DateTime Time)> page = fetched.Rows;
+            SeriesParsedPage parsed = fetched.Rows;
 
             dayIndex++;
-            totalRows += page.Count;
+            totalRows += parsed.Rows.Count;
             MoexLogMessages.DaySplitPageReceived(
                 _logger,
                 method,
                 date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                page.Count,
+                parsed.Rows.Count,
                 fetched.Elapsed);
 
-            if (page.Count > 0)
-                yield return page;
+            // Условие по числу исходных строк, а не принятых: страница, у которой отвергнуты
+            // все строки, всё равно прочитана и обязана дойти до писателя — иначе её строки
+            // не попадут ни в покрытый объём, ни в счёт пропусков.
+            if (parsed.SourceRowsCount > 0)
+                yield return parsed;
         }
 
         MoexLogMessages.DaySplitCompleted(
             _logger, method, fromText, tillText, dayIndex, totalRows);
         stopOutcome.Complete("range_exhausted", isPartial: false);
+    }
+
+    /// <summary>
+    /// Начало последней временной группы: позиция в ответе источника, число принятых
+    /// строк до неё и момент самой группы. Обход идёт по позициям ответа от конца
+    /// к началу, принятые и отвергнутые строки участвуют в нём наравне.
+    ///
+    /// Опорный момент берётся у первой встреченной строки, момент которой известен.
+    /// Строка с неизвестным моментом считается принадлежащей группе: перезапуск раньше
+    /// начала группы лишь перечитает несколько строк, перезапуск позже рассечёт группу
+    /// и потеряет строку, потому что порядок строк внутри группы источник не гарантирует.
+    /// Из двух неточностей выбрана безвредная.
+    ///
+    /// Нулевая позиция означает, что границы нет: либо вся страница занята одной группой,
+    /// либо ни у одной её строки момент прочитать не удалось.
+    /// </summary>
+    private static (int SourceTailStart, int AcceptedTailStart, DateTime? GroupTime)
+        FindTailGroupStart(SeriesParsedPage page)
+    {
+        int acceptedIndex = page.Rows.Count - 1;
+        int skippedIndex = (page.SkippedSourceRows?.Count ?? 0) - 1;
+        DateTime? groupTime = null;
+
+        for (int sourceIndex = page.SourceRowsCount - 1; sourceIndex >= 0; sourceIndex--)
+        {
+            bool accepted = true;
+            DateTime? time;
+            if (skippedIndex >= 0
+                && page.SkippedSourceRows![skippedIndex].SourceIndex == sourceIndex)
+            {
+                accepted = false;
+                time = page.SkippedSourceRows[skippedIndex].Time;
+                skippedIndex--;
+            }
+            else
+            {
+                time = page.Rows[acceptedIndex].Time;
+            }
+
+            if (groupTime is null)
+            {
+                groupTime = time;
+            }
+            else if (time is not null && time != groupTime)
+            {
+                return (sourceIndex + 1, acceptedIndex + 1, groupTime);
+            }
+
+            if (accepted)
+                acceptedIndex--;
+        }
+
+        return (0, 0, groupTime);
+    }
+
+    /// <summary>
+    /// Обрезает страницу по границе хвостовой группы. Отвергнутые строки хвоста в счёт
+    /// этой страницы не идут: следующая страница начнётся с той же позиции источника
+    /// и отвергнет их заново — иначе они были бы посчитаны дважды.
+    /// </summary>
+    private static SeriesParsedPage TrimToSourceIndex(
+        SeriesParsedPage page, int acceptedCount, int sourceCount)
+    {
+        List<SkippedSourceRow>? skipped = null;
+        if (page.SkippedSourceRows is not null)
+        {
+            for (int i = 0; i < page.SkippedSourceRows.Count; i++)
+            {
+                if (page.SkippedSourceRows[i].SourceIndex >= sourceCount)
+                    break;
+
+                skipped ??= new List<SkippedSourceRow>();
+                skipped.Add(page.SkippedSourceRows[i]);
+            }
+        }
+
+        return new SeriesParsedPage(
+            page.Rows.GetRange(0, acceptedCount), sourceCount, skipped);
     }
 
     /// <summary>
@@ -286,7 +371,7 @@ public sealed class MoexHistoryPageReader
     {
         long pageStart = Stopwatch.GetTimestamp();
 
-        List<(object?[] Row, DateTime Time)> rows;
+        SeriesParsedPage parsed;
         PaginationCursorDTO cursor;
         TimeSpan elapsed;
         using (Activity? pageActivity =
@@ -305,7 +390,7 @@ public sealed class MoexHistoryPageReader
 
                 try
                 {
-                    rows = _parser.Parse(body.Span, spec, secId, out cursor);
+                    parsed = _parser.Parse(body.Span, spec, secId, out cursor);
                 }
                 catch (MoexSchemaMismatchException ex)
                 {
@@ -353,7 +438,7 @@ public sealed class MoexHistoryPageReader
                 { MoexTelemetryAttributes.Market, operationTags.Market },
                 { MoexTelemetryAttributes.Flow, operationTags.Flow },
             };
-            MoexMetrics.RowsReceived.Add(rows.Count, rowsTags);
+            MoexMetrics.RowsReceived.Add(parsed.Rows.Count, rowsTags);
 
             MoexMetrics.RecordOperationSuccess(
                 in operationTags,
@@ -361,6 +446,6 @@ public sealed class MoexHistoryPageReader
             pageActivity?.SetStatus(ActivityStatusCode.Ok);
         }
 
-        return new PageFetchResult(rows, cursor, elapsed);
+        return new PageFetchResult(parsed, cursor, elapsed);
     }
 }

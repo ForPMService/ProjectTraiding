@@ -7,13 +7,14 @@ namespace ProjectTraiding.Moex.Series;
 
 public sealed class MoexSeriesParser
 {
-    public List<(object?[] Row, DateTime Time)> Parse(
+    public SeriesParsedPage Parse(
         ReadOnlySpan<byte> body,
         MoexSeriesSpec spec,
         string taskSecId,
         out PaginationCursorDTO cursor)
     {
         List<(object?[] Row, DateTime Time)> rows = [];
+        int sourceRowsCount = 0;
         Utf8JsonReader reader = new(body);
 
         ParseHelpersUtf8.SkipToRootObject(ref reader, spec.RootKey);
@@ -44,7 +45,7 @@ public sealed class MoexSeriesParser
                 }
 
                 foundData = true;
-                ReadRows(ref reader, rows, spec, taskSecId);
+                ReadRows(ref reader, rows, spec, taskSecId, ref sourceRowsCount);
             }
             else
             {
@@ -83,14 +84,15 @@ public sealed class MoexSeriesParser
             }
         }
 
-        return rows;
+        return new SeriesParsedPage(rows, sourceRowsCount, null);
     }
 
     private static void ReadRows(
         ref Utf8JsonReader reader,
         List<(object?[] Row, DateTime Time)> rows,
         MoexSeriesSpec spec,
-        string taskSecId)
+        string taskSecId,
+        ref int sourceRowIndex)
     {
         ParseHelpersUtf8.ReadAndExpect(
             ref reader, JsonTokenType.StartArray, "data", spec.RootKey);
@@ -100,13 +102,12 @@ public sealed class MoexSeriesParser
         // не смешивались.
         object?[] sourceValues = new object?[spec.SourceColumns.Length];
 
-        int rowIndex = 0;
         while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
         {
             if (reader.TokenType != JsonTokenType.StartArray)
             {
                 ParseHelpersUtf8.SchemaMismatch(
-                    $"[{spec.RootKey}] Ожидался StartArray строки {rowIndex}, " +
+                    $"[{spec.RootKey}] Ожидался StartArray строки {sourceRowIndex}, " +
                     $"получено {reader.TokenType}.");
             }
 
@@ -115,7 +116,7 @@ public sealed class MoexSeriesParser
                 if (!reader.Read())
                 {
                     ParseHelpersUtf8.SchemaMismatch(
-                        $"[{spec.RootKey}] Неожиданный конец JSON в строке {rowIndex}, " +
+                        $"[{spec.RootKey}] Неожиданный конец JSON в строке {sourceRowIndex}, " +
                         $"позиция {position}.");
                 }
 
@@ -124,25 +125,25 @@ public sealed class MoexSeriesParser
                     ParseHelpersUtf8.SchemaMismatch(
                         $"[{spec.RootKey}] Короткая строка данных: ожидалось " +
                         $"{spec.SourceColumns.Length} колонок, получено {position} " +
-                        $"(строка {rowIndex}).");
+                        $"(строка {sourceRowIndex}).");
                 }
 
                 sourceValues[position] = reader.TokenType == JsonTokenType.Null
                     ? null
                     : ReadValue(
                         ref reader, spec.SourceColumns[position], spec.SourceColumnUsed[position],
-                        rowIndex, spec.RootKey);
+                        sourceRowIndex, spec.RootKey);
             }
 
             if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
             {
                 ParseHelpersUtf8.SchemaMismatch(
                     $"[{spec.RootKey}] Ожидался EndArray после " +
-                    $"{spec.SourceColumns.Length} колонок (строка {rowIndex}).");
+                    $"{spec.SourceColumns.Length} колонок (строка {sourceRowIndex}).");
             }
 
             rows.Add(BuildTargetRow(sourceValues, spec, taskSecId));
-            rowIndex++;
+            sourceRowIndex++;
         }
     }
 
