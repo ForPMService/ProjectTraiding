@@ -85,14 +85,6 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
             return true;
         }
 
-        public static DateTime? AsWallClock(DateTime? value)
-        {
-            if (value is null)
-                return null;
-
-            return DateTime.SpecifyKind(value.Value, DateTimeKind.Unspecified);
-        }
-
         /// <summary>
         /// Метка "yyyy-MM-dd HH:mm:ss" из ответа реального времени в московское стенное время.
         /// Пустое значение — не ошибка: столбец необязательный.
