@@ -1,7 +1,5 @@
 using ProjectTraiding.Management.Contracts.Dto;
-using System;
-using System.Collections.Generic;
-using System.Text;
+using ProjectTraiding.Moex.Contracts;
 
 namespace ProjectTraiding.Management.Validation
 {
@@ -9,7 +7,6 @@ namespace ProjectTraiding.Management.Validation
     {
         private static readonly string[] FeeTypes =
         { "percent_of_turnover", "fixed_per_contract", "fixed_per_trade", "monthly", "depository" };
-        private static readonly string[] Markets = { "stock", "futures" };
 
         public static ValidationResult Validate(BrokerTariffCreateRequest request)
         {
@@ -21,16 +18,12 @@ namespace ProjectTraiding.Management.Validation
 
             if (string.IsNullOrWhiteSpace(request.BrokerName))
                 result.Errors.Add("broker_name обязателен");
-
             if (string.IsNullOrWhiteSpace(request.TariffName))
                 result.Errors.Add("tariff_name обязателен");
-
-            if (request.Market is null || Array.IndexOf(Markets, request.Market) < 0)
+            if (!MoexDomainRules.IsMarket(request.Market))
                 result.Errors.Add("market должен быть одним из: stock, futures");
-
             if (request.FeeType is null || Array.IndexOf(FeeTypes, request.FeeType) < 0)
                 result.Errors.Add($"fee_type должен быть одним из: {string.Join(", ", FeeTypes)}");
-
             if (request.FeeValue is null)
                 result.Errors.Add("fee_value обязателен");
 

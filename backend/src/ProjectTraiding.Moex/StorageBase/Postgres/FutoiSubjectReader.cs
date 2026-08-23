@@ -1,38 +1,18 @@
 using Npgsql;
 using NpgsqlTypes;
-using System;
-using System.Collections.Generic;
-using System.Text;
 
-namespace ProjectTraiding.Management.StorageBase.Postgres
+namespace ProjectTraiding.Moex.StorageBase.Postgres
 {
     /// <summary>
-    /// Разрешение субъекта данных открытого интереса.
-    ///
-    /// Три случая: срочный контракт разрешается в код своей серии (SRU6 -> SR); бессрочный
-    /// фьючерс серии не имеет и разрешается сам в себя (SBERF -> SBERF); уже переданный код
-    /// серии возвращается без изменения (SR -> SR).
-    ///
-    /// Последний случай делает разрешение идемпотентным: код субъекта можно передавать
-    /// повторно, и задача на серию ставится напрямую. Без него задача на SR была бы
-    /// отвергнута, поскольку строки SR в moex_futures_details нет — серия живёт только
-    /// в moex_instruments.
-    ///
-    /// Инструмент, для которого субъект не определяется, в словарь не попадает; вызывающая
-    /// сторона отвечает за отказ или пропуск.
+    /// Разрешение субъекта открытого интереса: контракт в серию, бессрочный фьючерс
+    /// в себя, а уже переданный код серии остаётся без изменения.
     /// </summary>
     public sealed class FutoiSubjectReader
     {
         private readonly NpgsqlDataSource _dataSource;
+        public FutoiSubjectReader(NpgsqlDataSource dataSource) => _dataSource = dataSource;
 
-        public FutoiSubjectReader(NpgsqlDataSource dataSource)
-        {
-            _dataSource = dataSource;
-        }
-
-        public async Task<Dictionary<string, string>> ResolveAsync(
-            string[] secids,
-            CancellationToken ct)
+        public async Task<Dictionary<string, string>> ResolveAsync(string[] secids, CancellationToken ct)
         {
             Dictionary<string, string> result = new(StringComparer.Ordinal);
             if (secids.Length == 0)
@@ -60,7 +40,6 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
             await using NpgsqlDataReader reader = await cmd.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
                 result[reader.GetString(0)] = reader.GetString(1);
-
             return result;
         }
     }

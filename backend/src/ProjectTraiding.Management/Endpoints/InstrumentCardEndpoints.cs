@@ -21,7 +21,7 @@ namespace ProjectTraiding.Management.Endpoints
                 DbWriteResult result = await loader.LoadStockAsync(ct);
                 return Results.Json(
                     BuildResult("sync_instruments_stock", "MOEX_ISS",
-                        "moex_instruments/moex_stock_details", result),
+                        MoexInstrumentSyncLoader.StockTarget, result),
                     ManagementJsonContext.Default.LoadResultDto);
             });
 
@@ -34,7 +34,7 @@ namespace ProjectTraiding.Management.Endpoints
                 DbWriteResult result = await loader.LoadFuturesAsync(ct);
                 return Results.Json(
                     BuildResult("sync_instruments_futures", "MOEX_ALGOPACK",
-                        "moex_instruments/moex_futures_details", result),
+                        MoexInstrumentSyncLoader.FuturesTarget, result),
                     ManagementJsonContext.Default.LoadResultDto);
             });
 
@@ -50,9 +50,9 @@ namespace ProjectTraiding.Management.Endpoints
                 LoadResultDto[] results =
                 [
                     BuildResult("sync_instruments_stock", "MOEX_ISS",
-                        "moex_instruments/moex_stock_details", stock),
+                        MoexInstrumentSyncLoader.StockTarget, stock),
                     BuildResult("sync_instruments_futures", "MOEX_ALGOPACK",
-                        "moex_instruments/moex_futures_details", futures)
+                        MoexInstrumentSyncLoader.FuturesTarget, futures)
                 ];
                 return Results.Json(results, ManagementJsonContext.Default.LoadResultDtoArray);
             });

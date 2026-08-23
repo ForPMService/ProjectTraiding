@@ -1,23 +1,16 @@
 using Npgsql;
 using ProjectTraiding.Management.Contracts;
 using ProjectTraiding.Management.Contracts.Dto;
-using ProjectTraiding.Management.Expansion;
 using ProjectTraiding.Management.StorageBase.Postgres;
 using ProjectTraiding.Management.Validation;
-using ProjectTraiding.Moex.Infrastructure;
-using System;
-using System.Collections.Generic;
-using System.Text;
+using ProjectTraiding.Moex.Contracts;
+using ProjectTraiding.Moex.Loading.Planning;
 
 namespace ProjectTraiding.Management.Endpoints
 {
     internal sealed class LoadTaskEndpointsLog;
     internal readonly record struct LoadTaskBulkValidationKey(
-        string Secid,
-        string Market,
-        string Boardid,
-        string DataKind,
-        int? CandleInterval);
+        string Secid, string Market, string Boardid, string DataKind, int? CandleInterval);
 
     public static class LoadTaskEndpoints
     {
@@ -26,66 +19,44 @@ namespace ProjectTraiding.Management.Endpoints
             routes.MapPost("/management/load-tasks", async (
                 LoadTaskCreateRequest request,
                 LoadTaskWriter writer,
-                FutoiSubjectReader subjectReader,
+                MoexLoadPlanner planner,
                 ILogger<LoadTaskEndpointsLog> logger,
                 CancellationToken ct) =>
             {
                 const string route = "POST /management/load-tasks";
                 ManagementEndpointLogMessages.OperationStarted(logger, route);
-
                 ValidationResult validation = LoadTaskValidator.Validate(request);
                 if (!validation.IsValid)
+                    return ValidationFailure(logger, route, validation);
+
+                MoexLoadWindow? planned = await planner.PlanSingleAsync(new MoexLoadWindow(
+                    request.Secid, request.Market, request.Boardid, request.DataKind,
+                    request.CandleInterval, request.DateFrom, request.DateTill, request.StorageTarget), ct);
+                if (planned is null)
                 {
-                    string errors = string.Join("; ", validation.Errors);
-                    ManagementEndpointLogMessages.ValidationRejected(logger, route, errors);
-                    return Results.BadRequest(errors);
-                }
-
-                // Открытый интерес принадлежит серии. Подстановка делается здесь, при
-                // создании задачи: тогда и задача, и покрытие, и строки в хранилище
-                // говорят одним кодом, и повторная загрузка отсекается по покрытию.
-                LoadTaskCreateRequest effectiveRequest = request;
-                if (request.DataKind == "futoi")
-                {
-                    string[] requested = new string[1];
-                    requested[0] = request.Secid;
-
-                    Dictionary<string, string> subjects = await subjectReader.ResolveAsync(requested, ct);
-                    if (!subjects.TryGetValue(request.Secid, out string? subject))
-                    {
-                        string message =
-                            $"открытый интерес публикуется по серии срочных контрактов; " +
-                            $"у инструмента {request.Secid} код серии не заполнен";
-                        ManagementEndpointLogMessages.ValidationRejected(logger, route, message);
-                        return Results.BadRequest(message);
-                    }
-
-                    effectiveRequest = request with { Secid = subject };
+                    string message = $"открытый интерес публикуется по серии срочных контрактов; " +
+                        $"у инструмента {request.Secid} код серии не заполнен";
+                    ManagementEndpointLogMessages.ValidationRejected(logger, route, message);
+                    return Results.BadRequest(message);
                 }
 
                 try
                 {
-                    Guid? taskId = await writer.CreateAsync(effectiveRequest, ct);
+                    Guid? taskId = await writer.CreateAsync(ToRequest(planned.Value), ct);
                     if (taskId is null)
                     {
-                        ManagementEndpointLogMessages.WriteBlockedByDeletion(
-                            logger, route, request.Secid);
+                        ManagementEndpointLogMessages.WriteBlockedByDeletion(logger, route, request.Secid);
                         return Results.Text(
                             "по инструменту выполняется удаление данных, постановка задания невозможна",
                             "text/plain", statusCode: StatusCodes.Status409Conflict);
                     }
-
-                    // Идентификатор задачи — uuid; общий ManagementResultDto.Id рассчитан на long,
-                    // поэтому отдаём taskId отдельно текстом, а не втискиваем в общий DTO.
                     return Results.Text($"load task created: taskId={taskId.Value}", "text/plain");
                 }
                 catch (PostgresException ex)
                 {
                     string? message = ManagementDbErrors.MapLoadTask(logger, route, ex);
-
                     if (message is null)
                         throw;
-
                     return Results.BadRequest(message);
                 }
             });
@@ -93,134 +64,38 @@ namespace ProjectTraiding.Management.Endpoints
             routes.MapPost("/management/load-tasks/bulk", async (
                 LoadTaskBulkCreateRequest request,
                 LoadTaskWriter writer,
-                FutoiSubjectReader subjectReader,
-                LoadedRangeCoverageReader coverageReader,
+                MoexLoadPlanner planner,
                 ILogger<LoadTaskEndpointsLog> logger,
                 CancellationToken ct) =>
             {
                 const string route = "POST /management/load-tasks/bulk";
                 ManagementEndpointLogMessages.OperationStarted(logger, route);
-
                 ValidationResult shapeValidation = ValidateBulkRequestShape(request);
                 if (!shapeValidation.IsValid)
-                {
-                    string errors = string.Join("; ", shapeValidation.Errors);
-                    ManagementEndpointLogMessages.ValidationRejected(logger, route, errors);
-                    return Results.BadRequest(errors);
-                }
-
+                    return ValidationFailure(logger, route, shapeValidation);
                 ValidationResult rangeValidation = ValidateBulkInstrumentRanges(request);
                 if (!rangeValidation.IsValid)
+                    return ValidationFailure(logger, route, rangeValidation);
+
+                List<MoexLoadPlanInstrument> instruments = new();
+                for (int index = 0; index < request.Instruments.Count; index++)
                 {
-                    string errors = string.Join("; ", rangeValidation.Errors);
-                    ManagementEndpointLogMessages.ValidationRejected(logger, route, errors);
-                    return Results.BadRequest(errors);
+                    LoadTaskBulkInstrumentRequest instrument = request.Instruments[index];
+                    instruments.Add(new MoexLoadPlanInstrument(
+                        instrument.Secid, instrument.Market, instrument.Boardid,
+                        instrument.DateFrom, instrument.DateTill));
                 }
 
-                int? normalizedSliceWeeks = request.SliceWeeks.HasValue
-                   ? (request.SliceWeeks.Value < 1 ? 1 : request.SliceWeeks.Value)
-                   : (int?)null;
-
-                // Зрелая дата — по московскому торговому дню, а не по часовому поясу процесса:
-                // приложение западнее Москвы в первый час московских суток отрезало бы лишний
-                // день молча, без единой ошибки в журнале.
-                //
-                // Вычисляется один раз до цикла: весь пакет задач одной постановки оперирует
-                // одной зрелой датой, даже если исполнение цикла пересечёт московскую полночь.
-                DateOnly lastMatureDate = MoexTime.Today.AddDays(-1);
-
-                int futuresInstrumentCount = 0;
-                for (int i = 0; i < request.Instruments.Count; i++)
-                {
-                    if (request.Instruments[i].Market == "futures")
-                        futuresInstrumentCount++;
-                }
-
-                string[] futuresSecids = new string[futuresInstrumentCount];
-                int futuresSecidIndex = 0;
-                for (int i = 0; i < request.Instruments.Count; i++)
-                {
-                    LoadTaskBulkInstrumentRequest instrument = request.Instruments[i];
-                    if (instrument.Market != "futures")
-                        continue;
-
-                    futuresSecids[futuresSecidIndex] = instrument.Secid;
-                    futuresSecidIndex++;
-                }
-
-                Dictionary<string, string> subjects =
-                    await subjectReader.ResolveAsync(futuresSecids, ct);
-
+                MoexLoadPlanResult plan = await planner.PlanBulkAsync(new MoexLoadPlanRequest(
+                    instruments, request.StockDataKinds, request.FuturesDataKinds,
+                    request.CandleIntervals, request.StorageTarget, request.SliceWeeks), ct);
                 List<LoadTaskCreateRequest> tasks = new();
-                for (int instrumentIndex = 0; instrumentIndex < request.Instruments.Count; instrumentIndex++)
-                {
-                    LoadTaskBulkInstrumentRequest instrument = request.Instruments[instrumentIndex];
-                    string[] dataKinds = instrument.Market == "stock"
-                        ? request.StockDataKinds
-                        : request.FuturesDataKinds;
-
-                    DateOnly effectiveFrom = instrument.DateFrom;
-                    DateOnly effectiveTill = instrument.DateTill < lastMatureDate
-                        ? instrument.DateTill
-                        : lastMatureDate;
-
-                    for (int intervalIndex = 0; intervalIndex < request.CandleIntervals.Length; intervalIndex++)
-                    {
-                        await AddMissingWindowsAsync(
-                            tasks,
-                            coverageReader,
-                            logger,
-                            route,
-                            instrument,
-                            dataKind: "candles",
-                            candleInterval: request.CandleIntervals[intervalIndex],
-                            storageTarget: request.StorageTarget,
-                            requestedSliceWeeks: request.SliceWeeks,
-                            effectiveFrom,
-                            effectiveTill,
-                            ct);
-                    }
-
-                    for (int dataKindIndex = 0; dataKindIndex < dataKinds.Length; dataKindIndex++)
-                    {
-                        string dataKind = dataKinds[dataKindIndex];
-
-                        LoadTaskBulkInstrumentRequest subjectInstrument = instrument;
-                        if (dataKind == "futoi")
-                        {
-                            if (!subjects.TryGetValue(instrument.Secid, out string? subject))
-                            {
-                                ManagementEndpointLogMessages.BulkFutoiSubjectMissing(
-                                    logger, route, instrument.Secid);
-                                continue;
-                            }
-
-                            subjectInstrument = instrument with { Secid = subject };
-                        }
-
-                        await AddMissingWindowsAsync(
-                            tasks,
-                            coverageReader,
-                            logger,
-                            route,
-                            subjectInstrument,
-                            dataKind: dataKind,
-                            candleInterval: null,
-                            storageTarget: request.StorageTarget,
-                            requestedSliceWeeks: request.SliceWeeks,
-                            effectiveFrom,
-                            effectiveTill,
-                            ct);
-                    }
-                }
+                for (int index = 0; index < plan.Windows.Count; index++)
+                    tasks.Add(ToRequest(plan.Windows[index]));
 
                 ValidationResult validation = ValidateBulkExpandedTasks(tasks);
                 if (!validation.IsValid)
-                {
-                    string errors = string.Join("; ", validation.Errors);
-                    ManagementEndpointLogMessages.ValidationRejected(logger, route, errors);
-                    return Results.BadRequest(errors);
-                }
+                    return ValidationFailure(logger, route, validation);
 
                 try
                 {
@@ -235,129 +110,120 @@ namespace ProjectTraiding.Management.Endpoints
                     }
 
                     ManagementEndpointLogMessages.BulkLoadTasksCreated(
-                        logger,
-                        route,
-                        result.ExpandedCount,
-                        result.InsertedCount,
-                        result.SkippedDuplicateCount);
-
-                    LoadTaskBulkCreateResponse response = new(
-                        ExpandedCount: result.ExpandedCount,
-                        InsertedCount: result.InsertedCount,
-                        SkippedDuplicateCount: result.SkippedDuplicateCount,
-                        SliceWeeks: normalizedSliceWeeks);
-
-                    return Results.Json(
-                        response,
-                        ManagementJsonContext.Default.LoadTaskBulkCreateResponse);
+                        logger, route, result.ExpandedCount, result.InsertedCount, result.SkippedDuplicateCount);
+                    return Results.Json(new LoadTaskBulkCreateResponse(
+                        result.ExpandedCount, result.InsertedCount, result.SkippedDuplicateCount,
+                        plan.EffectiveSliceWeeks), ManagementJsonContext.Default.LoadTaskBulkCreateResponse);
                 }
                 catch (PostgresException ex)
                 {
                     string? message = ManagementDbErrors.MapLoadTask(logger, route, ex);
-
                     if (message is null)
                         throw;
-
                     return Results.BadRequest(message);
                 }
             });
 
             routes.MapPost("/management/load-tasks/cancel", async (
-                LoadTaskWriter writer,
-                ILogger<LoadTaskEndpointsLog> logger,
-                CancellationToken ct) =>
+                LoadTaskWriter writer, ILogger<LoadTaskEndpointsLog> logger, CancellationToken ct) =>
             {
                 const string route = "POST /management/load-tasks/cancel";
                 ManagementEndpointLogMessages.OperationStarted(logger, route);
-
                 CancelResult result = await writer.CancelAllAsync(ct);
-                LoadTasksCancelResponse response = new(
-                    Scope: "all",
-                    Secid: null,
-                    CancelledCount: result.CancelledCount,
-                    CancelRequestedCount: result.CancelRequestedCount,
-                    ElapsedMs: result.Elapsed.TotalMilliseconds);
-
-                return Results.Json(
-                    response,
-                    ManagementJsonContext.Default.LoadTasksCancelResponse);
+                return Results.Json(new LoadTasksCancelResponse(
+                    "all", null, result.CancelledCount, result.CancelRequestedCount,
+                    result.Elapsed.TotalMilliseconds), ManagementJsonContext.Default.LoadTasksCancelResponse);
             });
 
-            // Сегмент instruments обязателен. Сегодня конфликта нет — маршрут ручного
-            // запуска живёт под другим префиксом (/operations/moex/load-tasks/{taskId}/run).
-            // Но если позже понадобится адресная отмена по идентификатору задания,
-            // без этого сегмента два шаблона совпали бы буквально.
             routes.MapPost("/management/load-tasks/instruments/{secid}/cancel", async (
-                string secid,
-                LoadTaskWriter writer,
-                ILogger<LoadTaskEndpointsLog> logger,
-                CancellationToken ct) =>
+                string secid, LoadTaskWriter writer, ILogger<LoadTaskEndpointsLog> logger, CancellationToken ct) =>
             {
                 const string route = "POST /management/load-tasks/instruments/{secid}/cancel";
                 ManagementEndpointLogMessages.OperationStarted(logger, route);
-
                 if (string.IsNullOrWhiteSpace(secid))
                 {
                     const string error = "secid обязателен";
                     ManagementEndpointLogMessages.ValidationRejected(logger, route, error);
                     return Results.BadRequest(error);
                 }
-
                 CancelResult result = await writer.CancelInstrumentAsync(secid, ct);
-                LoadTasksCancelResponse response = new(
-                    Scope: "instrument",
-                    Secid: secid,
-                    CancelledCount: result.CancelledCount,
-                    CancelRequestedCount: result.CancelRequestedCount,
-                    ElapsedMs: result.Elapsed.TotalMilliseconds);
-
-                return Results.Json(
-                    response,
-                    ManagementJsonContext.Default.LoadTasksCancelResponse);
+                return Results.Json(new LoadTasksCancelResponse(
+                    "instrument", secid, result.CancelledCount, result.CancelRequestedCount,
+                    result.Elapsed.TotalMilliseconds), ManagementJsonContext.Default.LoadTasksCancelResponse);
             });
 
             return routes;
         }
 
+        private static IResult ValidationFailure(ILogger logger, string route, ValidationResult validation)
+        {
+            string errors = string.Join("; ", validation.Errors);
+            ManagementEndpointLogMessages.ValidationRejected(logger, route, errors);
+            return Results.BadRequest(errors);
+        }
+
+        private static LoadTaskCreateRequest ToRequest(MoexLoadWindow window) => new(
+            window.Secid, window.Market, window.Boardid, window.DataKind, window.CandleInterval,
+            window.DateFrom, window.DateTill, window.StorageTarget);
+
         private static ValidationResult ValidateBulkRequestShape(LoadTaskBulkCreateRequest request)
         {
             ValidationResult result = new();
-
             if (request.Instruments is null || request.Instruments.Count == 0)
                 result.Errors.Add("instruments обязателен и не может быть пустым");
-
             if (request.StockDataKinds is null)
                 result.Errors.Add("stock_data_kinds обязателен");
-
+            else if (!AllDataKindsAllowed(request.StockDataKinds))
+                result.Errors.Add("stock_data_kinds содержит недопустимый data_kind");
             if (request.FuturesDataKinds is null)
                 result.Errors.Add("futures_data_kinds обязателен");
-
+            else if (!AllDataKindsAllowed(request.FuturesDataKinds))
+                result.Errors.Add("futures_data_kinds содержит недопустимый data_kind");
             if (request.CandleIntervals is null)
                 result.Errors.Add("candle_intervals обязателен");
-
+            else if (!AllCandleIntervalsAllowed(request.CandleIntervals))
+                result.Errors.Add("candle_intervals содержит недопустимый интервал");
             if (string.IsNullOrWhiteSpace(request.StorageTarget))
                 result.Errors.Add("storage_target обязателен");
-
+            else if (!MoexDomainRules.IsStorageTarget(request.StorageTarget))
+                result.Errors.Add("storage_target должен быть одним из: clickhouse");
             return result;
+        }
+
+        private static bool AllDataKindsAllowed(string[] dataKinds)
+        {
+            for (int index = 0; index < dataKinds.Length; index++)
+            {
+                if (!MoexDomainRules.IsDataKind(dataKinds[index]))
+                    return false;
+            }
+            return true;
+        }
+
+        private static bool AllCandleIntervalsAllowed(int[] intervals)
+        {
+            for (int index = 0; index < intervals.Length; index++)
+            {
+                if (!MoexDomainRules.IsCandleInterval(intervals[index]))
+                    return false;
+            }
+            return true;
         }
 
         private static ValidationResult ValidateBulkInstrumentRanges(LoadTaskBulkCreateRequest request)
         {
             ValidationResult result = new();
-
-            for (int i = 0; i < request.Instruments.Count; i++)
+            for (int index = 0; index < request.Instruments.Count; index++)
             {
-                LoadTaskBulkInstrumentRequest instrument = request.Instruments[i];
+                LoadTaskBulkInstrumentRequest instrument = request.Instruments[index];
                 if (instrument is null)
                 {
-                    result.Errors.Add($"instruments[{i}] обязателен");
+                    result.Errors.Add($"instruments[{index}] обязателен");
                     continue;
                 }
-
                 if (instrument.DateFrom > instrument.DateTill)
-                    result.Errors.Add($"instruments[{i}]: date_from не может быть позже date_till");
+                    result.Errors.Add($"instruments[{index}]: date_from не может быть позже date_till");
             }
-
             return result;
         }
 
@@ -365,113 +231,21 @@ namespace ProjectTraiding.Management.Endpoints
         {
             ValidationResult result = new();
             HashSet<LoadTaskBulkValidationKey> seen = new();
-            List<LoadTaskCreateRequest> representatives = new();
-
-            for (int i = 0; i < tasks.Count; i++)
+            for (int index = 0; index < tasks.Count; index++)
             {
-                LoadTaskCreateRequest task = tasks[i];
-                LoadTaskBulkValidationKey key = new(
-                    Secid: task.Secid,
-                    Market: task.Market,
-                    Boardid: task.Boardid,
-                    DataKind: task.DataKind,
-                    CandleInterval: task.CandleInterval);
-
-                if (seen.Add(key))
-                    representatives.Add(task);
-            }
-
-            for (int i = 0; i < representatives.Count; i++)
-            {
-                LoadTaskCreateRequest representative = representatives[i];
-                ValidationResult validation = LoadTaskValidator.Validate(representative);
-                if (validation.IsValid)
+                LoadTaskCreateRequest task = tasks[index];
+                if (!seen.Add(new LoadTaskBulkValidationKey(
+                        task.Secid, task.Market, task.Boardid, task.DataKind, task.CandleInterval)))
                     continue;
-
+                ValidationResult validation = LoadTaskValidator.Validate(task);
                 for (int errorIndex = 0; errorIndex < validation.Errors.Count; errorIndex++)
                 {
-                    result.Errors.Add(
-                        $"secid={representative.Secid}, market={representative.Market}, boardid={representative.Boardid}, " +
-                        $"data_kind={representative.DataKind}, candle_interval={representative.CandleInterval}: " +
+                    result.Errors.Add($"secid={task.Secid}, market={task.Market}, boardid={task.Boardid}, " +
+                        $"data_kind={task.DataKind}, candle_interval={task.CandleInterval}: " +
                         validation.Errors[errorIndex]);
                 }
             }
-
             return result;
-        }
-
-        private static async Task AddMissingWindowsAsync(
-            List<LoadTaskCreateRequest> tasks,
-            LoadedRangeCoverageReader coverageReader,
-            ILogger logger,
-            string route,
-            LoadTaskBulkInstrumentRequest instrument,
-            string dataKind,
-            int? candleInterval,
-            string storageTarget,
-            int? requestedSliceWeeks,
-            DateOnly effectiveFrom,
-            DateOnly effectiveTill,
-            CancellationToken ct)
-        {
-            if (effectiveFrom > effectiveTill)
-            {
-                ManagementEndpointLogMessages.BulkFillMissingResolved(
-                    logger,
-                    route,
-                    instrument.Secid,
-                    dataKind,
-                    candleInterval,
-                    instrument.DateFrom,
-                    instrument.DateTill,
-                    effectiveFrom,
-                    effectiveTill,
-                    coveredIntervalsCount: 0,
-                    missingIntervalsCount: 0,
-                    missingDaysTotal: 0,
-                    windowsCreatedCount: 0);
-                return;
-            }
-
-            IReadOnlyList<CoverageInterval> covered = await coverageReader.GetCoveredRangesAsync(
-                instrument.Secid,
-                instrument.Market,
-                instrument.Boardid,
-                dataKind,
-                candleInterval,
-                storageTarget,
-                effectiveFrom,
-                effectiveTill,
-                ct);
-
-            CoverageSubtractResult result = LoadedRangeCoverageCalculator.Subtract(
-                effectiveFrom,
-                effectiveTill,
-                covered);
-
-            int windowsCreatedCount = LoadTaskBulkExpander.AddMissingWindows(
-                tasks,
-                instrument,
-                dataKind,
-                candleInterval,
-                storageTarget,
-                requestedSliceWeeks,
-                result.Missing);
-
-            ManagementEndpointLogMessages.BulkFillMissingResolved(
-                logger,
-                route,
-                instrument.Secid,
-                dataKind,
-                candleInterval,
-                instrument.DateFrom,
-                instrument.DateTill,
-                effectiveFrom,
-                effectiveTill,
-                result.CoveredIntervalsCount,
-                result.MissingIntervalsCount,
-                result.MissingDaysTotal,
-                windowsCreatedCount);
         }
     }
 }

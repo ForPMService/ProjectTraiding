@@ -1,7 +1,6 @@
 using ProjectTraiding.Management.Contracts;
 using ProjectTraiding.Management.Contracts.Dto;
-using ProjectTraiding.Moex.Contracts.Dto.Calendar;
-using ProjectTraiding.Moex.Infrastructure;
+using ProjectTraiding.Moex.Contracts;
 using ProjectTraiding.Moex.Loading;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 
@@ -16,40 +15,30 @@ namespace ProjectTraiding.Management.Endpoints
                 MoexCalendarLoader loader,
                 CancellationToken ct) =>
             {
-                (DateOnly dateFrom, DateOnly dateTill) = ResolveRange(request);
-                if (dateFrom > dateTill)
+                DateOnly dateFrom = request.DateFrom ?? MoexCalendarLoader.GetDefaultDateFrom();
+                if (request.DateTill is DateOnly dateTill && dateFrom > dateTill)
                     return Results.BadRequest("dateFrom не может быть позже dateTill");
-                int rowsWritten = await loader.LoadDaysAsync(dateFrom, dateTill, ct);
-                return CalendarResponse(rowsWritten);
+                return CalendarResponse(await loader.LoadDaysAsync(dateFrom, request.DateTill, ct));
             });
 
             routes.MapPost("/management/calendar/intervals", async (
                 MoexCalendarLoader loader,
-                CancellationToken ct) =>
-            {
-                int rowsWritten = await loader.LoadIntervalsAsync(ct);
-                return CalendarResponse(rowsWritten);
-            });
+                CancellationToken ct) => CalendarResponse(await loader.LoadIntervalsAsync(ct)));
 
             routes.MapPost("/management/calendar/expirations", async (
                 CalendarLoadRequest request,
                 MoexCalendarLoader loader,
                 CancellationToken ct) =>
             {
-                (DateOnly dateFrom, DateOnly dateTill) = ResolveRange(request);
-                if (dateFrom > dateTill)
+                DateOnly dateFrom = request.DateFrom ?? MoexCalendarLoader.GetDefaultDateFrom();
+                if (request.DateTill is DateOnly dateTill && dateFrom > dateTill)
                     return Results.BadRequest("dateFrom не может быть позже dateTill");
-                int rowsWritten = await loader.LoadExpirationsAsync(dateFrom, dateTill, ct);
-                return CalendarResponse(rowsWritten);
+                return CalendarResponse(await loader.LoadExpirationsAsync(dateFrom, request.DateTill, ct));
             });
 
             routes.MapPost("/management/calendar/splits", async (
                 MoexCalendarLoader loader,
-                CancellationToken ct) =>
-            {
-                int rowsWritten = await loader.LoadSplitsAsync(ct);
-                return CalendarResponse(rowsWritten);
-            });
+                CancellationToken ct) => CalendarResponse(await loader.LoadSplitsAsync(ct)));
 
             routes.MapPost("/management/calendar/days/override", async (
                 CalendarDayOverrideRequest request,
@@ -69,30 +58,19 @@ namespace ProjectTraiding.Management.Endpoints
             return routes;
         }
 
-        private static IResult CalendarResponse(int rowsWritten)
-        {
-            CalendarOperationResponse response = new CalendarOperationResponse(rowsWritten);
-            return Results.Json(response, ManagementJsonContext.Default.CalendarOperationResponse);
-        }
-
-        private static (DateOnly DateFrom, DateOnly DateTill) ResolveRange(
-            CalendarLoadRequest request)
-        {
-            DateOnly dateFrom = request.DateFrom ?? MoexCalendarLoader.GetDefaultDateFrom();
-            DateOnly dateTill = request.DateTill ?? MoexTime.Today;
-            return (dateFrom, dateTill);
-        }
+        private static IResult CalendarResponse(int rowsWritten) => Results.Json(
+            new CalendarOperationResponse(rowsWritten),
+            ManagementJsonContext.Default.CalendarOperationResponse);
 
         private static string? ValidateOverride(CalendarDayOverrideRequest request)
         {
-            if (request.Market != "stock" && request.Market != "futures")
+            if (!MoexDomainRules.IsMarket(request.Market))
                 return "market должен быть stock или futures";
             if (request.Date is null)
                 return "date обязателен";
-            if (request.IsTraded is not 0 and not 1)
+            if (!MoexDomainRules.IsCalendarTradingFlag(request.IsTraded))
                 return "isTraded должен быть 0 или 1";
             return null;
         }
-
     }
 }

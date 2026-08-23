@@ -1,6 +1,7 @@
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Dto.Calendar;
 using ProjectTraiding.Moex.Contracts.Dto.Iss;
+using ProjectTraiding.Moex.Infrastructure;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 
 namespace ProjectTraiding.Moex.Loading
@@ -37,17 +38,18 @@ namespace ProjectTraiding.Moex.Loading
 
         public async Task<int> LoadDaysAsync(
             DateOnly dateFrom,
-            DateOnly dateTill,
+            DateOnly? dateTill,
             CancellationToken ct)
         {
-            ValidateRange(dateFrom, dateTill);
+            DateOnly effectiveDateTill = dateTill ?? MoexTime.Today;
+            ValidateRange(dateFrom, effectiveDateTill);
             List<EngineDailyTableDTO> stockEngineRows = await _issClient.GetEngine("stock", ct);
             List<EngineDailyTableDTO> futuresEngineRows = await _issClient.GetEngine("futures", ct);
             Dictionary<DateOnly, EngineDayTimes> stockTimes = BuildEngineTimes(stockEngineRows);
             Dictionary<DateOnly, EngineDayTimes> futuresTimes = BuildEngineTimes(futuresEngineRows);
             List<CalendarDayWriteDTO> output = new List<CalendarDayWriteDTO>();
 
-            List<(DateOnly From, DateOnly Till)> ranges = SplitByYears(dateFrom, dateTill);
+            List<(DateOnly From, DateOnly Till)> ranges = SplitByYears(dateFrom, effectiveDateTill);
             for (int rangeIndex = 0; rangeIndex < ranges.Count; rangeIndex++)
             {
                 (DateOnly From, DateOnly Till) range = ranges[rangeIndex];
@@ -120,13 +122,14 @@ namespace ProjectTraiding.Moex.Loading
 
         public async Task<int> LoadExpirationsAsync(
             DateOnly dateFrom,
-            DateOnly dateTill,
+            DateOnly? dateTill,
             CancellationToken ct)
         {
-            ValidateRange(dateFrom, dateTill);
+            DateOnly effectiveDateTill = dateTill ?? MoexTime.Today;
+            ValidateRange(dateFrom, effectiveDateTill);
             List<FuturesExpirationDTO> expirations = new List<FuturesExpirationDTO>();
 
-            List<(DateOnly From, DateOnly Till)> ranges = SplitByYears(dateFrom, dateTill);
+            List<(DateOnly From, DateOnly Till)> ranges = SplitByYears(dateFrom, effectiveDateTill);
             for (int rangeIndex = 0; rangeIndex < ranges.Count; rangeIndex++)
             {
                 (DateOnly From, DateOnly Till) range = ranges[rangeIndex];
@@ -135,7 +138,7 @@ namespace ProjectTraiding.Moex.Loading
             }
 
             DbWriteResult result = await _referenceWriter.ReplaceExpirationsAsync(
-                dateFrom, dateTill, expirations, ct);
+                dateFrom, effectiveDateTill, expirations, ct);
             return result.RowsWritten;
         }
 

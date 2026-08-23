@@ -1,7 +1,4 @@
-using System;
-using System.Collections.Generic;
-
-namespace ProjectTraiding.Management.Expansion
+namespace ProjectTraiding.Moex.Loading.Planning
 {
     public readonly record struct CoverageInterval(DateOnly From, DateOnly Till);
     public readonly record struct MissingInterval(DateOnly From, DateOnly Till);
@@ -27,13 +24,11 @@ namespace ProjectTraiding.Management.Expansion
                 CoverageInterval interval = covered[i];
                 DateOnly from = interval.From > effectiveFrom ? interval.From : effectiveFrom;
                 DateOnly till = interval.Till < effectiveTill ? interval.Till : effectiveTill;
-
                 if (from <= till)
                     clipped.Add(new CoverageInterval(from, till));
             }
 
             clipped.Sort(CoverageIntervalComparer.Instance);
-
             List<CoverageInterval> merged = new();
             for (int i = 0; i < clipped.Count; i++)
             {
@@ -44,11 +39,11 @@ namespace ProjectTraiding.Management.Expansion
                     continue;
                 }
 
-                CoverageInterval last = merged[merged.Count - 1];
+                CoverageInterval last = merged[^1];
                 if (current.From <= last.Till.AddDays(1))
                 {
                     DateOnly till = current.Till > last.Till ? current.Till : last.Till;
-                    merged[merged.Count - 1] = new CoverageInterval(last.From, till);
+                    merged[^1] = new CoverageInterval(last.From, till);
                     continue;
                 }
 
@@ -73,33 +68,18 @@ namespace ProjectTraiding.Management.Expansion
 
             int missingDaysTotal = 0;
             for (int i = 0; i < missing.Count; i++)
-            {
-                MissingInterval interval = missing[i];
-                missingDaysTotal += interval.Till.DayNumber - interval.From.DayNumber + 1;
-            }
+                missingDaysTotal += missing[i].Till.DayNumber - missing[i].From.DayNumber + 1;
 
-            return new CoverageSubtractResult(
-                missing,
-                merged.Count,
-                missing.Count,
-                missingDaysTotal);
+            return new CoverageSubtractResult(missing, merged.Count, missing.Count, missingDaysTotal);
         }
 
         private sealed class CoverageIntervalComparer : IComparer<CoverageInterval>
         {
             public static readonly CoverageIntervalComparer Instance = new();
-
-            private CoverageIntervalComparer()
-            {
-            }
-
             public int Compare(CoverageInterval left, CoverageInterval right)
             {
                 int fromComparison = left.From.CompareTo(right.From);
-                if (fromComparison != 0)
-                    return fromComparison;
-
-                return left.Till.CompareTo(right.Till);
+                return fromComparison != 0 ? fromComparison : left.Till.CompareTo(right.Till);
             }
         }
     }

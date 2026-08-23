@@ -12,8 +12,6 @@ namespace ProjectTraiding.Management.DependencyInjection
             services.AddTransient<InstrumentRelationWriter>();
             services.AddTransient<BrokerTariffWriter>();
             services.AddTransient<LoadTaskWriter>();
-            services.AddTransient<FutoiSubjectReader>();
-            services.AddTransient<LoadedRangeCoverageReader>();
             services.AddTransient<RealtimeSubscriptionWriter>();
             services.AddTransient<ManualEventWriter>();
             services.AddTransient<TradingPeriodWriter>();

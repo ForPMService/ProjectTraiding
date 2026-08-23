@@ -39,6 +39,9 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
             services.AddTransient<InstrumentDeletionGuardReader>();
             services.AddTransient<InstrumentDeletionWriter>();
             services.AddTransient<ProjectTraiding.Moex.Deletion.InstrumentDataDeletionRunner>();
+            services.AddTransient<FutoiSubjectReader>();
+            services.AddTransient<LoadedRangeCoverageReader>();
+            services.AddTransient<ProjectTraiding.Moex.Loading.Planning.MoexLoadPlanner>();
             services.AddSingleton<MoexSeriesParser>();
             services.AddTransient<MoexHistoryPageReader>();
             services.AddTransient(sp => new MoexHistoryWriter(

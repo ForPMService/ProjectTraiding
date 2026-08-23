@@ -1,6 +1,7 @@
 using ProjectTraiding.Management.Contracts;
 using ProjectTraiding.Management.Contracts.Dto;
 using ProjectTraiding.Management.StorageBase.Postgres;
+using ProjectTraiding.Moex.Contracts;
 
 namespace ProjectTraiding.Management.Endpoints
 {
@@ -76,7 +77,7 @@ namespace ProjectTraiding.Management.Endpoints
 
         private static string? ValidateTradingPeriod(TradingPeriodCreateRequest request)
         {
-            if (request.Market is not ("stock" or "futures"))
+            if (!MoexDomainRules.IsMarket(request.Market))
                 return "market должен быть stock или futures";
             if (request.ValidFrom is null)
                 return "validFrom обязателен";
@@ -95,7 +96,7 @@ namespace ProjectTraiding.Management.Endpoints
 
         private static string? ValidateTradingPeriodType(TradingPeriodTypeCreateRequest request)
         {
-            if (request.Market is not ("stock" or "futures"))
+            if (!MoexDomainRules.IsMarket(request.Market))
                 return "market должен быть stock или futures";
             if (string.IsNullOrWhiteSpace(request.TypeCode))
                 return "typeCode обязателен";

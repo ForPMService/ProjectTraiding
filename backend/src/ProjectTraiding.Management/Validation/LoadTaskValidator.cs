@@ -1,34 +1,14 @@
-﻿using ProjectTraiding.Management.Contracts.Dto;
-using System;
-using System.Collections.Generic;
-using System.Text;
+using ProjectTraiding.Management.Contracts.Dto;
+using ProjectTraiding.Moex.Contracts;
 
 namespace ProjectTraiding.Management.Validation
 {
     /// <summary>
-    /// Проверка запроса создания задачи загрузки до записи в базу.
-    /// Ловит вывернутый диапазон, рассогласование интервала с видом данных, недопустимые
-    /// значения перечислений. FK на инструмент проверит база — здесь не дублируем.
+    /// Проверка формы запроса создания задачи до записи в базу. Словари и совместимость
+    /// значений принадлежат MoexDomainRules; FK на инструмент проверит база.
     /// </summary>
     public static class LoadTaskValidator
     {
-        private static readonly string[] Markets = { "stock", "futures" };
-        private static readonly string[] StorageTargets = { "clickhouse" };
-        private static readonly string[] DataKinds =
-        { "candles", "tradestats", "obstats", "orderstats", "futoi", "hi2", "mega_alerts" };
-        // Допустимые рынки на каждый вид данных (без валюты).
-        // Асимметрия источника: заявки — только акции, открытый интерес — только фьючерсы.
-        private static readonly Dictionary<string, string[]> MarketsByDataKind = new()
-        {
-            ["candles"] = new[] { "stock", "futures" },
-            ["tradestats"] = new[] { "stock", "futures" },
-            ["obstats"] = new[] { "stock", "futures" },
-            ["orderstats"] = new[] { "stock" },
-            ["futoi"] = new[] { "futures" },
-            ["hi2"] = new[] { "stock", "futures" },
-            ["mega_alerts"] = new[] { "stock", "futures" },
-        };
-
         public static ValidationResult Validate(LoadTaskCreateRequest request)
         {
             ValidationResult result = new();
@@ -36,35 +16,31 @@ namespace ProjectTraiding.Management.Validation
             if (string.IsNullOrWhiteSpace(request.Secid))
                 result.Errors.Add("secid обязателен");
 
-            if (request.Market is null || Array.IndexOf(Markets, request.Market) < 0)
+            if (!MoexDomainRules.IsMarket(request.Market))
                 result.Errors.Add("market должен быть одним из: stock, futures");
 
             if (string.IsNullOrWhiteSpace(request.Boardid))
                 result.Errors.Add("boardid обязателен");
 
-            if (request.DataKind is null || Array.IndexOf(DataKinds, request.DataKind) < 0)
+            if (!MoexDomainRules.IsDataKind(request.DataKind))
             {
-                result.Errors.Add($"data_kind должен быть одним из: {string.Join(", ", DataKinds)}");
+                result.Errors.Add($"data_kind должен быть одним из: {string.Join(", ", MoexDomainRules.DataKinds)}");
             }
-            else if (request.Market is not null
-                     && MarketsByDataKind.TryGetValue(request.DataKind, out string[]? allowedMarkets)
-                     && Array.IndexOf(allowedMarkets, request.Market) < 0)
+            else if (!MoexDomainRules.IsMarketAllowedForDataKind(request.Market, request.DataKind))
             {
                 result.Errors.Add(
-                    $"для data_kind={request.DataKind} допустимы рынки: {string.Join(", ", allowedMarkets)}");
+                    $"для data_kind={request.DataKind} допустимы рынки: " +
+                    $"{string.Join(", ", MoexDomainRules.GetAllowedMarketsForDataKind(request.DataKind!))}");
             }
 
-            if (request.StorageTarget is null || Array.IndexOf(StorageTargets, request.StorageTarget) < 0)
+            if (!MoexDomainRules.IsStorageTarget(request.StorageTarget))
                 result.Errors.Add("storage_target должен быть одним из: clickhouse");
 
-            // Интервал осмыслен только для свечей: для candles обязателен, для прочих запрещён.
-            // Коды интервала свечей MOEX: 1 — минута, 10 — десять минут, 60 — час, 24 — день.
-            // Пятиминутного у свечей нет; недельный (7) пока не заводим.
-            if (request.DataKind == "candles")
+            if (MoexDomainRules.RequiresCandleInterval(request.DataKind))
             {
                 if (request.CandleInterval is null)
                     result.Errors.Add("candle_interval обязателен для candles");
-                else if (request.CandleInterval is not (1 or 10 or 60 or 24))
+                else if (!MoexDomainRules.IsCandleInterval(request.CandleInterval))
                     result.Errors.Add("candle_interval должен быть 1, 10, 60 или 24");
             }
             else if (request.CandleInterval is not null)
@@ -72,7 +48,6 @@ namespace ProjectTraiding.Management.Validation
                 result.Errors.Add("candle_interval допустим только для candles");
             }
 
-            // Вывернутый диапазон — отдельного CHECK на это в схеме нет.
             if (request.DateFrom > request.DateTill)
                 result.Errors.Add("date_from не может быть позже date_till");
 

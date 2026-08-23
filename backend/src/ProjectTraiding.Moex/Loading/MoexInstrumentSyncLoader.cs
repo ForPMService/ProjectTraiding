@@ -11,6 +11,9 @@ namespace ProjectTraiding.Moex.Loading
     /// </summary>
     public sealed class MoexInstrumentSyncLoader
     {
+        public const string StockTarget = "moex_instruments/moex_stock_details";
+        public const string FuturesTarget = "moex_instruments/moex_futures_details";
+
         private readonly MoexHttpIssClient _issClient;
         private readonly MoexHttpAlgClient _algClient;
         private readonly MoexInstrumentWriter _writer;
