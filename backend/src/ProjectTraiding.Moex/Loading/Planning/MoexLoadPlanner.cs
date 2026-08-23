@@ -70,6 +70,9 @@ namespace ProjectTraiding.Moex.Loading.Planning
                 ? await _subjectReader.ResolveAsync(GetFuturesSecids(request.Instruments), ct)
                 : new Dictionary<string, string>(StringComparer.Ordinal);
 
+            Dictionary<CoverageKey, List<CoverageInterval>> coverage =
+                await _coverageReader.GetCoveredRangesAsync(
+                    CollectSecids(request.Instruments, subjects), request.StorageTarget, ct);
             List<MoexLoadWindow> windows = new();
             int skippedCoveredCount = 0;
             int blockedCount = 0;
@@ -87,9 +90,9 @@ namespace ProjectTraiding.Moex.Loading.Planning
 
                 for (int intervalIndex = 0; intervalIndex < request.CandleIntervals.Length; intervalIndex++)
                 {
-                    skippedCoveredCount += await AddMissingWindowsAsync(
-                        windows, instrument, "candles", request.CandleIntervals[intervalIndex],
-                        request.StorageTarget, request.SliceWeeks, instrument.DateFrom, effectiveTill, ct);
+                    skippedCoveredCount += AddMissingWindows(
+                        windows, coverage, instrument, "candles", request.CandleIntervals[intervalIndex],
+                        request.StorageTarget, request.SliceWeeks, instrument.DateFrom, effectiveTill);
                 }
 
                 for (int dataKindIndex = 0; dataKindIndex < dataKinds.Length; dataKindIndex++)
@@ -106,32 +109,35 @@ namespace ProjectTraiding.Moex.Loading.Planning
                         subjectInstrument = instrument with { Secid = subject };
                     }
 
-                    skippedCoveredCount += await AddMissingWindowsAsync(
-                        windows, subjectInstrument, dataKind, null, request.StorageTarget,
-                        request.SliceWeeks, instrument.DateFrom, effectiveTill, ct);
+                    skippedCoveredCount += AddMissingWindows(
+                        windows, coverage, subjectInstrument, dataKind, null,
+                        request.StorageTarget, request.SliceWeeks, instrument.DateFrom, effectiveTill);
                 }
             }
 
             return new MoexLoadPlanResult(windows, skippedCoveredCount, blockedCount, effectiveSliceWeeks);
         }
 
-        private async Task<int> AddMissingWindowsAsync(
+        private static int AddMissingWindows(
             List<MoexLoadWindow> windows,
+            Dictionary<CoverageKey, List<CoverageInterval>> coverage,
             MoexLoadPlanInstrument instrument,
             string dataKind,
             int? candleInterval,
             string storageTarget,
             int? requestedSliceWeeks,
             DateOnly effectiveFrom,
-            DateOnly effectiveTill,
-            CancellationToken ct)
+            DateOnly effectiveTill)
         {
             if (effectiveFrom > effectiveTill)
                 return 0;
 
-            IReadOnlyList<CoverageInterval> covered = await _coverageReader.GetCoveredRangesAsync(
-                instrument.Secid, instrument.Market, instrument.Boardid, dataKind, candleInterval,
-                storageTarget, effectiveFrom, effectiveTill, ct);
+            CoverageKey key = new CoverageKey(
+                instrument.Secid, instrument.Market, instrument.Boardid, dataKind, candleInterval);
+            IReadOnlyList<CoverageInterval> covered =
+                coverage.TryGetValue(key, out List<CoverageInterval>? found)
+                    ? found
+                    : Array.Empty<CoverageInterval>();
             CoverageSubtractResult missing = LoadedRangeCoverageCalculator.Subtract(
                 effectiveFrom, effectiveTill, covered);
             int sliceWeeks = LoadTaskBulkExpander.ResolveSliceWeeks(
@@ -160,6 +166,24 @@ namespace ProjectTraiding.Moex.Loading.Planning
                     secids.Add(instruments[index].Secid);
             }
             return secids.ToArray();
+        }
+
+        // Коды всех инструментов плана плюс субъекты открытого интереса: покрытие
+        // по фьючерсу открытого интереса записано на код серии, а не на код контракта.
+        private static string[] CollectSecids(
+            IReadOnlyList<MoexLoadPlanInstrument> instruments,
+            Dictionary<string, string> subjects)
+        {
+            HashSet<string> secids = new(StringComparer.Ordinal);
+            for (int index = 0; index < instruments.Count; index++)
+                secids.Add(instruments[index].Secid);
+
+            foreach (KeyValuePair<string, string> subject in subjects)
+                secids.Add(subject.Value);
+
+            string[] result = new string[secids.Count];
+            secids.CopyTo(result);
+            return result;
         }
     }
 }

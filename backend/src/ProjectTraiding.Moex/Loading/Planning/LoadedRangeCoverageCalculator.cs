@@ -2,6 +2,18 @@ namespace ProjectTraiding.Moex.Loading.Planning
 {
     public readonly record struct CoverageInterval(DateOnly From, DateOnly Till);
     public readonly record struct MissingInterval(DateOnly From, DateOnly Till);
+    /// <summary>
+    /// Ключ покрытия: набор полей, по которому запись загруженного диапазона относится
+    /// к одной серии. Совпадает с набором условий прежнего поштучного запроса за вычетом
+    /// цели хранения и диапазона дат — первая одна на весь план, второй отсекается
+    /// обрезкой в Subtract.
+    /// </summary>
+    public readonly record struct CoverageKey(
+        string Secid,
+        string Market,
+        string Boardid,
+        string DataKind,
+        int? CandleInterval);
     public readonly record struct CoverageSubtractResult(
         IReadOnlyList<MissingInterval> Missing,
         int CoveredIntervalsCount,
