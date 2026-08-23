@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using ProjectTraiding.Moex.Series;
 
 namespace ProjectTraiding.Moex.StorageBase.ClickHouse
 {
@@ -83,6 +84,18 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
             }
 
             return true;
+        }
+
+        public static DateTime BuildSourceTime(in SourceTimeParts parts)
+        {
+            if (parts.Date.HasValue && parts.Time.HasValue)
+                return parts.Date.Value.ToDateTime(parts.Time.Value, DateTimeKind.Unspecified);
+
+            string? date = parts.RawDate
+                ?? parts.Date?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            string? time = parts.RawTime
+                ?? parts.Time?.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+            return BuildSourceTime(date, time);
         }
 
         /// <summary>

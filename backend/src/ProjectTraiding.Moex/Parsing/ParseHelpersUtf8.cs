@@ -403,6 +403,126 @@ namespace ProjectTraiding.Moex.Parsing
         // DateTime без аллокаций (A5)
         // ═══════════════════════════════════════════════════════════
 
+        internal static DateOnly? ReadMomentDateUtf8(
+            ref Utf8JsonReader reader,
+            int rowIndex,
+            int columnIndex,
+            string rootKey,
+            out string? raw)
+        {
+            raw = null;
+            if (reader.TokenType != JsonTokenType.String)
+                throw new InvalidOperationException(
+                    $"[{rootKey}] Ожидался String (moment date) в строке {rowIndex}, " +
+                    $"колонка {columnIndex}, получено {reader.TokenType}.");
+
+            Span<byte> sequenceBuffer = stackalloc byte[10];
+            scoped ReadOnlySpan<byte> span;
+            if (reader.HasValueSequence)
+            {
+                if (reader.ValueSequence.Length != 10)
+                {
+                    raw = reader.GetString();
+                    return null;
+                }
+
+                reader.ValueSequence.CopyTo(sequenceBuffer);
+                span = sequenceBuffer;
+            }
+            else
+            {
+                span = reader.ValueSpan;
+                if (span.Length != 10)
+                {
+                    raw = reader.GetString();
+                    return null;
+                }
+            }
+
+            if (!Utf8Parser.TryParse(span.Slice(0, 4), out int year, out int yearBytes)
+                || yearBytes != 4
+                || span[4] != (byte)'-'
+                || !Utf8Parser.TryParse(span.Slice(5, 2), out int month, out int monthBytes)
+                || monthBytes != 2
+                || span[7] != (byte)'-'
+                || !Utf8Parser.TryParse(span.Slice(8, 2), out int day, out int dayBytes)
+                || dayBytes != 2)
+            {
+                raw = reader.GetString();
+                return null;
+            }
+
+            try
+            {
+                return new DateOnly(year, month, day);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                raw = reader.GetString();
+                return null;
+            }
+        }
+
+        internal static TimeOnly? ReadMomentTimeUtf8(
+            ref Utf8JsonReader reader,
+            int rowIndex,
+            int columnIndex,
+            string rootKey,
+            out string? raw)
+        {
+            raw = null;
+            if (reader.TokenType != JsonTokenType.String)
+                throw new InvalidOperationException(
+                    $"[{rootKey}] Ожидался String (moment time) в строке {rowIndex}, " +
+                    $"колонка {columnIndex}, получено {reader.TokenType}.");
+
+            Span<byte> sequenceBuffer = stackalloc byte[8];
+            scoped ReadOnlySpan<byte> span;
+            if (reader.HasValueSequence)
+            {
+                if (reader.ValueSequence.Length != 8)
+                {
+                    raw = reader.GetString();
+                    return null;
+                }
+
+                reader.ValueSequence.CopyTo(sequenceBuffer);
+                span = sequenceBuffer;
+            }
+            else
+            {
+                span = reader.ValueSpan;
+                if (span.Length != 8)
+                {
+                    raw = reader.GetString();
+                    return null;
+                }
+            }
+
+            if (!Utf8Parser.TryParse(span.Slice(0, 2), out int hour, out int hourBytes)
+                || hourBytes != 2
+                || span[2] != (byte)':'
+                || !Utf8Parser.TryParse(span.Slice(3, 2), out int minute, out int minuteBytes)
+                || minuteBytes != 2
+                || span[5] != (byte)':'
+                || !Utf8Parser.TryParse(span.Slice(6, 2), out int second, out int secondBytes)
+                || secondBytes != 2)
+            {
+                raw = reader.GetString();
+                return null;
+            }
+
+            try
+            {
+                return new TimeOnly(hour, minute, second);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                raw = reader.GetString();
+                return null;
+            }
+        }
+
         /// <summary>
         /// Формат MOEX: "yyyy-MM-dd HH:mm:ss" — ровно 19 байт UTF-8.
         /// Парсим через Utf8Parser.TryParse по ValueSpan без GetString().
