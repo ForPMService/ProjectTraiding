@@ -135,6 +135,39 @@ public sealed class MoexSeriesSpec
     public int[] RequiredExternalSecIdIndexes =>
         _requiredExternalSecIdIndexes ??= BuildRequiredIndexes(FillRule.ExternalSecId);
 
+    private string[]? _columns;
+    private Dictionary<string, string>? _columnTypes;
+
+    /// <summary>
+    /// Имена целевых колонок в порядке объявления — довод вставки в хранилище.
+    /// Собирается при первом обращении и запоминается: декларации живут в статическом
+    /// реестре всё время работы процесса, а перечень от диапазона к диапазону не меняется.
+    /// Такие же готовые проекции есть у декларации приёма — MoexRealtimeSpec.Columns.
+    /// </summary>
+    public IReadOnlyList<string> Columns => _columns ??= BuildColumns();
+
+    /// <summary>Тип хранения по имени целевой колонки — второй довод вставки.</summary>
+    public IReadOnlyDictionary<string, string> ColumnTypes => _columnTypes ??= BuildColumnTypes();
+
+    private string[] BuildColumns()
+    {
+        string[] columns = new string[TargetColumns.Length];
+        for (int i = 0; i < TargetColumns.Length; i++)
+            columns[i] = TargetColumns[i].Name;
+
+        return columns;
+    }
+
+    private Dictionary<string, string> BuildColumnTypes()
+    {
+        Dictionary<string, string> columnTypes =
+            new(TargetColumns.Length, StringComparer.Ordinal);
+        for (int i = 0; i < TargetColumns.Length; i++)
+            columnTypes.Add(TargetColumns[i].Name, TargetColumns[i].ColumnType);
+
+        return columnTypes;
+    }
+
     private int[] BuildRequiredIndexes(FillRule fillRule)
     {
         int count = 0;

@@ -37,16 +37,6 @@ public sealed class MoexHistoryWriter
     {
         EnsureRangeValid(spec, secid);
 
-        string[] columns = new string[spec.TargetColumns.Length];
-        Dictionary<string, string> columnTypes =
-            new(spec.TargetColumns.Length, StringComparer.Ordinal);
-        for (int i = 0; i < spec.TargetColumns.Length; i++)
-        {
-            TargetColumn column = spec.TargetColumns[i];
-            columns[i] = column.Name;
-            columnTypes.Add(column.Name, column.ColumnType);
-        }
-
         List<object?[]> batch = new(_batchSize);
         DateTime batchFirstTime = default;
         DateTime batchLastTime = default;
@@ -74,8 +64,8 @@ public sealed class MoexHistoryWriter
                         dataGeneration,
                         sourceContractVersion,
                         writerVersion,
-                        columns,
-                        columnTypes,
+                        spec.Columns,
+                        spec.ColumnTypes,
                         batch,
                         batchFirstTime,
                         batchLastTime,
@@ -95,8 +85,8 @@ public sealed class MoexHistoryWriter
                 dataGeneration,
                 sourceContractVersion,
                 writerVersion,
-                columns,
-                columnTypes,
+                spec.Columns,
+                spec.ColumnTypes,
                 batch,
                 batchFirstTime,
                 batchLastTime,
