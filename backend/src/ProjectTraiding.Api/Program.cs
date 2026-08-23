@@ -18,7 +18,8 @@ var builder = WebApplication.CreateBuilder(args);
 // ══════════════════════════════════════════════
 builder.AddProjectTraidingObservability(
     activitySources: [MoexTelemetry.ActivitySourceName],
-    meters: [MoexTelemetry.MeterName]);
+    meters: [MoexTelemetry.MeterName],
+    droppedActivityNamePrefixes: []);
 
 builder.Services.AddMoexClients(builder.Configuration);
 builder.Services.AddClickHouse(builder.Configuration);
