@@ -172,13 +172,11 @@ public static class MoexClientServiceCollectionExtensions
 
         string errorType = status switch
         {
-            429 => MoexErrorTypes.RateLimit,
-            408 => MoexErrorTypes.Timeout,
-            >= 500 and <= 599 => MoexErrorTypes.ServerError,
             null when args.Outcome.Exception is TimeoutRejectedException => MoexErrorTypes.Timeout,
             null when args.Outcome.Exception is TaskCanceledException => MoexErrorTypes.Timeout,
             null when args.Outcome.Exception is HttpRequestException => MoexErrorTypes.TransportError,
-            _ => MoexErrorTypes.Unknown
+            null => MoexErrorTypes.Unknown,
+            _ => HttpClientHelpers.ClassifyStatus(status.Value)
         };
 
         MoexLogMessages.RetryAttempt(

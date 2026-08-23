@@ -9,6 +9,22 @@ namespace ProjectTraiding.Moex.Clients;
 public static class HttpClientHelpers
 {
     /// <summary>
+    /// Категория ошибки по коду ответа. Единственное место, где код состояния переводится
+    /// в стабильную категорию: и типизированное исключение, и журнал повторов берут её отсюда.
+    /// </summary>
+    public static string ClassifyStatus(int statusCode) => statusCode switch
+    {
+        429 => MoexErrorTypes.RateLimit,
+        408 => MoexErrorTypes.Timeout,
+        401 or 403 => MoexErrorTypes.Auth,
+        400 => MoexErrorTypes.BadRequest,
+        404 => MoexErrorTypes.NotFound,
+        >= 500 => MoexErrorTypes.ServerError,
+        >= 400 => MoexErrorTypes.ClientError,
+        _ => MoexErrorTypes.UnexpectedStatus
+    };
+
+    /// <summary>
     /// Проверяет статус ответа и при ошибке бросает типизированное исключение.
     /// Dispose вызывается до throw, чтобы не допустить утечки соединения.
     /// При успехе ответ не dispose-ится — ответственность вызывающего кода.
@@ -28,17 +44,12 @@ public static class HttpClientHelpers
 
         response.Dispose();
 
-        throw status switch
-        {
-            429 => new MoexHttpStatusException(endpoint, status, MoexErrorTypes.RateLimit),
-            408 => new MoexTimeoutException(endpoint),
-            401 or 403 => new MoexHttpStatusException(endpoint, status, MoexErrorTypes.Auth),
-            400 => new MoexHttpStatusException(endpoint, status, MoexErrorTypes.BadRequest),
-            404 => new MoexHttpStatusException(endpoint, status, MoexErrorTypes.NotFound),
-            >= 500 => new MoexHttpStatusException(endpoint, status, MoexErrorTypes.ServerError),
-            >= 400 => new MoexHttpStatusException(endpoint, status, MoexErrorTypes.ClientError),
-            _ => new MoexHttpStatusException(endpoint, status, MoexErrorTypes.UnexpectedStatus)
-        };
+        // Тайм-аут остаётся отдельным типом: у него своё свойство длительности и своя
+        // ветвь в обработке. Все прочие коды различаются только категорией.
+        if (status == 408)
+            throw new MoexTimeoutException(endpoint);
+
+        throw new MoexHttpStatusException(endpoint, status, ClassifyStatus(status));
     }
 
     /// <summary>
