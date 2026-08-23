@@ -1,9 +1,9 @@
 using ClickHouse.Driver;
 using ClickHouse.Driver.ADO.Parameters;
-using ProjectTraiding.Management.StorageBase.Postgres;
+using ProjectTraiding.Moex.StorageBase.Postgres;
 using System.Diagnostics;
 
-namespace ProjectTraiding.Management.StorageBase.ClickHouse
+namespace ProjectTraiding.Moex.StorageBase.ClickHouse
 {
     /// <summary>
     /// Удаление всех данных инструмента из ClickHouse.
@@ -93,12 +93,12 @@ namespace ProjectTraiding.Management.StorageBase.ClickHouse
 
                 await _client.ExecuteNonQueryAsync(sql, parameters, options, ct);
 
-                ManagementWriterLogMessages.InstrumentClickHouseTableCleared(
+                MoexWriterLogMessages.InstrumentClickHouseTableCleared(
                     _logger, secid, table);
             }
 
             TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
-            ManagementWriterLogMessages.InstrumentClickHouseDataDeleted(
+            MoexWriterLogMessages.InstrumentClickHouseDataDeleted(
                 _logger, secid, Tables.Length, elapsed);
 
             return Tables.Length;

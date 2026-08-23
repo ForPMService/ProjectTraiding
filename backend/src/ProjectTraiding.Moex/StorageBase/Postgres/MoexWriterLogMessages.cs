@@ -31,5 +31,28 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             EventId = 173, EventName = "MoexWriteDateParseFailed", Level = LogLevel.Warning,
             Message = "Date parse failed, NULL written: table={Table}, field={Field}, key={Key}, rawValue={RawValue}.")]
         public static partial void DateParseFailed(ILogger logger, string table, string field, string key, string rawValue);
+
+        [LoggerMessage(
+            EventId = 250, EventName = "MoexInstrumentPostgresDataDeleted", Level = LogLevel.Warning,
+            Message = "Moex instrument postgres data deleted: secid={Secid}, ranges={RangesDeleted}, cursors={CursorsDeleted}, tasks={TasksDeleted}, time={Elapsed}.")]
+        public static partial void InstrumentPostgresDataDeleted(
+            ILogger logger,
+            string secid,
+            int rangesDeleted,
+            int cursorsDeleted,
+            int tasksDeleted,
+            TimeSpan elapsed);
+
+        [LoggerMessage(
+            EventId = 251, EventName = "MoexInstrumentClickHouseTableCleared", Level = LogLevel.Information,
+            Message = "Moex instrument clickhouse table cleared: secid={Secid}, table={Table}.")]
+        public static partial void InstrumentClickHouseTableCleared(
+            ILogger logger, string secid, string table);
+
+        [LoggerMessage(
+            EventId = 252, EventName = "MoexInstrumentClickHouseDataDeleted", Level = LogLevel.Warning,
+            Message = "Moex instrument clickhouse data deleted: secid={Secid}, tables={TablesCleared}, time={Elapsed}.")]
+        public static partial void InstrumentClickHouseDataDeleted(
+            ILogger logger, string secid, int tablesCleared, TimeSpan elapsed);
     }
 }

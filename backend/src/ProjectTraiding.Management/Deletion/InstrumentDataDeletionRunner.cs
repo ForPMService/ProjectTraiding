@@ -1,5 +1,6 @@
-using ProjectTraiding.Management.StorageBase.ClickHouse;
 using ProjectTraiding.Management.StorageBase.Postgres;
+using ProjectTraiding.Moex.StorageBase.ClickHouse;
+using ProjectTraiding.Moex.StorageBase.Postgres;
 using System.Diagnostics;
 
 namespace ProjectTraiding.Management.Deletion

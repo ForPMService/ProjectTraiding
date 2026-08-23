@@ -1,6 +1,5 @@
 ﻿using ProjectTraiding.Management.StorageBase.Postgres;
 using ProjectTraiding.Management.Deletion;
-using ProjectTraiding.Management.StorageBase.ClickHouse;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -22,8 +21,6 @@ namespace ProjectTraiding.Management.DependencyInjection
             services.AddTransient<TradingPeriodTypeWriter>();
             services.AddTransient<InstrumentDeletionGuardReader>();
             services.AddTransient<InstrumentDeletionWriter>();
-            services.AddTransient<InstrumentPostgresDataDeleter>();
-            services.AddTransient<InstrumentClickHouseDataDeleter>();
             services.AddTransient<InstrumentDataDeletionRunner>();
             return services;
         }

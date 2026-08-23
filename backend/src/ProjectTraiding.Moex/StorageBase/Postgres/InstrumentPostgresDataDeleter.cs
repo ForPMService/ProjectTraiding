@@ -2,7 +2,7 @@ using Npgsql;
 using NpgsqlTypes;
 using System.Diagnostics;
 
-namespace ProjectTraiding.Management.StorageBase.Postgres
+namespace ProjectTraiding.Moex.StorageBase.Postgres
 {
     public readonly record struct PostgresDeleteCounts(
         int LoadedRangesDeleted,
@@ -64,7 +64,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                 await transaction.CommitAsync(ct);
 
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
-                ManagementWriterLogMessages.InstrumentPostgresDataDeleted(
+                MoexWriterLogMessages.InstrumentPostgresDataDeleted(
                     _logger, secid, rangesDeleted, cursorsDeleted, tasksDeleted, elapsed);
 
                 return new PostgresDeleteCounts(
@@ -72,8 +72,8 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
             }
             catch (Exception ex)
             {
-                ManagementWriterLogMessages.WriteRolledBack(
-                    _logger, ex, Table, ex.GetType().Name);
+                MoexWriterLogMessages.WriteRolledBack(
+                    _logger, ex, Table, secid, 0, ex.GetType().Name);
                 await transaction.RollbackAsync(CancellationToken.None);
                 throw;
             }
