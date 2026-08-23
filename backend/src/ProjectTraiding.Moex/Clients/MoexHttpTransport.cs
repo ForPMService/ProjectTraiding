@@ -23,7 +23,6 @@ namespace ProjectTraiding.Moex.Clients
     {
         private readonly HttpClient _httpClient;
         private readonly ILogger _logger;
-        private readonly MoexOptions _options;
         private readonly string _baseUrl;
         private readonly string _logSource;
         private readonly bool _requiresApiKey;
@@ -31,8 +30,7 @@ namespace ProjectTraiding.Moex.Clients
         /// <summary>
         /// Готовое значение заголовка доступа. Собирается один раз на транспорт: склейка
         /// на каждый запрос создавала бы в куче строку с ключом на каждое обращение к бирже.
-        /// Пусто, когда ключ не требуется или не настроен; проверку настроенности
-        /// по-прежнему выполняет EnsureApiKeyConfigured в момент создания запроса.
+        /// Пусто, когда ключ не требуется или не настроен.
         /// </summary>
         private readonly string? _authorizationHeader;
 
@@ -52,7 +50,6 @@ namespace ProjectTraiding.Moex.Clients
         {
             _httpClient = httpClient;
             _logger = logger;
-            _options = options;
             _baseUrl = baseUrl;
             _logSource = logSource;
             _requiresApiKey = requiresApiKey;
@@ -138,23 +135,18 @@ namespace ProjectTraiding.Moex.Clients
 
         private HttpRequestMessage CreateRequest(string requestUrl)
         {
-            if (_requiresApiKey)
-                EnsureApiKeyConfigured();
-
-            HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
-            if (_requiresApiKey)
-                request.Headers.Add("Authorization", _authorizationHeader!);
-
-            return request;
-        }
-
-        private void EnsureApiKeyConfigured()
-        {
-            if (string.IsNullOrWhiteSpace(_options.AlgKey))
-            {
+            // Настроенность ключа определена в конструкторе: заголовок собран тогда и только
+            // тогда, когда ключ требуется и задан. Повторное чтение настроек на каждый запрос
+            // ничего не проверяет заново.
+            if (_requiresApiKey && _authorizationHeader is null)
                 throw new InvalidOperationException(
                     "MOEX ALGOPACK API key is not configured. Set MoexAlg:Key via user-secrets or environment variable.");
-            }
+
+            HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
+            if (_authorizationHeader is not null)
+                request.Headers.Add("Authorization", _authorizationHeader);
+
+            return request;
         }
     }
 }
