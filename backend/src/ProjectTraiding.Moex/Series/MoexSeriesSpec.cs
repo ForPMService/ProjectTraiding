@@ -214,11 +214,18 @@ public sealed class MoexSeriesSpec
 
     private bool BuildSourceColumnKindsValid()
     {
+        int[] momentDateFirstUses = new int[SourceColumns.Length];
+        int[] momentTimeSecondUses = new int[SourceColumns.Length];
         for (int i = 0; i < TargetColumns.Length; i++)
         {
             TargetColumn target = TargetColumns[i];
             ColumnKind? sourceKind = GetSourceColumnKind(target.SourceIndex);
             ColumnKind? secondSourceKind = GetSourceColumnKind(target.SecondSourceIndex);
+
+            if (sourceKind == ColumnKind.MomentDate)
+                momentDateFirstUses[target.SourceIndex]++;
+            if (secondSourceKind == ColumnKind.MomentTime)
+                momentTimeSecondUses[target.SecondSourceIndex]++;
 
             if (target.FillRule == FillRule.SourceDateTime)
             {
@@ -234,6 +241,15 @@ public sealed class MoexSeriesSpec
                 if (secondSourceKind is ColumnKind.MomentDate or ColumnKind.MomentTime)
                     ThrowInvalidSourceColumnKind(target, target.SecondSourceIndex, secondSourceKind.Value);
             }
+        }
+
+        for (int i = 0; i < SourceColumns.Length; i++)
+        {
+            if (SourceColumns[i].Kind == ColumnKind.MomentDate && momentDateFirstUses[i] != 1)
+                ThrowInvalidMomentSourceUse(i, SourceColumns[i].Kind, momentDateFirstUses[i]);
+
+            if (SourceColumns[i].Kind == ColumnKind.MomentTime && momentTimeSecondUses[i] != 1)
+                ThrowInvalidMomentSourceUse(i, SourceColumns[i].Kind, momentTimeSecondUses[i]);
         }
 
         return true;
@@ -271,6 +287,13 @@ public sealed class MoexSeriesSpec
             $"Ошибка декларации {Market}/{DataKind}: колонка {target.Name} " +
             $"ссылается на источник вида {actual} на позиции {sourceIndex}, " +
             "хотя такой источник разрешён только для момента строки.");
+    }
+
+    private void ThrowInvalidMomentSourceUse(int sourceIndex, ColumnKind kind, int uses)
+    {
+        throw new InvalidOperationException(
+            $"Ошибка декларации {Market}/{DataKind}: источник позиции {sourceIndex} " +
+            $"вида {kind} использован {uses} раз вместо одного разрешённого использования.");
     }
 
     private int[] BuildRequiredIndexes(FillRule fillRule)
