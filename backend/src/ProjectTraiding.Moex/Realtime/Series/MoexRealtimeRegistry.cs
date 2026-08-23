@@ -21,7 +21,10 @@ public static class MoexRealtimeRegistry
             new(5, "PERIOD"u8.ToArray(), ColumnKind.String),
             new(6, "VALUE"u8.ToArray(), ColumnKind.Double),
             new(7, "BOARDID"u8.ToArray(), ColumnKind.String),
-            new(8, "SYSTIME"u8.ToArray(), ColumnKind.String),
+            // Разбор по байтам вместо строки: временной строки на каждую сделку больше
+            // не возникает. Непригодное значение даёт пустую ячейку, а не отказ страницы —
+            // решение принято осознанно: поле необязательное, а отказ уничтожал всю пачку.
+            new(8, "SYSTIME"u8.ToArray(), ColumnKind.DateTime),
             new(9, "BUYSELL"u8.ToArray(), ColumnKind.String),
             new(10, "DECIMALS"u8.ToArray(), ColumnKind.Int32),
             new(11, "TRADINGSESSION"u8.ToArray(), ColumnKind.String),
@@ -64,7 +67,10 @@ public static class MoexRealtimeRegistry
             new(4, "TRADETIME"u8.ToArray(), ColumnKind.String),
             new(5, "PRICE"u8.ToArray(), ColumnKind.Double),
             new(6, "QUANTITY"u8.ToArray(), ColumnKind.Int64),
-            new(7, "SYSTIME"u8.ToArray(), ColumnKind.String),
+            // Разбор по байтам вместо строки: временной строки на каждую сделку больше
+            // не возникает. Непригодное значение даёт пустую ячейку, а не отказ страницы —
+            // решение принято осознанно: поле необязательное, а отказ уничтожал всю пачку.
+            new(7, "SYSTIME"u8.ToArray(), ColumnKind.DateTime),
             new(8, "RECNO"u8.ToArray(), ColumnKind.Int64),
             new(9, "OPENPOSITION"u8.ToArray(), ColumnKind.Int64),
             new(10, "OFFMARKETDEAL"u8.ToArray(), ColumnKind.Int32),
