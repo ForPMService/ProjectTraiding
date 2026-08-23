@@ -208,12 +208,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     page = await client.GetOrderbookAsync(
                         state.Market, secid, fetchCts.Token);
 
-                    MoexMetrics.RowsReceived.Add(
-                        page.Rows.Count,
-                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, operationTags.Source),
-                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, operationTags.DataKind),
-                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, operationTags.Market),
-                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Flow, operationTags.Flow));
+                    TagList rowsTags = new TagList
+                    {
+                        { MoexTelemetryAttributes.Source, operationTags.Source },
+                        { MoexTelemetryAttributes.DataKind, operationTags.DataKind },
+                        { MoexTelemetryAttributes.Market, operationTags.Market },
+                        { MoexTelemetryAttributes.Flow, operationTags.Flow },
+                    };
+                    MoexMetrics.RowsReceived.Add(page.Rows.Count, rowsTags);
 
                     MoexMetrics.RecordOperationSuccess(
                         in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);

@@ -369,16 +369,14 @@ public sealed class MoexHistoryPageReader
                 new KeyValuePair<string, object?>(
                     MoexTelemetryAttributes.Market, operationTags.Market));
 
-            MoexMetrics.RowsReceived.Add(
-                rows.Count,
-                new KeyValuePair<string, object?>(
-                    MoexTelemetryAttributes.Source, operationTags.Source),
-                new KeyValuePair<string, object?>(
-                    MoexTelemetryAttributes.DataKind, operationTags.DataKind),
-                new KeyValuePair<string, object?>(
-                    MoexTelemetryAttributes.Market, operationTags.Market),
-                new KeyValuePair<string, object?>(
-                    MoexTelemetryAttributes.Flow, operationTags.Flow));
+            TagList rowsTags = new TagList
+            {
+                { MoexTelemetryAttributes.Source, operationTags.Source },
+                { MoexTelemetryAttributes.DataKind, operationTags.DataKind },
+                { MoexTelemetryAttributes.Market, operationTags.Market },
+                { MoexTelemetryAttributes.Flow, operationTags.Flow },
+            };
+            MoexMetrics.RowsReceived.Add(rows.Count, rowsTags);
 
             MoexMetrics.RecordOperationSuccess(
                 in operationTags,
