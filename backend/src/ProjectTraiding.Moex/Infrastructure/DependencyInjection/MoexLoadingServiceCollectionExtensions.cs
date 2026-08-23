@@ -27,6 +27,11 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
             // Исполнитель вставки не хранит состояния: у него только клиент ClickHouse
             // и журнал, оба одиночки. Создавать его заново на каждое обращение незачем.
             services.AddSingleton<ClickHouseInsertExecutor>();
+            services.AddTransient<MoexInstrumentWriter>();
+            services.AddTransient<MoexCalendarWriter>();
+            services.AddTransient<MoexCalendarReferenceWriter>();
+            services.AddTransient<MoexCalendarLoader>();
+            services.AddTransient<MoexInstrumentSyncLoader>();
             services.AddTransient<InstrumentClickHouseDataDeleter>();
             services.AddTransient<InstrumentPostgresDataDeleter>();
             services.AddSingleton<InstrumentDeletionQueueReader>();

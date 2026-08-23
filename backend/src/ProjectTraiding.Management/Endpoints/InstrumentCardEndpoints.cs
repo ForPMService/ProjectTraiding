@@ -1,7 +1,6 @@
 using ProjectTraiding.Management.Contracts;
 using ProjectTraiding.Management.Contracts.Dto;
-using ProjectTraiding.Moex.Clients;
-using ProjectTraiding.Moex.Contracts.Dto.Iss;
+using ProjectTraiding.Moex.Loading;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 
 namespace ProjectTraiding.Management.Endpoints
@@ -15,39 +14,45 @@ namespace ProjectTraiding.Management.Endpoints
         {
             routes.MapPost("/management/sync/instruments/stock", async (
                 HttpContext httpContext,
-                MoexHttpIssClient client,
-                MoexInstrumentWriter writer,
+                MoexInstrumentSyncLoader loader,
                 CancellationToken ct) =>
             {
                 httpContext.Response.Headers.CacheControl = "no-store";
-                LoadResultDto result = await LoadStockInstrumentsAsync(client, writer, ct);
-                return Results.Json(result, ManagementJsonContext.Default.LoadResultDto);
+                DbWriteResult result = await loader.LoadStockAsync(ct);
+                return Results.Json(
+                    BuildResult("sync_instruments_stock", "MOEX_ISS",
+                        "moex_instruments/moex_stock_details", result),
+                    ManagementJsonContext.Default.LoadResultDto);
             });
 
             routes.MapPost("/management/sync/instruments/futures", async (
                 HttpContext httpContext,
-                MoexHttpAlgClient client,
-                MoexInstrumentWriter writer,
+                MoexInstrumentSyncLoader loader,
                 CancellationToken ct) =>
             {
                 httpContext.Response.Headers.CacheControl = "no-store";
-                LoadResultDto result = await LoadFuturesInstrumentsAsync(client, writer, ct);
-                return Results.Json(result, ManagementJsonContext.Default.LoadResultDto);
+                DbWriteResult result = await loader.LoadFuturesAsync(ct);
+                return Results.Json(
+                    BuildResult("sync_instruments_futures", "MOEX_ALGOPACK",
+                        "moex_instruments/moex_futures_details", result),
+                    ManagementJsonContext.Default.LoadResultDto);
             });
 
             routes.MapPost("/management/sync/bootstrap", async (
                 HttpContext httpContext,
-                MoexHttpIssClient issClient,
-                MoexHttpAlgClient algClient,
-                MoexInstrumentWriter instrumentWriter,
+                MoexInstrumentSyncLoader loader,
                 CancellationToken ct) =>
             {
                 httpContext.Response.Headers.CacheControl = "no-store";
 
+                DbWriteResult stock = await loader.LoadStockAsync(ct);
+                DbWriteResult futures = await loader.LoadFuturesAsync(ct);
                 LoadResultDto[] results =
                 [
-                    await LoadStockInstrumentsAsync(issClient, instrumentWriter, ct),
-                    await LoadFuturesInstrumentsAsync(algClient, instrumentWriter, ct)
+                    BuildResult("sync_instruments_stock", "MOEX_ISS",
+                        "moex_instruments/moex_stock_details", stock),
+                    BuildResult("sync_instruments_futures", "MOEX_ALGOPACK",
+                        "moex_instruments/moex_futures_details", futures)
                 ];
                 return Results.Json(results, ManagementJsonContext.Default.LoadResultDtoArray);
             });
@@ -55,34 +60,16 @@ namespace ProjectTraiding.Management.Endpoints
             return routes;
         }
 
-        private static async Task<LoadResultDto> LoadStockInstrumentsAsync(
-            MoexHttpIssClient client,
-            MoexInstrumentWriter writer,
-            CancellationToken ct)
+        private static LoadResultDto BuildResult(
+            string operation,
+            string source,
+            string target,
+            DbWriteResult result)
         {
-            List<StockInstrumentCardDTO> cards = await client.GetStockInstrumentCards(ct);
-            DbWriteResult result = await writer.UpsertStocksAsync(cards, ct);
             return new LoadResultDto(
-                Operation: "sync_instruments_stock",
-                Source: "MOEX_ISS",
-                Target: "moex_instruments/moex_stock_details",
-                Status: "ok",
-                InputCount: result.InputCount,
-                RowsWritten: result.RowsWritten,
-                ElapsedMs: result.Elapsed.TotalMilliseconds);
-        }
-
-        private static async Task<LoadResultDto> LoadFuturesInstrumentsAsync(
-            MoexHttpAlgClient client,
-            MoexInstrumentWriter writer,
-            CancellationToken ct)
-        {
-            List<FuturesInstrumentCardDTO> cards = await client.GetFuturesInstrumentCards(ct);
-            DbWriteResult result = await writer.UpsertFuturesAsync(cards, ct);
-            return new LoadResultDto(
-                Operation: "sync_instruments_futures",
-                Source: "MOEX_ALGOPACK",
-                Target: "moex_instruments/moex_futures_details",
+                Operation: operation,
+                Source: source,
+                Target: target,
                 Status: "ok",
                 InputCount: result.InputCount,
                 RowsWritten: result.RowsWritten,

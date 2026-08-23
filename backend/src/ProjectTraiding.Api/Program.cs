@@ -7,7 +7,6 @@ using ProjectTraiding.Management.Contracts;
 using ProjectTraiding.Management.DependencyInjection;
 using ProjectTraiding.Moex.Infrastructure.DependencyInjection;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
-using ProjectTraiding.Moex.Loading;
 using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using ProjectTraiding.Observability.Infrastructure.DependencyInjection;
@@ -24,10 +23,6 @@ builder.AddProjectTraidingObservability(
 builder.Services.AddMoexClients(builder.Configuration);
 builder.Services.AddClickHouse(builder.Configuration);
 builder.Services.AddPostgre(builder.Configuration);
-builder.Services.AddTransient<MoexInstrumentWriter>();
-builder.Services.AddTransient<MoexCalendarWriter>();
-builder.Services.AddTransient<MoexCalendarReferenceWriter>();
-builder.Services.AddTransient<MoexCalendarLoader>();
 // Поколение данных инструмента для токена дедупликации: один читатель на оба
 // потребителя — историческую загрузку и приём реального времени.
 builder.Services.AddSingleton<MoexDataGenerationReader>();
