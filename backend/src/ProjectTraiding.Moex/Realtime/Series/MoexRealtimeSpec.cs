@@ -41,25 +41,93 @@ public sealed class MoexRealtimeSpec
         string[] columns = new string[targetColumns.Length];
         Dictionary<string, string> columnTypes = new(targetColumns.Length);
         bool[] sourceUsed = new bool[sourceColumns.Length];
+        int[] momentDateFirstUses = new int[sourceColumns.Length];
+        int[] momentTimeSecondUses = new int[sourceColumns.Length];
         int sessionDateIndex = -1;
         for (int i = 0; i < targetColumns.Length; i++)
         {
-            columns[i] = targetColumns[i].Name;
-            columnTypes[columns[i]] = targetColumns[i].ColumnType;
+            TargetColumn target = targetColumns[i];
+            columns[i] = target.Name;
+            columnTypes[columns[i]] = target.ColumnType;
 
-            if (targetColumns[i].SourceIndex >= 0)
-                sourceUsed[targetColumns[i].SourceIndex] = true;
-            if (targetColumns[i].SecondSourceIndex >= 0)
-                sourceUsed[targetColumns[i].SecondSourceIndex] = true;
+            if (target.SourceIndex >= 0)
+            {
+                sourceUsed[target.SourceIndex] = true;
+                if (sourceColumns[target.SourceIndex].Kind == ColumnKind.MomentDate)
+                    momentDateFirstUses[target.SourceIndex]++;
+            }
+            if (target.SecondSourceIndex >= 0)
+            {
+                sourceUsed[target.SecondSourceIndex] = true;
+                if (sourceColumns[target.SecondSourceIndex].Kind == ColumnKind.MomentTime)
+                    momentTimeSecondUses[target.SecondSourceIndex]++;
+            }
 
-            if (targetColumns[i].FillRule == FillRule.SessionDate)
+            if (target.FillRule == FillRule.SourceDateTime)
+            {
+                EnsureSourceColumnKind(target, target.SourceIndex, ColumnKind.MomentDate);
+                EnsureSourceColumnKind(target, target.SecondSourceIndex, ColumnKind.MomentTime);
+            }
+            else
+            {
+                EnsureMomentSourceIsNotUsed(target, target.SourceIndex);
+                EnsureMomentSourceIsNotUsed(target, target.SecondSourceIndex);
+            }
+
+            if (target.FillRule == FillRule.SessionDate)
                 sessionDateIndex = i;
+        }
+
+        for (int i = 0; i < sourceColumns.Length; i++)
+        {
+            if (sourceColumns[i].Kind == ColumnKind.MomentDate && momentDateFirstUses[i] != 1)
+                ThrowInvalidMomentSourceUse(i, sourceColumns[i].Kind, momentDateFirstUses[i]);
+
+            if (sourceColumns[i].Kind == ColumnKind.MomentTime && momentTimeSecondUses[i] != 1)
+                ThrowInvalidMomentSourceUse(i, sourceColumns[i].Kind, momentTimeSecondUses[i]);
         }
 
         Columns = columns;
         ColumnTypes = columnTypes;
         SourceColumnUsed = sourceUsed;
         SessionDateIndex = sessionDateIndex;
+    }
+
+    private void EnsureSourceColumnKind(TargetColumn target, int sourceIndex, ColumnKind expected)
+    {
+        ColumnKind? actual = sourceIndex >= 0 && sourceIndex < SourceColumns.Length
+            ? SourceColumns[sourceIndex].Kind
+            : null;
+        if (actual != expected)
+        {
+            string actualText = actual?.ToString() ?? "отсутствует";
+            throw new InvalidOperationException(
+                $"Ошибка декларации [{RootKey}] таблица {Table}: колонка {target.Name} " +
+                $"ожидала источник вида {expected} на позиции {sourceIndex}, " +
+                $"получен {actualText}.");
+        }
+    }
+
+    private void EnsureMomentSourceIsNotUsed(TargetColumn target, int sourceIndex)
+    {
+        if (sourceIndex < 0 || sourceIndex >= SourceColumns.Length)
+            return;
+
+        ColumnKind kind = SourceColumns[sourceIndex].Kind;
+        if (kind is ColumnKind.MomentDate or ColumnKind.MomentTime)
+        {
+            throw new InvalidOperationException(
+                $"Ошибка декларации [{RootKey}] таблица {Table}: колонка {target.Name} " +
+                $"ссылается на источник вида {kind} на позиции {sourceIndex}, " +
+                "хотя такой источник разрешён только для момента строки.");
+        }
+    }
+
+    private void ThrowInvalidMomentSourceUse(int sourceIndex, ColumnKind kind, int uses)
+    {
+        throw new InvalidOperationException(
+            $"Ошибка декларации [{RootKey}] таблица {Table}: источник позиции {sourceIndex} " +
+            $"вида {kind} использован {uses} раз вместо одного разрешённого использования.");
     }
 
     /// <summary>Имя корневого блока ответа: "trades", "orderbook" или "candles".</summary>
