@@ -466,8 +466,10 @@ public static class MoexRealtimeParser
                         }
                         else
                         {
-                            value = MoexClickHouseTime.AsWallClock(
-                                (DateTime?)sourceValues[column.SourceIndex]);
+                            // Значение уже прочитано разбором по байтам с видом
+                            // «неопределённый». Берётся готовый объект вместо
+                            // распаковки с повторной упаковкой.
+                            value = sourceValues[column.SourceIndex];
                         }
                         break;
                     case FillRule.Constant:
@@ -579,8 +581,7 @@ public static class MoexRealtimeParser
                         spec.SourceColumns[column.SourceIndex].Kind == ColumnKind.String
                             ? MoexClickHouseTime.ParseWallClock(
                                 sourceValues[column.SourceIndex] as string)
-                            : MoexClickHouseTime.AsWallClock(
-                                (DateTime?)sourceValues[column.SourceIndex]),
+                            : sourceValues[column.SourceIndex],
                     FillRule.Constant => column.Constant,
                     _ => throw new ArgumentOutOfRangeException(
                         nameof(column), column.FillRule, "Неизвестное правило заполнения."),

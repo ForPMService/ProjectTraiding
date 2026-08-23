@@ -237,8 +237,10 @@ public sealed class MoexSeriesParser
                 FillRule.SourceDateTime => MoexClickHouseTime.BuildSourceTime(
                     sourceValues[column.SourceIndex] as string,
                     sourceValues[column.SecondSourceIndex] as string),
-                FillRule.WallClock => MoexClickHouseTime.AsWallClock(
-                    (DateTime?)sourceValues[column.SourceIndex]),
+                // Значение уже прочитано разбором по байтам с видом «неопределённый»,
+                // и помощник проставлял бы ровно его же. Берётся готовый объект:
+                // распаковка с повторной упаковкой давала вторую упаковку на строку.
+                FillRule.WallClock => sourceValues[column.SourceIndex],
                 FillRule.ExternalSecId => sourceValues[column.SourceIndex],
                 FillRule.Constant => column.Constant,
                 _ => throw new ArgumentOutOfRangeException(
