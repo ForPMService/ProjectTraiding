@@ -19,6 +19,10 @@ public sealed class MoexSeriesParser
         Utf8JsonReader reader = new(body);
 
         ParseHelpersUtf8.SkipToRootObject(ref reader, spec.RootKey);
+
+        // Единственная точка запуска строгой проверки видов колонок. Отбрасывается
+        // значение, а не смысл: проверка бросает исключение при ошибке декларации,
+        // и без этого обращения она не выполнится ни разу. Строку не удалять.
         _ = spec.SourceColumnKindsValid;
 
         bool foundColumns = false;
