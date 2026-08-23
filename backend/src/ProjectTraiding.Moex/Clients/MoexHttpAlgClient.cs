@@ -66,19 +66,6 @@ namespace ProjectTraiding.Moex.Clients
         public async Task<List<FuturesInstrumentCardDTO>> GetFuturesInstrumentCards(
             CancellationToken cancellationToken = default)
         {
-            return await FetchFuturesCardsAsync(cancellationToken);
-        }
-
-        /// <summary>Карточки фьючерсов для построения календарных интервалов.</summary>
-        public async Task<List<FuturesInstrumentCardDTO>> GetCalendarFuturesCardsAsync(
-            CancellationToken cancellationToken = default)
-        {
-            return await FetchFuturesCardsAsync(cancellationToken);
-        }
-
-        private async Task<List<FuturesInstrumentCardDTO>> FetchFuturesCardsAsync(
-            CancellationToken cancellationToken)
-        {
             MoexOperationTags operationTags = new MoexOperationTags(
                 MoexLogSources.Algopack,
                 MoexOperations.ReferenceInstrumentsFetch,

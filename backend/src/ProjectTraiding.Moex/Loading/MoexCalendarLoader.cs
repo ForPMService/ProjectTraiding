@@ -93,7 +93,7 @@ namespace ProjectTraiding.Moex.Loading
             List<ListingIntervalDTO> activeStockListing =
                 await LoadListingPagesAsync("stock", "shares", "traded", ct);
             List<FuturesInstrumentCardDTO> activeFutures =
-                await _algClient.GetCalendarFuturesCardsAsync(ct);
+                await _algClient.GetFuturesInstrumentCards(ct);
 
             HashSet<InstrumentBoardKey> activeStock = new HashSet<InstrumentBoardKey>();
             for (int index = 0; index < activeStockListing.Count; index++)
