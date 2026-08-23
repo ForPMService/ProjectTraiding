@@ -37,7 +37,16 @@ public sealed class MoexHistoryPageReader
         _logger = logger;
     }
 
-    public async IAsyncEnumerable<List<(object?[] Row, DateTime Time)>> ReadPages(
+    /// <summary>
+    /// Выбор стратегии постраничного чтения. Метод обычный, а не асинхронный итератор:
+    /// выбирать нечего, кроме одной из трёх последовательностей, а обёртка добавляла
+    /// свою машину состояний и лишний шаг продвижения на каждую страницу.
+    ///
+    /// Ветвление выполняется при вызове, а не при первом обращении к последовательности.
+    /// Проверок доводов и иных побочных действий в нём нет, поэтому наблюдаемое поведение
+    /// не меняется.
+    /// </summary>
+    public IAsyncEnumerable<List<(object?[] Row, DateTime Time)>> ReadPages(
         MoexSeriesSpec spec,
         string secId,
         string boardId,
@@ -45,54 +54,22 @@ public sealed class MoexHistoryPageReader
         DateOnly till,
         LoadStopOutcome stopOutcome,
         MoexOperationTags operationTags,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
+        CancellationToken cancellationToken)
     {
         if (spec.Pagination == PaginationKind.Cursor)
         {
-            await foreach (List<(object?[] Row, DateTime Time)> page in ReadCursorPages(
-                               spec,
-                               secId,
-                               from,
-                               till,
-                               stopOutcome,
-                               operationTags,
-                               cancellationToken))
-            {
-                yield return page;
-            }
-
-            yield break;
+            return ReadCursorPages(
+                spec, secId, from, till, stopOutcome, operationTags, cancellationToken);
         }
 
         if (spec.Pagination == PaginationKind.FixedPage)
         {
-            await foreach (List<(object?[] Row, DateTime Time)> page in ReadFixedPages(
-                               spec,
-                               secId,
-                               boardId,
-                               from,
-                               till,
-                               stopOutcome,
-                               operationTags,
-                               cancellationToken))
-            {
-                yield return page;
-            }
-
-            yield break;
+            return ReadFixedPages(
+                spec, secId, boardId, from, till, stopOutcome, operationTags, cancellationToken);
         }
 
-        await foreach (List<(object?[] Row, DateTime Time)> page in ReadDaySplitPages(
-                           spec,
-                           secId,
-                           from,
-                           till,
-                           stopOutcome,
-                           operationTags,
-                           cancellationToken))
-        {
-            yield return page;
-        }
+        return ReadDaySplitPages(
+            spec, secId, from, till, stopOutcome, operationTags, cancellationToken);
     }
 
     private async IAsyncEnumerable<List<(object?[] Row, DateTime Time)>> ReadCursorPages(
