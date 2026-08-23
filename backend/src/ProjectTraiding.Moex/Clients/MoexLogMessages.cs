@@ -61,6 +61,10 @@ namespace ProjectTraiding.Moex.Clients
         [LoggerMessage(EventId = 131, EventName = "MoexParseFailed", Level = LogLevel.Error, Message = "MOEX response could not be read: endpoint={Endpoint}, error={ErrorCategory}, message={ErrorMessage}.")]
         public static partial void ParseFailed(ILogger logger, Exception exception, string endpoint, string errorCategory, string errorMessage);
 
+        [LoggerMessage(EventId = 132, EventName = "MoexRowsSkipped", Level = LogLevel.Warning,
+            Message = "MOEX rows skipped by parser: endpoint={Endpoint}, skipped={SkippedRows}.")]
+        public static partial void RowsSkipped(ILogger logger, string endpoint, int skippedRows);
+
         // ── Rate Limiter ────────────────────────────────────────
 
         /// <summary>

@@ -41,6 +41,7 @@ public sealed class MoexHistoryWriter
         DateTime batchFirstTime = default;
         DateTime batchLastTime = default;
         long rowsRead = 0;
+        long rowsSkipped = 0;
         long rowsInsertedReported = 0;
         string? lastToken = null;
 
@@ -51,6 +52,7 @@ public sealed class MoexHistoryWriter
             // строка прочитана и входит в диапазон, просто не записана. Иначе rows_total
             // изменил бы смысл — сегодня в нём число прочитанных строк.
             rowsRead += page.SourceRowsCount;
+            rowsSkipped += page.SkippedRows;
 
             foreach ((object?[] row, DateTime time) in page.Rows)
             {
@@ -100,7 +102,7 @@ public sealed class MoexHistoryWriter
 
         ClickHouseWriterLogMessages.RangeWritten(
             _logger, secid, rowsRead, rowsInsertedReported);
-        return new RowWriteSummary(rowsRead, lastToken);
+        return new RowWriteSummary(rowsRead, rowsSkipped, lastToken);
     }
 
     private static void EnsureRangeValid(MoexSeriesSpec spec, string secid)

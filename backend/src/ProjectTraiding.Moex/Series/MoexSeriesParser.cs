@@ -15,6 +15,7 @@ public sealed class MoexSeriesParser
     {
         List<(object?[] Row, DateTime Time)> rows = [];
         int sourceRowsCount = 0;
+        List<SkippedSourceRow>? skippedSourceRows = null;
         Utf8JsonReader reader = new(body);
 
         ParseHelpersUtf8.SkipToRootObject(ref reader, spec.RootKey);
@@ -45,7 +46,8 @@ public sealed class MoexSeriesParser
                 }
 
                 foundData = true;
-                ReadRows(ref reader, rows, spec, taskSecId, ref sourceRowsCount);
+                ReadRows(
+                    ref reader, rows, spec, taskSecId, ref sourceRowsCount, ref skippedSourceRows);
             }
             else
             {
@@ -84,7 +86,7 @@ public sealed class MoexSeriesParser
             }
         }
 
-        return new SeriesParsedPage(rows, sourceRowsCount, null);
+        return new SeriesParsedPage(rows, sourceRowsCount, skippedSourceRows);
     }
 
     private static void ReadRows(
@@ -92,7 +94,8 @@ public sealed class MoexSeriesParser
         List<(object?[] Row, DateTime Time)> rows,
         MoexSeriesSpec spec,
         string taskSecId,
-        ref int sourceRowIndex)
+        ref int sourceRowIndex,
+        ref List<SkippedSourceRow>? skippedSourceRows)
     {
         ParseHelpersUtf8.ReadAndExpect(
             ref reader, JsonTokenType.StartArray, "data", spec.RootKey);
@@ -142,7 +145,22 @@ public sealed class MoexSeriesParser
                     $"{spec.SourceColumns.Length} колонок (строка {sourceRowIndex}).");
             }
 
-            rows.Add(BuildTargetRow(sourceValues, spec, taskSecId));
+            // Отказ значения отвергает одну строку. Несовпадение схемы сюда не попадает:
+            // оно объявлено своим типом и поднимается наружу, отменяя задание целиком.
+            // Неизвестное правило заполнения тоже сюда не попадает: это ошибка декларации,
+            // и тихо пропускать из-за неё данные нельзя.
+            try
+            {
+                rows.Add(BuildTargetRow(sourceValues, spec, taskSecId));
+            }
+            catch (Exception ex) when (
+                ex is InvalidOperationException or FormatException)
+            {
+                skippedSourceRows ??= new List<SkippedSourceRow>();
+                skippedSourceRows.Add(new SkippedSourceRow(
+                    sourceRowIndex, TryReadSourceTime(sourceValues, spec)));
+            }
+
             sourceRowIndex++;
         }
     }
@@ -245,6 +263,29 @@ public sealed class MoexSeriesParser
         ValidateRequired(row, spec, spec.RequiredExternalSecIdIndexes);
 
         return (row, sourceTime);
+    }
+
+    /// <summary>
+    /// Момент отвергнутой строки. Вызывается только при отказе, поэтому обычный путь
+    /// разбора ничего не тратит. Непрочитанный момент — не отказ: строка уже отвергнута,
+    /// а неизвестный момент обход границы группы обрабатывает сам.
+    /// </summary>
+    private static DateTime? TryReadSourceTime(object?[] sourceValues, MoexSeriesSpec spec)
+    {
+        (int dateIndex, int timeIndex) = spec.SourceTimeIndexes;
+        if (dateIndex < 0 || timeIndex < 0)
+            return null;
+
+        try
+        {
+            return MoexClickHouseTime.BuildSourceTime(
+                sourceValues[dateIndex] as string, sourceValues[timeIndex] as string);
+        }
+        catch (Exception ex) when (
+            ex is InvalidOperationException or FormatException)
+        {
+            return null;
+        }
     }
 
     private static void ValidateRequired(

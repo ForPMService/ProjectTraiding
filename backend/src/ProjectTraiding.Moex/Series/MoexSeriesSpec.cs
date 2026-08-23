@@ -149,6 +149,16 @@ public sealed class MoexSeriesSpec
     /// <summary>Тип хранения по имени целевой колонки — второй довод вставки.</summary>
     public IReadOnlyDictionary<string, string> ColumnTypes => _columnTypes ??= BuildColumnTypes();
 
+    private (int Date, int Time)? _sourceTimeIndexes;
+
+    /// <summary>
+    /// Позиции колонок источника, из которых собирается момент строки. Обе равны -1,
+    /// если целевой колонки с таким правилом заполнения у декларации нет. Нужны разбору
+    /// для отвергнутых строк: момент такой строки иначе взять неоткуда.
+    /// </summary>
+    public (int Date, int Time) SourceTimeIndexes =>
+        _sourceTimeIndexes ??= BuildSourceTimeIndexes();
+
     private string[] BuildColumns()
     {
         string[] columns = new string[TargetColumns.Length];
@@ -166,6 +176,17 @@ public sealed class MoexSeriesSpec
             columnTypes.Add(TargetColumns[i].Name, TargetColumns[i].ColumnType);
 
         return columnTypes;
+    }
+
+    private (int Date, int Time) BuildSourceTimeIndexes()
+    {
+        for (int i = 0; i < TargetColumns.Length; i++)
+        {
+            if (TargetColumns[i].FillRule == FillRule.SourceDateTime)
+                return (TargetColumns[i].SourceIndex, TargetColumns[i].SecondSourceIndex);
+        }
+
+        return (-1, -1);
     }
 
     private int[] BuildRequiredIndexes(FillRule fillRule)

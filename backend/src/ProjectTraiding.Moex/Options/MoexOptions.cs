@@ -28,6 +28,13 @@ namespace ProjectTraiding.Moex.Options
         public int MaxConnectionsPerServer { get; set; } = 10;
         public int MaxPagesPerLoad { get; set; } = 10_000;
 
+        /// <summary>
+        /// Предел отвергнутых строк на одно задание загрузки. Отрицательное значение
+        /// снимает предел. Ноль возвращает прежнее поведение: первая же отвергнутая
+        /// строка отменяет задание.
+        /// </summary>
+        public int MaxSkippedRowsPerLoad { get; set; } = 100;
+
         // ── Rate Limiter ────────────────────────────────────
 
         /// <summary>

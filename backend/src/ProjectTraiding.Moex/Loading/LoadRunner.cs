@@ -183,7 +183,8 @@ namespace ProjectTraiding.Moex.Loading
                 stopReasonForTelemetry = stopReason;
 
                 // Штатное полное покрытие: журнал результата и закрытие успехом.
-                await _rangeWriter.UpsertAsync(task, summary.RowsRead, summary.LastToken, CancellationToken.None);
+                await _rangeWriter.UpsertAsync(
+                    task, summary.RowsRead, summary.RowsSkipped, summary.LastToken, CancellationToken.None);
                 await _taskWriter.MarkDoneAsync(taskId, summary.RowsRead, stopReason, summary.LastToken, CancellationToken.None);
 
                 return;

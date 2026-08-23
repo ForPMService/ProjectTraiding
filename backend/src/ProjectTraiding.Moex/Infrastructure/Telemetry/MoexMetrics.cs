@@ -74,6 +74,15 @@ public static class MoexMetrics
             description: "MOEX rows received and parsed total");
 
     /// <summary>
+    /// Количество строк, отвергнутых разбором. Ненулевое значение означает неполное
+    /// покрытие при успешном задании: исходные строки нигде не сохраняются.
+    /// </summary>
+    public static readonly Counter<long> RowsSkipped =
+        Meter.CreateCounter<long>(
+            "moex.rows.skipped",
+            description: "MOEX rows rejected by parser total");
+
+    /// <summary>
     /// Количество полученных страниц исторической пагинации.
     /// Одностраничные методы страницами не считаются: у них нет пагинации,
     /// и счёт таких вызовов дублировал бы счётчик операций.
