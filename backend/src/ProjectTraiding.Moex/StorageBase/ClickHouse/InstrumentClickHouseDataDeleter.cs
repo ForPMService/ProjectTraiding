@@ -60,8 +60,8 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
         /// <summary>
         /// Возвращает число обработанных таблиц. Ошибка на любой таблице поднимается:
         /// частично очищенный ClickHouse при задании в статусе 'started' — верное
-        /// состояние, оператор продолжает удаление командой с resume=true,
-        /// повтор безопасен на каждой таблице.
+        /// состояние, фоновый исполнитель повторит очистку целиком; повтор безопасен
+        /// на каждой таблице.
         /// </summary>
         public async Task<int> DeleteAsync(string secid, CancellationToken ct)
         {

@@ -42,7 +42,7 @@ namespace ProjectTraiding.Management.Endpoints
                 }
 
                 // Открытый интерес принадлежит серии. Подстановка делается здесь, при
-                // создании задачи: тогда и задача, и покрытие, и строки в ClickHouse
+                // создании задачи: тогда и задача, и покрытие, и строки в хранилище
                 // говорят одним кодом, и повторная загрузка отсекается по покрытию.
                 LoadTaskCreateRequest effectiveRequest = request;
                 if (request.DataKind == "futoi")

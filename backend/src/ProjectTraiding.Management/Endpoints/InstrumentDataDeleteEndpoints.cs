@@ -1,6 +1,7 @@
+using Npgsql;
 using ProjectTraiding.Management.Contracts;
 using ProjectTraiding.Management.Contracts.Dto;
-using ProjectTraiding.Management.Deletion;
+using ProjectTraiding.Moex.StorageBase.Postgres;
 
 namespace ProjectTraiding.Management.Endpoints
 {
@@ -14,16 +15,9 @@ namespace ProjectTraiding.Management.Endpoints
             // Сегмент data обязателен: он говорит, что удаляются данные инструмента,
             // а не сам инструмент. Карточка, справочные детали, связи, тарифы и
             // календарь остаются на месте.
-            //
-            // resume — необязательный параметр строки запроса. Передаётся тогда и
-            // только тогда, когда прошлая попытка удаления прервалась ошибкой и
-            // оставила незакрытое задание. Тип bool?, а не bool со значением по
-            // умолчанию: отсутствующий параметр должен читаться как «не продолжаем»
-            // без опоры на поведение привязки при нативной компиляции.
             routes.MapPost("/management/instruments/{secid}/data/delete", async (
                 string secid,
-                bool? resume,
-                InstrumentDataDeletionRunner runner,
+                InstrumentDeletionWriter writer,
                 ILogger<InstrumentDataDeleteEndpointsLog> logger,
                 CancellationToken ct) =>
             {
@@ -37,49 +31,69 @@ namespace ProjectTraiding.Management.Endpoints
                     return Results.BadRequest(error);
                 }
 
-                DeletionOutcome outcome = await runner.RunAsync(secid, resume == true, ct);
-
-                if (outcome.Status != DeletionStatus.Done)
+                try
                 {
-                    ManagementEndpointLogMessages.InstrumentDataDeleteRejected(
-                        logger, route, secid, outcome.Status.ToString());
+                    Guid? deletionId = await writer.TryStartAsync(secid, ct);
+                    if (deletionId is null)
+                    {
+                        const string error = "удаление данных этого инструмента уже начато и не закрыто.";
+                        ManagementEndpointLogMessages.InstrumentDataDeleteRejected(
+                            logger, route, secid, "already_deleting");
+                        return Results.Text(
+                            error,
+                            "text/plain",
+                            statusCode: StatusCodes.Status409Conflict);
+                    }
+
+                    InstrumentDataDeleteAcceptedResponse response = new(
+                        Secid: secid,
+                        DeletionId: deletionId.Value,
+                        Status: "accepted");
+                    return Results.Json(
+                        response,
+                        ManagementJsonContext.Default.InstrumentDataDeleteAcceptedResponse,
+                        statusCode: StatusCodes.Status202Accepted);
+                }
+                catch (PostgresException ex)
+                {
+                    string? message = ManagementDbErrors.MapDeletion(logger, route, ex);
+                    if (message is null)
+                        throw;
+
+                    return Results.BadRequest(message);
+                }
+            });
+
+            routes.MapGet("/management/instruments/{secid}/data/delete/status", async (
+                string secid,
+                InstrumentDeletionStatusReader reader,
+                ILogger<InstrumentDataDeleteEndpointsLog> logger,
+                CancellationToken ct) =>
+            {
+                const string route = "GET /management/instruments/{secid}/data/delete/status";
+                ManagementEndpointLogMessages.OperationStarted(logger, route);
+
+                if (string.IsNullOrWhiteSpace(secid))
+                {
+                    const string error = "secid обязателен";
+                    ManagementEndpointLogMessages.ValidationRejected(logger, route, error);
+                    return Results.BadRequest(error);
                 }
 
-                return outcome.Status switch
-                {
-                    DeletionStatus.InstrumentNotFound =>
-                        Results.NotFound("инструмент не найден"),
+                InstrumentDeletionStatus? status = await reader.GetLatestAsync(secid, ct);
+                if (status is null)
+                    return Results.NotFound("заявка на удаление данных инструмента не найдена");
 
-                    DeletionStatus.LoadRunning =>
-                        Results.Text(
-                            "по инструменту сейчас выполняется загрузка данных, удаление невозможно",
-                            "text/plain", statusCode: StatusCodes.Status409Conflict),
-
-                    DeletionStatus.RealtimeEnabled =>
-                        Results.Text(
-                            "по инструменту включён приём реального времени, удаление невозможно",
-                            "text/plain", statusCode: StatusCodes.Status409Conflict),
-
-                    DeletionStatus.AlreadyDeleting =>
-                        Results.Text(
-                            "удаление данных этого инструмента уже начато и не закрыто. " +
-                            "Если предыдущая попытка прервалась ошибкой, повторите команду " +
-                            "с параметром resume=true. Сначала убедитесь, что прошлая попытка " +
-                            "действительно завершилась: одновременное выполнение двух очисток " +
-                            "система не предотвращает",
-                            "text/plain", statusCode: StatusCodes.Status409Conflict),
-
-                    _ => Results.Json(
-                        new InstrumentDataDeleteResponse(
-                            Secid: secid,
-                            Status: "finished",
-                            LoadedRangesDeleted: outcome.LoadedRangesDeleted,
-                            StreamCursorsDeleted: outcome.StreamCursorsDeleted,
-                            LoadTasksDeleted: outcome.LoadTasksDeleted,
-                            ClickHouseTablesCleared: outcome.ClickHouseTablesCleared,
-                            ElapsedMs: outcome.Elapsed.TotalMilliseconds),
-                        ManagementJsonContext.Default.InstrumentDataDeleteResponse),
-                };
+                InstrumentDataDeleteStatusResponse response = new(
+                    Secid: status.Secid,
+                    Status: status.Status,
+                    CreatedAt: status.CreatedAt,
+                    ClaimedAt: status.ClaimedAt,
+                    NextAttemptAt: status.NextAttemptAt,
+                    ErrorMessage: status.ErrorMessage);
+                return Results.Json(
+                    response,
+                    ManagementJsonContext.Default.InstrumentDataDeleteStatusResponse);
             });
 
             return routes;

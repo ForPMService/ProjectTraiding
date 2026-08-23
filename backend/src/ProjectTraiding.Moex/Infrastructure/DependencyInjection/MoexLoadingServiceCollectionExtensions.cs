@@ -29,6 +29,11 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
             services.AddSingleton<ClickHouseInsertExecutor>();
             services.AddTransient<InstrumentClickHouseDataDeleter>();
             services.AddTransient<InstrumentPostgresDataDeleter>();
+            services.AddSingleton<InstrumentDeletionQueueReader>();
+            services.AddTransient<InstrumentDeletionStatusReader>();
+            services.AddTransient<InstrumentDeletionGuardReader>();
+            services.AddTransient<InstrumentDeletionWriter>();
+            services.AddTransient<ProjectTraiding.Moex.Deletion.InstrumentDataDeletionRunner>();
             services.AddSingleton<MoexSeriesParser>();
             services.AddTransient<MoexHistoryPageReader>();
             services.AddTransient(sp => new MoexHistoryWriter(
@@ -57,6 +62,16 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
                     sp.GetRequiredService<ILogger<MoexLoadBackgroundService>>(),
                     TimeSpan.FromSeconds(moexOptions.PollIntervalSeconds),
                     moexOptions.LoadWorkerConcurrency);
+            });
+
+            services.AddHostedService(sp =>
+            {
+                MoexOptions moexOptions = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
+                return new ProjectTraiding.Moex.Deletion.InstrumentDeletionBackgroundService(
+                    sp.GetRequiredService<IServiceScopeFactory>(),
+                    sp.GetRequiredService<InstrumentDeletionQueueReader>(),
+                    sp.GetRequiredService<ILogger<ProjectTraiding.Moex.Deletion.InstrumentDeletionBackgroundService>>(),
+                    TimeSpan.FromSeconds(moexOptions.PollIntervalSeconds));
             });
 
             return services;
