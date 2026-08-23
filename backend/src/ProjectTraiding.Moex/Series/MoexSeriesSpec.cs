@@ -119,6 +119,42 @@ public sealed class MoexSeriesSpec
     /// </summary>
     public bool[] SourceColumnUsed => _sourceColumnUsed ??= BuildSourceColumnUsed();
 
+    private int[]? _requiredDirectIndexes;
+    private int[]? _requiredExternalSecIdIndexes;
+
+    /// <summary>
+    /// Позиции обязательных целевых колонок с прямым заполнением. Проверка обязательности
+    /// раньше проходила весь перечень колонок на каждую строку данных, хотя обязательных
+    /// в декларациях одна-две и позиции их постоянны. Вычисляется при первом обращении
+    /// и запоминается: декларации живут в статическом реестре всё время работы процесса.
+    /// </summary>
+    public int[] RequiredDirectIndexes =>
+        _requiredDirectIndexes ??= BuildRequiredIndexes(FillRule.Direct);
+
+    /// <summary>Позиции обязательных целевых колонок с внешним кодом инструмента.</summary>
+    public int[] RequiredExternalSecIdIndexes =>
+        _requiredExternalSecIdIndexes ??= BuildRequiredIndexes(FillRule.ExternalSecId);
+
+    private int[] BuildRequiredIndexes(FillRule fillRule)
+    {
+        int count = 0;
+        for (int i = 0; i < TargetColumns.Length; i++)
+        {
+            if (TargetColumns[i].FillRule == fillRule && TargetColumns[i].Required)
+                count++;
+        }
+
+        int[] indexes = new int[count];
+        int next = 0;
+        for (int i = 0; i < TargetColumns.Length; i++)
+        {
+            if (TargetColumns[i].FillRule == fillRule && TargetColumns[i].Required)
+                indexes[next++] = i;
+        }
+
+        return indexes;
+    }
+
     private bool[] BuildSourceColumnUsed()
     {
         bool[] used = new bool[SourceColumns.Length];

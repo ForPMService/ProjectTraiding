@@ -240,8 +240,8 @@ public sealed class MoexSeriesParser
 
         // Карты проверяли собственные обязательные поля после source_time:
         // сначала обычные значения строки, затем внешний secid.
-        ValidateRequired(row, spec, FillRule.Direct);
-        ValidateRequired(row, spec, FillRule.ExternalSecId);
+        ValidateRequired(row, spec, spec.RequiredDirectIndexes);
+        ValidateRequired(row, spec, spec.RequiredExternalSecIdIndexes);
 
         return (row, sourceTime);
     }
@@ -249,13 +249,12 @@ public sealed class MoexSeriesParser
     private static void ValidateRequired(
         object?[] row,
         MoexSeriesSpec spec,
-        FillRule fillRule)
+        int[] requiredIndexes)
     {
-        for (int i = 0; i < spec.TargetColumns.Length; i++)
+        for (int i = 0; i < requiredIndexes.Length; i++)
         {
-            TargetColumn column = spec.TargetColumns[i];
-            if (column.FillRule == fillRule)
-                ValidateRequired(column, row[i]);
+            int columnIndex = requiredIndexes[i];
+            ValidateRequired(spec.TargetColumns[columnIndex], row[columnIndex]);
         }
     }
 
