@@ -28,7 +28,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 string? validationMessage = ValidateRangeRequest(ticker, from, till);
                 if (validationMessage is not null)
                 {
-                    return CreateDiagnosticError(400, "candles", "stock", ticker, validationMessage);
+                    return DiagnosticResponses.CreateDiagnosticError(400, DiagnosticSource, "candles", "stock", validationMessage, ticker);
                 }
 
                 string method = $"/engines/stock/markets/shares/boards/tqbr/securities/{ticker}/candles.json";
@@ -47,7 +47,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 string? validationMessage = ValidateRangeRequest(ticker, from, till);
                 if (validationMessage is not null)
                 {
-                    return CreateDiagnosticError(400, "candles", "futures", ticker, validationMessage);
+                    return DiagnosticResponses.CreateDiagnosticError(400, DiagnosticSource, "candles", "futures", validationMessage, ticker);
                 }
 
                 string method = $"/engines/futures/markets/forts/boards/RFUD/securities/{ticker}/candles.json";
@@ -66,7 +66,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 string? validationMessage = ValidateRangeRequest(ticker, from, till);
                 if (validationMessage is not null)
                 {
-                    return CreateDiagnosticError(400, "tradestats", "stock", ticker, validationMessage);
+                    return DiagnosticResponses.CreateDiagnosticError(400, DiagnosticSource, "tradestats", "stock", validationMessage, ticker);
                 }
 
                 string method = $"/datashop/algopack/eq/tradestats/{ticker}.json";
@@ -84,7 +84,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 string? validationMessage = ValidateRangeRequest(ticker, from, till);
                 if (validationMessage is not null)
                 {
-                    return CreateDiagnosticError(400, "tradestats", "futures", ticker, validationMessage);
+                    return DiagnosticResponses.CreateDiagnosticError(400, DiagnosticSource, "tradestats", "futures", validationMessage, ticker);
                 }
 
                 string method = $"/datashop/algopack/fo/tradestats/{ticker}.json";
@@ -102,7 +102,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 string? validationMessage = ValidateRangeRequest(ticker, from, till);
                 if (validationMessage is not null)
                 {
-                    return CreateDiagnosticError(400, "obstats", "stock", ticker, validationMessage);
+                    return DiagnosticResponses.CreateDiagnosticError(400, DiagnosticSource, "obstats", "stock", validationMessage, ticker);
                 }
 
                 string method = $"/datashop/algopack/eq/obstats/{ticker}.json";
@@ -120,7 +120,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 string? validationMessage = ValidateRangeRequest(ticker, from, till);
                 if (validationMessage is not null)
                 {
-                    return CreateDiagnosticError(400, "obstats", "futures", ticker, validationMessage);
+                    return DiagnosticResponses.CreateDiagnosticError(400, DiagnosticSource, "obstats", "futures", validationMessage, ticker);
                 }
 
                 string method = $"/datashop/algopack/fo/obstats/{ticker}.json";
@@ -138,7 +138,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 string? validationMessage = ValidateRangeRequest(ticker, from, till);
                 if (validationMessage is not null)
                 {
-                    return CreateDiagnosticError(400, "orderstats", "stock", ticker, validationMessage);
+                    return DiagnosticResponses.CreateDiagnosticError(400, DiagnosticSource, "orderstats", "stock", validationMessage, ticker);
                 }
 
                 string method = $"/datashop/algopack/eq/orderstats/{ticker}.json";
@@ -156,7 +156,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 string? validationMessage = ValidateRangeRequest(ticker, from, till);
                 if (validationMessage is not null)
                 {
-                    return CreateDiagnosticError(400, "futoi", "futures", ticker, validationMessage);
+                    return DiagnosticResponses.CreateDiagnosticError(400, DiagnosticSource, "futoi", "futures", validationMessage, ticker);
                 }
 
                 string method = $"/analyticalproducts/futoi/securities/{ticker}.json";
@@ -174,7 +174,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 string? validationMessage = ValidateRangeRequest(ticker, from, till);
                 if (validationMessage is not null)
                 {
-                    return CreateDiagnosticError(400, "hi2", "stock", ticker, validationMessage);
+                    return DiagnosticResponses.CreateDiagnosticError(400, DiagnosticSource, "hi2", "stock", validationMessage, ticker);
                 }
 
                 string method = $"/datashop/algopack/eq/hi2/{ticker}.json";
@@ -192,7 +192,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 string? validationMessage = ValidateRangeRequest(ticker, from, till);
                 if (validationMessage is not null)
                 {
-                    return CreateDiagnosticError(400, "hi2", "futures", ticker, validationMessage);
+                    return DiagnosticResponses.CreateDiagnosticError(400, DiagnosticSource, "hi2", "futures", validationMessage, ticker);
                 }
 
                 string method = $"/datashop/algopack/fo/hi2/{ticker}.json";
@@ -210,7 +210,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 string? validationMessage = ValidateRangeRequest(ticker, from, till);
                 if (validationMessage is not null)
                 {
-                    return CreateDiagnosticError(400, "alerts", "stock", ticker, validationMessage);
+                    return DiagnosticResponses.CreateDiagnosticError(400, DiagnosticSource, "alerts", "stock", validationMessage, ticker);
                 }
 
                 string method = $"/datashop/algopack/eq/alerts/{ticker}.json";
@@ -228,7 +228,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 string? validationMessage = ValidateRangeRequest(ticker, from, till);
                 if (validationMessage is not null)
                 {
-                    return CreateDiagnosticError(400, "alerts", "futures", ticker, validationMessage);
+                    return DiagnosticResponses.CreateDiagnosticError(400, DiagnosticSource, "alerts", "futures", validationMessage, ticker);
                 }
 
                 string method = $"/datashop/algopack/fo/alerts/{ticker}.json";
@@ -255,7 +255,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
             }
             catch (Exception ex)
             {
-                return CreateDiagnosticError(500, kind, market, ticker, ex.Message);
+                return DiagnosticResponses.CreateDiagnosticError(500, DiagnosticSource, kind, market, ex.Message, ticker);
             }
         }
 
@@ -306,29 +306,6 @@ namespace ProjectTraiding.Diagnostics.Endpoints
             }
 
             return null;
-        }
-
-        private static IResult CreateDiagnosticError(int statusCode, string kind, string market, string ticker, string message)
-        {
-            string json = "{"
-                + "\"status\":\"error\"," 
-                + "\"source\":\"" + EscapeJson(DiagnosticSource) + "\"," 
-                + "\"kind\":\"" + EscapeJson(kind) + "\"," 
-                + "\"market\":\"" + EscapeJson(market) + "\"," 
-                + "\"ticker\":\"" + EscapeJson(ticker) + "\"," 
-                + "\"message\":\"" + EscapeJson(message) + "\""
-                + "}";
-
-            return Results.Text(json, "application/json", statusCode: statusCode);
-        }
-
-        private static string EscapeJson(string value)
-        {
-            return value
-                .Replace("\\", "\\\\")
-                .Replace("\"", "\\\"")
-                .Replace("\r", " ")
-                .Replace("\n", " ");
         }
 
     }

@@ -13,6 +13,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
         public static IEndpointRouteBuilder MapRealtimeDebugEndpoints(this IEndpointRouteBuilder routes)
         {
             var group = routes.MapGroup("/realtime");
+            RouteGroupBuilder raw = routes.MapGroup("/raw");
 
             // ── Raw endpoints ──
 
@@ -82,6 +83,36 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 var queryParams = new Dictionary<string, string>
                 {
                     ["iss.only"] = "securities",
+                    ["iss.meta"] = "off",
+                };
+                string raw = await client.GetRawSectionAsync(url, queryParams, ct);
+                return Results.Text(raw, "application/json");
+            });
+
+            raw.MapGet("/market-statistics-marketdata-stock/{ticker}", async (
+                string ticker,
+                MoexRealtimeRestClient client,
+                CancellationToken ct) =>
+            {
+                string url = $"/engines/stock/markets/shares/boards/TQBR/securities/{ticker}.json";
+                Dictionary<string, string> queryParams = new Dictionary<string, string>
+                {
+                    ["iss.only"] = "marketdata",
+                    ["iss.meta"] = "off",
+                };
+                string raw = await client.GetRawSectionAsync(url, queryParams, ct);
+                return Results.Text(raw, "application/json");
+            });
+
+            raw.MapGet("/market-statistics-marketdata-futures/{ticker}", async (
+                string ticker,
+                MoexRealtimeRestClient client,
+                CancellationToken ct) =>
+            {
+                string url = $"/engines/futures/markets/forts/boards/RFUD/securities/{ticker}.json";
+                Dictionary<string, string> queryParams = new Dictionary<string, string>
+                {
+                    ["iss.only"] = "marketdata",
                     ["iss.meta"] = "off",
                 };
                 string raw = await client.GetRawSectionAsync(url, queryParams, ct);

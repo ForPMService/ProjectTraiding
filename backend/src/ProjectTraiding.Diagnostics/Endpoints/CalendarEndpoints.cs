@@ -123,10 +123,10 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 MoexHttpIssClient issClient,
                 CancellationToken ct) =>
             {
-                if (!IsSafePathSegment(board))
+                if (!DiagnosticResponses.IsSafePathSegment(board))
                 {
-                    return CreateDiagnosticError(
-                        400, "listing", "stock", "Route parameter board must be alphanumeric.");
+                    return DiagnosticResponses.CreateDiagnosticError(
+                        400, DiagnosticSource, "listing", "stock", "Route parameter board must be alphanumeric.");
                 }
 
                 string method = $"/history/engines/stock/markets/shares/boards/{board}/listing.json";
@@ -139,10 +139,10 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 MoexHttpIssClient issClient,
                 CancellationToken ct) =>
             {
-                if (!IsSafePathSegment(board))
+                if (!DiagnosticResponses.IsSafePathSegment(board))
                 {
-                    return CreateDiagnosticError(
-                        400, "listing", "futures", "Route parameter board must be alphanumeric.");
+                    return DiagnosticResponses.CreateDiagnosticError(
+                        400, DiagnosticSource, "listing", "futures", "Route parameter board must be alphanumeric.");
                 }
 
                 string method = $"/history/engines/futures/markets/forts/boards/{board}/listing.json";
@@ -165,10 +165,10 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 MoexHttpIssClient issClient,
                 CancellationToken ct) =>
             {
-                if (!IsSafePathSegment(engine))
+                if (!DiagnosticResponses.IsSafePathSegment(engine))
                 {
-                    return CreateDiagnosticError(
-                        400, "engine", engine, "Route parameter engine must be alphanumeric.");
+                    return DiagnosticResponses.CreateDiagnosticError(
+                        400, DiagnosticSource, "engine", engine, "Route parameter engine must be alphanumeric.");
                 }
 
                 string method = $"/engines/{engine}.json";
@@ -200,11 +200,12 @@ namespace ProjectTraiding.Diagnostics.Endpoints
 
             if (!useIss && !useApim)
             {
-                return CreateDiagnosticError(
-                    400, kind, market, "Query parameter source accepts only iss or apim.");
+                return DiagnosticResponses.CreateDiagnosticError(
+                    400, DiagnosticSource, kind, market, "Query parameter source accepts only iss or apim.");
             }
 
-            Dictionary<string, string> queryParams = CollectPassThroughQuery(request);
+            Dictionary<string, string> queryParams = DiagnosticResponses.CollectPassThroughQuery(
+                request, excludeSource: true);
 
             try
             {
@@ -216,7 +217,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
             }
             catch (Exception ex)
             {
-                return CreateDiagnosticError(500, kind, market, ex.Message);
+                return DiagnosticResponses.CreateDiagnosticError(500, DiagnosticSource, kind, market, ex.Message);
             }
         }
 
@@ -228,7 +229,8 @@ namespace ProjectTraiding.Diagnostics.Endpoints
             string method,
             CancellationToken ct)
         {
-            Dictionary<string, string> queryParams = CollectPassThroughQuery(request);
+            Dictionary<string, string> queryParams = DiagnosticResponses.CollectPassThroughQuery(
+                request, excludeSource: true);
 
             try
             {
@@ -237,75 +239,9 @@ namespace ProjectTraiding.Diagnostics.Endpoints
             }
             catch (Exception ex)
             {
-                return CreateDiagnosticError(500, kind, market, ex.Message);
+                return DiagnosticResponses.CreateDiagnosticError(500, DiagnosticSource, kind, market, ex.Message);
             }
         }
 
-        /// <summary>
-        /// Сбор параметров строки запроса для передачи источнику. Служебный source
-        /// исключается: он адресован диагностике, а не Московской бирже. Остальные
-        /// параметры не проверяются и не преобразуются.
-        /// </summary>
-        private static Dictionary<string, string> CollectPassThroughQuery(HttpRequest request)
-        {
-            Dictionary<string, string> queryParams = new Dictionary<string, string>();
-
-            foreach (string key in request.Query.Keys)
-            {
-                if (string.Equals(key, "source", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                queryParams[key] = request.Query[key].ToString();
-            }
-
-            return queryParams;
-        }
-
-        /// <summary>
-        /// Проверка отрезка пути. Отрезок подставляется в адрес источника, поэтому
-        /// допускаются только буквы и цифры: иначе значение маршрута могло бы свести
-        /// запрос на произвольный путь.
-        /// </summary>
-        private static bool IsSafePathSegment(string value)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                return false;
-            }
-
-            foreach (char symbol in value)
-            {
-                if (!char.IsLetterOrDigit(symbol))
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        private static IResult CreateDiagnosticError(int statusCode, string kind, string market, string message)
-        {
-            string json = "{"
-                + "\"status\":\"error\","
-                + "\"source\":\"" + EscapeJson(DiagnosticSource) + "\","
-                + "\"kind\":\"" + EscapeJson(kind) + "\","
-                + "\"market\":\"" + EscapeJson(market) + "\","
-                + "\"message\":\"" + EscapeJson(message) + "\""
-                + "}";
-
-            return Results.Text(json, "application/json", statusCode: statusCode);
-        }
-
-        private static string EscapeJson(string value)
-        {
-            return value
-                .Replace("\\", "\\\\")
-                .Replace("\"", "\\\"")
-                .Replace("\r", " ")
-                .Replace("\n", " ");
-        }
     }
 }

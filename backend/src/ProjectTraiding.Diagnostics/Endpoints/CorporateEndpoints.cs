@@ -10,8 +10,8 @@ namespace ProjectTraiding.Diagnostics.Endpoints
     /// Все точки идут через публичный ISS без ключа. Путь зашит в маршруте, параметры
     /// строки запроса передаются источнику без разбора. Обход страниц не выполняется.
     ///
-    /// Вспомогательные методы намеренно повторяют методы CalendarEndpoints: наборы точек
-    /// независимы, общий вспомогательный слой между ними не заводится.
+    /// Общие операции построения ответа, проверки пути и передачи параметров вынесены
+    /// в DiagnosticResponses, чтобы их контракт не расходился с календарной диагностикой.
     /// </summary>
     public static class CorporateEndpoints
     {
@@ -70,10 +70,10 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 MoexHttpIssClient issClient,
                 CancellationToken ct) =>
             {
-                if (!IsSafePathSegment(ticker))
+                if (!DiagnosticResponses.IsSafePathSegment(ticker))
                 {
-                    return CreateDiagnosticError(
-                        400, "security-dividends", "stock", "Route parameter ticker must be alphanumeric.");
+                    return DiagnosticResponses.CreateDiagnosticError(
+                        400, DiagnosticSource, "security-dividends", "stock", "Route parameter ticker must be alphanumeric.");
                 }
 
                 string method = $"/securities/{ticker}/dividends.json";
@@ -91,7 +91,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
             string method,
             CancellationToken ct)
         {
-            Dictionary<string, string> queryParams = CollectPassThroughQuery(request);
+            Dictionary<string, string> queryParams = DiagnosticResponses.CollectPassThroughQuery(request);
 
             try
             {
@@ -100,60 +100,9 @@ namespace ProjectTraiding.Diagnostics.Endpoints
             }
             catch (Exception ex)
             {
-                return CreateDiagnosticError(500, kind, market, ex.Message);
+                return DiagnosticResponses.CreateDiagnosticError(500, DiagnosticSource, kind, market, ex.Message);
             }
         }
 
-        private static Dictionary<string, string> CollectPassThroughQuery(HttpRequest request)
-        {
-            Dictionary<string, string> queryParams = new Dictionary<string, string>();
-
-            foreach (string key in request.Query.Keys)
-            {
-                queryParams[key] = request.Query[key].ToString();
-            }
-
-            return queryParams;
-        }
-
-        private static bool IsSafePathSegment(string value)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                return false;
-            }
-
-            foreach (char symbol in value)
-            {
-                if (!char.IsLetterOrDigit(symbol))
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        private static IResult CreateDiagnosticError(int statusCode, string kind, string market, string message)
-        {
-            string json = "{"
-                + "\"status\":\"error\","
-                + "\"source\":\"" + EscapeJson(DiagnosticSource) + "\","
-                + "\"kind\":\"" + EscapeJson(kind) + "\","
-                + "\"market\":\"" + EscapeJson(market) + "\","
-                + "\"message\":\"" + EscapeJson(message) + "\""
-                + "}";
-
-            return Results.Text(json, "application/json", statusCode: statusCode);
-        }
-
-        private static string EscapeJson(string value)
-        {
-            return value
-                .Replace("\\", "\\\\")
-                .Replace("\"", "\\\"")
-                .Replace("\r", " ")
-                .Replace("\n", " ");
-        }
     }
 }
