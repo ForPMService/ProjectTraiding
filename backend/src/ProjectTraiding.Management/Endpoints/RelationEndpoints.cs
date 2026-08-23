@@ -49,14 +49,8 @@ namespace ProjectTraiding.Management.Endpoints
                 catch (PostgresException ex)
                 {
                     // Маппинг кодов БД в текст. Известные коды → 400, неизвестный → пробросить (500).
-                    ManagementEndpointLogMessages.DbErrorMapped(logger, route, ex.SqlState ?? "?");
-                    string? message = ex.SqlState switch
-                    {
-                        "23503" => $"инструмент не найден (source_secid={request.SourceSecid}, target_secid={request.TargetSecid})",
-                        "23514" => "нарушен инвариант: нужен хотя бы один из target_secid / target_asset_code",
-                        "23505" => "связь уже существует (не должно возникать при ON CONFLICT DO UPDATE)",
-                        _ => null
-                    };
+                    string? message = ManagementDbErrors.MapRelation(
+                        logger, route, ex, request.SourceSecid, request.TargetSecid);
 
                     if (message is null)
                         throw;   // неизвестный код БД → пусть всплывёт как 500

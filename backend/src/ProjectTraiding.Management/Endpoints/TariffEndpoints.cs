@@ -45,12 +45,7 @@ namespace ProjectTraiding.Management.Endpoints
                 }
                 catch (PostgresException ex)
                 {
-                    ManagementEndpointLogMessages.DbErrorMapped(logger, route, ex.SqlState ?? "?");
-                    string? message = ex.SqlState switch
-                    {
-                        "23514" => "market должен быть одним из: stock, futures (страховка)",
-                        _ => null
-                    };
+                    string? message = ManagementDbErrors.MapTariff(logger, route, ex);
 
                     if (message is null)
                         throw;

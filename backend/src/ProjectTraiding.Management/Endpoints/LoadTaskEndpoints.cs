@@ -81,13 +81,7 @@ namespace ProjectTraiding.Management.Endpoints
                 }
                 catch (PostgresException ex)
                 {
-                    ManagementEndpointLogMessages.DbErrorMapped(logger, route, ex.SqlState ?? "?");
-                    string? message = ex.SqlState switch
-                    {
-                        "23503" => "secid не найден среди инструментов (FK)",
-                        "23514" => "недопустимое значение market или storage_target (страховка)",
-                        _ => null
-                    };
+                    string? message = ManagementDbErrors.MapLoadTask(logger, route, ex);
 
                     if (message is null)
                         throw;
@@ -259,13 +253,7 @@ namespace ProjectTraiding.Management.Endpoints
                 }
                 catch (PostgresException ex)
                 {
-                    ManagementEndpointLogMessages.DbErrorMapped(logger, route, ex.SqlState ?? "?");
-                    string? message = ex.SqlState switch
-                    {
-                        "23503" => "secid не найден среди инструментов (FK)",
-                        "23514" => "недопустимое значение market или storage_target (страховка)",
-                        _ => null
-                    };
+                    string? message = ManagementDbErrors.MapLoadTask(logger, route, ex);
 
                     if (message is null)
                         throw;
