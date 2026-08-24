@@ -82,5 +82,48 @@ namespace ProjectTraiding.Management.Endpoints
                 _ => null
             };
         }
+
+        /// <summary>
+        /// Маршрут ручного события: только страховочные ограничения значений event_type
+        /// и event_stage. Внешнего ключа на справочник инструментов у таблицы намеренно
+        /// нет, первичный ключ — генерируемый идентификатор, поэтому ни нарушение внешнего
+        /// ключа, ни нарушение уникальности здесь недостижимы.
+        /// </summary>
+        internal static string? MapManualEvent(ILogger logger, string route, PostgresException ex)
+        {
+            ManagementEndpointLogMessages.DbErrorMapped(logger, route, ex.SqlState ?? "?");
+            return ex.SqlState switch
+            {
+                "23514" => "недопустимое значение eventType или eventStage (страховка)",
+                _ => null
+            };
+        }
+
+        /// <summary>
+        /// Маршрут периода внутри торгового дня. Первичный ключ составной, поэтому повторная
+        /// отправка того же периода даёт нарушение уникальности.
+        /// </summary>
+        internal static string? MapTradingPeriod(ILogger logger, string route, PostgresException ex)
+        {
+            ManagementEndpointLogMessages.DbErrorMapped(logger, route, ex.SqlState ?? "?");
+            return ex.SqlState switch
+            {
+                "23505" => "такой период уже задан: совпадают market, validFrom, validTill, boardid, secid, periodType и timeFrom",
+                "23514" => "недопустимое значение market или validFrom позже validTill (страховка)",
+                _ => null
+            };
+        }
+
+        /// <summary>Маршрут типа периода: уникальность пары рынка и кода, страховка по рынку.</summary>
+        internal static string? MapTradingPeriodType(ILogger logger, string route, PostgresException ex)
+        {
+            ManagementEndpointLogMessages.DbErrorMapped(logger, route, ex.SqlState ?? "?");
+            return ex.SqlState switch
+            {
+                "23505" => "такой тип периода уже задан для этого рынка",
+                "23514" => "market должен быть одним из: stock, futures (страховка)",
+                _ => null
+            };
+        }
     }
 }
