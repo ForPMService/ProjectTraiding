@@ -44,6 +44,9 @@ namespace ProjectTraiding.Moex.Options
             if (options.MaxConnectionsPerServer <= 0)
                 throw new InvalidOperationException("Moex:MaxConnectionsPerServer должен быть положительным.");
 
+            if (string.IsNullOrWhiteSpace(options.CertificatesDirectory))
+                throw new InvalidOperationException("Moex:CertificatesDirectory не может быть пустым.");
+
             if (options.MaxPagesPerLoad <= 0)
                 throw new InvalidOperationException("Moex:MaxPagesPerLoad должен быть положительным.");
 

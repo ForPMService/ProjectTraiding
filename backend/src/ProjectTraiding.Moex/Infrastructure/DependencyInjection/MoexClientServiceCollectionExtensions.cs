@@ -7,11 +7,30 @@ using Polly.Timeout;
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Threading.RateLimiting;
+using System.Net.Security;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection;
 
 public static class MoexClientServiceCollectionExtensions
 {
     private const int MaxRetryAttempts = 5;
+    /// <summary>
+    /// Отпечатки SHA-256 сертификатов НУЦ Минцифры. Значения не секретны; плановая смена
+    /// сертификата — сознательная правка кода, а не изменение настройки. Ожидаемый состав
+    /// каталога сверяется с этими наборами как множество с множеством.
+    /// </summary>
+    private static readonly string[] ExpectedRootHashes =
+    [
+        // Russian Trusted Root CA, 02.03.2022 — 28.02.2032
+        "D26D2D0231B7C39F92CC738512BA54103519E4405D68B5BD703E9788CA8ECF31",
+    ];
+
+    private static readonly string[] ExpectedIntermediateHashes =
+   [
+       // Russian Trusted Sub CA, 15.07.2024 — 19.07.2029
+       "2155785036C900DBB5F1BB2A1569C80C55595BD6BF94867A29BBDDBC7D88A3F2",
+    ];
     public static IServiceCollection AddMoexClients(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -21,6 +40,13 @@ public static class MoexClientServiceCollectionExtensions
         services.AddOptions<MoexOptions>()
             .Bind(configuration.GetSection("Moex"));
         MoexOptions moexOptions = configuration.GetSection("Moex").Get<MoexOptions>() ?? new MoexOptions();
+        string certificatesDirectory = Path.Combine(AppContext.BaseDirectory, moexOptions.CertificatesDirectory);
+        (
+            X509Certificate2Collection Roots,
+            X509Certificate2Collection Intermediates
+        ) nucTrust = (
+            LoadCertificateSet(certificatesDirectory, "Roots", ExpectedRootHashes),
+            LoadCertificateSet(certificatesDirectory, "Intermediates", ExpectedIntermediateHashes));
         // ══════════════════════════════════════════════
         // Rate Limiter — один на все MOEX-клиенты.
         // Лимит MOEX на IP, не на endpoint, поэтому один limiter на процесс.
@@ -38,10 +64,10 @@ public static class MoexClientServiceCollectionExtensions
             });
         });
 
-        AddMoexHttpClient<MoexHttpIssClient>(services, moexOptions, MoexLogSources.Iss);
-        AddMoexHttpClient<MoexHttpAlgClient>(services, moexOptions, MoexLogSources.Algopack);
-        AddMoexHttpClient<MoexHttpCalendarClient>(services, moexOptions, MoexLogSources.Calendar);
-        AddMoexHttpClient<MoexRealtimeRestClient>(services, moexOptions, MoexLogSources.RealtimeRest);
+        AddMoexHttpClient<MoexHttpIssClient>(services, moexOptions, MoexLogSources.Iss, nucTrust: null);
+        AddMoexHttpClient<MoexHttpAlgClient>(services, moexOptions, MoexLogSources.Algopack, nucTrust);
+        AddMoexHttpClient<MoexHttpCalendarClient>(services, moexOptions, MoexLogSources.Calendar, nucTrust);
+        AddMoexHttpClient<MoexRealtimeRestClient>(services, moexOptions, MoexLogSources.RealtimeRest, nucTrust);
 
         return services;
 
@@ -61,7 +87,8 @@ public static class MoexClientServiceCollectionExtensions
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TClient>(
         IServiceCollection services,
         MoexOptions moexOptions,
-        string logSource)
+        string logSource,
+        (X509Certificate2Collection Roots, X509Certificate2Collection Intermediates)? nucTrust)
         where TClient : class
     {
         IHttpClientBuilder builder = services.AddHttpClient<TClient>(client =>
@@ -72,13 +99,34 @@ public static class MoexClientServiceCollectionExtensions
         }).ConfigurePrimaryHttpMessageHandler(sp =>
         {
             MoexOptions options = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
-            return new SocketsHttpHandler
+
+            SocketsHttpHandler handler = new()
             {
                 AutomaticDecompression = DecompressionMethods.All,
                 PooledConnectionLifetime = TimeSpan.FromMinutes(10),
                 PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
                 MaxConnectionsPerServer = options.MaxConnectionsPerServer,
             };
+
+            // Корень НУЦ Минцифры доверяется только тем клиентам, чьи адреса на него перешли.
+            // CustomRootTrust заменяет системный набор корней целиком, поэтому клиенты без
+            // этой политики сохраняют штатное системное доверие без изменений.
+            if (nucTrust is not null)
+            {
+                X509ChainPolicy chainPolicy = new() { TrustMode = X509ChainTrustMode.CustomRootTrust };
+                chainPolicy.CustomTrustStore.AddRange(nucTrust.Value.Roots);
+                // Выпускающие сертификаты не становятся доверенными корнями — они лишь дают
+                // цепочке материал для достройки, если сервер не прислал их в рукопожатии.
+                chainPolicy.ExtraStore.AddRange(nucTrust.Value.Intermediates);
+                ApplyRevocationPolicy(chainPolicy, options.CertificateRevocationPolicy);
+
+                handler.SslOptions = new SslClientAuthenticationOptions
+                {
+                    CertificateChainPolicy = chainPolicy,
+                };
+            }
+
+            return handler;
         });
 
         builder.AddStandardResilienceHandler(options =>
@@ -197,5 +245,92 @@ public static class MoexClientServiceCollectionExtensions
         return default;
     }
 
-    
+    /// <summary>
+    /// Читает один набор сертификатов НУЦ из подкаталога и сверяет его состав с ожидаемым.
+    /// Загруженные объекты живут до остановки приложения — владелец с определённым временем
+    /// жизни есть, поэтому using здесь неуместен.
+    /// Сверка идёт как множество с множеством: дубликат файла или отсутствие ожидаемого
+    /// сертификата останавливают запуск. Проверки только по количеству недостаточно —
+    /// две копии одного корня прошли бы её, а второго корня не было бы.
+    /// </summary>
+    private static X509Certificate2Collection LoadCertificateSet(
+        string certificatesDirectory,
+        string subdirectory,
+        string[] expectedHashes)
+    {
+        string directory = Path.Combine(certificatesDirectory, subdirectory);
+
+        if (!Directory.Exists(directory))
+            throw new InvalidOperationException(
+                $"Каталог сертификатов не найден: {directory}. " +
+                "Проверьте запись Content в файле проекта ProjectTraiding.Moex.");
+
+        X509Certificate2Collection set = [];
+        HashSet<string> actual = new(StringComparer.OrdinalIgnoreCase);
+
+        foreach (string file in Directory.GetFiles(directory, "*.cer"))
+        {
+            byte[] bytes = File.ReadAllBytes(file);
+
+            // Файлы с портала Госуслуг встречаются и текстовыми, и двоичными.
+            X509Certificate2 certificate = bytes.AsSpan().StartsWith("-----BEGIN"u8)
+                ? X509Certificate2.CreateFromPem(File.ReadAllText(file))
+                : X509CertificateLoader.LoadCertificate(bytes);
+
+            string hash = Convert.ToHexString(certificate.GetCertHash(HashAlgorithmName.SHA256));
+
+            if (!actual.Add(hash))
+                throw new InvalidOperationException(
+                    $"Дубликат сертификата в подкаталоге {subdirectory}: " +
+                    $"{Path.GetFileName(file)}, отпечаток {hash}.");
+
+            set.Add(certificate);
+        }
+
+        HashSet<string> expected = new(expectedHashes, StringComparer.OrdinalIgnoreCase);
+
+        if (!actual.SetEquals(expected))
+        {
+            string missing = string.Join(", ", expected.Except(actual));
+            string extra = string.Join(", ", actual.Except(expected));
+            throw new InvalidOperationException(
+                $"Состав сертификатов в подкаталоге {subdirectory} не совпадает с ожидаемым. " +
+                $"Отсутствуют: [{missing}]. Не ожидались: [{extra}].");
+        }
+
+        return set;
+    }
+
+    /// <summary>
+    /// Переводит политику проверки отзыва из настройки в состояние цепочки.
+    /// Каждая ветвь задаёт оба поля целиком, чтобы результат не зависел от того,
+    /// была ли политика создана заново.
+    /// </summary>
+    private static void ApplyRevocationPolicy(X509ChainPolicy policy, MoexRevocationPolicy mode)
+    {
+        switch (mode)
+        {
+            case MoexRevocationPolicy.Off:
+                policy.RevocationMode = X509RevocationMode.NoCheck;
+                policy.VerificationFlags = X509VerificationFlags.NoFlag;
+                break;
+
+            case MoexRevocationPolicy.SoftFail:
+                policy.RevocationMode = X509RevocationMode.Online;
+                // Корень исключён из проверки отзыва штатно (RevocationFlag = ExcludeRoot),
+                // поэтому флаг для корня не нужен.
+                policy.VerificationFlags = X509VerificationFlags.IgnoreEndRevocationUnknown
+                                         | X509VerificationFlags.IgnoreCertificateAuthorityRevocationUnknown;
+                break;
+
+            case MoexRevocationPolicy.Strict:
+                policy.RevocationMode = X509RevocationMode.Online;
+                policy.VerificationFlags = X509VerificationFlags.NoFlag;
+                break;
+
+            default:
+                throw new InvalidOperationException($"Неизвестный режим проверки отзыва: {mode}.");
+        }
+    }
+
 }

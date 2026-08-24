@@ -128,5 +128,18 @@ namespace ProjectTraiding.Moex.Options
 
         /// <summary>Минимальный интервал между сердцебиениями покрытия на сеанс, секунды.</summary>
         public int HeartbeatMinIntervalSeconds { get; set; } = 30;
+        /// <summary>
+        /// Каталог с сертификатами НУЦ Минцифры, относительно каталога приложения.
+        /// Внутри ожидаются подкаталоги Roots (доверенные корни) и Intermediates
+        /// (выпускающие, нужны для достройки цепочки). Корни заменяют системный набор,
+        /// но только для клиентов биржи.
+        /// </summary>
+        public string CertificatesDirectory { get; set; } = "Certificates";
+
+        /// <summary>
+        /// Политика проверки отзыва для соединений с биржей. По умолчанию отключена,
+        /// что сохраняет поведение, действовавшее до подключения корня НУЦ.
+        /// </summary>
+        public MoexRevocationPolicy CertificateRevocationPolicy { get; set; } = MoexRevocationPolicy.Off;
     }
 }
