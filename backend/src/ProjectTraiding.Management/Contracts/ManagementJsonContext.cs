@@ -26,6 +26,7 @@ namespace ProjectTraiding.Management.Contracts
     [JsonSerializable(typeof(TradingPeriodTypeCreateRequest))]
     [JsonSerializable(typeof(LoadResultDto))]
     [JsonSerializable(typeof(LoadResultDto[]))]
+    [JsonSerializable(typeof(ApiErrorDto))]
     public partial class ManagementJsonContext : JsonSerializerContext;
     
 }

@@ -1,9 +1,11 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Options;
 using ProjectTraiding.Api.Infrastructure;
 #if DEBUG
 using ProjectTraiding.Diagnostics.DependencyInjection;
 #endif
 using ProjectTraiding.Management.Contracts;
+using ProjectTraiding.Management.Contracts.Dto;
 using ProjectTraiding.Management.DependencyInjection;
 using ProjectTraiding.Moex.Infrastructure.DependencyInjection;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
@@ -54,6 +56,23 @@ using (IServiceScope startupScope = app.Services.CreateScope())
         .GetRequiredService<ILogger<Program>>();
     MoexOptionsValidator.ValidateAndLog(moexOptions, startupLogger);
 }
+// Запись исключения в журнал делает сам промежуточный слой обработки: он всегда
+// пишет её перед вызовом обработчика. Поэтому здесь только тело ответа.
+// Осторожно при переходе на форму с регистрацией класса-обработчика: начиная
+// с .NET 10 штатная запись в этой форме подавляется, и её придётся вернуть руками.
+app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
+{
+    string? traceId = Activity.Current?.Id ?? context.TraceIdentifier;
+
+    context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+    await context.Response.WriteAsJsonAsync(
+        new ApiErrorDto(
+            StatusCodes.Status500InternalServerError,
+            "Внутренняя ошибка сервера",
+            traceId),
+        ManagementJsonContext.Default.ApiErrorDto);
+}));
+
 app.MapObservabilityEndpoints();
 
 // Управление — под ведро управления (редкие команды оператора).
