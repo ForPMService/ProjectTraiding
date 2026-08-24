@@ -1,3 +1,4 @@
+using Npgsql;
 using ProjectTraiding.Management.Contracts;
 using ProjectTraiding.Management.Contracts.Dto;
 using ProjectTraiding.Management.StorageBase.Postgres;
@@ -5,6 +6,7 @@ using ProjectTraiding.Moex.Contracts;
 
 namespace ProjectTraiding.Management.Endpoints
 {
+    internal sealed class ManualCalendarEndpointsLog;
     public static class ManualCalendarEndpoints
     {
         public static IEndpointRouteBuilder MapManualCalendarEndpoints(this IEndpointRouteBuilder routes)
@@ -12,42 +14,99 @@ namespace ProjectTraiding.Management.Endpoints
             routes.MapPost("/management/events", async (
                 ManualEventCreateRequest request,
                 ManualEventWriter writer,
+                ILogger<ManualCalendarEndpointsLog> logger,
                 CancellationToken ct) =>
             {
+                const string route = "POST /management/events";
+                ManagementEndpointLogMessages.OperationStarted(logger, route);
+
                 string? error = ValidateManualEvent(request);
                 if (error is not null)
+                {
+                    ManagementEndpointLogMessages.ValidationRejected(logger, route, error);
                     return Results.BadRequest(error);
+                }
 
-                Guid id = await writer.CreateAsync(request, ct);
-                return Results.Json(
-                    new ManualEventCreateResponse(id, 1),
-                    ManagementJsonContext.Default.ManualEventCreateResponse);
+                try
+                {
+                    Guid id = await writer.CreateAsync(request, ct);
+                    return Results.Json(
+                        new ManualEventCreateResponse(id, 1),
+                        ManagementJsonContext.Default.ManualEventCreateResponse);
+                }
+                catch (PostgresException ex)
+                {
+                    string? message = ManagementDbErrors.MapManualEvent(logger, route, ex);
+
+                    if (message is null)
+                        throw;
+
+                    return Results.BadRequest(message);
+                }
             });
 
             routes.MapPost("/management/calendar/periods", async (
                 TradingPeriodCreateRequest request,
                 TradingPeriodWriter writer,
+                ILogger<ManualCalendarEndpointsLog> logger,
                 CancellationToken ct) =>
             {
+                const string route = "POST /management/calendar/periods";
+                ManagementEndpointLogMessages.OperationStarted(logger, route);
+
                 string? error = ValidateTradingPeriod(request);
                 if (error is not null)
+                {
+                    ManagementEndpointLogMessages.ValidationRejected(logger, route, error);
                     return Results.BadRequest(error);
+                }
 
-                int rowsWritten = await writer.CreateAsync(request, ct);
-                return CalendarResponse(rowsWritten);
+                try
+                {
+                    int rowsWritten = await writer.CreateAsync(request, ct);
+                    return CalendarResponse(rowsWritten);
+                }
+                catch (PostgresException ex)
+                {
+                    string? message = ManagementDbErrors.MapTradingPeriod(logger, route, ex);
+
+                    if (message is null)
+                        throw;
+
+                    return Results.BadRequest(message);
+                }
             });
 
             routes.MapPost("/management/calendar/period-types", async (
                 TradingPeriodTypeCreateRequest request,
                 TradingPeriodTypeWriter writer,
+                ILogger<ManualCalendarEndpointsLog> logger,
                 CancellationToken ct) =>
             {
+                const string route = "POST /management/calendar/period-types";
+                ManagementEndpointLogMessages.OperationStarted(logger, route);
+
                 string? error = ValidateTradingPeriodType(request);
                 if (error is not null)
+                {
+                    ManagementEndpointLogMessages.ValidationRejected(logger, route, error);
                     return Results.BadRequest(error);
+                }
 
-                int rowsWritten = await writer.CreateAsync(request, ct);
-                return CalendarResponse(rowsWritten);
+                try
+                {
+                    int rowsWritten = await writer.CreateAsync(request, ct);
+                    return CalendarResponse(rowsWritten);
+                }
+                catch (PostgresException ex)
+                {
+                    string? message = ManagementDbErrors.MapTradingPeriodType(logger, route, ex);
+
+                    if (message is null)
+                        throw;
+
+                    return Results.BadRequest(message);
+                }
             });
 
             return routes;
