@@ -1,5 +1,6 @@
 ﻿using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Contracts.Pagination;
+using ProjectTraiding.Moex.Infrastructure;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
@@ -118,6 +119,10 @@ namespace ProjectTraiding.Moex.Loading
                 if (task.StorageTarget != "clickhouse")
                     throw new InvalidOperationException(
                         $"Задача {taskId} не нацелена на ClickHouse (storage_target={task.StorageTarget}).");
+
+                if (task.DateTill >= MoexTime.Today)
+                    throw new InvalidOperationException(
+                        $"Задача {taskId} захватывает незакрытый день (date_till={task.DateTill:yyyy-MM-dd}).");
 
                 // PostgreSQL раньше ClickHouse: покрытие снимается до удаления данных.
                 // Обратный порядок оставляет строку 'ok' на пустом диапазоне, если
