@@ -10,40 +10,35 @@ namespace ProjectTraiding.Moex.Loading.Planning
             return dataKind == "orderstats" && market == "stock" ? 1 : 52;
         }
 
-        public static int AddMissingWindows(
+        public static void AddWindows(
             List<MoexLoadWindow> windows,
             MoexLoadPlanInstrument instrument,
             string dataKind,
             int? candleInterval,
             string storageTarget,
             int sliceWeeks,
-            IReadOnlyList<MissingInterval> missing)
+            DateOnly from,
+            DateOnly till)
         {
-            int initialCount = windows.Count;
             int sliceDays = sliceWeeks * 7;
-            for (int i = 0; i < missing.Count; i++)
+            DateOnly windowFrom = from;
+            while (windowFrom <= till)
             {
-                DateOnly windowFrom = missing[i].From;
-                while (windowFrom <= missing[i].Till)
-                {
-                    DateOnly windowTill = windowFrom.AddDays(sliceDays - 1);
-                    if (windowTill > missing[i].Till)
-                        windowTill = missing[i].Till;
+                DateOnly windowTill = windowFrom.AddDays(sliceDays - 1);
+                if (windowTill > till)
+                    windowTill = till;
 
-                    windows.Add(new MoexLoadWindow(
-                        instrument.Secid,
-                        instrument.Market,
-                        instrument.Boardid,
-                        dataKind,
-                        candleInterval,
-                        windowFrom,
-                        windowTill,
-                        storageTarget));
-                    windowFrom = windowFrom.AddDays(sliceDays);
-                }
+                windows.Add(new MoexLoadWindow(
+                    instrument.Secid,
+                    instrument.Market,
+                    instrument.Boardid,
+                    dataKind,
+                    candleInterval,
+                    windowFrom,
+                    windowTill,
+                    storageTarget));
+                windowFrom = windowFrom.AddDays(sliceDays);
             }
-
-            return windows.Count - initialCount;
         }
     }
 }
