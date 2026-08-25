@@ -1,5 +1,6 @@
 using ProjectTraiding.Management.Contracts.Dto;
 using ProjectTraiding.Moex.Contracts;
+using ProjectTraiding.Moex.Infrastructure;
 
 namespace ProjectTraiding.Management.Validation
 {
@@ -50,6 +51,9 @@ namespace ProjectTraiding.Management.Validation
 
             if (request.DateFrom > request.DateTill)
                 result.Errors.Add("date_from не может быть позже date_till");
+
+            if (request.DateTill >= MoexTime.Today)
+                result.Errors.Add("date_till должен быть раньше сегодняшнего дня");
 
             return result;
         }
