@@ -64,9 +64,8 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         /// <summary>
         /// Атомарно берёт в работу самую старую задачу под ClickHouse в статусе pending
         /// (FIFO по created_at) и возвращает её идентификатор, либо null, если очереди нет.
-        /// Один запрос: подзапрос блокирует строку с пропуском уже заблокированных другими
-        /// дорожками, внешний UPDATE переводит её в running и чистит
-        /// хвост прошлой попытки. Несколько дорожек берут разные задачи без холостых проигрышей.
+        /// Подзапрос блокирует строку с пропуском уже заблокированных другими дорожками, внешний
+        /// UPDATE переводит её в running и чистит хвост прошлой попытки.
         /// Вид данных здесь не различается — маршрутизацию по data_kind делает координатор.
         ///
         /// Подбор пропускает задания тех инструментов, по которым удаление зафиксировано
@@ -77,12 +76,20 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         /// </summary>
         /// <summary>
         /// Захватывает следующую ожидающую задачу и возвращает её готовой строкой.
-        /// Захват и чтение — одно обращение: строка уже есть у запроса обновления,
-        /// второе чтение по идентификатору было бы лишним кругом до базы.
         /// </summary>
         public async Task<MoexLoadTask?> ClaimNextPendingTaskAsync(CancellationToken ct)
         {
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
+            await using NpgsqlTransaction transaction = await connection.BeginTransactionAsync(ct);
+
+            // Блокировка транзакционная, снимается фиксацией: держится вокруг подбора,
+            // а не вокруг загрузки. Число произвольное, но одно на все дорожки.
+            await using (NpgsqlCommand lockCmd = new NpgsqlCommand(
+                "SELECT pg_advisory_xact_lock(8771001)", connection, transaction))
+            {
+                await lockCmd.ExecuteNonQueryAsync(ct);
+            }
+
             await using NpgsqlCommand cmd = new NpgsqlCommand("""
                 UPDATE moex_load_tasks
                 SET status = 'running',
@@ -101,6 +108,16 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                         SELECT 1 FROM moex_instrument_data_deletions d
                         WHERE d.secid = t.secid AND d.status = 'started'
                     )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM moex_load_tasks r
+                        WHERE r.status = 'running'
+                          AND r.secid = t.secid
+                          AND r.market = t.market
+                          AND r.boardid = t.boardid
+                          AND r.data_kind = t.data_kind
+                          AND r.candle_interval IS NOT DISTINCT FROM t.candle_interval
+                          AND r.storage_target = t.storage_target
+                    )
                     ORDER BY t.created_at
                     FOR UPDATE SKIP LOCKED
                     LIMIT 1
@@ -116,25 +133,31 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                           storage_target,
                           source_contract_version,
                           writer_version
-                """, connection);
+                """, connection, transaction);
 
             await cmd.PrepareAsync(ct);
-            await using NpgsqlDataReader reader = await cmd.ExecuteReaderAsync(ct);
-            if (!await reader.ReadAsync(ct))
-                return null;
+            MoexLoadTask? task;
+            await using (NpgsqlDataReader reader = await cmd.ExecuteReaderAsync(ct))
+            {
+                task = await reader.ReadAsync(ct)
+                    ? new MoexLoadTask(
+                        Id: reader.GetGuid(0),
+                        Secid: reader.GetString(1),
+                        Market: reader.GetString(2),
+                        Boardid: reader.GetString(3),
+                        DataKind: reader.GetString(4),
+                        CandleInterval: reader.IsDBNull(5) ? null : reader.GetInt32(5),
+                        DateFrom: reader.GetFieldValue<DateOnly>(6),
+                        DateTill: reader.GetFieldValue<DateOnly>(7),
+                        StorageTarget: reader.GetString(8),
+                        SourceContractVersion: reader.GetString(9),
+                        WriterVersion: reader.GetString(10))
+                    : null;
+            }
 
-            return new MoexLoadTask(
-                Id: reader.GetGuid(0),
-                Secid: reader.GetString(1),
-                Market: reader.GetString(2),
-                Boardid: reader.GetString(3),
-                DataKind: reader.GetString(4),
-                CandleInterval: reader.IsDBNull(5) ? null : reader.GetInt32(5),
-                DateFrom: reader.GetFieldValue<DateOnly>(6),
-                DateTill: reader.GetFieldValue<DateOnly>(7),
-                StorageTarget: reader.GetString(8),
-                SourceContractVersion: reader.GetString(9),
-                WriterVersion: reader.GetString(10));
+            // Читатель закрыт до фиксации.
+            await transaction.CommitAsync(ct);
+            return task;
         }
     }
 }
