@@ -33,6 +33,7 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
             services.AddTransient<MoexCalendarLoader>();
             services.AddTransient<MoexInstrumentSyncLoader>();
             services.AddTransient<InstrumentClickHouseDataDeleter>();
+            services.AddTransient<SeriesRangeDeleter>();
             services.AddTransient<InstrumentPostgresDataDeleter>();
             services.AddSingleton<InstrumentDeletionQueueReader>();
             services.AddTransient<InstrumentDeletionStatusReader>();

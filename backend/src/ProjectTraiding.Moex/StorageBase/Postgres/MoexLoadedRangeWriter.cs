@@ -74,5 +74,112 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
             MoexLoadTaskLogMessages.RangeRecorded(_logger, task.Secid, task.DataKind, rowsTotal, elapsed);
         }
+
+        /// <summary>
+        /// Переписывает успешное историческое покрытие, пересекающее диапазон задачи, до
+        /// удаления данных из ClickHouse. Остатки создаются только из полного покрытия:
+        /// rows_skipped у них равен нулю, а rows_total намеренно обнулён.
+        /// </summary>
+        public async Task RewriteOverlappingHistoryAsync(MoexLoadTask task, CancellationToken ct)
+        {
+            await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
+            await using NpgsqlTransaction transaction = await connection.BeginTransactionAsync(ct);
+
+            int affected = 0;
+
+            await using (NpgsqlCommand cmd = new NpgsqlCommand("""
+                INSERT INTO moex_loaded_ranges
+                    (secid, market, boardid, data_kind, candle_interval,
+                     date_from, date_till, last_success_at, last_task_id,
+                     rows_total, rows_skipped, storage_target, status,
+                     source_contract_version, writer_version)
+                SELECT secid, market, boardid, data_kind, candle_interval,
+                       date_from, @date_from - 1, last_success_at, last_task_id,
+                       0, 0, storage_target, status,
+                       source_contract_version, writer_version
+                FROM moex_loaded_ranges
+                WHERE secid = @secid AND market = @market AND boardid = @boardid
+                  AND data_kind = @data_kind
+                  AND candle_interval IS NOT DISTINCT FROM @candle_interval
+                  AND storage_target = @storage_target
+                  AND time_from IS NULL AND status = 'ok'
+                  AND rows_skipped = 0
+                  AND date_from <= @date_till AND date_till >= @date_from
+                  AND date_from < @date_from
+                ON CONFLICT ON CONSTRAINT uq_moex_loaded_ranges_span DO NOTHING
+                """, connection, transaction))
+            {
+                cmd.Parameters.Add("@secid", NpgsqlDbType.Text).Value = task.Secid;
+                cmd.Parameters.Add("@market", NpgsqlDbType.Text).Value = task.Market;
+                cmd.Parameters.Add("@boardid", NpgsqlDbType.Text).Value = task.Boardid;
+                cmd.Parameters.Add("@data_kind", NpgsqlDbType.Text).Value = task.DataKind;
+                cmd.Parameters.Add("@candle_interval", NpgsqlDbType.Integer).Value =
+                    (object?)task.CandleInterval ?? DBNull.Value;
+                cmd.Parameters.Add("@storage_target", NpgsqlDbType.Text).Value = task.StorageTarget;
+                cmd.Parameters.Add("@date_from", NpgsqlDbType.Date).Value = task.DateFrom;
+                cmd.Parameters.Add("@date_till", NpgsqlDbType.Date).Value = task.DateTill;
+                affected += await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            await using (NpgsqlCommand cmd = new NpgsqlCommand("""
+                INSERT INTO moex_loaded_ranges
+                    (secid, market, boardid, data_kind, candle_interval,
+                     date_from, date_till, last_success_at, last_task_id,
+                     rows_total, rows_skipped, storage_target, status,
+                     source_contract_version, writer_version)
+                SELECT secid, market, boardid, data_kind, candle_interval,
+                       @date_till + 1, date_till, last_success_at, last_task_id,
+                       0, 0, storage_target, status,
+                       source_contract_version, writer_version
+                FROM moex_loaded_ranges
+                WHERE secid = @secid AND market = @market AND boardid = @boardid
+                  AND data_kind = @data_kind
+                  AND candle_interval IS NOT DISTINCT FROM @candle_interval
+                  AND storage_target = @storage_target
+                  AND time_from IS NULL AND status = 'ok'
+                  AND rows_skipped = 0
+                  AND date_from <= @date_till AND date_till >= @date_from
+                  AND date_till > @date_till
+                ON CONFLICT ON CONSTRAINT uq_moex_loaded_ranges_span DO NOTHING
+                """, connection, transaction))
+            {
+                cmd.Parameters.Add("@secid", NpgsqlDbType.Text).Value = task.Secid;
+                cmd.Parameters.Add("@market", NpgsqlDbType.Text).Value = task.Market;
+                cmd.Parameters.Add("@boardid", NpgsqlDbType.Text).Value = task.Boardid;
+                cmd.Parameters.Add("@data_kind", NpgsqlDbType.Text).Value = task.DataKind;
+                cmd.Parameters.Add("@candle_interval", NpgsqlDbType.Integer).Value =
+                    (object?)task.CandleInterval ?? DBNull.Value;
+                cmd.Parameters.Add("@storage_target", NpgsqlDbType.Text).Value = task.StorageTarget;
+                cmd.Parameters.Add("@date_from", NpgsqlDbType.Date).Value = task.DateFrom;
+                cmd.Parameters.Add("@date_till", NpgsqlDbType.Date).Value = task.DateTill;
+                affected += await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            await using (NpgsqlCommand cmd = new NpgsqlCommand("""
+                DELETE FROM moex_loaded_ranges
+                WHERE secid = @secid AND market = @market AND boardid = @boardid
+                  AND data_kind = @data_kind
+                  AND candle_interval IS NOT DISTINCT FROM @candle_interval
+                  AND storage_target = @storage_target
+                  AND time_from IS NULL AND status = 'ok'
+                  AND date_from <= @date_till AND date_till >= @date_from
+                """, connection, transaction))
+            {
+                cmd.Parameters.Add("@secid", NpgsqlDbType.Text).Value = task.Secid;
+                cmd.Parameters.Add("@market", NpgsqlDbType.Text).Value = task.Market;
+                cmd.Parameters.Add("@boardid", NpgsqlDbType.Text).Value = task.Boardid;
+                cmd.Parameters.Add("@data_kind", NpgsqlDbType.Text).Value = task.DataKind;
+                cmd.Parameters.Add("@candle_interval", NpgsqlDbType.Integer).Value =
+                    (object?)task.CandleInterval ?? DBNull.Value;
+                cmd.Parameters.Add("@storage_target", NpgsqlDbType.Text).Value = task.StorageTarget;
+                cmd.Parameters.Add("@date_from", NpgsqlDbType.Date).Value = task.DateFrom;
+                cmd.Parameters.Add("@date_till", NpgsqlDbType.Date).Value = task.DateTill;
+                affected += await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            await transaction.CommitAsync(ct);
+            MoexWriterLogMessages.HistoryCoverageRewritten(
+                _logger, task.Secid, task.DataKind, affected);
+        }
     }
 }

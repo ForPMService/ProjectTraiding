@@ -33,11 +33,16 @@ public sealed class SpecLoadHandler
 
     private readonly MoexHistoryPageReader _reader;
     private readonly MoexHistoryWriter _writer;
+    private readonly SeriesRangeDeleter _rangeDeleter;
 
-    public SpecLoadHandler(MoexHistoryPageReader reader, MoexHistoryWriter writer)
+    public SpecLoadHandler(
+        MoexHistoryPageReader reader,
+        MoexHistoryWriter writer,
+        SeriesRangeDeleter rangeDeleter)
     {
         _reader = reader;
         _writer = writer;
+        _rangeDeleter = rangeDeleter;
     }
 
     public async Task<RowWriteSummary> LoadAsync(
@@ -48,6 +53,12 @@ public sealed class SpecLoadHandler
         MoexSeriesSpec spec = FindSpec(task)
             ?? throw new InvalidOperationException(
                 $"Нет обработчика для задачи {task.Id} (data_kind={task.DataKind}, market={task.Market}, interval={task.CandleInterval}).");
+
+        // Между удалением и успешным окончанием загрузки диапазон пуст. Покрытие
+        // перезаписано координатором до этой строки, поэтому массовая постановка
+        // предложит диапазон снова.
+        await _rangeDeleter.DeleteAsync(
+            spec, task.Secid, task.DateFrom, task.DateTill, cancellationToken);
 
         string operation = spec.Pagination switch
         {

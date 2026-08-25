@@ -119,6 +119,11 @@ namespace ProjectTraiding.Moex.Loading
                     throw new InvalidOperationException(
                         $"Задача {taskId} не нацелена на ClickHouse (storage_target={task.StorageTarget}).");
 
+                // PostgreSQL раньше ClickHouse: покрытие снимается до удаления данных.
+                // Обратный порядок оставляет строку 'ok' на пустом диапазоне, если
+                // источник откажет после удаления.
+                await _rangeWriter.RewriteOverlappingHistoryAsync(task, ct);
+
                 LoadStopOutcome stopOutcome = new LoadStopOutcome();
 
                 using CancellationTokenSource operatorCts = new CancellationTokenSource();
