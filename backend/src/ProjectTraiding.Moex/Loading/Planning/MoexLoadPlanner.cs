@@ -30,7 +30,6 @@ namespace ProjectTraiding.Moex.Loading.Planning
 
     public sealed record MoexLoadPlanResult(
         IReadOnlyList<MoexLoadWindow> Windows,
-        int BlockedCount,
         int? EffectiveSliceWeeks);
 
     /// <summary>
@@ -66,7 +65,6 @@ namespace ProjectTraiding.Moex.Loading.Planning
                 : new Dictionary<string, string>(StringComparer.Ordinal);
 
             List<MoexLoadWindow> windows = new();
-            int blockedCount = 0;
             int? effectiveSliceWeeks = request.SliceWeeks.HasValue
                 ? (request.SliceWeeks.Value < 1 ? 1 : request.SliceWeeks.Value)
                 : null;
@@ -93,10 +91,7 @@ namespace ProjectTraiding.Moex.Loading.Planning
                     if (dataKind == "futoi")
                     {
                         if (!subjects.TryGetValue(instrument.Secid, out string? subject))
-                        {
-                            blockedCount++;
                             continue;
-                        }
                         subjectInstrument = instrument with { Secid = subject };
                     }
 
@@ -106,7 +101,7 @@ namespace ProjectTraiding.Moex.Loading.Planning
                 }
             }
 
-            return new MoexLoadPlanResult(windows, blockedCount, effectiveSliceWeeks);
+            return new MoexLoadPlanResult(windows, effectiveSliceWeeks);
         }
 
         private static void AddWindows(

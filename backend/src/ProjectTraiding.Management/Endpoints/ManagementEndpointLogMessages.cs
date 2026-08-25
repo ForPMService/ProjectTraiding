@@ -36,24 +36,6 @@ namespace ProjectTraiding.Management.Endpoints
             int skippedDuplicateCount);
 
         [LoggerMessage(
-            EventId = 214, EventName = "MgmtBulkFillMissingResolved", Level = LogLevel.Information,
-            Message = "Management bulk fill missing resolved: route={Route}, secid={Secid}, dataKind={DataKind}, candleInterval={CandleInterval}, requestedFrom={RequestedFrom}, requestedTill={RequestedTill}, effectiveFrom={EffectiveFrom}, effectiveTill={EffectiveTill}, coveredIntervals={CoveredIntervalsCount}, missingIntervals={MissingIntervalsCount}, missingDays={MissingDaysTotal}, windowsCreated={WindowsCreatedCount}.")]
-        public static partial void BulkFillMissingResolved(
-            ILogger logger,
-            string route,
-            string secid,
-            string dataKind,
-            int? candleInterval,
-            DateOnly requestedFrom,
-            DateOnly requestedTill,
-            DateOnly effectiveFrom,
-            DateOnly effectiveTill,
-            int coveredIntervalsCount,
-            int missingIntervalsCount,
-            int missingDaysTotal,
-            int windowsCreatedCount);
-
-        [LoggerMessage(
             EventId = 215, EventName = "MgmtInstrumentDataDeleteRejected", Level = LogLevel.Warning,
             Message = "Management instrument data delete rejected: route={Route}, secid={Secid}, reason={Reason}.")]
         public static partial void InstrumentDataDeleteRejected(
@@ -65,9 +47,5 @@ namespace ProjectTraiding.Management.Endpoints
         public static partial void WriteBlockedByDeletion(
             ILogger logger, string route, string secid);
 
-        [LoggerMessage(EventId = 217, EventName = "MgmtBulkFutoiSubjectMissing",
-            Level = LogLevel.Warning,
-            Message = "Bulk load tasks: futoi skipped, no series subject: route={Route}, secid={Secid}.")]
-        public static partial void BulkFutoiSubjectMissing(ILogger logger, string route, string secid);
     }
 }
