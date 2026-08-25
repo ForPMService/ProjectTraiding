@@ -2,7 +2,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ProjectTraiding.Moex.Contracts.Dto;
 using ProjectTraiding.Moex.Contracts.Dto.Calendar;
-using ProjectTraiding.Moex.Contracts.Pagination;
 using ProjectTraiding.Moex.Infrastructure.Buffers;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Options;
