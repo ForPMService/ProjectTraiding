@@ -47,7 +47,6 @@ public sealed class SpecLoadHandler
 
     public async Task<RowWriteSummary> LoadAsync(
         MoexLoadTask task,
-        LoadStopOutcome stopOutcome,
         CancellationToken cancellationToken)
     {
         MoexSeriesSpec spec = FindSpec(task)
@@ -79,7 +78,6 @@ public sealed class SpecLoadHandler
             task.Boardid,
             task.DateFrom,
             task.DateTill,
-            stopOutcome,
             operationTags,
             cancellationToken);
 

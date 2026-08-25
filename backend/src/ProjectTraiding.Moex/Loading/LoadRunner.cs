@@ -129,8 +129,6 @@ namespace ProjectTraiding.Moex.Loading
                 // источник откажет после удаления.
                 await _rangeWriter.RewriteOverlappingHistoryAsync(task, ct);
 
-                LoadStopOutcome stopOutcome = new LoadStopOutcome();
-
                 using CancellationTokenSource operatorCts = new CancellationTokenSource();
                 using CancellationTokenSource linkedCts =
                     CancellationTokenSource.CreateLinkedTokenSource(ct, operatorCts.Token);
@@ -141,7 +139,7 @@ namespace ProjectTraiding.Moex.Loading
                 RowWriteSummary summary;
                 try
                 {
-                    summary = await _loader.LoadAsync(task, stopOutcome, linkedCts.Token);
+                    summary = await _loader.LoadAsync(task, linkedCts.Token);
                 }
                 finally
                 {
@@ -159,26 +157,7 @@ namespace ProjectTraiding.Moex.Loading
 
                 rowsForTelemetry = summary.RowsRead;
 
-                // Настоящая причина из потока; пустой держатель трактуем как штатное исчерпание.
-                string stopReason = stopOutcome.StopReason ?? "range_exhausted";
-
-                // Частичный исход = сработал защитный предел страниц: диапазон шире, чем можно
-                // безопасно вычитать за один проход. Покрытие НЕ пишем (иначе неполный диапазон
-                // закрепился бы как полный) и закрываем задачу отказом с машинной причиной.
-                // Оператор пересоздаёт задачи меньшим окном. Ветвление стоит ДО записи покрытия —
-                // в этом суть правки А1.
-                if (stopOutcome.IsPartial)
-                {
-                    outcome = MoexOutcomes.Error;
-                    stopReasonForTelemetry = stopReason;
-
-                    await _taskWriter.MarkErrorAsync(
-                        taskId,
-                        "диапазон превышает предел страниц: пересоздайте задачи с меньшим окном",
-                        stopReason,
-                        ct);
-                    return;
-                }
+                const string stopReason = "range_exhausted";
 
                 outcome = MoexOutcomes.Success;
                 stopReasonForTelemetry = stopReason;

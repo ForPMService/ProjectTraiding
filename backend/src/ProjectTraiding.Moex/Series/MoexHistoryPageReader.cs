@@ -52,24 +52,23 @@ public sealed class MoexHistoryPageReader
         string boardId,
         DateOnly from,
         DateOnly till,
-        LoadStopOutcome stopOutcome,
         MoexOperationTags operationTags,
         CancellationToken cancellationToken)
     {
         if (spec.Pagination == PaginationKind.Cursor)
         {
             return ReadCursorPages(
-                spec, secId, from, till, stopOutcome, operationTags, cancellationToken);
+                spec, secId, from, till, operationTags, cancellationToken);
         }
 
         if (spec.Pagination == PaginationKind.FixedPage)
         {
             return ReadFixedPages(
-                spec, secId, boardId, from, till, stopOutcome, operationTags, cancellationToken);
+                spec, secId, boardId, from, till, operationTags, cancellationToken);
         }
 
         return ReadDaySplitPages(
-            spec, secId, from, till, stopOutcome, operationTags, cancellationToken);
+            spec, secId, from, till, operationTags, cancellationToken);
     }
 
     private async IAsyncEnumerable<SeriesParsedPage> ReadCursorPages(
@@ -77,7 +76,6 @@ public sealed class MoexHistoryPageReader
         string secId,
         DateOnly from,
         DateOnly till,
-        LoadStopOutcome stopOutcome,
         MoexOperationTags operationTags,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
@@ -141,7 +139,6 @@ public sealed class MoexHistoryPageReader
 
                 MoexLogMessages.PaginationStopped(
                     _logger, method, "range_exhausted", pagesElapsed, totalRows);
-                stopOutcome.Complete("range_exhausted", isPartial: false);
                 break;
             }
 
@@ -190,7 +187,6 @@ public sealed class MoexHistoryPageReader
         string boardId,
         DateOnly from,
         DateOnly till,
-        LoadStopOutcome stopOutcome,
         MoexOperationTags operationTags,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
@@ -254,7 +250,6 @@ public sealed class MoexHistoryPageReader
                 MoexLogMessages.FixedPagePaginationStopped(
                     _logger, method, "last_page_incomplete",
                     pagesElapsed, totalRows, parsed.Rows.Count, FixedPageSize);
-                stopOutcome.Complete("range_exhausted", isPartial: false);
                 break;
             }
         }
@@ -265,7 +260,6 @@ public sealed class MoexHistoryPageReader
         string secId,
         DateOnly from,
         DateOnly till,
-        LoadStopOutcome stopOutcome,
         MoexOperationTags operationTags,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
@@ -318,7 +312,6 @@ public sealed class MoexHistoryPageReader
 
         MoexLogMessages.DaySplitCompleted(
             _logger, method, fromText, tillText, dayIndex, totalRows);
-        stopOutcome.Complete("range_exhausted", isPartial: false);
     }
 
     /// <summary>
