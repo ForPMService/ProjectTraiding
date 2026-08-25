@@ -327,10 +327,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     await writer.WriteAsync(
                         spec,
                         secid,
-                        state.DataGeneration,
                         closed,
-                        firstClosedBegin,
-                        lastClosedBegin,
                         insertContext,
                         commitCt);
                     state.RowsTotal += closed.Count;

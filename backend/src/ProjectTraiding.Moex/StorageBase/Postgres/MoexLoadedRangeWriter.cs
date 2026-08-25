@@ -10,7 +10,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
     /// <summary>
     /// Запись факта успешно загруженного диапазона (moex_loaded_ranges).
     /// Единица учёта — диапазон дат, ключ — составная уникальность таблицы.
-    /// Повтор диапазона ожидаем, поэтому UPSERT. Токен — аудиторный след.
+    /// Повтор диапазона ожидаем, поэтому UPSERT.
     /// </summary>
     public sealed class MoexLoadedRangeWriter
     {
@@ -27,7 +27,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             MoexLoadTask task,
             long rowsTotal,
             long rowsSkipped,
-            string? lastDeduplicationToken,
             CancellationToken ct)
         {
             long startTs = Stopwatch.GetTimestamp();
@@ -38,12 +37,12 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                     (secid, market, boardid, data_kind, candle_interval,
                      date_from, date_till, last_success_at, last_task_id,
                      rows_total, rows_skipped, storage_target, status,
-                     source_contract_version, writer_version, last_insert_deduplication_token)
+                     source_contract_version, writer_version)
                 VALUES
                     (@secid, @market, @boardid, @data_kind, @candle_interval,
                      @date_from, @date_till, now(), @last_task_id,
                      @rows_total, @rows_skipped, @storage_target, 'ok',
-                     @scv, @wv, @token)
+                     @scv, @wv)
                 ON CONFLICT ON CONSTRAINT uq_moex_loaded_ranges_span
                 DO UPDATE SET
                      last_success_at = now(),
@@ -52,8 +51,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                      rows_skipped = @rows_skipped,
                      status = 'ok',
                      source_contract_version = @scv,
-                     writer_version = @wv,
-                     last_insert_deduplication_token = @token
+                     writer_version = @wv
                 """, connection);
 
             cmd.Parameters.Add("@secid", NpgsqlDbType.Text).Value = task.Secid;
@@ -70,8 +68,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             cmd.Parameters.Add("@storage_target", NpgsqlDbType.Text).Value = task.StorageTarget;
             cmd.Parameters.Add("@scv", NpgsqlDbType.Text).Value = task.SourceContractVersion;
             cmd.Parameters.Add("@wv", NpgsqlDbType.Text).Value = task.WriterVersion;
-            cmd.Parameters.Add("@token", NpgsqlDbType.Text).Value =
-                (object?)lastDeduplicationToken ?? DBNull.Value;
 
             await cmd.ExecuteNonQueryAsync(ct);
 

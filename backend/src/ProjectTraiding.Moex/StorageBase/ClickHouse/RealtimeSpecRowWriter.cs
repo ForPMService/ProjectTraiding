@@ -1,4 +1,3 @@
-using System.Globalization;
 using ProjectTraiding.Moex.Realtime.Series;
 
 namespace ProjectTraiding.Moex.StorageBase.ClickHouse;
@@ -11,7 +10,6 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse;
 /// Логгер не внедряется намеренно: у прежнего писателя он был, но не использовался ни разу,
 /// а запись о вставке и об отказе делает исполнитель.
 ///
-/// Дедупликация двухуровневая и остаётся прежней: токен отсекает близкий повтор той же пачки,
 /// ReplacingMergeTree схлопывает совпавшие по ключу сортировки строки при слиянии. Чтение
 /// без дублей до слияния требует FINAL — это обязанность читателей.
 /// </summary>
@@ -31,10 +29,7 @@ public sealed class RealtimeSpecRowWriter
     public async Task WriteAsync(
         MoexRealtimeSpec spec,
         string secid,
-        string dataGeneration,
         List<object?[]> rows,
-        DateTime firstTime,
-        DateTime lastTime,
         StorageInsertContext insertContext,
         CancellationToken ct)
     {
@@ -44,20 +39,7 @@ public sealed class RealtimeSpecRowWriter
         if (string.IsNullOrWhiteSpace(secid))
             throw new InvalidOperationException(spec.EmptySecidMessage);
 
-        string token = BuildToken(spec.TokenPrefix, secid, dataGeneration, firstTime, lastTime, rows.Count);
-
         await _executor.InsertAsync(
-            spec.Table, spec.Columns, spec.ColumnTypes, rows, token, insertContext, ct);
-    }
-
-    // {префикс}:{secid}:{поколение}:{время первой}:{время последней}:{число строк}.
-    // Формат времени инвариантный — границы пачки воспроизводимы при повторе. Поколение
-    // приходит из состояния сеанса и разрывает связь с операциями, оставшимися от данных,
-    // удалённых мутацией: контрольные суммы блоков переживают ALTER ... DELETE.
-    private static string BuildToken(
-        string tokenPrefix, string secid, string dataGeneration, DateTime first, DateTime last, int count)
-    {
-        return string.Create(CultureInfo.InvariantCulture,
-            $"{tokenPrefix}:{secid}:{dataGeneration}:{first:yyyyMMddHHmmssfff}:{last:yyyyMMddHHmmssfff}:{count}");
+            spec.Table, spec.Columns, spec.ColumnTypes, rows, insertContext, ct);
     }
 }

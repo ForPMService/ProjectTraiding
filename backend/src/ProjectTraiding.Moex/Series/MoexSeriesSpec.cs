@@ -105,7 +105,6 @@ public sealed class MoexSeriesSpec
     public required SourceColumn[] SourceColumns { get; init; }
     public required string Table { get; init; }
     public required TargetColumn[] TargetColumns { get; init; }
-    public required string TokenPrefix { get; init; }
     public required PaginationKind Pagination { get; init; }
 
     // Код свечного интервала MOEX (1, 10, 60, 24). Заполнен только у свечей;

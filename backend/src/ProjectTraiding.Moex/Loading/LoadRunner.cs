@@ -184,8 +184,8 @@ namespace ProjectTraiding.Moex.Loading
 
                 // Штатное полное покрытие: журнал результата и закрытие успехом.
                 await _rangeWriter.UpsertAsync(
-                    task, summary.RowsRead, summary.RowsSkipped, summary.LastToken, CancellationToken.None);
-                await _taskWriter.MarkDoneAsync(taskId, summary.RowsRead, stopReason, summary.LastToken, CancellationToken.None);
+                    task, summary.RowsRead, summary.RowsSkipped, CancellationToken.None);
+                await _taskWriter.MarkDoneAsync(taskId, summary.RowsRead, stopReason, CancellationToken.None);
 
                 return;
             }

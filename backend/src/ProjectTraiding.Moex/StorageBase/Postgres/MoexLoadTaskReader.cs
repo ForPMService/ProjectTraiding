@@ -91,7 +91,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                     error_message = null,
                     stop_reason = null,
                     rows_loaded = 0,
-                    last_insert_deduplication_token = null,
                     attempt_count = attempt_count + 1
                 WHERE id = (
                     SELECT id FROM moex_load_tasks t

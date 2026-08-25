@@ -69,7 +69,6 @@ public static class MoexSeriesRegistry
             new("sec_pr_close", "Nullable(Int32)", FillRule.Direct, 26),
             new("systime", "Nullable(DateTime64(3, 'Europe/Moscow'))", FillRule.WallClock, 22),
         ],
-        TokenPrefix = "tradestats:5m:stock",
         Pagination = PaginationKind.Cursor,
     };
 
@@ -152,7 +151,6 @@ public static class MoexSeriesRegistry
             new("sec_pr_close", "Nullable(Int32)", FillRule.Direct, 31),
             new("systime", "Nullable(DateTime64(3, 'Europe/Moscow'))", FillRule.WallClock, 32),
         ],
-        TokenPrefix = "tradestats:5m:futures",
         Pagination = PaginationKind.Cursor,
     };
 
@@ -211,7 +209,6 @@ public static class MoexSeriesRegistry
             new("vwap_s_1mio", "Nullable(Float64)", FillRule.Direct, 19),
             new("systime", "Nullable(DateTime64(3, 'Europe/Moscow'))", FillRule.WallClock, 20),
         ],
-        TokenPrefix = "obstats:5m:stock",
         Pagination = PaginationKind.Cursor,
     };
 
@@ -298,7 +295,6 @@ public static class MoexSeriesRegistry
             new("vwap_s_l20", "Nullable(Float64)", FillRule.Direct, 33),
             new("systime", "Nullable(DateTime64(3, 'Europe/Moscow'))", FillRule.WallClock, 34),
         ],
-        TokenPrefix = "obstats:5m:futures",
         Pagination = PaginationKind.Cursor,
     };
 
@@ -367,7 +363,6 @@ public static class MoexSeriesRegistry
             new("cancel_orders", "Nullable(Int64)", FillRule.Direct, 24),
             new("systime", "Nullable(DateTime64(3, 'Europe/Moscow'))", FillRule.WallClock, 25),
         ],
-        TokenPrefix = "orderstats:5m:stock",
         Pagination = PaginationKind.Cursor,
     };
 
@@ -399,7 +394,6 @@ public static class MoexSeriesRegistry
             new("reference", "Nullable(String)", FillRule.Direct, 5),
             new("systime", "Nullable(DateTime64(3, 'Europe/Moscow'))", FillRule.WallClock, 6),
         ],
-        TokenPrefix = "hi2:1d:stock",
         Pagination = PaginationKind.Cursor,
         PreserveCursorTimeGroup = true,
     };
@@ -434,7 +428,6 @@ public static class MoexSeriesRegistry
             new("reference", "Nullable(String)", FillRule.Direct, 6),
             new("systime", "Nullable(DateTime64(3, 'Europe/Moscow'))", FillRule.WallClock, 7),
         ],
-        TokenPrefix = "hi2:1d:futures",
         Pagination = PaginationKind.Cursor,
         PreserveCursorTimeGroup = true,
     };
@@ -469,7 +462,6 @@ public static class MoexSeriesRegistry
             new("reference", "Nullable(String)", FillRule.Direct, 6),
             new("systime", "Nullable(DateTime64(3, 'Europe/Moscow'))", FillRule.WallClock, 7),
         ],
-        TokenPrefix = "megaalerts:event:stock",
         Pagination = PaginationKind.Cursor,
         PreserveCursorTimeGroup = true,
     };
@@ -506,7 +498,6 @@ public static class MoexSeriesRegistry
             new("reference", "Nullable(String)", FillRule.Direct, 7),
             new("systime", "Nullable(DateTime64(3, 'Europe/Moscow'))", FillRule.WallClock, 8),
         ],
-        TokenPrefix = "megaalerts:event:futures",
         Pagination = PaginationKind.Cursor,
         PreserveCursorTimeGroup = true,
     };
@@ -551,13 +542,12 @@ public static class MoexSeriesRegistry
             new("trade_session_date", "Nullable(String)", FillRule.Direct, 12),
             new("systime", "Nullable(DateTime64(3, 'Europe/Moscow'))", FillRule.WallClock, 11),
         ],
-        TokenPrefix = "futoi:5m:futures",
         Pagination = PaginationKind.DaySplit,
     };
 
     // ═══════════════════════════════════════════════════════════
     // Свечи. Форма одна на оба рынка и все интервалы; различаются
-    // шаблон адреса (рынок), таблица и префикс токена (интервал).
+    // шаблон адреса (рынок) и таблица (интервал).
     // Адрес двухместный: {0} — код инструмента, {1} — доска из задачи;
     // регистр доски (строчные у акций, прописные у фьючерсов) применяет
     // загрузчик по рынку декларации. Приоритет вставки 1 — исторический
@@ -594,7 +584,7 @@ public static class MoexSeriesRegistry
     ];
 
     private static MoexSeriesSpec Candles(
-        string market, string methodTemplate, int interval, string table, string tokenPrefix) => new()
+        string market, string methodTemplate, int interval, string table) => new()
     {
         DataKind = "candles",
         Market = market,
@@ -603,7 +593,6 @@ public static class MoexSeriesRegistry
         SourceColumns = CandlesSourceColumns,
         Table = table,
         TargetColumns = CandlesTargetColumns,
-        TokenPrefix = tokenPrefix,
         Pagination = PaginationKind.FixedPage,
         CandleInterval = interval,
     };
@@ -615,26 +604,26 @@ public static class MoexSeriesRegistry
         "/engines/futures/markets/forts/boards/{1}/securities/{0}/candles.json";
 
     public static readonly MoexSeriesSpec CandlesStock1m =
-        Candles("stock", CandlesStockTemplate, 1, "moex_candles_1m", "candles:1m");
+        Candles("stock", CandlesStockTemplate, 1, "moex_candles_1m");
 
     public static readonly MoexSeriesSpec CandlesStock10m =
-        Candles("stock", CandlesStockTemplate, 10, "moex_candles_10m", "candles:10m");
+        Candles("stock", CandlesStockTemplate, 10, "moex_candles_10m");
 
     public static readonly MoexSeriesSpec CandlesStock1h =
-        Candles("stock", CandlesStockTemplate, 60, "moex_candles_1h", "candles:1h");
+        Candles("stock", CandlesStockTemplate, 60, "moex_candles_1h");
 
     public static readonly MoexSeriesSpec CandlesStock1d =
-        Candles("stock", CandlesStockTemplate, 24, "moex_candles_1d", "candles:1d");
+        Candles("stock", CandlesStockTemplate, 24, "moex_candles_1d");
 
     public static readonly MoexSeriesSpec CandlesFutures1m =
-        Candles("futures", CandlesFuturesTemplate, 1, "moex_candles_1m", "candles:1m");
+        Candles("futures", CandlesFuturesTemplate, 1, "moex_candles_1m");
 
     public static readonly MoexSeriesSpec CandlesFutures10m =
-        Candles("futures", CandlesFuturesTemplate, 10, "moex_candles_10m", "candles:10m");
+        Candles("futures", CandlesFuturesTemplate, 10, "moex_candles_10m");
 
     public static readonly MoexSeriesSpec CandlesFutures1h =
-        Candles("futures", CandlesFuturesTemplate, 60, "moex_candles_1h", "candles:1h");
+        Candles("futures", CandlesFuturesTemplate, 60, "moex_candles_1h");
 
     public static readonly MoexSeriesSpec CandlesFutures1d =
-        Candles("futures", CandlesFuturesTemplate, 24, "moex_candles_1d", "candles:1d");
+        Candles("futures", CandlesFuturesTemplate, 24, "moex_candles_1d");
 }

@@ -51,7 +51,6 @@ public static class MoexRealtimeRegistry
             new("systime", "Nullable(DateTime64(3, 'Europe/Moscow'))", FillRule.WallClock, 8),
             new("ingest_priority", "UInt8", FillRule.Constant, Constant: (byte)0),
         ],
-        tokenPrefix: "trades:tick:stock",
         emptySecidMessage: "Запись сделок отвергнута: secid пустой.",
         keyTimeIndex: 1,
         tradeNoIndex: 2);
@@ -96,7 +95,6 @@ public static class MoexRealtimeRegistry
             new("systime", "Nullable(DateTime64(3, 'Europe/Moscow'))", FillRule.WallClock, 7),
             new("ingest_priority", "UInt8", FillRule.Constant, Constant: (byte)0),
         ],
-        tokenPrefix: "trades:tick:futures",
         emptySecidMessage: "Запись сделок отвергнута: secid пустой.",
         keyTimeIndex: 1,
         tradeNoIndex: 2);
@@ -130,7 +128,6 @@ public static class MoexRealtimeRegistry
             new("trade_session_date", "Nullable(Date)", FillRule.SessionDate),
             new("ingest_priority", "UInt8", FillRule.Constant, Constant: (byte)0),
         ],
-        tokenPrefix: "orderbook:snapshot",
         emptySecidMessage: "Запись стакана отвергнута: secid пустой.",
         keyTimeIndex: 1,
         tradeNoIndex: -1);
@@ -162,7 +159,6 @@ public static class MoexRealtimeRegistry
             new("end", "Nullable(DateTime64(3, 'Europe/Moscow'))", FillRule.WallClock, 7),
             new("ingest_priority", "UInt8", FillRule.Constant, Constant: (byte)0),
         ],
-        tokenPrefix: "candles:1m",
         emptySecidMessage: "Загрузка свечей отвергнута: secid пустой.",
         keyTimeIndex: 7,
         tradeNoIndex: -1);

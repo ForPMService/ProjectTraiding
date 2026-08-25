@@ -19,7 +19,6 @@ public sealed class MoexRealtimeSpec
         SourceColumn[] sourceColumns,
         string table,
         TargetColumn[] targetColumns,
-        string tokenPrefix,
         string emptySecidMessage,
         int keyTimeIndex,
         int tradeNoIndex)
@@ -28,7 +27,6 @@ public sealed class MoexRealtimeSpec
         SourceColumns = sourceColumns;
         Table = table;
         TargetColumns = targetColumns;
-        TokenPrefix = tokenPrefix;
         EmptySecidMessage = emptySecidMessage;
         KeyTimeIndex = keyTimeIndex;
         TradeNoIndex = tradeNoIndex;
@@ -139,7 +137,6 @@ public sealed class MoexRealtimeSpec
 
     public TargetColumn[] TargetColumns { get; }
 
-    public string TokenPrefix { get; }
 
     /// <summary>Сообщение отказа при пустом коде инструмента. Своё у каждого вида данных.</summary>
     public string EmptySecidMessage { get; }

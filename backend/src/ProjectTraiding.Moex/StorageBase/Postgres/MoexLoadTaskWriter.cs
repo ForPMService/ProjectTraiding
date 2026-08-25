@@ -24,13 +24,12 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
 
         /// <summary>
         /// Закрывает задачу успехом: running → done. finished_at = now(), rows_loaded,
-        /// stop_reason, аудиторный токен. Если строка не в running — аномалия, ошибка.
+        /// stop_reason. Если строка не в running — аномалия, ошибка.
         /// </summary>
         public async Task MarkDoneAsync(
             Guid taskId,
             long rowsLoaded,
             string? stopReason,
-            string? lastDeduplicationToken,
             CancellationToken ct)
         {
             long startTs = Stopwatch.GetTimestamp();
@@ -39,14 +38,12 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             await using NpgsqlCommand cmd = new NpgsqlCommand("""
                 UPDATE moex_load_tasks
                 SET status = 'done', finished_at = now(),
-                    rows_loaded = @rows, stop_reason = @stop_reason,
-                    last_insert_deduplication_token = @token
+                    rows_loaded = @rows, stop_reason = @stop_reason
                 WHERE id = @id AND status = 'running'
                 """, connection);
             cmd.Parameters.Add("@id", NpgsqlDbType.Uuid).Value = taskId;
             cmd.Parameters.Add("@rows", NpgsqlDbType.Bigint).Value = rowsLoaded;
             cmd.Parameters.Add("@stop_reason", NpgsqlDbType.Text).Value = (object?)stopReason ?? DBNull.Value;
-            cmd.Parameters.Add("@token", NpgsqlDbType.Text).Value = (object?)lastDeduplicationToken ?? DBNull.Value;
 
             int affected = await cmd.ExecuteNonQueryAsync(ct);
             if (affected != 1)

@@ -81,9 +81,6 @@ public sealed class SpecLoadHandler
         return await _writer.WriteRangeAsync(
             spec,
             task.Secid,
-            dataGeneration,
-            task.SourceContractVersion,
-            task.WriterVersion,
             pages,
             insertContext,
             cancellationToken);

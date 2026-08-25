@@ -329,10 +329,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     await writer.WriteAsync(
                         spec,
                         secid,
-                        state.DataGeneration,
                         page.Rows,
-                        page.FirstTime,
-                        page.LastTime,
                         insertContext,
                         commitCt);
 
