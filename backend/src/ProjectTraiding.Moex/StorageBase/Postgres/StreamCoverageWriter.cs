@@ -6,13 +6,12 @@ using System;
 namespace ProjectTraiding.Moex.StorageBase.Postgres
 {
     /// <summary>
-    /// Писатель покрытия приёма в moex_loaded_ranges (V023). Ведёт журнал непрерывности:
+    /// Писатель покрытия приёма в moex_loaded_ranges. Ведёт журнал непрерывности:
     /// один сеанс приёма ряда — одна строка. Открытие ставит status='open' и границы времени,
     /// сердцебиение двигает time_till, штатная остановка закрывает в 'closed', а строки,
     /// пережившие падение процесса, при следующем старте закрываются в 'crashed'.
     ///
-    /// Это НЕ идемпотентность вставки (её несёт токен ClickHouse) и НЕ высокая отметка
-    /// (её несёт moex_stream_cursors). Это средство честности: по закрытым строкам видно,
+    /// Это средство честности: по закрытым строкам видно,
     /// где в приёме была дыра, чтобы анализ не считал признаки по пустоте.
     /// </summary>
     public sealed class StreamCoverageWriter
@@ -31,7 +30,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         /// <summary>
         /// Закрывает в 'crashed' все строки этого ряда, оставшиеся 'open' от прошлого запуска.
         /// Вызывается при старте приёма ряда ДО открытия нового сеанса.
-        /// time_till не трогаем: он достоверен с точностью до последнего сердцебиения (V023).
+        /// time_till не трогаем: он достоверен с точностью до последнего сердцебиения.
         /// </summary>
         public async Task CloseCrashedAsync(
             string secid, string market, string boardid, string dataKind,
@@ -71,7 +70,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         /// осиротевший сеанс отключённой или удалённой подписки вне читаемого списка.
         /// Глобальное закрытие опирается на инвариант единственного писателя: другой процесс не
         /// держит 'open'-сеансы этого вида одновременно.
-        /// time_till не трогаем: он достоверен с точностью до последнего сердцебиения (V023).
+        /// time_till не трогаем: он достоверен с точностью до последнего сердцебиения.
         /// </summary>
         public async Task MarkOrphanedOpenAsCrashedAsync(
             string dataKind, int? candleInterval, CancellationToken ct)

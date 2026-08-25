@@ -30,7 +30,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
 
             try
             {
-                // ON CONFLICT по ключу UNIQUE NULLS NOT DISTINCT (V013) → перезапись редактируемых полей.
+                // ON CONFLICT по ключу UNIQUE NULLS NOT DISTINCT → перезапись редактируемых полей.
                 await using NpgsqlCommand cmd = new NpgsqlCommand("""
                 INSERT INTO moex_instrument_relations
                     (source_secid, target_secid, target_asset_code, relation_type, confidence, comment)

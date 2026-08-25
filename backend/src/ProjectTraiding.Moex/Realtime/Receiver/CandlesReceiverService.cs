@@ -31,7 +31,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
         protected override int? StorageCandleInterval => CandleInterval;
 
-        // Реальное время пока только минутная свеча. Контракт подписок (V026) держит это CHECK-ом.
+        // Реальное время пока только минутная свеча. Контракт подписок держит это CHECK-ом.
         private const int CandleInterval = 1;
 
         // Хвост окна опроса, минуты. Одна-две минуты укладываются в одну страницу клиента; запас

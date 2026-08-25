@@ -7,7 +7,7 @@ namespace ProjectTraiding.Management.Validation
 {
     public static class InstrumentRelationValidator
     {
-        // Словари дублируют CHECK / контракт БД(V013), но дают оператору внятный текст до SQL.
+        // Словари дублируют CHECK / контракт БД, но дают оператору внятный текст до SQL.
         private static readonly string[] RelationTypes =
         { "future_underlying", "same_underlying", "manual_related" };
         private static readonly string[] Confidences = { "auto", "manual" };

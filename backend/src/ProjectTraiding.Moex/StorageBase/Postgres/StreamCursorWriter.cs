@@ -6,7 +6,7 @@ using System;
 namespace ProjectTraiding.Moex.StorageBase.Postgres
 {
     /// <summary>
-    /// Писатель высокой отметки приёма в moex_stream_cursors (V019 + V024).
+    /// Писатель высокой отметки приёма в moex_stream_cursors.
     /// Единственный владелец записи курсоров приёма — контур Moex.
     /// Upsert по ключу ряда: повторный приём двигает отметку вперёд.
     ///
