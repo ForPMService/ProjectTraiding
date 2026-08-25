@@ -110,46 +110,47 @@ public sealed class MoexHistoryPageReader
 
             // Решение об остановке принимается до обрезки: последняя страница отдаётся
             // целиком, иначе её хвостовая группа была бы отброшена безвозвратно.
-            PaginationStep step = MoexCursorPagination.Next(
-                cursor, pagesElapsed, _options.MaxPagesPerLoad);
-            if (step.IsStop)
-            {
-                skippedTotal += parsed.SkippedRows;
-                if (_options.MaxSkippedRowsPerLoad >= 0
-                    && skippedTotal > _options.MaxSkippedRowsPerLoad)
-                {
-                    // Испорченная строка — редкость, испорченная страница — признак сломанного
-                    // контракта. Порог отделяет одно от другого: до него загрузка продолжается,
-                    // после — задание отменяется целиком.
-                    throw new InvalidOperationException(
-                        $"Разбор отверг {skippedTotal} строк, предел {_options.MaxSkippedRowsPerLoad}: " +
-                        "источник вернул данные, не отвечающие декларации.");
-                }
+            if (cursor.Index is null || cursor.PageSize is null || cursor.Total is null)
+                throw new InvalidOperationException(
+                    "Источник не вернул курсор целиком (INDEX, TOTAL, PAGESIZE): " +
+                    "полнота диапазона не доказана.");
 
-                if (parsed.SkippedRows > 0)
-                {
-                    MoexLogMessages.RowsSkipped(_logger, method, parsed.SkippedRows);
-                    MoexMetrics.RowsSkipped.Add(
-                        parsed.SkippedRows,
-                        new KeyValuePair<string, object?>(
-                            MoexTelemetryAttributes.Source, operationTags.Source),
-                        new KeyValuePair<string, object?>(
-                            MoexTelemetryAttributes.DataKind, operationTags.DataKind),
-                        new KeyValuePair<string, object?>(
-                            MoexTelemetryAttributes.Market, operationTags.Market));
-                }
+            int cursorIndex = cursor.Index.Value;
+            int cursorTotal = cursor.Total.Value;
+            int cursorPageSize = cursor.PageSize.Value;
+
+            if (cursorIndex < 0 || cursorTotal < 0)
+                throw new InvalidOperationException(
+                    $"Курсор источника отрицателен: INDEX={cursorIndex}, TOTAL={cursorTotal}.");
+
+            if (cursorPageSize <= 0)
+                throw new InvalidOperationException(
+                    $"Размер страницы источника не положителен: PAGESIZE={cursorPageSize}.");
+
+            if (cursorIndex > cursorTotal)
+                throw new InvalidOperationException(
+                    $"Курсор указывает за пределы набора: INDEX={cursorIndex}, TOTAL={cursorTotal}.");
+
+            long nextCursor = (long)cursorIndex + cursorPageSize;
+
+            if (nextCursor >= cursorTotal)
+            {
+                skippedTotal = AccountSkippedRows(parsed, method, operationTags, skippedTotal);
 
                 yield return parsed;
 
                 MoexLogMessages.PaginationStopped(
-                    _logger, method, step.StopReason!, pagesElapsed, totalRows);
-                stopOutcome.Complete(
-                    step.StopReason!,
-                    isPartial: step.StopReason == "safety_cap_hit");
+                    _logger, method, "range_exhausted", pagesElapsed, totalRows);
+                stopOutcome.Complete("range_exhausted", isPartial: false);
                 break;
             }
 
-            int nextStart = step.NextStart;
+            if (pagesElapsed >= _options.MaxPagesPerLoad)
+                throw new InvalidOperationException(
+                    $"Достигнут защитный предел Moex:MaxPagesPerLoad={_options.MaxPagesPerLoad} " +
+                    "при неисчерпанном диапазоне.");
+
+            int nextStart = (int)nextCursor;
 
             // Граница страницы не должна рассекать группу строк одного момента: порядок
             // внутри группы источник не гарантирует, и рассечённая группа теряет строку.
@@ -171,34 +172,11 @@ public sealed class MoexHistoryPageReader
                         + $"{groupTime:yyyy-MM-dd HH:mm:ss}), "
                         + "продолжение чтения не гарантирует полноты.");
 
-                nextStart = cursor.Index!.Value + sourceTailStart;
+                nextStart = cursorIndex + sourceTailStart;
                 parsed = TrimToSourceIndex(parsed, acceptedTailStart, sourceTailStart);
             }
 
-            skippedTotal += parsed.SkippedRows;
-            if (_options.MaxSkippedRowsPerLoad >= 0
-                && skippedTotal > _options.MaxSkippedRowsPerLoad)
-            {
-                // Испорченная строка — редкость, испорченная страница — признак сломанного
-                // контракта. Порог отделяет одно от другого: до него загрузка продолжается,
-                // после — задание отменяется целиком.
-                throw new InvalidOperationException(
-                    $"Разбор отверг {skippedTotal} строк, предел {_options.MaxSkippedRowsPerLoad}: " +
-                    "источник вернул данные, не отвечающие декларации.");
-            }
-
-            if (parsed.SkippedRows > 0)
-            {
-                MoexLogMessages.RowsSkipped(_logger, method, parsed.SkippedRows);
-                MoexMetrics.RowsSkipped.Add(
-                    parsed.SkippedRows,
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.Source, operationTags.Source),
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.DataKind, operationTags.DataKind),
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.Market, operationTags.Market));
-            }
+            skippedTotal = AccountSkippedRows(parsed, method, operationTags, skippedTotal);
 
             yield return parsed;
 
@@ -252,30 +230,7 @@ public sealed class MoexHistoryPageReader
                 spec, method, query, secId, operationTags, cancellationToken);
             SeriesParsedPage parsed = page.Rows;
 
-            skippedTotal += parsed.SkippedRows;
-            if (_options.MaxSkippedRowsPerLoad >= 0
-                && skippedTotal > _options.MaxSkippedRowsPerLoad)
-            {
-                // Испорченная строка — редкость, испорченная страница — признак сломанного
-                // контракта. Порог отделяет одно от другого: до него загрузка продолжается,
-                // после — задание отменяется целиком.
-                throw new InvalidOperationException(
-                    $"Разбор отверг {skippedTotal} строк, предел {_options.MaxSkippedRowsPerLoad}: " +
-                    "источник вернул данные, не отвечающие декларации.");
-            }
-
-            if (parsed.SkippedRows > 0)
-            {
-                MoexLogMessages.RowsSkipped(_logger, method, parsed.SkippedRows);
-                MoexMetrics.RowsSkipped.Add(
-                    parsed.SkippedRows,
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.Source, operationTags.Source),
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.DataKind, operationTags.DataKind),
-                    new KeyValuePair<string, object?>(
-                        MoexTelemetryAttributes.Market, operationTags.Market));
-            }
+            skippedTotal = AccountSkippedRows(parsed, method, operationTags, skippedTotal);
 
             pagesElapsed++;
             totalRows += parsed.Rows.Count;
@@ -286,6 +241,11 @@ public sealed class MoexHistoryPageReader
 
             if (parsed.SourceRowsCount >= FixedPageSize)
             {
+                if (pagesElapsed >= _options.MaxPagesPerLoad)
+                    throw new InvalidOperationException(
+                        $"Достигнут защитный предел Moex:MaxPagesPerLoad={_options.MaxPagesPerLoad} " +
+                        "при неисчерпанном диапазоне.");
+
                 queryStart += FixedPageSize;
                 query["start"] = queryStart.ToString(CultureInfo.InvariantCulture);
             }
@@ -337,30 +297,7 @@ public sealed class MoexHistoryPageReader
 
             if (parsed.SourceRowsCount > 0)
             {
-                skippedTotal += parsed.SkippedRows;
-                if (_options.MaxSkippedRowsPerLoad >= 0
-                    && skippedTotal > _options.MaxSkippedRowsPerLoad)
-                {
-                    // Испорченная строка — редкость, испорченная страница — признак сломанного
-                    // контракта. Порог отделяет одно от другого: до него загрузка продолжается,
-                    // после — задание отменяется целиком.
-                    throw new InvalidOperationException(
-                        $"Разбор отверг {skippedTotal} строк, предел {_options.MaxSkippedRowsPerLoad}: " +
-                        "источник вернул данные, не отвечающие декларации.");
-                }
-
-                if (parsed.SkippedRows > 0)
-                {
-                    MoexLogMessages.RowsSkipped(_logger, method, parsed.SkippedRows);
-                    MoexMetrics.RowsSkipped.Add(
-                        parsed.SkippedRows,
-                        new KeyValuePair<string, object?>(
-                            MoexTelemetryAttributes.Source, operationTags.Source),
-                        new KeyValuePair<string, object?>(
-                            MoexTelemetryAttributes.DataKind, operationTags.DataKind),
-                        new KeyValuePair<string, object?>(
-                            MoexTelemetryAttributes.Market, operationTags.Market));
-                }
+                skippedTotal = AccountSkippedRows(parsed, method, operationTags, skippedTotal);
             }
 
             dayIndex++;
@@ -382,6 +319,44 @@ public sealed class MoexHistoryPageReader
         MoexLogMessages.DaySplitCompleted(
             _logger, method, fromText, tillText, dayIndex, totalRows);
         stopOutcome.Complete("range_exhausted", isPartial: false);
+    }
+
+    /// <summary>
+    /// Учёт отвергнутых строк страницы: предел, событие журнала, счётчик с метками.
+    /// Возвращает накопленное число отвергнутых строк.
+    /// </summary>
+    private int AccountSkippedRows(
+        SeriesParsedPage parsed,
+        string method,
+        MoexOperationTags operationTags,
+        int skippedTotal)
+    {
+        skippedTotal += parsed.SkippedRows;
+        if (_options.MaxSkippedRowsPerLoad >= 0
+            && skippedTotal > _options.MaxSkippedRowsPerLoad)
+        {
+            // Испорченная строка — редкость, испорченная страница — признак сломанного
+            // контракта. Порог отделяет одно от другого: до него загрузка продолжается,
+            // после — задание отменяется целиком.
+            throw new InvalidOperationException(
+                $"Разбор отверг {skippedTotal} строк, предел {_options.MaxSkippedRowsPerLoad}: " +
+                "источник вернул данные, не отвечающие декларации.");
+        }
+
+        if (parsed.SkippedRows == 0)
+            return skippedTotal;
+
+        MoexLogMessages.RowsSkipped(_logger, method, parsed.SkippedRows);
+        MoexMetrics.RowsSkipped.Add(
+            parsed.SkippedRows,
+            new KeyValuePair<string, object?>(
+                MoexTelemetryAttributes.Source, operationTags.Source),
+            new KeyValuePair<string, object?>(
+                MoexTelemetryAttributes.DataKind, operationTags.DataKind),
+            new KeyValuePair<string, object?>(
+                MoexTelemetryAttributes.Market, operationTags.Market));
+
+        return skippedTotal;
     }
 
     /// <summary>
