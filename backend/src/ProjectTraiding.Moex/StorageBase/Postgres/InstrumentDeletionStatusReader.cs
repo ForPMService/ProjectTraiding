@@ -5,7 +5,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
 {
     /// <summary>Последняя заявка удаления инструмента для ответа оператору.</summary>
     public sealed record InstrumentDeletionStatus(
-        Guid Id,
         string Secid,
         string Status,
         DateTimeOffset CreatedAt,
@@ -27,7 +26,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         {
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
             await using NpgsqlCommand cmd = new NpgsqlCommand("""
-                SELECT id, secid, status, created_at, claimed_at, next_attempt_at, error_message
+                SELECT secid, status, created_at, claimed_at, next_attempt_at, error_message
                 FROM moex_instrument_data_deletions
                 WHERE secid = @secid
                 ORDER BY created_at DESC
@@ -40,13 +39,12 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 return null;
 
             return new InstrumentDeletionStatus(
-                Id: reader.GetGuid(0),
-                Secid: reader.GetString(1),
-                Status: reader.GetString(2),
-                CreatedAt: reader.GetFieldValue<DateTimeOffset>(3),
-                ClaimedAt: reader.IsDBNull(4) ? null : reader.GetFieldValue<DateTimeOffset>(4),
-                NextAttemptAt: reader.GetFieldValue<DateTimeOffset>(5),
-                ErrorMessage: reader.IsDBNull(6) ? null : reader.GetString(6));
+                Secid: reader.GetString(0),
+                Status: reader.GetString(1),
+                CreatedAt: reader.GetFieldValue<DateTimeOffset>(2),
+                ClaimedAt: reader.IsDBNull(3) ? null : reader.GetFieldValue<DateTimeOffset>(3),
+                NextAttemptAt: reader.GetFieldValue<DateTimeOffset>(4),
+                ErrorMessage: reader.IsDBNull(5) ? null : reader.GetString(5));
         }
     }
 }
