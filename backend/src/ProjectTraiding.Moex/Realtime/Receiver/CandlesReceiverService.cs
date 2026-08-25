@@ -151,23 +151,13 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         {
             StreamCoverageWriter coverageWriter =
                 services.GetRequiredService<StreamCoverageWriter>();
-            MoexDataGenerationReader generationReader =
-                services.GetRequiredService<MoexDataGenerationReader>();
-
-            // Чтение идёт перед открытием сеанса: отказ здесь не оставляет открытой строки
-            // покрытия, за которой никто не следит.
-            string dataGeneration = await generationReader.GetAsync(instrument.Secid, ct);
-
             long sessionId = await coverageWriter.OpenSessionAsync(
                 instrument.Secid, instrument.Market, boardId, DataKind, CandleInterval, ct);
             long heartbeatTimestamp = Stopwatch.GetTimestamp();
             States.Add(
                 instrument.Secid,
                 new CandleInstrumentState(
-                    sessionId, instrument.Market, boardId, heartbeatTimestamp)
-                {
-                    DataGeneration = dataGeneration,
-                });
+                    sessionId, instrument.Market, boardId, heartbeatTimestamp));
             MoexRealtimeReceiverLogMessages.CandlesInstrumentPrepared(
                 _logger, instrument.Secid, instrument.Market, sessionId);
         }
@@ -284,8 +274,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             _closed.Clear();
             List<object?[]> closed = _closed;
             DateTime maxClosedBegin = state.LastClosedBegin ?? DateTime.MinValue;
-            DateTime firstClosedBegin = default;
-            DateTime lastClosedBegin = default;
 
             try
             {
@@ -306,10 +294,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         beginValue <= state.LastClosedBegin.Value)
                         continue;
 
-                    if (closed.Count == 0)
-                        firstClosedBegin = beginValue;
-
-                    lastClosedBegin = beginValue;
                     closed.Add(candles[i].Row);
 
                     if (beginValue > maxClosedBegin)

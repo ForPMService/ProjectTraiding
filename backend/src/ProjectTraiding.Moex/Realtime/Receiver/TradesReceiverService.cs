@@ -146,13 +146,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 services.GetRequiredService<StreamCoverageWriter>();
             MoexRealtimeRestClient client =
                 services.GetRequiredService<MoexRealtimeRestClient>();
-            MoexDataGenerationReader generationReader =
-                services.GetRequiredService<MoexDataGenerationReader>();
-
-            // Чтение идёт до курсора, холодного старта и открытия сеанса: отказ здесь
-            // не обесценивает уже проделанную работу и не оставляет открытой строки покрытия.
-            string dataGeneration = await generationReader.GetAsync(instrument.Secid, ct);
-
             StreamCursorState? cursor = await cursorWriter.TryGetAsync(
                 instrument.Secid,
                 instrument.Market,
@@ -199,10 +192,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     sessionId,
                     instrument.Market,
                     boardId,
-                    heartbeatTimestamp)
-                {
-                    DataGeneration = dataGeneration,
-                });
+                    heartbeatTimestamp));
             MoexRealtimeReceiverLogMessages.TradesInstrumentPrepared(
                 _logger, instrument.Secid, instrument.Market, sessionId);
         }
@@ -321,11 +311,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     // тип отказа виден в записи журнала и подменяться не должен.
                     if (page.GuardFailure is not null) throw page.GuardFailure;
 
-                    // Фиксация страницы — под хостовым commitCt. Обрыв бюджетом между записью и курсором
-                    // недопустим: следующий оборот со старым курсором получит расширенную пачку с другим
-                    // токеном, insert-дедупликация её примет, и до фонового слияния будут видны лишние
-                    // физические версии. ReplacingMergeTree схлопнет их по ключу при слиянии; чтение до
-                    // этого требует FINAL. Порядок: durable-запись, затем сразу in-memory состояние.
                     await writer.WriteAsync(
                         spec,
                         secid,

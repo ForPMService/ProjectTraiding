@@ -26,9 +26,6 @@ builder.AddProjectTraidingObservability(
 builder.Services.AddMoexClients(builder.Configuration);
 builder.Services.AddClickHouse(builder.Configuration);
 builder.Services.AddPostgre(builder.Configuration);
-// Поколение данных инструмента для токена дедупликации: один читатель на оба
-// потребителя — историческую загрузку и приём реального времени.
-builder.Services.AddSingleton<MoexDataGenerationReader>();
 builder.Services.AddManagement();
 builder.Services.AddMoexLoading(builder.Configuration);
 builder.Services.AddMoexRealtimeReceiver(builder.Configuration);

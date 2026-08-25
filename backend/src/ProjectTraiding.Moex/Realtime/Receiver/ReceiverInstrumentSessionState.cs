@@ -26,14 +26,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         public string Market { get; }
         public string BoardId { get; }
 
-        /// <summary>
-        /// Поколение данных инструмента на момент открытия состояния. Входит в токен
-        /// дедупликации: без него после удаления данных приём не смог бы записать те же
-        /// минуты заново. Обязательно к заданию при создании и неизменно после: новое
-        /// поколение подхватывается при следующем открытии состояния, а не в текущем.
-        /// </summary>
-        public required string DataGeneration { get; init; }
-
         public long RowsTotal { get; set; }
         public long LastHeartbeatTimestamp { get; set; }
 

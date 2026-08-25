@@ -42,7 +42,6 @@ public sealed class SpecLoadHandler
 
     public async Task<RowWriteSummary> LoadAsync(
         MoexLoadTask task,
-        string dataGeneration,
         LoadStopOutcome stopOutcome,
         CancellationToken cancellationToken)
     {
