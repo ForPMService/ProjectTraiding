@@ -10,11 +10,6 @@ public static class MoexCursorPagination
 {
     /// <summary>
     /// Определяет следующий шаг пагинации на основе cursor от MOEX.
-    /// 
-    /// Три причины остановки:
-    ///   "empty_cursor"    — cursor пустой (Index/PageSize/Total is null)
-    ///   "range_exhausted" — Index + PageSize >= Total, все данные получены
-    ///   "safety_cap_hit"  — превышен лимит страниц (защита от бесконечного цикла)
     /// </summary>
     /// <param name="cursor">Cursor из ответа MOEX (Index, Total, PageSize — nullable).</param>
     /// <param name="pagesElapsed">Сколько страниц уже загружено в текущем цикле.</param>
@@ -25,16 +20,36 @@ public static class MoexCursorPagination
         int maxPagesGuard)
     {
         if (cursor.Index is null || cursor.PageSize is null || cursor.Total is null)
-            return PaginationStep.Stop("empty_cursor");
+            throw new InvalidOperationException(
+                "Источник не вернул курсор целиком (INDEX, TOTAL, PAGESIZE): " +
+                "полнота диапазона не доказана.");
 
-        int next = cursor.Index.Value + cursor.PageSize.Value;
+        int index = cursor.Index.Value;
+        int total = cursor.Total.Value;
+        int pageSize = cursor.PageSize.Value;
 
-        if (next >= cursor.Total.Value)
+        if (index < 0 || total < 0)
+            throw new InvalidOperationException(
+                $"Курсор источника отрицателен: INDEX={index}, TOTAL={total}.");
+
+        if (pageSize <= 0)
+            throw new InvalidOperationException(
+                $"Размер страницы источника не положителен: PAGESIZE={pageSize}.");
+
+        if (index > total)
+            throw new InvalidOperationException(
+                $"Курсор указывает за пределы набора: INDEX={index}, TOTAL={total}.");
+
+        long next = (long)index + pageSize;
+
+        if (next >= total)
             return PaginationStep.Stop("range_exhausted");
 
         if (pagesElapsed >= maxPagesGuard)
-            return PaginationStep.Stop("safety_cap_hit");
+            throw new InvalidOperationException(
+                $"Достигнут защитный предел Moex:MaxPagesPerLoad={maxPagesGuard} " +
+                "при неисчерпанном диапазоне.");
 
-        return PaginationStep.Continue(next);
+        return PaginationStep.Continue((int)next);
     }
 }
