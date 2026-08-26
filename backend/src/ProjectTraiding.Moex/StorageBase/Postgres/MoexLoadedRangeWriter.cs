@@ -10,7 +10,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
     /// <summary>
     /// Запись факта успешно загруженного диапазона (moex_loaded_ranges).
     /// Единица учёта — диапазон дат, ключ — составная уникальность таблицы.
-    /// Повтор диапазона ожидаем, поэтому UPSERT.
+    /// Пересекающиеся строки сняты перезаписью до начала загрузки, поэтому вставка простая.
     /// </summary>
     public sealed class MoexLoadedRangeWriter
     {
@@ -23,7 +23,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             _logger = logger;
         }
 
-        public async Task UpsertAsync(
+        public async Task InsertAsync(
             MoexLoadTask task,
             long rowsTotal,
             long rowsSkipped,
@@ -41,13 +41,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                     (@secid, @market, @boardid, @data_kind, @candle_interval,
                      @date_from, @date_till, now(), @last_task_id,
                      @rows_total, @rows_skipped, @storage_target, 'ok')
-                ON CONFLICT ON CONSTRAINT uq_moex_loaded_ranges_span
-                DO UPDATE SET
-                     last_success_at = now(),
-                     last_task_id = @last_task_id,
-                     rows_total = @rows_total,
-                     rows_skipped = @rows_skipped,
-                     status = 'ok'
                 """, connection);
 
             cmd.Parameters.Add("@secid", NpgsqlDbType.Text).Value = task.Secid;

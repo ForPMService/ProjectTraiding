@@ -159,7 +159,7 @@ namespace ProjectTraiding.Moex.Loading
                 outcome = MoexOutcomes.Success;
 
                 // Штатное полное покрытие: журнал результата и закрытие успехом.
-                await _rangeWriter.UpsertAsync(
+                await _rangeWriter.InsertAsync(
                     task, summary.RowsRead, summary.RowsSkipped, CancellationToken.None);
                 await _taskWriter.MarkDoneAsync(taskId, summary.RowsRead, CancellationToken.None);
 
