@@ -17,7 +17,5 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         int? CandleInterval,
         DateOnly DateFrom,
         DateOnly DateTill,
-        string StorageTarget,
-        string SourceContractVersion,
-        string WriterVersion);
+        string StorageTarget);
 }

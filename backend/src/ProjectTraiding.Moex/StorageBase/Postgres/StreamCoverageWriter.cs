@@ -111,13 +111,11 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 INSERT INTO moex_loaded_ranges
                     (secid, market, boardid, data_kind, candle_interval,
                      date_from, date_till, time_from, time_till,
-                     rows_total, storage_target, status,
-                     source_contract_version, writer_version)
+                     rows_total, storage_target, status)
                 VALUES
                     (@secid, @market, @boardid, @data_kind, @candle_interval,
                      @date, @date, @now, @now,
-                     0, @storage_target, 'open',
-                     'moex_realtime_v1', 'clickhouse_receiver_v1')
+                     0, @storage_target, 'open')
                 RETURNING id
                 """, connection);
 

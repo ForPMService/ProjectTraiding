@@ -36,22 +36,18 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 INSERT INTO moex_loaded_ranges
                     (secid, market, boardid, data_kind, candle_interval,
                      date_from, date_till, last_success_at, last_task_id,
-                     rows_total, rows_skipped, storage_target, status,
-                     source_contract_version, writer_version)
+                     rows_total, rows_skipped, storage_target, status)
                 VALUES
                     (@secid, @market, @boardid, @data_kind, @candle_interval,
                      @date_from, @date_till, now(), @last_task_id,
-                     @rows_total, @rows_skipped, @storage_target, 'ok',
-                     @scv, @wv)
+                     @rows_total, @rows_skipped, @storage_target, 'ok')
                 ON CONFLICT ON CONSTRAINT uq_moex_loaded_ranges_span
                 DO UPDATE SET
                      last_success_at = now(),
                      last_task_id = @last_task_id,
                      rows_total = @rows_total,
                      rows_skipped = @rows_skipped,
-                     status = 'ok',
-                     source_contract_version = @scv,
-                     writer_version = @wv
+                     status = 'ok'
                 """, connection);
 
             cmd.Parameters.Add("@secid", NpgsqlDbType.Text).Value = task.Secid;
@@ -66,8 +62,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             cmd.Parameters.Add("@rows_total", NpgsqlDbType.Bigint).Value = rowsTotal;
             cmd.Parameters.Add("@rows_skipped", NpgsqlDbType.Bigint).Value = rowsSkipped;
             cmd.Parameters.Add("@storage_target", NpgsqlDbType.Text).Value = task.StorageTarget;
-            cmd.Parameters.Add("@scv", NpgsqlDbType.Text).Value = task.SourceContractVersion;
-            cmd.Parameters.Add("@wv", NpgsqlDbType.Text).Value = task.WriterVersion;
 
             await cmd.ExecuteNonQueryAsync(ct);
 
@@ -91,12 +85,10 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 INSERT INTO moex_loaded_ranges
                     (secid, market, boardid, data_kind, candle_interval,
                      date_from, date_till, last_success_at, last_task_id,
-                     rows_total, rows_skipped, storage_target, status,
-                     source_contract_version, writer_version)
+                     rows_total, rows_skipped, storage_target, status)
                 SELECT secid, market, boardid, data_kind, candle_interval,
                        date_from, @date_from - 1, last_success_at, last_task_id,
-                       0, 0, storage_target, status,
-                       source_contract_version, writer_version
+                       0, 0, storage_target, status
                 FROM moex_loaded_ranges
                 WHERE secid = @secid AND market = @market AND boardid = @boardid
                   AND data_kind = @data_kind
@@ -125,12 +117,10 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 INSERT INTO moex_loaded_ranges
                     (secid, market, boardid, data_kind, candle_interval,
                      date_from, date_till, last_success_at, last_task_id,
-                     rows_total, rows_skipped, storage_target, status,
-                     source_contract_version, writer_version)
+                     rows_total, rows_skipped, storage_target, status)
                 SELECT secid, market, boardid, data_kind, candle_interval,
                        @date_till + 1, date_till, last_success_at, last_task_id,
-                       0, 0, storage_target, status,
-                       source_contract_version, writer_version
+                       0, 0, storage_target, status
                 FROM moex_loaded_ranges
                 WHERE secid = @secid AND market = @market AND boardid = @boardid
                   AND data_kind = @data_kind

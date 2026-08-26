@@ -52,9 +52,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                     finished_at = CASE
                         WHEN cancel_requested_at IS NOT NULL THEN now()
                         ELSE null END,
-                    stop_reason = CASE
-                        WHEN cancel_requested_at IS NOT NULL THEN 'operator_cancelled'
-                        ELSE null END,
                     error_message = null
                 WHERE status = 'running'
                 """, connection);
@@ -82,10 +79,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 SET status = 'running',
                     started_at = now(),
                     finished_at = null,
-                    error_message = null,
-                    stop_reason = null,
-                    rows_loaded = 0,
-                    attempt_count = attempt_count + 1
+                    error_message = null
                 WHERE id = (
                     SELECT id FROM moex_load_tasks t
                     WHERE t.status = 'pending'
@@ -117,9 +111,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                           candle_interval,
                           date_from,
                           date_till,
-                          storage_target,
-                          source_contract_version,
-                          writer_version
+                          storage_target
                 """, connection, transaction);
 
             await cmd.PrepareAsync(ct);
@@ -136,9 +128,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                         CandleInterval: reader.IsDBNull(5) ? null : reader.GetInt32(5),
                         DateFrom: reader.GetFieldValue<DateOnly>(6),
                         DateTill: reader.GetFieldValue<DateOnly>(7),
-                        StorageTarget: reader.GetString(8),
-                        SourceContractVersion: reader.GetString(9),
-                        WriterVersion: reader.GetString(10))
+                        StorageTarget: reader.GetString(8))
                     : null;
             }
 

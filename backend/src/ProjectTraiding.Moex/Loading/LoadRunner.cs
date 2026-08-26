@@ -156,15 +156,12 @@ namespace ProjectTraiding.Moex.Loading
 
                 rowsForTelemetry = summary.RowsRead;
 
-                const string stopReason = "range_exhausted";
-
                 outcome = MoexOutcomes.Success;
-                stopReasonForTelemetry = stopReason;
 
                 // Штатное полное покрытие: журнал результата и закрытие успехом.
                 await _rangeWriter.UpsertAsync(
                     task, summary.RowsRead, summary.RowsSkipped, CancellationToken.None);
-                await _taskWriter.MarkDoneAsync(taskId, summary.RowsRead, stopReason, CancellationToken.None);
+                await _taskWriter.MarkDoneAsync(taskId, summary.RowsRead, CancellationToken.None);
 
                 return;
             }
@@ -205,7 +202,7 @@ namespace ProjectTraiding.Moex.Loading
                 stopReasonForTelemetry = null;
                 errorTypeForTelemetry = MoexMetrics.ClassifyError(ex);
 
-                await _taskWriter.MarkErrorAsync(taskId, ex.Message, null, CancellationToken.None);
+                await _taskWriter.MarkErrorAsync(taskId, ex.Message, CancellationToken.None);
 
                 throw;
             }

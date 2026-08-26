@@ -23,13 +23,12 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         }
 
         /// <summary>
-        /// Закрывает задачу успехом: running → done. finished_at = now(), rows_loaded,
-        /// stop_reason. Если строка не в running — аномалия, ошибка.
+        /// Закрывает задачу успехом: running → done. finished_at = now().
+        /// Если строка не в running — аномалия, ошибка.
         /// </summary>
         public async Task MarkDoneAsync(
             Guid taskId,
             long rowsLoaded,
-            string? stopReason,
             CancellationToken ct)
         {
             long startTs = Stopwatch.GetTimestamp();
@@ -37,13 +36,10 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
 
             await using NpgsqlCommand cmd = new NpgsqlCommand("""
                 UPDATE moex_load_tasks
-                SET status = 'done', finished_at = now(),
-                    rows_loaded = @rows, stop_reason = @stop_reason
+                SET status = 'done', finished_at = now()
                 WHERE id = @id AND status = 'running'
                 """, connection);
             cmd.Parameters.Add("@id", NpgsqlDbType.Uuid).Value = taskId;
-            cmd.Parameters.Add("@rows", NpgsqlDbType.Bigint).Value = rowsLoaded;
-            cmd.Parameters.Add("@stop_reason", NpgsqlDbType.Text).Value = (object?)stopReason ?? DBNull.Value;
 
             int affected = await cmd.ExecuteNonQueryAsync(ct);
             if (affected != 1)
@@ -55,13 +51,12 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         }
 
         /// <summary>
-        /// Закрывает задачу отказом: running → error. finished_at = now(), error_message,
-        /// stop_reason (отмена помечается явной причиной). Если строка не в running — аномалия, ошибка.
+        /// Закрывает задачу отказом: running → error. finished_at = now(), error_message.
+        /// Если строка не в running — аномалия, ошибка.
         /// </summary>
         public async Task MarkErrorAsync(
             Guid taskId,
             string errorMessage,
-            string? stopReason,
             CancellationToken ct)
         {
             long startTs = Stopwatch.GetTimestamp();
@@ -70,12 +65,11 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             await using NpgsqlCommand cmd = new NpgsqlCommand("""
                 UPDATE moex_load_tasks
                 SET status = 'error', finished_at = now(),
-                    error_message = @msg, stop_reason = @stop_reason
+                    error_message = @msg
                 WHERE id = @id AND status = 'running'
                 """, connection);
             cmd.Parameters.Add("@id", NpgsqlDbType.Uuid).Value = taskId;
             cmd.Parameters.Add("@msg", NpgsqlDbType.Text).Value = errorMessage;
-            cmd.Parameters.Add("@stop_reason", NpgsqlDbType.Text).Value = (object?)stopReason ?? DBNull.Value;
 
             int affected = await cmd.ExecuteNonQueryAsync(ct);
             if (affected != 1)
@@ -91,8 +85,8 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         /// оператора: есть запрос — cancelled, нет — возврат в очередь. Возвращает новый статус
         /// либо null, если строки в running уже нет.
         /// Пустой результат — не отказ, а безопасная гонка с естественным завершением: успевшее
-        /// закрыться успехом задание остаётся успешным. При возврате в очередь причина остановки
-        /// и текст ошибки очищаются; захват чистит те же поля при следующем запуске.
+        /// закрыться успехом задание остаётся успешным. При возврате в очередь текст ошибки
+        /// очищается; захват чистит то же поле при следующем запуске.
         /// </summary>
         public async Task<string?> FinalizeCancellationAsync(Guid taskId, CancellationToken ct)
         {
@@ -105,9 +99,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                         ELSE 'pending' END,
                     finished_at = CASE
                         WHEN cancel_requested_at IS NOT NULL THEN now()
-                        ELSE null END,
-                    stop_reason = CASE
-                        WHEN cancel_requested_at IS NOT NULL THEN 'operator_cancelled'
                         ELSE null END,
                     error_message = null
                 WHERE id = @id AND status = 'running'
