@@ -36,11 +36,11 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 INSERT INTO moex_loaded_ranges
                     (secid, market, boardid, data_kind, candle_interval,
                      date_from, date_till, last_success_at, last_task_id,
-                     rows_total, rows_skipped, storage_target, status)
+                     rows_total, rows_skipped, status)
                 VALUES
                     (@secid, @market, @boardid, @data_kind, @candle_interval,
                      @date_from, @date_till, now(), @last_task_id,
-                     @rows_total, @rows_skipped, @storage_target, 'ok')
+                     @rows_total, @rows_skipped, 'ok')
                 """, connection);
 
             cmd.Parameters.Add("@secid", NpgsqlDbType.Text).Value = task.Secid;
@@ -54,7 +54,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             cmd.Parameters.Add("@last_task_id", NpgsqlDbType.Uuid).Value = task.Id;
             cmd.Parameters.Add("@rows_total", NpgsqlDbType.Bigint).Value = rowsTotal;
             cmd.Parameters.Add("@rows_skipped", NpgsqlDbType.Bigint).Value = rowsSkipped;
-            cmd.Parameters.Add("@storage_target", NpgsqlDbType.Text).Value = task.StorageTarget;
 
             await cmd.ExecuteNonQueryAsync(ct);
 
@@ -78,15 +77,14 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 INSERT INTO moex_loaded_ranges
                     (secid, market, boardid, data_kind, candle_interval,
                      date_from, date_till, last_success_at, last_task_id,
-                     rows_total, rows_skipped, storage_target, status)
+                     rows_total, rows_skipped, status)
                 SELECT secid, market, boardid, data_kind, candle_interval,
                        date_from, @date_from - 1, last_success_at, last_task_id,
-                       0, 0, storage_target, status
+                       0, 0, status
                 FROM moex_loaded_ranges
                 WHERE secid = @secid AND market = @market AND boardid = @boardid
                   AND data_kind = @data_kind
                   AND candle_interval IS NOT DISTINCT FROM @candle_interval
-                  AND storage_target = @storage_target
                   AND time_from IS NULL AND status = 'ok'
                   AND rows_skipped = 0
                   AND date_from <= @date_till AND date_till >= @date_from
@@ -100,7 +98,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 cmd.Parameters.Add("@data_kind", NpgsqlDbType.Text).Value = task.DataKind;
                 cmd.Parameters.Add("@candle_interval", NpgsqlDbType.Integer).Value =
                     (object?)task.CandleInterval ?? DBNull.Value;
-                cmd.Parameters.Add("@storage_target", NpgsqlDbType.Text).Value = task.StorageTarget;
                 cmd.Parameters.Add("@date_from", NpgsqlDbType.Date).Value = task.DateFrom;
                 cmd.Parameters.Add("@date_till", NpgsqlDbType.Date).Value = task.DateTill;
                 affected += await cmd.ExecuteNonQueryAsync(ct);
@@ -110,15 +107,14 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 INSERT INTO moex_loaded_ranges
                     (secid, market, boardid, data_kind, candle_interval,
                      date_from, date_till, last_success_at, last_task_id,
-                     rows_total, rows_skipped, storage_target, status)
+                     rows_total, rows_skipped, status)
                 SELECT secid, market, boardid, data_kind, candle_interval,
                        @date_till + 1, date_till, last_success_at, last_task_id,
-                       0, 0, storage_target, status
+                       0, 0, status
                 FROM moex_loaded_ranges
                 WHERE secid = @secid AND market = @market AND boardid = @boardid
                   AND data_kind = @data_kind
                   AND candle_interval IS NOT DISTINCT FROM @candle_interval
-                  AND storage_target = @storage_target
                   AND time_from IS NULL AND status = 'ok'
                   AND rows_skipped = 0
                   AND date_from <= @date_till AND date_till >= @date_from
@@ -132,7 +128,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 cmd.Parameters.Add("@data_kind", NpgsqlDbType.Text).Value = task.DataKind;
                 cmd.Parameters.Add("@candle_interval", NpgsqlDbType.Integer).Value =
                     (object?)task.CandleInterval ?? DBNull.Value;
-                cmd.Parameters.Add("@storage_target", NpgsqlDbType.Text).Value = task.StorageTarget;
                 cmd.Parameters.Add("@date_from", NpgsqlDbType.Date).Value = task.DateFrom;
                 cmd.Parameters.Add("@date_till", NpgsqlDbType.Date).Value = task.DateTill;
                 affected += await cmd.ExecuteNonQueryAsync(ct);
@@ -143,7 +138,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 WHERE secid = @secid AND market = @market AND boardid = @boardid
                   AND data_kind = @data_kind
                   AND candle_interval IS NOT DISTINCT FROM @candle_interval
-                  AND storage_target = @storage_target
                   AND time_from IS NULL AND status = 'ok'
                   AND date_from <= @date_till AND date_till >= @date_from
                 """, connection, transaction))
@@ -154,7 +148,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 cmd.Parameters.Add("@data_kind", NpgsqlDbType.Text).Value = task.DataKind;
                 cmd.Parameters.Add("@candle_interval", NpgsqlDbType.Integer).Value =
                     (object?)task.CandleInterval ?? DBNull.Value;
-                cmd.Parameters.Add("@storage_target", NpgsqlDbType.Text).Value = task.StorageTarget;
                 cmd.Parameters.Add("@date_from", NpgsqlDbType.Date).Value = task.DateFrom;
                 cmd.Parameters.Add("@date_till", NpgsqlDbType.Date).Value = task.DateTill;
                 affected += await cmd.ExecuteNonQueryAsync(ct);

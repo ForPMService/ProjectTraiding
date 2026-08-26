@@ -84,7 +84,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                     SELECT id FROM moex_load_tasks t
                     WHERE t.status = 'pending'
                     AND t.cancel_requested_at IS NULL
-                    AND t.storage_target = 'clickhouse'
                     AND NOT EXISTS (
                         SELECT 1 FROM moex_instrument_data_deletions d
                         WHERE d.secid = t.secid AND d.status = 'started'
@@ -97,7 +96,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                           AND r.boardid = t.boardid
                           AND r.data_kind = t.data_kind
                           AND r.candle_interval IS NOT DISTINCT FROM t.candle_interval
-                          AND r.storage_target = t.storage_target
                     )
                     ORDER BY t.created_at
                     FOR UPDATE SKIP LOCKED
@@ -110,8 +108,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                           data_kind,
                           candle_interval,
                           date_from,
-                          date_till,
-                          storage_target
+                          date_till
                 """, connection, transaction);
 
             await cmd.PrepareAsync(ct);
@@ -127,8 +124,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                         DataKind: reader.GetString(4),
                         CandleInterval: reader.IsDBNull(5) ? null : reader.GetInt32(5),
                         DateFrom: reader.GetFieldValue<DateOnly>(6),
-                        DateTill: reader.GetFieldValue<DateOnly>(7),
-                        StorageTarget: reader.GetString(8))
+                        DateTill: reader.GetFieldValue<DateOnly>(7))
                     : null;
             }
 

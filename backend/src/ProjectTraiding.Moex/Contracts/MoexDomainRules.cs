@@ -10,12 +10,10 @@ namespace ProjectTraiding.Moex.Contracts
         private static readonly string[] MarketValues = ["stock", "futures"];
         private static readonly string[] DataKindValues =
             ["candles", "tradestats", "obstats", "orderstats", "futoi", "hi2", "mega_alerts"];
-        private static readonly string[] StorageTargetValues = ["clickhouse"];
         private static readonly int[] CandleIntervalValues = [1, 10, 60, 24];
 
         public static IReadOnlyList<string> Markets => MarketValues;
         public static IReadOnlyList<string> DataKinds => DataKindValues;
-        public static IReadOnlyList<string> StorageTargets => StorageTargetValues;
         public static IReadOnlyList<int> CandleIntervals => CandleIntervalValues;
 
         public static bool IsMarket(string? market) => market is "stock" or "futures";
@@ -38,8 +36,6 @@ namespace ProjectTraiding.Moex.Contracts
             dataKind is "orderstats" ? ["stock"]
             : dataKind is "futoi" ? ["futures"]
             : MarketValues;
-
-        public static bool IsStorageTarget(string? storageTarget) => storageTarget is "clickhouse";
 
         public static bool RequiresCandleInterval(string? dataKind) => dataKind == "candles";
 

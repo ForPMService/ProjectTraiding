@@ -11,6 +11,5 @@ namespace ProjectTraiding.Management.Contracts.Dto
         string[] StockDataKinds,
         string[] FuturesDataKinds,
         int[] CandleIntervals,
-        string StorageTarget,
         int? SliceWeeks);
 }

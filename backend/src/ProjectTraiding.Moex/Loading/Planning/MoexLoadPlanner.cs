@@ -15,7 +15,6 @@ namespace ProjectTraiding.Moex.Loading.Planning
         string[] StockDataKinds,
         string[] FuturesDataKinds,
         int[] CandleIntervals,
-        string StorageTarget,
         int? SliceWeeks);
 
     public readonly record struct MoexLoadWindow(
@@ -25,8 +24,7 @@ namespace ProjectTraiding.Moex.Loading.Planning
         string DataKind,
         int? CandleInterval,
         DateOnly DateFrom,
-        DateOnly DateTill,
-        string StorageTarget);
+        DateOnly DateTill);
 
     public sealed record MoexLoadPlanResult(
         IReadOnlyList<MoexLoadWindow> Windows,
@@ -81,7 +79,7 @@ namespace ProjectTraiding.Moex.Loading.Planning
                 {
                     AddWindows(
                         windows, instrument, "candles", request.CandleIntervals[intervalIndex],
-                        request.StorageTarget, request.SliceWeeks, instrument.DateFrom, effectiveTill);
+                        request.SliceWeeks, instrument.DateFrom, effectiveTill);
                 }
 
                 for (int dataKindIndex = 0; dataKindIndex < dataKinds.Length; dataKindIndex++)
@@ -97,7 +95,7 @@ namespace ProjectTraiding.Moex.Loading.Planning
 
                     AddWindows(
                         windows, subjectInstrument, dataKind, null,
-                        request.StorageTarget, request.SliceWeeks, instrument.DateFrom, effectiveTill);
+                        request.SliceWeeks, instrument.DateFrom, effectiveTill);
                 }
             }
 
@@ -109,7 +107,6 @@ namespace ProjectTraiding.Moex.Loading.Planning
             MoexLoadPlanInstrument instrument,
             string dataKind,
             int? candleInterval,
-            string storageTarget,
             int? requestedSliceWeeks,
             DateOnly effectiveFrom,
             DateOnly effectiveTill)
@@ -120,7 +117,7 @@ namespace ProjectTraiding.Moex.Loading.Planning
             int sliceWeeks = LoadTaskBulkExpander.ResolveSliceWeeks(
                 requestedSliceWeeks, dataKind, instrument.Market);
             LoadTaskBulkExpander.AddWindows(
-                windows, instrument, dataKind, candleInterval, storageTarget, sliceWeeks,
+                windows, instrument, dataKind, candleInterval, sliceWeeks,
                 effectiveFrom, effectiveTill);
         }
 

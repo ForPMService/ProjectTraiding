@@ -31,7 +31,7 @@ namespace ProjectTraiding.Management.Endpoints
 
                 MoexLoadWindow? planned = await planner.PlanSingleAsync(new MoexLoadWindow(
                     request.Secid, request.Market, request.Boardid, request.DataKind,
-                    request.CandleInterval, request.DateFrom, request.DateTill, request.StorageTarget), ct);
+                    request.CandleInterval, request.DateFrom, request.DateTill), ct);
                 if (planned is null)
                 {
                     string message = $"открытый интерес публикуется по серии срочных контрактов; " +
@@ -88,7 +88,7 @@ namespace ProjectTraiding.Management.Endpoints
 
                 MoexLoadPlanResult plan = await planner.PlanBulkAsync(new MoexLoadPlanRequest(
                     instruments, request.StockDataKinds, request.FuturesDataKinds,
-                    request.CandleIntervals, request.StorageTarget, request.SliceWeeks), ct);
+                    request.CandleIntervals, request.SliceWeeks), ct);
                 List<LoadTaskCreateRequest> tasks = new();
                 for (int index = 0; index < plan.Windows.Count; index++)
                     tasks.Add(ToRequest(plan.Windows[index]));
@@ -164,7 +164,7 @@ namespace ProjectTraiding.Management.Endpoints
 
         private static LoadTaskCreateRequest ToRequest(MoexLoadWindow window) => new(
             window.Secid, window.Market, window.Boardid, window.DataKind, window.CandleInterval,
-            window.DateFrom, window.DateTill, window.StorageTarget);
+            window.DateFrom, window.DateTill);
 
         private static ValidationResult ValidateBulkRequestShape(LoadTaskBulkCreateRequest request)
         {
@@ -183,10 +183,6 @@ namespace ProjectTraiding.Management.Endpoints
                 result.Errors.Add("candle_intervals обязателен");
             else if (!AllCandleIntervalsAllowed(request.CandleIntervals))
                 result.Errors.Add("candle_intervals содержит недопустимый интервал");
-            if (string.IsNullOrWhiteSpace(request.StorageTarget))
-                result.Errors.Add("storage_target обязателен");
-            else if (!MoexDomainRules.IsStorageTarget(request.StorageTarget))
-                result.Errors.Add("storage_target должен быть одним из: clickhouse");
             return result;
         }
 

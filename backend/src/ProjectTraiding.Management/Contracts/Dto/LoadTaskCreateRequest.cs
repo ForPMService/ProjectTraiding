@@ -17,6 +17,5 @@ namespace ProjectTraiding.Management.Contracts.Dto
         string DataKind,
         int? CandleInterval,
         DateOnly DateFrom,
-        DateOnly DateTill,
-        string StorageTarget);
+        DateOnly DateTill);
 }

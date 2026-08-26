@@ -115,10 +115,6 @@ namespace ProjectTraiding.Moex.Loading
                     // Признак остаётся ложным: уменьшать то, что не увеличилось, нельзя.
                 }
 
-                if (task.StorageTarget != "clickhouse")
-                    throw new InvalidOperationException(
-                        $"Задача {taskId} не нацелена на ClickHouse (storage_target={task.StorageTarget}).");
-
                 if (task.DateTill >= MoexTime.Today)
                     throw new InvalidOperationException(
                         $"Задача {taskId} захватывает незакрытый день (date_till={task.DateTill:yyyy-MM-dd}).");

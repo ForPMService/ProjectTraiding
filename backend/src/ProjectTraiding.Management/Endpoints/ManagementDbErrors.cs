@@ -30,7 +30,7 @@ namespace ProjectTraiding.Management.Endpoints
             return ex.SqlState switch
             {
                 "23503" => SecidNotFound,
-                "23514" => "недопустимое значение market или storage_target (страховка)",
+                "23514" => "недопустимое значение market (страховка)",
                 _ => null
             };
         }

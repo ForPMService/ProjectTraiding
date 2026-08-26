@@ -15,7 +15,6 @@ namespace ProjectTraiding.Moex.Loading.Planning
             MoexLoadPlanInstrument instrument,
             string dataKind,
             int? candleInterval,
-            string storageTarget,
             int sliceWeeks,
             DateOnly from,
             DateOnly till)
@@ -35,8 +34,7 @@ namespace ProjectTraiding.Moex.Loading.Planning
                     dataKind,
                     candleInterval,
                     windowFrom,
-                    windowTill,
-                    storageTarget));
+                    windowTill));
                 windowFrom = windowFrom.AddDays(sliceDays);
             }
         }

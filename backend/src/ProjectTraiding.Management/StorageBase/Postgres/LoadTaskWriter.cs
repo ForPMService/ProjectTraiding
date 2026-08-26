@@ -49,10 +49,10 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
             await using NpgsqlCommand cmd = new NpgsqlCommand("""
                 INSERT INTO moex_load_tasks
                     (secid, market, boardid, data_kind, candle_interval,
-                     date_from, date_till, storage_target)
+                     date_from, date_till)
                 SELECT
                     @secid, @market, @boardid, @data_kind, @candle_interval,
-                    @date_from, @date_till, @storage_target
+                    @date_from, @date_till
                 WHERE NOT EXISTS (
                     SELECT 1 FROM moex_instrument_data_deletions d
                     WHERE d.secid = @secid AND d.status = 'started'
@@ -68,7 +68,6 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                 (object?)request.CandleInterval ?? DBNull.Value;
             cmd.Parameters.Add("@date_from", NpgsqlDbType.Date).Value = request.DateFrom;
             cmd.Parameters.Add("@date_till", NpgsqlDbType.Date).Value = request.DateTill;
-            cmd.Parameters.Add("@storage_target", NpgsqlDbType.Text).Value = request.StorageTarget;
 
             object? idObj = await cmd.ExecuteScalarAsync(ct);
             return idObj is Guid id ? id : (Guid?)null;
@@ -98,8 +97,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                         data_kind       text,
                         candle_interval integer,
                         date_from       date,
-                        date_till       date,
-                        storage_target  text
+                        date_till       date
                     ) ON COMMIT DROP
                     """, connection, transaction);
                 await createTempCommand.ExecuteNonQueryAsync(ct);
@@ -113,7 +111,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                 await using (NpgsqlBinaryImporter importer = await connection.BeginBinaryImportAsync("""
                     COPY tmp_moex_load_tasks_bulk
                         (secid, market, boardid, data_kind, candle_interval,
-                         date_from, date_till, storage_target)
+                         date_from, date_till)
                     FROM STDIN (FORMAT BINARY)
                     """, ct))
                 {
@@ -134,7 +132,6 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
 
                         await importer.WriteAsync(task.DateFrom, NpgsqlDbType.Date, ct);
                         await importer.WriteAsync(task.DateTill, NpgsqlDbType.Date, ct);
-                        await importer.WriteAsync(task.StorageTarget, NpgsqlDbType.Text, ct);
                     }
 
                     await importer.CompleteAsync(ct);
@@ -171,13 +168,13 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                     inserted AS (
                         INSERT INTO moex_load_tasks
                             (secid, market, boardid, data_kind, candle_interval,
-                             date_from, date_till, storage_target)
+                             date_from, date_till)
                         SELECT t.secid, t.market, t.boardid, t.data_kind, t.candle_interval,
-                               t.date_from, t.date_till, t.storage_target
+                               t.date_from, t.date_till
                         FROM tmp_moex_load_tasks_bulk t
                         WHERE NOT EXISTS (SELECT 1 FROM blocked)
                         ON CONFLICT (secid, market, boardid, data_kind, candle_interval,
-                                     date_from, date_till, storage_target)
+                                     date_from, date_till)
                             WHERE status IN ('pending', 'running')
                         DO NOTHING
                         RETURNING 1

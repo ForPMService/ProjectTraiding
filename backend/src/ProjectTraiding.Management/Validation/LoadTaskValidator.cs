@@ -34,9 +34,6 @@ namespace ProjectTraiding.Management.Validation
                     $"{string.Join(", ", MoexDomainRules.GetAllowedMarketsForDataKind(request.DataKind!))}");
             }
 
-            if (!MoexDomainRules.IsStorageTarget(request.StorageTarget))
-                result.Errors.Add("storage_target должен быть одним из: clickhouse");
-
             if (MoexDomainRules.RequiresCandleInterval(request.DataKind))
             {
                 if (request.CandleInterval is null)

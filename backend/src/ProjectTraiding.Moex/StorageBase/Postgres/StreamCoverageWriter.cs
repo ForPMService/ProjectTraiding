@@ -16,8 +16,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
     /// </summary>
     public sealed class StreamCoverageWriter
     {
-        private const string StorageTarget = "clickhouse";
-
         private readonly NpgsqlDataSource _dataSource;
         private readonly ILogger<StreamCoverageWriter> _logger;
 
@@ -45,7 +43,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                   AND boardid = @boardid
                   AND data_kind = @data_kind
                   AND candle_interval IS NOT DISTINCT FROM @candle_interval
-                  AND storage_target = @storage_target
                   AND status = 'open'
                 """, connection);
 
@@ -55,8 +52,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             cmd.Parameters.Add("@data_kind", NpgsqlDbType.Text).Value = dataKind;
             cmd.Parameters.Add("@candle_interval", NpgsqlDbType.Integer).Value =
                 (object?)candleInterval ?? DBNull.Value;
-            cmd.Parameters.Add("@storage_target", NpgsqlDbType.Text).Value = StorageTarget;
-
             int closed = await cmd.ExecuteNonQueryAsync(ct);
             if (closed > 0)
                 MoexStreamCoverageLogMessages.CrashedClosed(_logger, secid, dataKind, closed);
@@ -81,15 +76,12 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 SET status = 'crashed'
                 WHERE data_kind = @data_kind
                   AND candle_interval IS NOT DISTINCT FROM @candle_interval
-                  AND storage_target = @storage_target
                   AND status = 'open'
                 """, connection);
 
             cmd.Parameters.Add("@data_kind", NpgsqlDbType.Text).Value = dataKind;
             cmd.Parameters.Add("@candle_interval", NpgsqlDbType.Integer).Value =
                 (object?)candleInterval ?? DBNull.Value;
-            cmd.Parameters.Add("@storage_target", NpgsqlDbType.Text).Value = StorageTarget;
-
             int marked = await cmd.ExecuteNonQueryAsync(ct);
             if (marked > 0)
                 MoexStreamCoverageLogMessages.OrphanedMarkedCrashed(_logger, dataKind, marked);
@@ -111,11 +103,11 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 INSERT INTO moex_loaded_ranges
                     (secid, market, boardid, data_kind, candle_interval,
                      date_from, date_till, time_from, time_till,
-                     rows_total, storage_target, status)
+                     rows_total, status)
                 VALUES
                     (@secid, @market, @boardid, @data_kind, @candle_interval,
                      @date, @date, @now, @now,
-                     0, @storage_target, 'open')
+                     0, 'open')
                 RETURNING id
                 """, connection);
 
@@ -127,8 +119,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 (object?)candleInterval ?? DBNull.Value;
             cmd.Parameters.Add("@date", NpgsqlDbType.Date).Value = today;
             cmd.Parameters.Add("@now", NpgsqlDbType.TimestampTz).Value = now;
-            cmd.Parameters.Add("@storage_target", NpgsqlDbType.Text).Value = StorageTarget;
-
             object? scalar = await cmd.ExecuteScalarAsync(ct);
             long id = (long)scalar!;
             MoexStreamCoverageLogMessages.SessionOpened(_logger, secid, dataKind, id);
