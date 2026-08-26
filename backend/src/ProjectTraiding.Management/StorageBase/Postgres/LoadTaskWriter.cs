@@ -16,7 +16,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
     /// ManagementWriteResult: идентификатор задачи это uuid, а поле Id общего типа
     /// рассчитано на таблицы с целочисленным ключом.
     ///
-    /// Команды отмены переводят pending и partial в cancelled, а для running фиксируют
+    /// Команды отмены переводят pending в cancelled, а для running фиксируют
     /// запрос остановки. Финальный статус выполняющегося задания устанавливает контур Moex.
     /// </summary>
     public sealed class LoadTaskWriter
@@ -178,7 +178,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                         WHERE NOT EXISTS (SELECT 1 FROM blocked)
                         ON CONFLICT (secid, market, boardid, data_kind, candle_interval,
                                      date_from, date_till, storage_target)
-                            WHERE status IN ('pending', 'running', 'partial')
+                            WHERE status IN ('pending', 'running')
                         DO NOTHING
                         RETURNING 1
                     )
@@ -234,13 +234,9 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
         }
 
         /// <summary>
-        /// Снимает всю ожидающую очередь: pending и partial → cancelled; для running
+        /// Снимает всю ожидающую очередь: pending → cancelled; для running
         /// фиксирует запрос отмены, не меняя статус. Фактическую остановку и финальный
         /// running → cancelled выполняет координатор Moex.
-        ///
-        /// Статус partial сохранён в схеме и страховочно обрабатывается запросами,
-        /// хотя кодом больше не проставляется. Он входит в уникальный индекс активных
-        /// заданий, и оставленная строка блокировала бы повторную постановку того же диапазона.
         ///
         /// Статусы done и error не трогаем: это завершённые исходы, а не очередь.
         ///
@@ -265,21 +261,18 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                     WITH affected AS (
                         UPDATE moex_load_tasks
                         SET status = CASE
-                                WHEN status IN ('pending', 'partial') THEN 'cancelled'
+                                WHEN status = 'pending' THEN 'cancelled'
                                 ELSE status END,
                             finished_at = CASE
-                                WHEN status IN ('pending', 'partial') THEN now()
+                                WHEN status = 'pending' THEN now()
                                 ELSE finished_at END,
-                            stop_reason = CASE
-                                WHEN status IN ('pending', 'partial') THEN 'operator_cancelled'
-                                ELSE stop_reason END,
                             error_message = CASE
-                                WHEN status IN ('pending', 'partial') THEN null
+                                WHEN status = 'pending' THEN null
                                 ELSE error_message END,
                             cancel_requested_at = CASE
                                 WHEN status = 'running' THEN now()
                                 ELSE cancel_requested_at END
-                        WHERE status IN ('pending', 'partial')
+                        WHERE status = 'pending'
                            OR (status = 'running' AND cancel_requested_at IS NULL)
                         RETURNING status
                     )
@@ -329,23 +322,20 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                     WITH affected AS (
                         UPDATE moex_load_tasks
                         SET status = CASE
-                                WHEN status IN ('pending', 'partial') THEN 'cancelled'
+                                WHEN status = 'pending' THEN 'cancelled'
                                 ELSE status END,
                             finished_at = CASE
-                                WHEN status IN ('pending', 'partial') THEN now()
+                                WHEN status = 'pending' THEN now()
                                 ELSE finished_at END,
-                            stop_reason = CASE
-                                WHEN status IN ('pending', 'partial') THEN 'operator_cancelled'
-                                ELSE stop_reason END,
                             error_message = CASE
-                                WHEN status IN ('pending', 'partial') THEN null
+                                WHEN status = 'pending' THEN null
                                 ELSE error_message END,
                             cancel_requested_at = CASE
                                 WHEN status = 'running' THEN now()
                                 ELSE cancel_requested_at END
                         WHERE secid = @secid
                           AND (
-                              status IN ('pending', 'partial')
+                              status = 'pending'
                               OR (status = 'running' AND cancel_requested_at IS NULL)
                           )
                         RETURNING status
