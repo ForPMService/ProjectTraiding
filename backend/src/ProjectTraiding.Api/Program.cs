@@ -29,6 +29,7 @@ builder.Services.AddPostgre(builder.Configuration);
 builder.Services.AddManagement();
 builder.Services.AddMoexLoading(builder.Configuration);
 builder.Services.AddMoexRealtimeReceiver(builder.Configuration);
+builder.Services.AddMoexAlgopackCurrentDay(builder.Configuration);
 
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
