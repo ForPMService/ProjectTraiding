@@ -18,85 +18,36 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
             _logger = logger;
         }
 
-        /// Возврат RowsWritten = 0 означает, что по инструменту идёт удаление данных:
-        /// при обычном ходе строка либо вставляется, либо обновляется через ON CONFLICT,
-        /// и ноль затронутых строк невозможен. Отсекающее условие стоит внутри вставки,
-        /// потому что проверка отдельным запросом перед ней оставляет окно шире.
         public async Task<ManagementWriteResult> EnableTradesAsync(string secid, CancellationToken ct)
         {
-            ManagementWriterLogMessages.WriteStarted(_logger, Table);
-            long startTs = Stopwatch.GetTimestamp();
-
-            try
-            {
-                await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
-                await using NpgsqlCommand cmd = new NpgsqlCommand("""
-                INSERT INTO moex_realtime_subscriptions
-                    (secid, data_kind, candle_interval, enabled, created_at, updated_at)
-                SELECT @secid, 'trades', NULL::int, true, now(), now()
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM moex_instrument_data_deletions d
-                    WHERE d.secid = @secid AND d.status = 'started'
-                )
-                ON CONFLICT (secid, data_kind)
-                DO UPDATE SET enabled = true, updated_at = now()
-                """, connection);
-                cmd.Parameters.Add("@secid", NpgsqlDbType.Text).Value = secid;
-
-                int rowsWritten = await cmd.ExecuteNonQueryAsync(ct);
-                TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
-                ManagementWriterLogMessages.RealtimeTradesEnabled(_logger, secid, rowsWritten, elapsed);
-                return new ManagementWriteResult(null, rowsWritten, elapsed);
-            }
-            catch (Exception ex)
-            {
-                ManagementWriterLogMessages.WriteRolledBack(_logger, ex, Table, ex.GetType().Name);
-                throw;
-            }
+            ManagementWriteResult result = await EnableAsync(secid, "trades", null, ct);
+            ManagementWriterLogMessages.RealtimeTradesEnabled(
+                _logger, secid, result.RowsWritten, result.Elapsed);
+            return result;
         }
 
-        /// Возврат RowsWritten = 0 означает, что по инструменту идёт удаление данных:
-        /// при обычном ходе строка либо вставляется, либо обновляется через ON CONFLICT,
-        /// и ноль затронутых строк невозможен. Отсекающее условие стоит внутри вставки,
-        /// потому что проверка отдельным запросом перед ней оставляет окно шире.
         public async Task<ManagementWriteResult> EnableOrderbookAsync(string secid, CancellationToken ct)
         {
-            ManagementWriterLogMessages.WriteStarted(_logger, Table);
-            long startTs = Stopwatch.GetTimestamp();
+            ManagementWriteResult result = await EnableAsync(secid, "orderbook", null, ct);
+            ManagementWriterLogMessages.RealtimeOrderbookEnabled(
+                _logger, secid, result.RowsWritten, result.Elapsed);
+            return result;
+        }
 
-            try
-            {
-                await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
-                await using NpgsqlCommand cmd = new NpgsqlCommand("""
-                INSERT INTO moex_realtime_subscriptions
-                    (secid, data_kind, candle_interval, enabled, created_at, updated_at)
-                SELECT @secid, 'orderbook', NULL::int, true, now(), now()
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM moex_instrument_data_deletions d
-                    WHERE d.secid = @secid AND d.status = 'started'
-                )
-                ON CONFLICT (secid, data_kind)
-                DO UPDATE SET enabled = true, updated_at = now()
-                """, connection);
-                cmd.Parameters.Add("@secid", NpgsqlDbType.Text).Value = secid;
-
-                int rowsWritten = await cmd.ExecuteNonQueryAsync(ct);
-                TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
-                ManagementWriterLogMessages.RealtimeOrderbookEnabled(_logger, secid, rowsWritten, elapsed);
-                return new ManagementWriteResult(null, rowsWritten, elapsed);
-            }
-            catch (Exception ex)
-            {
-                ManagementWriterLogMessages.WriteRolledBack(_logger, ex, Table, ex.GetType().Name);
-                throw;
-            }
+        public async Task<ManagementWriteResult> EnableCandlesAsync(string secid, CancellationToken ct)
+        {
+            ManagementWriteResult result = await EnableAsync(secid, "candles", 1, ct);
+            ManagementWriterLogMessages.RealtimeCandlesEnabled(
+                _logger, secid, result.RowsWritten, result.Elapsed);
+            return result;
         }
 
         /// Возврат RowsWritten = 0 означает, что по инструменту идёт удаление данных:
         /// при обычном ходе строка либо вставляется, либо обновляется через ON CONFLICT,
         /// и ноль затронутых строк невозможен. Отсекающее условие стоит внутри вставки,
         /// потому что проверка отдельным запросом перед ней оставляет окно шире.
-        public async Task<ManagementWriteResult> EnableCandlesAsync(string secid, CancellationToken ct)
+        private async Task<ManagementWriteResult> EnableAsync(
+            string secid, string dataKind, int? candleInterval, CancellationToken ct)
         {
             ManagementWriterLogMessages.WriteStarted(_logger, Table);
             long startTs = Stopwatch.GetTimestamp();
@@ -107,7 +58,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                 await using NpgsqlCommand cmd = new NpgsqlCommand("""
                 INSERT INTO moex_realtime_subscriptions
                     (secid, data_kind, candle_interval, enabled, created_at, updated_at)
-                SELECT @secid, 'candles', 1, true, now(), now()
+                SELECT @secid, @data_kind, @candle_interval, true, now(), now()
                 WHERE NOT EXISTS (
                     SELECT 1 FROM moex_instrument_data_deletions d
                     WHERE d.secid = @secid AND d.status = 'started'
@@ -116,10 +67,77 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                 DO UPDATE SET enabled = true, updated_at = now()
                 """, connection);
                 cmd.Parameters.Add("@secid", NpgsqlDbType.Text).Value = secid;
+                cmd.Parameters.Add("@data_kind", NpgsqlDbType.Text).Value = dataKind;
+                cmd.Parameters.Add("@candle_interval", NpgsqlDbType.Integer).Value =
+                    (object?)candleInterval ?? DBNull.Value;
 
                 int rowsWritten = await cmd.ExecuteNonQueryAsync(ct);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
-                ManagementWriterLogMessages.RealtimeCandlesEnabled(_logger, secid, rowsWritten, elapsed);
+                return new ManagementWriteResult(null, rowsWritten, elapsed);
+            }
+            catch (Exception ex)
+            {
+                ManagementWriterLogMessages.WriteRolledBack(_logger, ex, Table, ex.GetType().Name);
+                throw;
+            }
+        }
+
+        public async Task<ManagementWriteResult> EnableInstrumentAsync(
+            string secid, CancellationToken ct)
+        {
+            ManagementWriterLogMessages.WriteStarted(_logger, Table);
+            long startTs = Stopwatch.GetTimestamp();
+
+            try
+            {
+                await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
+                await using NpgsqlCommand cmd = new NpgsqlCommand("""
+                INSERT INTO moex_realtime_subscriptions
+                    (secid, data_kind, candle_interval, enabled, created_at, updated_at)
+                SELECT instrument.secid,
+                       subscription.data_kind,
+                       subscription.candle_interval,
+                       true,
+                       now(),
+                       now()
+                FROM moex_instruments instrument
+                JOIN (VALUES
+                    ('stock',   'trades',      NULL::int),
+                    ('stock',   'orderbook',   NULL::int),
+                    ('stock',   'candles',     1),
+                    ('stock',   'tradestats',  NULL::int),
+                    ('stock',   'obstats',     NULL::int),
+                    ('stock',   'orderstats',  NULL::int),
+                    ('stock',   'mega_alerts', NULL::int),
+                    ('stock',   'hi2',         NULL::int),
+                    ('futures', 'trades',      NULL::int),
+                    ('futures', 'orderbook',   NULL::int),
+                    ('futures', 'candles',     1),
+                    ('futures', 'tradestats',  NULL::int),
+                    ('futures', 'obstats',     NULL::int),
+                    ('futures', 'futoi',       NULL::int),
+                    ('futures', 'mega_alerts', NULL::int),
+                    ('futures', 'hi2',         NULL::int)
+                ) AS subscription(instrument_type, data_kind, candle_interval)
+                    ON subscription.instrument_type = instrument.instrument_type
+                WHERE instrument.secid = @secid
+                  AND instrument.instrument_type <> 'futures_series'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM moex_instrument_data_deletions d
+                      WHERE d.secid = @secid AND d.status = 'started'
+                  )
+                ON CONFLICT (secid, data_kind)
+                DO UPDATE SET
+                    candle_interval = EXCLUDED.candle_interval,
+                    enabled = true,
+                    updated_at = now()
+                """, connection);
+                cmd.Parameters.Add("@secid", NpgsqlDbType.Text).Value = secid;
+
+                int rowsWritten = await cmd.ExecuteNonQueryAsync(ct);
+                TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
+                ManagementWriterLogMessages.RealtimeInstrumentEnabled(
+                    _logger, secid, rowsWritten, elapsed);
                 return new ManagementWriteResult(null, rowsWritten, elapsed);
             }
             catch (Exception ex)

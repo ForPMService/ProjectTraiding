@@ -18,6 +18,7 @@ namespace ProjectTraiding.Management.Endpoints
             DisableOrderbook,
             EnableCandles,
             DisableCandles,
+            EnableInstrument,
             DisableInstrument
         }
 
@@ -135,6 +136,22 @@ namespace ProjectTraiding.Management.Endpoints
                     enabled: false,
                     ct));
 
+            routes.MapGet("/management/realtime-subscriptions/{secid}/enable", async (
+                string secid,
+                RealtimeSubscriptionWriter writer,
+                ILogger<RealtimeSubscriptionEndpointsLog> logger,
+                CancellationToken ct) =>
+                await HandleAsync(
+                    SubscriptionOperation.EnableInstrument,
+                    secid,
+                    writer,
+                    logger,
+                    "GET /management/realtime-subscriptions/{secid}/enable",
+                    "enable_instrument",
+                    "all",
+                    enabled: true,
+                    ct));
+
             routes.MapPost("/management/realtime-subscriptions/disable-all", async (
                 RealtimeSubscriptionWriter writer,
                 ILogger<RealtimeSubscriptionEndpointsLog> logger,
@@ -177,6 +194,7 @@ namespace ProjectTraiding.Management.Endpoints
                     SubscriptionOperation.DisableOrderbook => await writer.DisableOrderbookAsync(secid, ct),
                     SubscriptionOperation.EnableCandles => await writer.EnableCandlesAsync(secid, ct),
                     SubscriptionOperation.DisableCandles => await writer.DisableCandlesAsync(secid, ct),
+                    SubscriptionOperation.EnableInstrument => await writer.EnableInstrumentAsync(secid, ct),
                     SubscriptionOperation.DisableInstrument => await writer.DisableInstrumentAsync(secid, ct),
                     _ => throw new ArgumentOutOfRangeException(nameof(operation))
                 };

@@ -87,5 +87,14 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
             int cancelRequestedCount,
             TimeSpan elapsed);
 
+        [LoggerMessage(
+            EventId = 253, EventName = "MgmtRealtimeInstrumentEnabled", Level = LogLevel.Information,
+            Message = "Management realtime instrument enabled: secid={Secid}, rows={RowsWritten}, time={Elapsed}.")]
+        public static partial void RealtimeInstrumentEnabled(
+            ILogger logger,
+            string secid,
+            int rowsWritten,
+            TimeSpan elapsed);
+
     }
 }
