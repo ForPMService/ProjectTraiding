@@ -18,6 +18,7 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
         // Значения настроек имеют тип объекта: числовые литералы упаковывались бы в кучу
         // на каждую вставку. Значение постоянно, поэтому упаковано один раз.
         private static readonly object DisabledSetting = 0;
+        private static readonly object EnabledSetting = 1;
 
         private readonly ClickHouseClient _client;
         private readonly ILogger<ClickHouseInsertExecutor> _logger;
@@ -50,10 +51,21 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 BatchSize = rows.Count,
                 MaxDegreeOfParallelism = 1,
                 ColumnTypes = columnTypes,
-                CustomSettings = new Dictionary<string, object>
-                {
-                    ["async_insert"] = DisabledSetting,
-                },
+                // Историческая загрузка шлёт крупные пачки — синхронная вставка кладёт их одной
+                // частью. Приём шлёт мелкие частые пачки: без буферизации каждая стала бы
+                // отдельной частью. Ожидание подтверждения оставлено включённым: без него
+                // вызывающий получил бы успех до фактической записи, и счётчик вставленных
+                // строк перестал бы быть правдой.
+                CustomSettings = insertContext.Flow == MoexFlows.History
+                    ? new Dictionary<string, object>
+                    {
+                        ["async_insert"] = DisabledSetting,
+                    }
+                    : new Dictionary<string, object>
+                    {
+                        ["async_insert"] = EnabledSetting,
+                        ["wait_for_async_insert"] = EnabledSetting,
+                    },
             };
 
             // Собственного отрезка трассы у вставки нет намеренно: он создавался бы на
