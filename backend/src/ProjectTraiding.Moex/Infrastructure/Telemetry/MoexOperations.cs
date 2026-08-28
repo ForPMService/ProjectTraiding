@@ -30,4 +30,7 @@ public static class MoexOperations
 
     /// <summary>Опрос текущих свечей одного инструмента.</summary>
     public const string RealtimeCandlesPoll = "realtime.candles.poll";
+
+    /// <summary>Периодическая загрузка текущего дня ALGOPACK одного инструмента.</summary>
+    public const string RealtimeAlgopackCurrentDayPoll = "realtime.algopack_current_day.poll";
 }

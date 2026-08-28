@@ -62,6 +62,30 @@ namespace ProjectTraiding.Moex.Options
             if (options.CandlesPollSeconds <= 0)
                 throw new InvalidOperationException("Moex:CandlesPollSeconds должен быть положительным.");
 
+            if (options.TradeStatsPollSeconds <= 0)
+                throw new InvalidOperationException("Moex:TradeStatsPollSeconds должен быть положительным.");
+
+            if (options.ObStatsPollSeconds <= 0)
+                throw new InvalidOperationException("Moex:ObStatsPollSeconds должен быть положительным.");
+
+            if (options.OrderStatsPollSeconds <= 0)
+                throw new InvalidOperationException("Moex:OrderStatsPollSeconds должен быть положительным.");
+
+            if (options.FutoiPollSeconds <= 0)
+                throw new InvalidOperationException("Moex:FutoiPollSeconds должен быть положительным.");
+
+            if (options.MegaAlertsPollSeconds <= 0)
+                throw new InvalidOperationException("Moex:MegaAlertsPollSeconds должен быть положительным.");
+
+            if (options.Hi2RetrySeconds <= 0)
+                throw new InvalidOperationException("Moex:Hi2RetrySeconds должен быть положительным.");
+
+            if (options.Hi2DailyHour is < 0 or > 23)
+                throw new InvalidOperationException("Moex:Hi2DailyHour должен быть в диапазоне от 0 до 23.");
+
+            if (options.Hi2DailyMinute is < 0 or > 59)
+                throw new InvalidOperationException("Moex:Hi2DailyMinute должен быть в диапазоне от 0 до 59.");
+
             if (options.RealtimeStalePollIntervals <= 0)
                 throw new InvalidOperationException("Moex:RealtimeStalePollIntervals должен быть положительным.");
 

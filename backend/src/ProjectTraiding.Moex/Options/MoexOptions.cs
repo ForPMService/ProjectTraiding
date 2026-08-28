@@ -98,6 +98,16 @@ namespace ProjectTraiding.Moex.Options
         /// <summary>Интервал опроса свечей текущего дня, секунды. Раздельно со сделками и стаканом.</summary>
         public int CandlesPollSeconds { get; set; } = 5;
 
+        public bool AlgopackCurrentDayEnabled { get; set; }
+        public int TradeStatsPollSeconds { get; set; } = 300;
+        public int ObStatsPollSeconds { get; set; } = 300;
+        public int OrderStatsPollSeconds { get; set; } = 300;
+        public int FutoiPollSeconds { get; set; } = 300;
+        public int MegaAlertsPollSeconds { get; set; } = 60;
+        public int Hi2DailyHour { get; set; } = 19;
+        public int Hi2DailyMinute { get; set; } = 30;
+        public int Hi2RetrySeconds { get; set; } = 300;
+
         /// <summary>
         /// Во сколько интервалов опроса укладывается допустимая пауза между успешными
         /// опросами одного инструмента. Задаётся множителем, а не длительностью: интервалы
