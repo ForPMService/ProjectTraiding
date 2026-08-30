@@ -39,7 +39,7 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
                 RETURNING id
                 """, connection, transaction);
 
-                // Все колонки text. Валидатор уже гарантировал непустые source/relation/confidence (!).
+                // Все колонки text. Валидатор уже гарантировал непустые source/relation/confidence.
                 // nullable target/comment → DBNull.Value. Дат здесь нет (урок 42804 — в тарифах).
                 cmd.Parameters.Add("@source_secid", NpgsqlDbType.Text).Value = command.SourceSecid;
                 cmd.Parameters.Add("@target_secid", NpgsqlDbType.Text).Value = (object?)command.TargetSecid ?? DBNull.Value;
@@ -49,7 +49,9 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
                 cmd.Parameters.Add("@comment", NpgsqlDbType.Text).Value = (object?)command.Comment ?? DBNull.Value;
 
                 object? scalar = await cmd.ExecuteScalarAsync(ct);
-                long id = (long)scalar!;   // RETURNING id: bigint → long
+                long id = scalar is long value
+                    ? value
+                    : throw new InvalidOperationException("INSERT INTO moex_instrument_relations did not return id.");
 
                 await transaction.CommitAsync(ct);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);

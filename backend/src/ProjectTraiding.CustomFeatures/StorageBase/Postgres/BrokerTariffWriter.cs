@@ -62,11 +62,13 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
                 cmd.Parameters.Add("@valid_till", NpgsqlDbType.Date).Value = (object?)command.ValidTill ?? DBNull.Value;
                 cmd.Parameters.Add("@comment", NpgsqlDbType.Text).Value = (object?)command.Comment ?? DBNull.Value;
 
-                if (hasCurrency)
-                    cmd.Parameters.Add("@fee_currency", NpgsqlDbType.Text).Value = command.FeeCurrency!;
+                if (command.FeeCurrency is string feeCurrency)
+                    cmd.Parameters.Add("@fee_currency", NpgsqlDbType.Text).Value = feeCurrency;
 
                 object? scalar = await cmd.ExecuteScalarAsync(ct);
-                long id = (long)scalar!;
+                long id = scalar is long value
+                    ? value
+                    : throw new InvalidOperationException("INSERT INTO moex_broker_tariffs did not return id.");
 
                 await transaction.CommitAsync(ct);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);

@@ -42,7 +42,10 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
             dbCommand.Parameters.Add("@source_note", NpgsqlDbType.Text).Value =
                 (object?)command.SourceNote ?? DBNull.Value;
 
-            return (Guid)(await dbCommand.ExecuteScalarAsync(ct))!;
+            object? scalar = await dbCommand.ExecuteScalarAsync(ct);
+            return scalar is Guid id
+                ? id
+                : throw new InvalidOperationException("INSERT INTO moex_manual_events did not return id.");
         }
     }
 }
