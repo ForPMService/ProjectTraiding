@@ -1,7 +1,8 @@
 using Npgsql;
+using ProjectTraiding.CustomFeatures.Contracts;
+using ProjectTraiding.CustomFeatures.StorageBase.Postgres;
 using ProjectTraiding.Management.Contracts;
 using ProjectTraiding.Management.Contracts.Dto;
-using ProjectTraiding.Management.StorageBase.Postgres;
 using ProjectTraiding.Management.Validation;
 using System;
 using System.Collections.Generic;
@@ -33,7 +34,13 @@ namespace ProjectTraiding.Management.Endpoints
 
                 try
                 {
-                    ManagementWriteResult w = await writer.CreateAsync(request, ct);
+                    BrokerTariffCreateCommand command = new(
+                        request.BrokerName!, request.TariffName!, request.Market!, request.FeeType!,
+                        request.FeeValue!.Value, DateOnly.Parse(request.ValidFrom!),
+                        request.FeeCurrency, request.MinFee, request.TurnoverThreshold,
+                        request.ValidTill is null ? null : DateOnly.Parse(request.ValidTill),
+                        request.Comment);
+                    ContextWriteResult w = await writer.CreateAsync(command, ct);
                     ManagementResultDto dto = new(
                         Operation: "create_broker_tariff",
                         Target: "moex_broker_tariffs",

@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/ProjectTraiding.Api/ProjectTraiding.Api.csproj" />
+    <Project Path="src/ProjectTraiding.CustomFeatures/ProjectTraiding.CustomFeatures.csproj" />
     <Project Path="src/ProjectTraiding.Diagnostics/ProjectTraiding.Diagnostics.csproj" />
     <Project Path="src/ProjectTraiding.Management/ProjectTraiding.Management.csproj" />
     <Project Path="src/ProjectTraiding.Moex/ProjectTraiding.Moex.csproj" />

@@ -11,6 +11,7 @@
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
 	</ItemGroup>
 	<ItemGroup>
+		<ProjectReference Include="..\ProjectTraiding.CustomFeatures\ProjectTraiding.CustomFeatures.csproj" />
 		<ProjectReference Include="..\ProjectTraiding.Moex\ProjectTraiding.Moex.csproj" />
 	</ItemGroup>
 	<ItemGroup>

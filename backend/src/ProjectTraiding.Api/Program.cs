@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Options;
 using ProjectTraiding.Api.Infrastructure;
+using ProjectTraiding.CustomFeatures.Infrastructure.DependencyInjection;
 #if DEBUG
 using ProjectTraiding.Diagnostics.DependencyInjection;
 #endif
@@ -26,7 +27,7 @@ builder.AddProjectTraidingObservability(
 builder.Services.AddMoexClients(builder.Configuration);
 builder.Services.AddClickHouse(builder.Configuration);
 builder.Services.AddPostgre(builder.Configuration);
-builder.Services.AddManagement();
+builder.Services.AddCustomFeatures();
 builder.Services.AddMoexLoading(builder.Configuration);
 builder.Services.AddMoexRealtimeReceiver(builder.Configuration);
 builder.Services.AddMoexAlgopackCurrentDay(builder.Configuration);

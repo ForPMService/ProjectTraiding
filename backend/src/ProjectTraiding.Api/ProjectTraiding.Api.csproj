@@ -10,6 +10,7 @@
     <UserSecretsId>017b40f1-32cc-4972-a253-fbfaee10e4b5</UserSecretsId>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\ProjectTraiding.CustomFeatures\ProjectTraiding.CustomFeatures.csproj" />
     <ProjectReference Include="..\ProjectTraiding.Moex\ProjectTraiding.Moex.csproj" />
     <ProjectReference Include="..\ProjectTraiding.Observability\ProjectTraiding.Observability.csproj" />
     <ProjectReference Include="..\ProjectTraiding.Management\ProjectTraiding.Management.csproj" />
