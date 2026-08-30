@@ -1,10 +1,10 @@
 using Npgsql;
 using ProjectTraiding.Management.Contracts;
 using ProjectTraiding.Management.Contracts.Dto;
-using ProjectTraiding.Management.StorageBase.Postgres;
 using ProjectTraiding.Management.Validation;
 using ProjectTraiding.Moex.Contracts;
 using ProjectTraiding.Moex.Loading.Planning;
+using ProjectTraiding.Moex.StorageBase.Postgres;
 
 namespace ProjectTraiding.Management.Endpoints
 {
@@ -18,7 +18,7 @@ namespace ProjectTraiding.Management.Endpoints
         {
             routes.MapPost("/management/load-tasks", async (
                 LoadTaskCreateRequest request,
-                LoadTaskWriter writer,
+                LoadTaskCommandWriter writer,
                 MoexLoadPlanner planner,
                 ILogger<LoadTaskEndpointsLog> logger,
                 CancellationToken ct) =>
@@ -42,7 +42,7 @@ namespace ProjectTraiding.Management.Endpoints
 
                 try
                 {
-                    Guid? taskId = await writer.CreateAsync(ToRequest(planned.Value), ct);
+                    Guid? taskId = await writer.CreateAsync(planned.Value, ct);
                     if (taskId is null)
                     {
                         ManagementEndpointLogMessages.WriteBlockedByDeletion(logger, route, request.Secid);
@@ -63,7 +63,7 @@ namespace ProjectTraiding.Management.Endpoints
 
             routes.MapPost("/management/load-tasks/bulk", async (
                 LoadTaskBulkCreateRequest request,
-                LoadTaskWriter writer,
+                LoadTaskCommandWriter writer,
                 MoexLoadPlanner planner,
                 ILogger<LoadTaskEndpointsLog> logger,
                 CancellationToken ct) =>
@@ -89,17 +89,13 @@ namespace ProjectTraiding.Management.Endpoints
                 MoexLoadPlanResult plan = await planner.PlanBulkAsync(new MoexLoadPlanRequest(
                     instruments, request.StockDataKinds, request.FuturesDataKinds,
                     request.CandleIntervals, request.SliceWeeks), ct);
-                List<LoadTaskCreateRequest> tasks = new();
-                for (int index = 0; index < plan.Windows.Count; index++)
-                    tasks.Add(ToRequest(plan.Windows[index]));
-
-                ValidationResult validation = ValidateBulkExpandedTasks(tasks);
+                ValidationResult validation = ValidateBulkExpandedTasks(plan.Windows);
                 if (!validation.IsValid)
                     return ValidationFailure(logger, route, validation);
 
                 try
                 {
-                    BulkCreateResult result = await writer.CreateManyAsync(tasks, ct);
+                    LoadTaskBulkResult result = await writer.CreateManyAsync(plan.Windows, ct);
                     if (result.BlockedSecids.Count > 0)
                     {
                         string blocked = string.Join(", ", result.BlockedSecids);
@@ -125,18 +121,18 @@ namespace ProjectTraiding.Management.Endpoints
             });
 
             routes.MapPost("/management/load-tasks/cancel", async (
-                LoadTaskWriter writer, ILogger<LoadTaskEndpointsLog> logger, CancellationToken ct) =>
+                LoadTaskCommandWriter writer, ILogger<LoadTaskEndpointsLog> logger, CancellationToken ct) =>
             {
                 const string route = "POST /management/load-tasks/cancel";
                 ManagementEndpointLogMessages.OperationStarted(logger, route);
-                CancelResult result = await writer.CancelAllAsync(ct);
+                LoadTaskCancelResult result = await writer.CancelAllAsync(ct);
                 return Results.Json(new LoadTasksCancelResponse(
                     "all", null, result.CancelledCount, result.CancelRequestedCount,
                     result.Elapsed.TotalMilliseconds), ManagementJsonContext.Default.LoadTasksCancelResponse);
             });
 
             routes.MapPost("/management/load-tasks/instruments/{secid}/cancel", async (
-                string secid, LoadTaskWriter writer, ILogger<LoadTaskEndpointsLog> logger, CancellationToken ct) =>
+                string secid, LoadTaskCommandWriter writer, ILogger<LoadTaskEndpointsLog> logger, CancellationToken ct) =>
             {
                 const string route = "POST /management/load-tasks/instruments/{secid}/cancel";
                 ManagementEndpointLogMessages.OperationStarted(logger, route);
@@ -146,7 +142,7 @@ namespace ProjectTraiding.Management.Endpoints
                     ManagementEndpointLogMessages.ValidationRejected(logger, route, error);
                     return Results.BadRequest(error);
                 }
-                CancelResult result = await writer.CancelInstrumentAsync(secid, ct);
+                LoadTaskCancelResult result = await writer.CancelInstrumentAsync(secid, ct);
                 return Results.Json(new LoadTasksCancelResponse(
                     "instrument", secid, result.CancelledCount, result.CancelRequestedCount,
                     result.Elapsed.TotalMilliseconds), ManagementJsonContext.Default.LoadTasksCancelResponse);
@@ -161,10 +157,6 @@ namespace ProjectTraiding.Management.Endpoints
             ManagementEndpointLogMessages.ValidationRejected(logger, route, errors);
             return Results.BadRequest(errors);
         }
-
-        private static LoadTaskCreateRequest ToRequest(MoexLoadWindow window) => new(
-            window.Secid, window.Market, window.Boardid, window.DataKind, window.CandleInterval,
-            window.DateFrom, window.DateTill);
 
         private static ValidationResult ValidateBulkRequestShape(LoadTaskBulkCreateRequest request)
         {
@@ -223,13 +215,13 @@ namespace ProjectTraiding.Management.Endpoints
             return result;
         }
 
-        private static ValidationResult ValidateBulkExpandedTasks(IReadOnlyList<LoadTaskCreateRequest> tasks)
+        private static ValidationResult ValidateBulkExpandedTasks(IReadOnlyList<MoexLoadWindow> tasks)
         {
             ValidationResult result = new();
             HashSet<LoadTaskBulkValidationKey> seen = new();
             for (int index = 0; index < tasks.Count; index++)
             {
-                LoadTaskCreateRequest task = tasks[index];
+                MoexLoadWindow task = tasks[index];
                 if (!seen.Add(new LoadTaskBulkValidationKey(
                         task.Secid, task.Market, task.Boardid, task.DataKind, task.CandleInterval)))
                     continue;

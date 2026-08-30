@@ -1,31 +1,28 @@
 ﻿using Npgsql;
 using NpgsqlTypes;
-using ProjectTraiding.Management.Contracts.Dto;
+using ProjectTraiding.Moex.Loading.Planning;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
 
-namespace ProjectTraiding.Management.StorageBase.Postgres
+namespace ProjectTraiding.Moex.StorageBase.Postgres
 {
     /// <summary>
-    /// Создание и операторское снятие заданий загрузки (moex_load_tasks).
+    /// Создание и операторская отмена заданий загрузки (moex_load_tasks).
     ///
     /// При создании статус и версии не задаются — берутся DEFAULT схемы. id генерирует
     /// база (uuidv7()), возвращаем его через RETURNING. Возврат — Guid, а не общий
-    /// ManagementWriteResult: идентификатор задачи это uuid, а поле Id общего типа
-    /// рассчитано на таблицы с целочисленным ключом.
-    ///
     /// Команды отмены переводят pending в cancelled, а для running фиксируют
     /// запрос остановки. Финальный статус выполняющегося задания устанавливает контур Moex.
     /// </summary>
-    public sealed class LoadTaskWriter
+    public sealed class LoadTaskCommandWriter
     {
         private const string LoadTasksTable = "moex_load_tasks";
         private readonly NpgsqlDataSource _dataSource;
-        private readonly ILogger<LoadTaskWriter> _logger;
+        private readonly ILogger<LoadTaskCommandWriter> _logger;
 
-        public LoadTaskWriter(NpgsqlDataSource dataSource, ILogger<LoadTaskWriter> logger)
+        public LoadTaskCommandWriter(NpgsqlDataSource dataSource, ILogger<LoadTaskCommandWriter> logger)
         {
             _dataSource = dataSource;
             _logger = logger;
@@ -42,7 +39,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
         /// зафиксированное уже после начала оператора, не отсекается ни тем ни
         /// другим способом (раздел 5.3 задания).
         /// </summary>
-        public async Task<Guid?> CreateAsync(LoadTaskCreateRequest request, CancellationToken ct)
+        public async Task<Guid?> CreateAsync(MoexLoadWindow request, CancellationToken ct)
         {
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
 
@@ -73,12 +70,12 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
             return idObj is Guid id ? id : (Guid?)null;
         }
 
-        public async Task<BulkCreateResult> CreateManyAsync(
-            IReadOnlyList<LoadTaskCreateRequest> tasks,
+        public async Task<LoadTaskBulkResult> CreateManyAsync(
+            IReadOnlyList<MoexLoadWindow> tasks,
             CancellationToken ct)
         {
             if (tasks.Count == 0)
-                return new BulkCreateResult(
+                return new LoadTaskBulkResult(
                     ExpandedCount: 0,
                     InsertedCount: 0,
                     SkippedDuplicateCount: 0,
@@ -117,7 +114,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                 {
                     for (int i = 0; i < tasks.Count; i++)
                     {
-                        LoadTaskCreateRequest task = tasks[i];
+                        MoexLoadWindow task = tasks[i];
 
                         await importer.StartRowAsync(ct);
                         await importer.WriteAsync(task.Secid, NpgsqlDbType.Text, ct);
@@ -205,14 +202,14 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                     for (int i = 0; i < parts.Length; i++)
                         blocked.Add(parts[i]);
 
-                    return new BulkCreateResult(
+                    return new LoadTaskBulkResult(
                         ExpandedCount: tasks.Count,
                         InsertedCount: 0,
                         SkippedDuplicateCount: 0,
                         BlockedSecids: blocked);
                 }
 
-                return new BulkCreateResult(
+                return new LoadTaskBulkResult(
                     ExpandedCount: tasks.Count,
                     InsertedCount: (int)insertedCount,
                     SkippedDuplicateCount: tasks.Count - (int)insertedCount,
@@ -220,7 +217,7 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
             }
             catch (Exception ex)
             {
-                ManagementWriterLogMessages.WriteRolledBack(
+                MoexCommandWriterLogMessages.WriteRolledBack(
                     _logger,
                     ex,
                     "moex_load_tasks",
@@ -246,9 +243,9 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
         /// running и ставит запрос. Два отдельных оператора оставили бы окно потери отмены.
         /// Условие cancel_requested_at IS NULL делает повторный вызов идемпотентным.
         /// </summary>
-        public async Task<CancelResult> CancelAllAsync(CancellationToken ct)
+        public async Task<LoadTaskCancelResult> CancelAllAsync(CancellationToken ct)
         {
-            ManagementWriterLogMessages.WriteStarted(_logger, LoadTasksTable);
+            MoexCommandWriterLogMessages.WriteStarted(_logger, LoadTasksTable);
             long startTs = Stopwatch.GetTimestamp();
 
             try
@@ -284,16 +281,16 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                 int cancelledCount = (int)reader.GetInt64(0);
                 int cancelRequestedCount = (int)reader.GetInt64(1);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
-                ManagementWriterLogMessages.LoadTasksCancelledAll(
+                MoexCommandWriterLogMessages.LoadTasksCancelledAll(
                     _logger,
                     cancelledCount,
                     cancelRequestedCount,
                     elapsed);
-                return new CancelResult(cancelledCount, cancelRequestedCount, elapsed);
+                return new LoadTaskCancelResult(cancelledCount, cancelRequestedCount, elapsed);
             }
             catch (Exception ex)
             {
-                ManagementWriterLogMessages.WriteRolledBack(_logger, ex, LoadTasksTable, ex.GetType().Name);
+                MoexCommandWriterLogMessages.WriteRolledBack(_logger, ex, LoadTasksTable, ex.GetType().Name);
                 throw;
             }
         }
@@ -307,9 +304,9 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
         /// Отдельный метод, а не общий с необязательным secid: не переданный по ошибке
         /// параметр превратил бы точечную команду в снятие всей очереди.
         /// </summary>
-        public async Task<CancelResult> CancelInstrumentAsync(string secid, CancellationToken ct)
+        public async Task<LoadTaskCancelResult> CancelInstrumentAsync(string secid, CancellationToken ct)
         {
-            ManagementWriterLogMessages.WriteStarted(_logger, LoadTasksTable);
+            MoexCommandWriterLogMessages.WriteStarted(_logger, LoadTasksTable);
             long startTs = Stopwatch.GetTimestamp();
 
             try
@@ -349,17 +346,17 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
                 int cancelledCount = (int)reader.GetInt64(0);
                 int cancelRequestedCount = (int)reader.GetInt64(1);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
-                ManagementWriterLogMessages.LoadTasksCancelledInstrument(
+                MoexCommandWriterLogMessages.LoadTasksCancelledInstrument(
                     _logger,
                     secid,
                     cancelledCount,
                     cancelRequestedCount,
                     elapsed);
-                return new CancelResult(cancelledCount, cancelRequestedCount, elapsed);
+                return new LoadTaskCancelResult(cancelledCount, cancelRequestedCount, elapsed);
             }
             catch (Exception ex)
             {
-                ManagementWriterLogMessages.WriteRolledBack(_logger, ex, LoadTasksTable, ex.GetType().Name);
+                MoexCommandWriterLogMessages.WriteRolledBack(_logger, ex, LoadTasksTable, ex.GetType().Name);
                 throw;
             }
         }

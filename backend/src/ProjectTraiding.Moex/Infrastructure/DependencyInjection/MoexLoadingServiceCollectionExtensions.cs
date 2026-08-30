@@ -57,6 +57,7 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
             // области — пока очередь пуста, область не создаётся вовсе.
             services.AddSingleton<MoexLoadTaskReader>();
             services.AddTransient<MoexLoadTaskWriter>();
+            services.AddTransient<LoadTaskCommandWriter>();
             services.AddTransient<MoexLoadedRangeWriter>();
             services.AddScoped<LoadRunner>();
 

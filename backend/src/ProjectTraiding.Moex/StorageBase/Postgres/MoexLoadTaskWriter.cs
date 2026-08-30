@@ -8,8 +8,11 @@ using System.Text;
 namespace ProjectTraiding.Moex.StorageBase.Postgres
 {
     /// <summary>
-    /// Писатель жизненного цикла задачи загрузки (moex_load_tasks): закрыть успехом
-    /// или отказом. Создание задачи и захват — забота контура Management и исполнителя.
+    /// Писатель завершает выполнение задачи загрузки (moex_load_tasks): running → done,
+    /// running → error, а прерванное выполнение финализирует в running → cancelled при
+    /// наличии запроса отмены либо в running → pending без него. Создание заданий и
+    /// операторская отмена перешли к LoadTaskCommandWriter в этом же контуре; захват
+    /// задания остаётся за MoexLoadTaskReader. Два писателя одной таблицы допустимы.
     /// </summary>
     public sealed class MoexLoadTaskWriter
     {

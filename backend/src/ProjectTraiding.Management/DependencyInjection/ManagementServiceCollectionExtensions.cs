@@ -9,7 +9,6 @@ namespace ProjectTraiding.Management.DependencyInjection
     {
         public static IServiceCollection AddManagement(this IServiceCollection services)
         {
-            services.AddTransient<LoadTaskWriter>();
             services.AddTransient<RealtimeSubscriptionWriter>();
             return services;
         }
