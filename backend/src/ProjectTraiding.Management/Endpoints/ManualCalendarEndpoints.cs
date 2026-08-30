@@ -1,7 +1,8 @@
 using Npgsql;
+using ProjectTraiding.CustomFeatures.Contracts;
+using ProjectTraiding.CustomFeatures.StorageBase.Postgres;
 using ProjectTraiding.Management.Contracts;
 using ProjectTraiding.Management.Contracts.Dto;
-using ProjectTraiding.Management.StorageBase.Postgres;
 using ProjectTraiding.Moex.Contracts;
 
 namespace ProjectTraiding.Management.Endpoints
@@ -29,7 +30,12 @@ namespace ProjectTraiding.Management.Endpoints
 
                 try
                 {
-                    Guid id = await writer.CreateAsync(request, ct);
+                    ManualEventCreateCommand command = new(
+                        request.Secid!, request.EventType!, request.EventStage!,
+                        request.EventDate!.Value, request.KnownFrom!.Value,
+                        request.RecordDate, request.LastTradeDate, request.PaymentDate,
+                        request.Amount, request.Currency, request.SourceNote);
+                    Guid id = await writer.CreateAsync(command, ct);
                     return Results.Json(
                         new ManualEventCreateResponse(id, 1),
                         ManagementJsonContext.Default.ManualEventCreateResponse);
@@ -63,7 +69,11 @@ namespace ProjectTraiding.Management.Endpoints
 
                 try
                 {
-                    int rowsWritten = await writer.CreateAsync(request, ct);
+                    TradingPeriodCreateCommand command = new(
+                        request.Market!, request.ValidFrom!.Value, request.ValidTill!.Value,
+                        request.Boardid!, request.PeriodType!, request.TimeFrom!.Value,
+                        request.Secid, request.Session, request.TimeTill);
+                    int rowsWritten = await writer.CreateAsync(command, ct);
                     return CalendarResponse(rowsWritten);
                 }
                 catch (PostgresException ex)
@@ -95,7 +105,9 @@ namespace ProjectTraiding.Management.Endpoints
 
                 try
                 {
-                    int rowsWritten = await writer.CreateAsync(request, ct);
+                    TradingPeriodTypeCreateCommand command = new(
+                        request.Market!, request.TypeCode!, request.Title!);
+                    int rowsWritten = await writer.CreateAsync(command, ct);
                     return CalendarResponse(rowsWritten);
                 }
                 catch (PostgresException ex)

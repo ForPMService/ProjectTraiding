@@ -11,9 +11,6 @@ namespace ProjectTraiding.Management.DependencyInjection
         {
             services.AddTransient<LoadTaskWriter>();
             services.AddTransient<RealtimeSubscriptionWriter>();
-            services.AddTransient<ManualEventWriter>();
-            services.AddTransient<TradingPeriodWriter>();
-            services.AddTransient<TradingPeriodTypeWriter>();
             return services;
         }
     }
