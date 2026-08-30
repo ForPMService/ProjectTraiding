@@ -18,10 +18,14 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
             this IServiceCollection services,
             IConfiguration configuration)
         {
+            // Писатель подписок регистрируется безусловно: операторские команды включения
+            // и отключения работают и при выключенном приёмнике.
+            services.AddTransient<RealtimeSubscriptionWriter>();
+
             // Приёмник по умолчанию выключен. При выключенном признаке фоновые службы и их
-            // писатели не регистрируются вовсе — запуск API не начинает сбор. Секция читается
-            // здесь тем же приёмом, что и в AddMoexClients (Get<MoexOptions>), потому что на
-            // этапе построения контейнера привязанные настройки ещё недоступны.
+            // зависимые писатели не регистрируются — запуск API не начинает сбор. Секция
+            // читается здесь тем же приёмом, что и в AddMoexClients (Get<MoexOptions>), потому
+            // что на этапе построения контейнера привязанные настройки ещё недоступны.
             MoexOptions moexOptions =
                 configuration.GetSection("Moex").Get<MoexOptions>() ?? new MoexOptions();
             if (!moexOptions.RealtimeReceiverEnabled)

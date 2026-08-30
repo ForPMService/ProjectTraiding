@@ -1,7 +1,7 @@
 using Npgsql;
 using ProjectTraiding.Management.Contracts;
 using ProjectTraiding.Management.Contracts.Dto;
-using ProjectTraiding.Management.StorageBase.Postgres;
+using ProjectTraiding.Moex.StorageBase.Postgres;
 
 namespace ProjectTraiding.Management.Endpoints
 {
@@ -160,7 +160,7 @@ namespace ProjectTraiding.Management.Endpoints
                 const string route = "POST /management/realtime-subscriptions/disable-all";
                 ManagementEndpointLogMessages.OperationStarted(logger, route);
 
-                ManagementWriteResult w = await writer.DisableAllAsync(ct);
+                SubscriptionWriteResult w = await writer.DisableAllAsync(ct);
                 RealtimeSubscriptionsDisableAllResponse dto = new(
                     "disable_all", w.RowsWritten, w.Elapsed.TotalMilliseconds);
                 return Results.Json(
@@ -186,7 +186,7 @@ namespace ProjectTraiding.Management.Endpoints
 
             try
             {
-                ManagementWriteResult w = operation switch
+                SubscriptionWriteResult w = operation switch
                 {
                     SubscriptionOperation.EnableTrades => await writer.EnableTradesAsync(secid, ct),
                     SubscriptionOperation.DisableTrades => await writer.DisableTradesAsync(secid, ct),

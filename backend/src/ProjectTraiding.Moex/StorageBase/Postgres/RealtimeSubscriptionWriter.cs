@@ -2,7 +2,7 @@ using Npgsql;
 using NpgsqlTypes;
 using System.Diagnostics;
 
-namespace ProjectTraiding.Management.StorageBase.Postgres
+namespace ProjectTraiding.Moex.StorageBase.Postgres
 {
     public sealed class RealtimeSubscriptionWriter
     {
@@ -18,26 +18,26 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
             _logger = logger;
         }
 
-        public async Task<ManagementWriteResult> EnableTradesAsync(string secid, CancellationToken ct)
+        public async Task<SubscriptionWriteResult> EnableTradesAsync(string secid, CancellationToken ct)
         {
-            ManagementWriteResult result = await EnableAsync(secid, "trades", null, ct);
-            ManagementWriterLogMessages.RealtimeTradesEnabled(
+            SubscriptionWriteResult result = await EnableAsync(secid, "trades", null, ct);
+            MoexCommandWriterLogMessages.RealtimeTradesEnabled(
                 _logger, secid, result.RowsWritten, result.Elapsed);
             return result;
         }
 
-        public async Task<ManagementWriteResult> EnableOrderbookAsync(string secid, CancellationToken ct)
+        public async Task<SubscriptionWriteResult> EnableOrderbookAsync(string secid, CancellationToken ct)
         {
-            ManagementWriteResult result = await EnableAsync(secid, "orderbook", null, ct);
-            ManagementWriterLogMessages.RealtimeOrderbookEnabled(
+            SubscriptionWriteResult result = await EnableAsync(secid, "orderbook", null, ct);
+            MoexCommandWriterLogMessages.RealtimeOrderbookEnabled(
                 _logger, secid, result.RowsWritten, result.Elapsed);
             return result;
         }
 
-        public async Task<ManagementWriteResult> EnableCandlesAsync(string secid, CancellationToken ct)
+        public async Task<SubscriptionWriteResult> EnableCandlesAsync(string secid, CancellationToken ct)
         {
-            ManagementWriteResult result = await EnableAsync(secid, "candles", 1, ct);
-            ManagementWriterLogMessages.RealtimeCandlesEnabled(
+            SubscriptionWriteResult result = await EnableAsync(secid, "candles", 1, ct);
+            MoexCommandWriterLogMessages.RealtimeCandlesEnabled(
                 _logger, secid, result.RowsWritten, result.Elapsed);
             return result;
         }
@@ -46,10 +46,10 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
         /// при обычном ходе строка либо вставляется, либо обновляется через ON CONFLICT,
         /// и ноль затронутых строк невозможен. Отсекающее условие стоит внутри вставки,
         /// потому что проверка отдельным запросом перед ней оставляет окно шире.
-        private async Task<ManagementWriteResult> EnableAsync(
+        private async Task<SubscriptionWriteResult> EnableAsync(
             string secid, string dataKind, int? candleInterval, CancellationToken ct)
         {
-            ManagementWriterLogMessages.WriteStarted(_logger, Table);
+            MoexCommandWriterLogMessages.WriteStarted(_logger, Table);
             long startTs = Stopwatch.GetTimestamp();
 
             try
@@ -73,19 +73,19 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
 
                 int rowsWritten = await cmd.ExecuteNonQueryAsync(ct);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
-                return new ManagementWriteResult(null, rowsWritten, elapsed);
+                return new SubscriptionWriteResult(rowsWritten, elapsed);
             }
             catch (Exception ex)
             {
-                ManagementWriterLogMessages.WriteRolledBack(_logger, ex, Table, ex.GetType().Name);
+                MoexCommandWriterLogMessages.WriteRolledBack(_logger, ex, Table, ex.GetType().Name);
                 throw;
             }
         }
 
-        public async Task<ManagementWriteResult> EnableInstrumentAsync(
+        public async Task<SubscriptionWriteResult> EnableInstrumentAsync(
             string secid, CancellationToken ct)
         {
-            ManagementWriterLogMessages.WriteStarted(_logger, Table);
+            MoexCommandWriterLogMessages.WriteStarted(_logger, Table);
             long startTs = Stopwatch.GetTimestamp();
 
             try
@@ -136,20 +136,20 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
 
                 int rowsWritten = await cmd.ExecuteNonQueryAsync(ct);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
-                ManagementWriterLogMessages.RealtimeInstrumentEnabled(
+                MoexCommandWriterLogMessages.RealtimeInstrumentEnabled(
                     _logger, secid, rowsWritten, elapsed);
-                return new ManagementWriteResult(null, rowsWritten, elapsed);
+                return new SubscriptionWriteResult(rowsWritten, elapsed);
             }
             catch (Exception ex)
             {
-                ManagementWriterLogMessages.WriteRolledBack(_logger, ex, Table, ex.GetType().Name);
+                MoexCommandWriterLogMessages.WriteRolledBack(_logger, ex, Table, ex.GetType().Name);
                 throw;
             }
         }
 
-        public async Task<ManagementWriteResult> DisableTradesAsync(string secid, CancellationToken ct)
+        public async Task<SubscriptionWriteResult> DisableTradesAsync(string secid, CancellationToken ct)
         {
-            ManagementWriterLogMessages.WriteStarted(_logger, Table);
+            MoexCommandWriterLogMessages.WriteStarted(_logger, Table);
             long startTs = Stopwatch.GetTimestamp();
 
             try
@@ -164,19 +164,19 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
 
                 int rowsWritten = await cmd.ExecuteNonQueryAsync(ct);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
-                ManagementWriterLogMessages.RealtimeTradesDisabled(_logger, secid, rowsWritten, elapsed);
-                return new ManagementWriteResult(null, rowsWritten, elapsed);
+                MoexCommandWriterLogMessages.RealtimeTradesDisabled(_logger, secid, rowsWritten, elapsed);
+                return new SubscriptionWriteResult(rowsWritten, elapsed);
             }
             catch (Exception ex)
             {
-                ManagementWriterLogMessages.WriteRolledBack(_logger, ex, Table, ex.GetType().Name);
+                MoexCommandWriterLogMessages.WriteRolledBack(_logger, ex, Table, ex.GetType().Name);
                 throw;
             }
         }
 
-        public async Task<ManagementWriteResult> DisableOrderbookAsync(string secid, CancellationToken ct)
+        public async Task<SubscriptionWriteResult> DisableOrderbookAsync(string secid, CancellationToken ct)
         {
-            ManagementWriterLogMessages.WriteStarted(_logger, Table);
+            MoexCommandWriterLogMessages.WriteStarted(_logger, Table);
             long startTs = Stopwatch.GetTimestamp();
 
             try
@@ -191,19 +191,19 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
 
                 int rowsWritten = await cmd.ExecuteNonQueryAsync(ct);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
-                ManagementWriterLogMessages.RealtimeOrderbookDisabled(_logger, secid, rowsWritten, elapsed);
-                return new ManagementWriteResult(null, rowsWritten, elapsed);
+                MoexCommandWriterLogMessages.RealtimeOrderbookDisabled(_logger, secid, rowsWritten, elapsed);
+                return new SubscriptionWriteResult(rowsWritten, elapsed);
             }
             catch (Exception ex)
             {
-                ManagementWriterLogMessages.WriteRolledBack(_logger, ex, Table, ex.GetType().Name);
+                MoexCommandWriterLogMessages.WriteRolledBack(_logger, ex, Table, ex.GetType().Name);
                 throw;
             }
         }
 
-        public async Task<ManagementWriteResult> DisableCandlesAsync(string secid, CancellationToken ct)
+        public async Task<SubscriptionWriteResult> DisableCandlesAsync(string secid, CancellationToken ct)
         {
-            ManagementWriterLogMessages.WriteStarted(_logger, Table);
+            MoexCommandWriterLogMessages.WriteStarted(_logger, Table);
             long startTs = Stopwatch.GetTimestamp();
 
             try
@@ -218,19 +218,19 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
 
                 int rowsWritten = await cmd.ExecuteNonQueryAsync(ct);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
-                ManagementWriterLogMessages.RealtimeCandlesDisabled(_logger, secid, rowsWritten, elapsed);
-                return new ManagementWriteResult(null, rowsWritten, elapsed);
+                MoexCommandWriterLogMessages.RealtimeCandlesDisabled(_logger, secid, rowsWritten, elapsed);
+                return new SubscriptionWriteResult(rowsWritten, elapsed);
             }
             catch (Exception ex)
             {
-                ManagementWriterLogMessages.WriteRolledBack(_logger, ex, Table, ex.GetType().Name);
+                MoexCommandWriterLogMessages.WriteRolledBack(_logger, ex, Table, ex.GetType().Name);
                 throw;
             }
         }
 
-        public async Task<ManagementWriteResult> DisableInstrumentAsync(string secid, CancellationToken ct)
+        public async Task<SubscriptionWriteResult> DisableInstrumentAsync(string secid, CancellationToken ct)
         {
-            ManagementWriterLogMessages.WriteStarted(_logger, Table);
+            MoexCommandWriterLogMessages.WriteStarted(_logger, Table);
             long startTs = Stopwatch.GetTimestamp();
 
             try
@@ -245,12 +245,12 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
 
                 int rowsWritten = await cmd.ExecuteNonQueryAsync(ct);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
-                ManagementWriterLogMessages.RealtimeInstrumentDisabled(_logger, secid, rowsWritten, elapsed);
-                return new ManagementWriteResult(null, rowsWritten, elapsed);
+                MoexCommandWriterLogMessages.RealtimeInstrumentDisabled(_logger, secid, rowsWritten, elapsed);
+                return new SubscriptionWriteResult(rowsWritten, elapsed);
             }
             catch (Exception ex)
             {
-                ManagementWriterLogMessages.WriteRolledBack(_logger, ex, Table, ex.GetType().Name);
+                MoexCommandWriterLogMessages.WriteRolledBack(_logger, ex, Table, ex.GetType().Name);
                 throw;
             }
         }
@@ -262,9 +262,9 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
         /// Повторный вызов при неизменившемся состоянии возвращает ноль изменённых строк;
         /// если между вызовами подписки снова включили, ненулевой результат штатен.
         /// </summary>
-        public async Task<ManagementWriteResult> DisableAllAsync(CancellationToken ct)
+        public async Task<SubscriptionWriteResult> DisableAllAsync(CancellationToken ct)
         {
-            ManagementWriterLogMessages.WriteStarted(_logger, Table);
+            MoexCommandWriterLogMessages.WriteStarted(_logger, Table);
             long startTs = Stopwatch.GetTimestamp();
 
             try
@@ -278,12 +278,12 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
 
                 int rowsWritten = await cmd.ExecuteNonQueryAsync(ct);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
-                ManagementWriterLogMessages.RealtimeAllDisabled(_logger, rowsWritten, elapsed);
-                return new ManagementWriteResult(null, rowsWritten, elapsed);
+                MoexCommandWriterLogMessages.RealtimeAllDisabled(_logger, rowsWritten, elapsed);
+                return new SubscriptionWriteResult(rowsWritten, elapsed);
             }
             catch (Exception ex)
             {
-                ManagementWriterLogMessages.WriteRolledBack(_logger, ex, Table, ex.GetType().Name);
+                MoexCommandWriterLogMessages.WriteRolledBack(_logger, ex, Table, ex.GetType().Name);
                 throw;
             }
         }
