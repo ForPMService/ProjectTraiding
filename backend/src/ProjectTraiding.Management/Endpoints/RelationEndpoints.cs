@@ -1,7 +1,8 @@
 ﻿using Npgsql;
+using ProjectTraiding.CustomFeatures.Contracts;
+using ProjectTraiding.CustomFeatures.StorageBase.Postgres;
 using ProjectTraiding.Management.Contracts;
 using ProjectTraiding.Management.Contracts.Dto;
-using ProjectTraiding.Management.StorageBase.Postgres;
 using ProjectTraiding.Management.Validation;
 using System;
 using System.Collections.Generic;
@@ -36,7 +37,10 @@ namespace ProjectTraiding.Management.Endpoints
                 // 2. Запись. PostgresException приходит из writer'а (rollback там уже залогирован).
                 try
                 {
-                    ManagementWriteResult w = await writer.UpsertAsync(request, ct);
+                    InstrumentRelationUpsertCommand command = new(
+                        request.SourceSecid!, request.RelationType!, request.Confidence!,
+                        request.TargetSecid, request.TargetAssetCode, request.Comment);
+                    ContextWriteResult w = await writer.UpsertAsync(command, ct);
                     ManagementResultDto dto = new(
                         Operation: "upsert_instrument_relation",
                         Target: "moex_instrument_relations",

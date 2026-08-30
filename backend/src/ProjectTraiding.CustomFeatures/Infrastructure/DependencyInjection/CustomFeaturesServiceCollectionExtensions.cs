@@ -7,6 +7,7 @@ namespace ProjectTraiding.CustomFeatures.Infrastructure.DependencyInjection
         public static IServiceCollection AddCustomFeatures(this IServiceCollection services)
         {
             services.AddTransient<BrokerTariffWriter>();
+            services.AddTransient<InstrumentRelationWriter>();
             return services;
         }
     }

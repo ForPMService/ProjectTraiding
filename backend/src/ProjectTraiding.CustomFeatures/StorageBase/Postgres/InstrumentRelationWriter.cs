@@ -1,12 +1,9 @@
-﻿using Npgsql;
+using Npgsql;
 using NpgsqlTypes;
-using ProjectTraiding.Management.Contracts.Dto;
-using System;
-using System.Collections.Generic;
+using ProjectTraiding.CustomFeatures.Contracts;
 using System.Diagnostics;
-using System.Text;
 
-namespace ProjectTraiding.Management.StorageBase.Postgres
+namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
 {
     public sealed class InstrumentRelationWriter
     {
@@ -19,10 +16,10 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
             _logger = logger;
         }
 
-        public async Task<ManagementWriteResult> UpsertAsync(InstrumentRelationCreateRequest request, CancellationToken ct)
+        public async Task<ContextWriteResult> UpsertAsync(InstrumentRelationUpsertCommand command, CancellationToken ct)
         {
             const string table = "moex_instrument_relations";
-            ManagementWriterLogMessages.WriteStarted(_logger, table);
+            CustomFeaturesWriterLogMessages.WriteStarted(_logger, table);
             long startTs = Stopwatch.GetTimestamp();
 
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
@@ -44,27 +41,27 @@ namespace ProjectTraiding.Management.StorageBase.Postgres
 
                 // Все колонки text. Валидатор уже гарантировал непустые source/relation/confidence (!).
                 // nullable target/comment → DBNull.Value. Дат здесь нет (урок 42804 — в тарифах).
-                cmd.Parameters.Add("@source_secid", NpgsqlDbType.Text).Value = request.SourceSecid!;
-                cmd.Parameters.Add("@target_secid", NpgsqlDbType.Text).Value = (object?)request.TargetSecid ?? DBNull.Value;
-                cmd.Parameters.Add("@target_asset_code", NpgsqlDbType.Text).Value = (object?)request.TargetAssetCode ?? DBNull.Value;
-                cmd.Parameters.Add("@relation_type", NpgsqlDbType.Text).Value = request.RelationType!;
-                cmd.Parameters.Add("@confidence", NpgsqlDbType.Text).Value = request.Confidence!;
-                cmd.Parameters.Add("@comment", NpgsqlDbType.Text).Value = (object?)request.Comment ?? DBNull.Value;
+                cmd.Parameters.Add("@source_secid", NpgsqlDbType.Text).Value = command.SourceSecid;
+                cmd.Parameters.Add("@target_secid", NpgsqlDbType.Text).Value = (object?)command.TargetSecid ?? DBNull.Value;
+                cmd.Parameters.Add("@target_asset_code", NpgsqlDbType.Text).Value = (object?)command.TargetAssetCode ?? DBNull.Value;
+                cmd.Parameters.Add("@relation_type", NpgsqlDbType.Text).Value = command.RelationType;
+                cmd.Parameters.Add("@confidence", NpgsqlDbType.Text).Value = command.Confidence;
+                cmd.Parameters.Add("@comment", NpgsqlDbType.Text).Value = (object?)command.Comment ?? DBNull.Value;
 
                 object? scalar = await cmd.ExecuteScalarAsync(ct);
                 long id = (long)scalar!;   // RETURNING id: bigint → long
 
                 await transaction.CommitAsync(ct);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
-                ManagementWriterLogMessages.WriteCompleted(_logger, table, id, 1, elapsed);
+                CustomFeaturesWriterLogMessages.WriteCompleted(_logger, table, id, 1, elapsed);
 
-                return new ManagementWriteResult(Id: id, RowsWritten: 1, Elapsed: elapsed);
+                return new ContextWriteResult(Id: id, RowsWritten: 1, Elapsed: elapsed);
             }
             catch (Exception ex)
             {
                 // Любой rollback = Error (consistency с Moex). FK-опечатка оператора (23503) тоже сюда —
                 // известная шумность Error-уровня, endpoint переведёт её в 400-текст.
-                ManagementWriterLogMessages.WriteRolledBack(_logger, ex, table, ex.GetType().Name);
+                CustomFeaturesWriterLogMessages.WriteRolledBack(_logger, ex, table, ex.GetType().Name);
                 await transaction.RollbackAsync(CancellationToken.None);
                 throw;
             }
