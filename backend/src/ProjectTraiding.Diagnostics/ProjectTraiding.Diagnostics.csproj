@@ -19,6 +19,7 @@
 		<Using Include="Microsoft.Extensions.Logging" />
 	</ItemGroup>
 	<ItemGroup>
+		<ProjectReference Include="..\ProjectTraiding.CustomFeatures\ProjectTraiding.CustomFeatures.csproj" />
 		<ProjectReference Include="..\ProjectTraiding.Moex\ProjectTraiding.Moex.csproj" />
 	</ItemGroup>
 </Project>

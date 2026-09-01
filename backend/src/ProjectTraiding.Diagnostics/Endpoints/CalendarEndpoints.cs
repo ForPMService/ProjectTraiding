@@ -1,3 +1,4 @@
+using ProjectTraiding.CustomFeatures.Clients;
 using ProjectTraiding.Moex.Clients;
 
 
@@ -28,7 +29,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
             diagnosticsGroup.MapGet("/raw/calendar/stock/days", async (
                 string? source,
                 HttpRequest request,
-                MoexHttpCalendarClient calendarClient,
+                CalendarApimClient calendarClient,
                 MoexHttpIssClient issClient,
                 CancellationToken ct) =>
             {
@@ -40,7 +41,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
             diagnosticsGroup.MapGet("/raw/calendar/futures/days", async (
                 string? source,
                 HttpRequest request,
-                MoexHttpCalendarClient calendarClient,
+                CalendarApimClient calendarClient,
                 MoexHttpIssClient issClient,
                 CancellationToken ct) =>
             {
@@ -52,7 +53,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
             diagnosticsGroup.MapGet("/raw/calendar/stock/session", async (
                 string? source,
                 HttpRequest request,
-                MoexHttpCalendarClient calendarClient,
+                CalendarApimClient calendarClient,
                 MoexHttpIssClient issClient,
                 CancellationToken ct) =>
             {
@@ -64,7 +65,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
             diagnosticsGroup.MapGet("/raw/calendar/futures/session", async (
                 string? source,
                 HttpRequest request,
-                MoexHttpCalendarClient calendarClient,
+                CalendarApimClient calendarClient,
                 MoexHttpIssClient issClient,
                 CancellationToken ct) =>
             {
@@ -76,7 +77,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
             diagnosticsGroup.MapGet("/raw/calendar/stock/securities-boards", async (
                 string? source,
                 HttpRequest request,
-                MoexHttpCalendarClient calendarClient,
+                CalendarApimClient calendarClient,
                 MoexHttpIssClient issClient,
                 CancellationToken ct) =>
             {
@@ -88,7 +89,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
             diagnosticsGroup.MapGet("/raw/calendar/futures/securities", async (
                 string? source,
                 HttpRequest request,
-                MoexHttpCalendarClient calendarClient,
+                CalendarApimClient calendarClient,
                 MoexHttpIssClient issClient,
                 CancellationToken ct) =>
             {
@@ -189,7 +190,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
             string market,
             string? source,
             HttpRequest request,
-            MoexHttpCalendarClient calendarClient,
+            CalendarApimClient calendarClient,
             MoexHttpIssClient issClient,
             string method,
             CancellationToken ct)
