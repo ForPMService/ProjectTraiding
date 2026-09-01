@@ -28,9 +28,6 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
             // и журнал, оба одиночки. Создавать его заново на каждое обращение незачем.
             services.AddSingleton<ClickHouseInsertExecutor>();
             services.AddTransient<MoexInstrumentWriter>();
-            services.AddTransient<MoexCalendarWriter>();
-            services.AddTransient<MoexCalendarReferenceWriter>();
-            services.AddTransient<MoexCalendarLoader>();
             services.AddTransient<MoexInstrumentSyncLoader>();
             services.AddTransient<InstrumentClickHouseDataDeleter>();
             services.AddTransient<SeriesRangeDeleter>();

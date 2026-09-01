@@ -1,8 +1,8 @@
+using ProjectTraiding.CustomFeatures.Loading;
+using ProjectTraiding.CustomFeatures.StorageBase.Postgres;
 using ProjectTraiding.Management.Contracts;
 using ProjectTraiding.Management.Contracts.Dto;
 using ProjectTraiding.Moex.Contracts;
-using ProjectTraiding.Moex.Loading;
-using ProjectTraiding.Moex.StorageBase.Postgres;
 
 namespace ProjectTraiding.Management.Endpoints
 {
@@ -12,37 +12,37 @@ namespace ProjectTraiding.Management.Endpoints
         {
             routes.MapPost("/management/calendar/days", async (
                 CalendarLoadRequest request,
-                MoexCalendarLoader loader,
+                CalendarLoader loader,
                 CancellationToken ct) =>
             {
-                DateOnly dateFrom = request.DateFrom ?? MoexCalendarLoader.GetDefaultDateFrom();
+                DateOnly dateFrom = request.DateFrom ?? CalendarLoader.GetDefaultDateFrom();
                 if (request.DateTill is DateOnly dateTill && dateFrom > dateTill)
                     return Results.BadRequest("dateFrom не может быть позже dateTill");
                 return CalendarResponse(await loader.LoadDaysAsync(dateFrom, request.DateTill, ct));
             });
 
             routes.MapPost("/management/calendar/intervals", async (
-                MoexCalendarLoader loader,
+                CalendarLoader loader,
                 CancellationToken ct) => CalendarResponse(await loader.LoadIntervalsAsync(ct)));
 
             routes.MapPost("/management/calendar/expirations", async (
                 CalendarLoadRequest request,
-                MoexCalendarLoader loader,
+                CalendarLoader loader,
                 CancellationToken ct) =>
             {
-                DateOnly dateFrom = request.DateFrom ?? MoexCalendarLoader.GetDefaultDateFrom();
+                DateOnly dateFrom = request.DateFrom ?? CalendarLoader.GetDefaultDateFrom();
                 if (request.DateTill is DateOnly dateTill && dateFrom > dateTill)
                     return Results.BadRequest("dateFrom не может быть позже dateTill");
                 return CalendarResponse(await loader.LoadExpirationsAsync(dateFrom, request.DateTill, ct));
             });
 
             routes.MapPost("/management/calendar/splits", async (
-                MoexCalendarLoader loader,
+                CalendarLoader loader,
                 CancellationToken ct) => CalendarResponse(await loader.LoadSplitsAsync(ct)));
 
             routes.MapPost("/management/calendar/days/override", async (
                 CalendarDayOverrideRequest request,
-                MoexCalendarWriter writer,
+                CalendarDayWriter writer,
                 CancellationToken ct) =>
             {
                 string? validationError = ValidateOverride(request);
@@ -68,7 +68,7 @@ namespace ProjectTraiding.Management.Endpoints
                 return "market должен быть stock или futures";
             if (request.Date is null)
                 return "date обязателен";
-            if (!MoexDomainRules.IsCalendarTradingFlag(request.IsTraded))
+            if (request.IsTraded is not (0 or 1))
                 return "isTraded должен быть 0 или 1";
             return null;
         }

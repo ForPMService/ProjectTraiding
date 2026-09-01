@@ -1,4 +1,5 @@
 using ProjectTraiding.CustomFeatures.StorageBase.Postgres;
+using ProjectTraiding.CustomFeatures.Loading;
 
 namespace ProjectTraiding.CustomFeatures.Infrastructure.DependencyInjection
 {
@@ -11,6 +12,9 @@ namespace ProjectTraiding.CustomFeatures.Infrastructure.DependencyInjection
             services.AddTransient<ManualEventWriter>();
             services.AddTransient<TradingPeriodWriter>();
             services.AddTransient<TradingPeriodTypeWriter>();
+            services.AddTransient<CalendarDayWriter>();
+            services.AddTransient<CalendarReferenceWriter>();
+            services.AddTransient<CalendarLoader>();
             return services;
         }
     }
