@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.Extensions.Options;
 using ProjectTraiding.Api.Infrastructure;
 using ProjectTraiding.CustomFeatures.Infrastructure.DependencyInjection;
+using ProjectTraiding.CustomFeatures.Options;
 #if DEBUG
 using ProjectTraiding.Diagnostics.DependencyInjection;
 #endif
@@ -28,6 +29,7 @@ builder.Services.AddMoexClients(builder.Configuration);
 builder.Services.AddClickHouse(builder.Configuration);
 builder.Services.AddPostgre(builder.Configuration);
 builder.Services.AddCustomFeatures();
+builder.Services.AddCustomFeaturesCalendarSource(builder.Configuration);
 builder.Services.AddMoexLoading(builder.Configuration);
 builder.Services.AddMoexRealtimeReceiver(builder.Configuration);
 builder.Services.AddMoexAlgopackCurrentDay(builder.Configuration);
@@ -54,6 +56,10 @@ using (IServiceScope startupScope = app.Services.CreateScope())
     ILogger<Program> startupLogger = startupScope.ServiceProvider
         .GetRequiredService<ILogger<Program>>();
     MoexOptionsValidator.ValidateAndLog(moexOptions, startupLogger);
+
+    CalendarSourceOptions calendarSourceOptions = startupScope.ServiceProvider
+        .GetRequiredService<IOptions<CalendarSourceOptions>>().Value;
+    CalendarSourceOptionsValidator.Validate(calendarSourceOptions);
 }
 // Запись исключения в журнал делает сам промежуточный слой обработки: он всегда
 // пишет её перед вызовом обработчика. Поэтому здесь только тело ответа.

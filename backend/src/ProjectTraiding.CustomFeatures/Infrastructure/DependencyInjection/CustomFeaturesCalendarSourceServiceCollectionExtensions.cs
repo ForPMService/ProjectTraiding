@@ -32,6 +32,23 @@ public static class CustomFeaturesCalendarSourceServiceCollectionExtensions
     {
         services.AddOptions<CalendarSourceOptions>()
             .Bind(configuration.GetSection("Moex"));
+
+        CalendarSourceOptions options =
+            configuration.GetSection("Moex").Get<CalendarSourceOptions>() ?? new CalendarSourceOptions();
+
+        string certificatesDirectory =
+            Path.Combine(AppContext.BaseDirectory, options.CertificatesDirectory);
+
+        (
+            X509Certificate2Collection Roots,
+            X509Certificate2Collection Intermediates
+        ) nucTrust = (
+            LoadCertificateSet(certificatesDirectory, "Roots", ExpectedRootHashes),
+            LoadCertificateSet(certificatesDirectory, "Intermediates", ExpectedIntermediateHashes));
+
+        AddCalendarHttpClient<CalendarApimClient>(services, options, CalendarLogSources.Apim, nucTrust);
+        AddCalendarHttpClient<CalendarIssClient>(services, options, CalendarLogSources.Iss, nucTrust: null);
+
         return services;
     }
 
