@@ -1,7 +1,7 @@
 namespace ProjectTraiding.Moex.Contracts
 {
     /// <summary>
-    /// Предметные правила загрузки и календаря Московской биржи. Это не
+    /// Предметные правила загрузки Московской биржи. Это не
     /// Infrastructure.Telemetry.MoexDataKinds: тот класс задаёт только метки
     /// телеметрии и не является словарём допустимых видов задач.
     /// </summary>
@@ -41,7 +41,5 @@ namespace ProjectTraiding.Moex.Contracts
 
         public static bool IsCandleInterval(int? candleInterval) =>
             candleInterval is 1 or 10 or 60 or 24;
-
-        public static bool IsCalendarTradingFlag(int? isTraded) => isTraded is 0 or 1;
     }
 }

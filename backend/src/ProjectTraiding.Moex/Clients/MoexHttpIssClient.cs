@@ -1,13 +1,11 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using ProjectTraiding.Moex.Contracts.Dto.Calendar;
 using ProjectTraiding.Moex.Contracts.Dto.Iss;
 using ProjectTraiding.Moex.Infrastructure.Buffers;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Parsing;
 using System.Diagnostics;
-using System.Globalization;
 using System.Text;
 
 
@@ -102,51 +100,5 @@ namespace ProjectTraiding.Moex.Clients
             }
         }
 
-        public async Task<List<EngineDailyTableDTO>> GetEngine(
-            string engine,
-            CancellationToken ct)
-        {
-            string endpoint = $"/engines/{engine}.json";
-            using RentedBuffer buffer = await RentAsync(endpoint, null, ct);
-            return ParsingIssCalendar.ParseEngine(buffer.Memory);
-        }
-
-        public async Task<List<ListingIntervalDTO>> GetListing(
-            string engine,
-            string market,
-            string? status,
-            int limit,
-            int start,
-            CancellationToken ct)
-        {
-            string endpoint = $"/history/engines/{engine}/markets/{market}/listing.json";
-            Dictionary<string, string> queryParams = new Dictionary<string, string>
-            {
-                ["limit"] = limit.ToString(CultureInfo.InvariantCulture),
-                ["start"] = start.ToString(CultureInfo.InvariantCulture),
-            };
-            if (status is not null)
-                queryParams["status"] = status;
-
-            using RentedBuffer buffer = await RentAsync(endpoint, queryParams, ct);
-            return ParsingIssCalendar.ParseListing(buffer.Memory);
-        }
-
-        public async Task<List<SplitWriteDTO>> GetSplits(CancellationToken ct)
-        {
-            const string endpoint = "/statistics/engines/stock/splits.json";
-            using RentedBuffer buffer = await RentAsync(endpoint, null, ct);
-            return ParsingIssCalendar.ParseSplits(buffer.Memory);
-        }
-
-        private async Task<RentedBuffer> RentAsync(
-            string endpoint,
-            Dictionary<string, string>? queryParams,
-            CancellationToken ct)
-        {
-            using HttpResponseMessage response = await _transport.SendAsync(endpoint, queryParams, ct);
-            return await RentedBuffer.RentFromResponseAsync(
-                response, _options.BodyReadTimeout, endpoint, ct);
-        }
     }
 }

@@ -123,7 +123,6 @@ namespace ProjectTraiding.Moex.Clients
     {
         public const string Iss = "MOEX_ISS";
         public const string Algopack = "MOEX_ALGOPACK";
-        public const string Calendar = "MOEX_CALENDAR";
         public const string RealtimeRest = "MOEX_REALTIME_REST";
     }
 }

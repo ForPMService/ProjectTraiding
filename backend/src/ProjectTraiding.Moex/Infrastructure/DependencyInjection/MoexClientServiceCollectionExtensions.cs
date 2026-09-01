@@ -66,7 +66,6 @@ public static class MoexClientServiceCollectionExtensions
 
         AddMoexHttpClient<MoexHttpIssClient>(services, moexOptions, MoexLogSources.Iss, nucTrust: null);
         AddMoexHttpClient<MoexHttpAlgClient>(services, moexOptions, MoexLogSources.Algopack, nucTrust);
-        AddMoexHttpClient<MoexHttpCalendarClient>(services, moexOptions, MoexLogSources.Calendar, nucTrust);
         AddMoexHttpClient<MoexRealtimeRestClient>(services, moexOptions, MoexLogSources.RealtimeRest, nucTrust);
 
         return services;
