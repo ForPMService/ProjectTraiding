@@ -68,10 +68,9 @@ public sealed class CalendarLoader
                 bool hasFuturesDay = futuresActual.TryGetValue(date, out futuresDay);
 
                 output.Add(CreateDay(
-                    date, "stock", hasStockDay ? stockDay : null,
-                    hasFuturesDay ? futuresDay : null, stockTimes));
+                    date, "stock", hasStockDay ? stockDay : null, stockTimes));
                 output.Add(CreateDay(
-                    date, "futures", hasFuturesDay ? futuresDay : null, null, futuresTimes));
+                    date, "futures", hasFuturesDay ? futuresDay : null, futuresTimes));
                 date = date.AddDays(1);
             }
         }
@@ -188,8 +187,6 @@ public sealed class CalendarLoader
         for (int index = 0; index < rows.Count; index++)
         {
             CalendarOffDaysMarketDTO row = rows[index];
-            if (row.UpdateTime is null)
-                continue;
             DateOnly date = row.TradeDate;
             result[date] = row;
         }
@@ -212,32 +209,11 @@ public sealed class CalendarLoader
         DateOnly date,
         string market,
         CalendarOffDaysMarketDTO? ownDay,
-        CalendarOffDaysMarketDTO? borrowedDay,
         Dictionary<DateOnly, EngineDayTimes> times)
     {
-        int isTraded;
-        DateOnly? tradeSessionDate = null;
-        string? reason = null;
-        string dataSource;
-        DateTime? updateTime = null;
-        if (ownDay is not null)
-        {
-            isTraded = RequireIsTraded(ownDay, market);
-            tradeSessionDate = ownDay.TradeSessionDate;
-            reason = ownDay.Reason;
-            dataSource = "calendar";
-            updateTime = ownDay.UpdateTime;
-        }
-        else if (borrowedDay is not null)
-        {
-            isTraded = RequireIsTraded(borrowedDay, "futures");
-            dataSource = "calendar_futures";
-        }
-        else
-        {
-            isTraded = IsWeekday(date) ? 1 : 0;
-            dataSource = "weekday_rule";
-        }
+        if (ownDay is null)
+            throw new InvalidOperationException(
+                $"Календарь {market} не вернул дату {date:yyyy-MM-dd} в запрошенном диапазоне.");
 
         EngineDayTimes engineTimes;
         times.TryGetValue(date, out engineTimes);
@@ -245,14 +221,14 @@ public sealed class CalendarLoader
         {
             TradeDate = date,
             Market = market,
-            IsTraded = isTraded,
-            TradeSessionDate = tradeSessionDate,
-            Reason = reason,
+            IsTraded = RequireIsTraded(ownDay, market),
+            TradeSessionDate = ownDay.TradeSessionDate,
+            Reason = ownDay.Reason,
             StartTime = engineTimes.StartTime,
             StopTime = engineTimes.StopTime,
             EngineIsWorkDay = engineTimes.IsWorkDay,
-            DataSource = dataSource,
-            MoexUpdateTime = updateTime,
+            DataSource = "calendar",
+            MoexUpdateTime = ownDay.UpdateTime,
         };
     }
 
@@ -300,12 +276,6 @@ public sealed class CalendarLoader
         if (row.IsTraded is null)
             throw new InvalidOperationException($"Пустой is_traded в календаре {market}.");
         return row.IsTraded.Value;
-    }
-
-    private static bool IsWeekday(DateOnly date)
-    {
-        return date.DayOfWeek != DayOfWeek.Saturday
-            && date.DayOfWeek != DayOfWeek.Sunday;
     }
 
     private static void ValidateRange(DateOnly dateFrom, DateOnly dateTill)
