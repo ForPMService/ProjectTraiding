@@ -19,7 +19,7 @@
     <ProjectReference Include="..\ProjectTraiding.Diagnostics\ProjectTraiding.Diagnostics.csproj" Condition="'$(Configuration)' == 'Debug'" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="ClickHouse.Driver" Version="1.3.0" />
+    <PackageReference Include="ClickHouse.Driver" Version="1.4.0" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.11" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
   </ItemGroup>

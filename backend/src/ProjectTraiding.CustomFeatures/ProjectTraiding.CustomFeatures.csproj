@@ -19,6 +19,7 @@
     <Using Include="Microsoft.Extensions.Logging" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="ClickHouse.Driver" Version="1.4.0" />
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="10.9.0" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
   </ItemGroup>

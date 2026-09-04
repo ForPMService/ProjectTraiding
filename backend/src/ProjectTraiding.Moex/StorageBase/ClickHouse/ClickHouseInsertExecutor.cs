@@ -51,11 +51,6 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 BatchSize = rows.Count,
                 MaxDegreeOfParallelism = 1,
                 ColumnTypes = columnTypes,
-                // Историческая загрузка шлёт крупные пачки — синхронная вставка кладёт их одной
-                // частью. Приём шлёт мелкие частые пачки: без буферизации каждая стала бы
-                // отдельной частью. Ожидание подтверждения оставлено включённым: без него
-                // вызывающий получил бы успех до фактической записи, и счётчик вставленных
-                // строк перестал бы быть правдой.
                 CustomSettings = insertContext.Flow == MoexFlows.History
                     ? new Dictionary<string, object>
                     {
@@ -66,6 +61,7 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                         ["async_insert"] = EnabledSetting,
                         ["wait_for_async_insert"] = EnabledSetting,
                     },
+                Compressor = null,    
             };
 
             // Собственного отрезка трассы у вставки нет намеренно: он создавался бы на

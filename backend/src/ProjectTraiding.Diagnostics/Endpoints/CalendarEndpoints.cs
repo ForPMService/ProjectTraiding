@@ -175,6 +175,23 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 string method = $"/engines/{engine}.json";
                 return await ExecuteIssRawAsync("engine", engine, request, issClient, method, ct);
             });
+            diagnosticsGroup.MapGet("/raw/calendar", async (
+                string? source,
+                HttpRequest request,
+                CalendarApimClient calendarClient,
+                MoexHttpIssClient issClient,
+                CancellationToken ct) =>
+            {
+                return await ExecuteSelectableRawAsync(
+                    "days",
+                    "all",
+                    source,
+                    request,
+                    calendarClient,
+                    issClient,
+                    "/calendars.json",
+                    ct);
+            });
 
             return routes;
         }
