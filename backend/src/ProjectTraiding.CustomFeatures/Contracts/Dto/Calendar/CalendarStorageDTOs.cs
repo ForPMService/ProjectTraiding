@@ -12,6 +12,19 @@ public record CalendarDayWriteDTO
     public DateTime? MoexUpdateTime { get; init; }
 }
 
+public record TradingPeriodWriteDTO
+{
+    public DateOnly TradeDate { get; init; }
+    public string Market { get; init; } = string.Empty;
+    public string BoardId { get; init; } = string.Empty;
+    public string SecId { get; init; } = string.Empty;
+    public short? Session { get; init; }
+    public string PeriodType { get; init; } = string.Empty;
+    public DateTime TimeFrom { get; init; }
+    public DateTime? TimeTill { get; init; }
+    public DateTime? MoexUpdateTime { get; init; }
+}
+
 public record InstrumentBoardIntervalDTO
 {
     public string Market { get; init; } = string.Empty;

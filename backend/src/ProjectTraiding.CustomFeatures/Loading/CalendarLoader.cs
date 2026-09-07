@@ -16,17 +16,20 @@ public sealed class CalendarLoader
     private readonly CalendarIssClient _issClient;
     private readonly CalendarDayWriter _calendarWriter;
     private readonly CalendarReferenceWriter _referenceWriter;
+    private readonly TradingPeriodWriter _tradingPeriodWriter;
 
     public CalendarLoader(
         CalendarApimClient apimClient,
         CalendarIssClient issClient,
         CalendarDayWriter calendarWriter,
-        CalendarReferenceWriter referenceWriter)
+        CalendarReferenceWriter referenceWriter,
+        TradingPeriodWriter tradingPeriodWriter)
     {
         _apimClient = apimClient;
         _issClient = issClient;
         _calendarWriter = calendarWriter;
         _referenceWriter = referenceWriter;
+        _tradingPeriodWriter = tradingPeriodWriter;
     }
 
     public static DateOnly GetDefaultDateFrom()
@@ -114,6 +117,15 @@ public sealed class CalendarLoader
         AppendIntervals(futuresListing, "futures", FuturesBoardId, activeFuturesKeys, intervals);
 
         CalendarBulkWriteResult result = await _referenceWriter.ReplaceIntervalsAsync(intervals, ct);
+        return result.RowsWritten;
+    }
+
+    public async Task<int> LoadCurrentSessionsAsync(CancellationToken ct)
+    {
+        List<TradingPeriodWriteDTO> sessions = await _apimClient.GetStockSessions(ct);
+        sessions.AddRange(await _apimClient.GetFuturesSessions(ct));
+        CalendarBulkWriteResult result =
+            await _tradingPeriodWriter.ReplaceCalendarSessionsAsync(sessions, ct);
         return result.RowsWritten;
     }
 

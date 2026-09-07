@@ -80,6 +80,18 @@ public class CalendarApimClient
         return ParsingRfudSecurities.ParseSecIds(buffer.Memory);
     }
 
+    public async Task<List<TradingPeriodWriteDTO>> GetStockSessions(CancellationToken ct)
+    {
+        const string endpoint = "/calendars/stock/session.json";
+        return await LoadSessionPagesAsync(endpoint, ParsingSessions.ParseStockSessions, ct);
+    }
+
+    public async Task<List<TradingPeriodWriteDTO>> GetFuturesSessions(CancellationToken ct)
+    {
+        const string endpoint = "/calendars/futures/session.json";
+        return await LoadSessionPagesAsync(endpoint, ParsingSessions.ParseFuturesSessions, ct);
+    }
+
     private async Task<RentedBuffer> RentAsync(
         string endpoint,
         Dictionary<string, string>? queryParams,
@@ -88,6 +100,55 @@ public class CalendarApimClient
         using HttpResponseMessage response = await _transport.SendAsync(endpoint, queryParams, ct);
         return await RentedBuffer.RentFromResponseAsync(
             response, _options.BodyReadTimeout, endpoint, ct);
+    }
+
+    private async Task<List<TradingPeriodWriteDTO>> LoadSessionPagesAsync(
+        string endpoint,
+        Func<ReadOnlyMemory<byte>, List<TradingPeriodWriteDTO>> parser,
+        CancellationToken ct)
+    {
+        List<TradingPeriodWriteDTO> rows = new List<TradingPeriodWriteDTO>();
+        List<TradingPeriodWriteDTO>? previousPage = null;
+        int start = 0;
+
+        while (true)
+        {
+            Dictionary<string, string> queryParams = new()
+            {
+                ["start"] = start.ToString(CultureInfo.InvariantCulture),
+            };
+            using RentedBuffer buffer = await RentAsync(endpoint, queryParams, ct);
+            List<TradingPeriodWriteDTO> page = parser(buffer.Memory);
+            if (page.Count == 0)
+                break;
+            if (previousPage is not null && PagesAreEqual(previousPage, page))
+            {
+                throw new InvalidOperationException(
+                    $"Источник игнорирует start в календарном методе {endpoint}.");
+            }
+
+            rows.AddRange(page);
+            start += page.Count;
+            previousPage = page;
+        }
+
+        return rows;
+    }
+
+    private static bool PagesAreEqual(
+        IReadOnlyList<TradingPeriodWriteDTO> first,
+        IReadOnlyList<TradingPeriodWriteDTO> second)
+    {
+        if (first.Count != second.Count)
+            return false;
+
+        for (int index = 0; index < first.Count; index++)
+        {
+            if (first[index] != second[index])
+                return false;
+        }
+
+        return true;
     }
 
     private static Dictionary<string, string> CreateDateRangeQuery(

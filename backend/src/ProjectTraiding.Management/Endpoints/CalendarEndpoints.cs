@@ -25,6 +25,10 @@ namespace ProjectTraiding.Management.Endpoints
                 CalendarLoader loader,
                 CancellationToken ct) => CalendarResponse(await loader.LoadIntervalsAsync(ct)));
 
+            routes.MapPost("/management/calendar/sessions", async (
+                CalendarLoader loader,
+                CancellationToken ct) => CalendarResponse(await loader.LoadCurrentSessionsAsync(ct)));
+
             routes.MapPost("/management/calendar/expirations", async (
                 CalendarLoadRequest request,
                 CalendarLoader loader,
