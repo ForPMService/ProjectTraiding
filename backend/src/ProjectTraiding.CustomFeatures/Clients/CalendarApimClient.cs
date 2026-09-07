@@ -80,16 +80,27 @@ public class CalendarApimClient
         return ParsingRfudSecurities.ParseSecIds(buffer.Memory);
     }
 
+    // Параметр start этими методами источника не обрабатывается: проверено
+    // ответами диагностики 7 сентября 2026 года, ответ при start=436 для stock
+    // и start=13 для futures совпал с ответом без смещения. Метод отдаёт
+    // расписание текущего дня целиком, блока session_schedule.cursor в ответе нет.
+    // Цикл по страницам возвращать нельзя: он либо упрётся в повтор, либо
+    // не закончится.
+    // Отдельно, более ранней проверкой: запрос этих методов с исторической датой
+    // возвращал текущее состояние, поэтому параметры from и till тоже не
+    // передаются и метод не принимает дату снаружи.
     public async Task<List<TradingPeriodWriteDTO>> GetStockSessions(CancellationToken ct)
     {
         const string endpoint = "/calendars/stock/session.json";
-        return await LoadSessionPagesAsync(endpoint, ParsingSessions.ParseStockSessions, ct);
+        using RentedBuffer buffer = await RentAsync(endpoint, null, ct);
+        return ParsingSessions.ParseStockSessions(buffer.Memory);
     }
 
     public async Task<List<TradingPeriodWriteDTO>> GetFuturesSessions(CancellationToken ct)
     {
         const string endpoint = "/calendars/futures/session.json";
-        return await LoadSessionPagesAsync(endpoint, ParsingSessions.ParseFuturesSessions, ct);
+        using RentedBuffer buffer = await RentAsync(endpoint, null, ct);
+        return ParsingSessions.ParseFuturesSessions(buffer.Memory);
     }
 
     private async Task<RentedBuffer> RentAsync(
@@ -100,55 +111,6 @@ public class CalendarApimClient
         using HttpResponseMessage response = await _transport.SendAsync(endpoint, queryParams, ct);
         return await RentedBuffer.RentFromResponseAsync(
             response, _options.BodyReadTimeout, endpoint, ct);
-    }
-
-    private async Task<List<TradingPeriodWriteDTO>> LoadSessionPagesAsync(
-        string endpoint,
-        Func<ReadOnlyMemory<byte>, List<TradingPeriodWriteDTO>> parser,
-        CancellationToken ct)
-    {
-        List<TradingPeriodWriteDTO> rows = new List<TradingPeriodWriteDTO>();
-        List<TradingPeriodWriteDTO>? previousPage = null;
-        int start = 0;
-
-        while (true)
-        {
-            Dictionary<string, string> queryParams = new()
-            {
-                ["start"] = start.ToString(CultureInfo.InvariantCulture),
-            };
-            using RentedBuffer buffer = await RentAsync(endpoint, queryParams, ct);
-            List<TradingPeriodWriteDTO> page = parser(buffer.Memory);
-            if (page.Count == 0)
-                break;
-            if (previousPage is not null && PagesAreEqual(previousPage, page))
-            {
-                throw new InvalidOperationException(
-                    $"Источник игнорирует start в календарном методе {endpoint}.");
-            }
-
-            rows.AddRange(page);
-            start += page.Count;
-            previousPage = page;
-        }
-
-        return rows;
-    }
-
-    private static bool PagesAreEqual(
-        IReadOnlyList<TradingPeriodWriteDTO> first,
-        IReadOnlyList<TradingPeriodWriteDTO> second)
-    {
-        if (first.Count != second.Count)
-            return false;
-
-        for (int index = 0; index < first.Count; index++)
-        {
-            if (first[index] != second[index])
-                return false;
-        }
-
-        return true;
     }
 
     private static Dictionary<string, string> CreateDateRangeQuery(

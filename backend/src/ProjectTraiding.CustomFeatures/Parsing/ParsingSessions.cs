@@ -14,13 +14,15 @@ public static class ParsingSessions
 
     private static readonly string[] FuturesSessionColumns =
     [
-        "tradedate", "secid", "boardid", "type", "time_from", "time_till", "updatetime",
+        "trade_session_date", "boardid", "secid", "type",
+        "time_from", "time_till", "updatetime",
     ];
 
     public static List<TradingPeriodWriteDTO> ParseStockSessions(ReadOnlyMemory<byte> json)
     {
         const string rootKey = "session_schedule";
         using JsonDocument document = JsonDocument.Parse(json);
+        RequireNoCursor(document, rootKey);
         JsonElement rows = CalendarJson.Block(document, rootKey, StockSessionColumns);
         List<TradingPeriodWriteDTO> result = new(rows.GetArrayLength());
         int rowIndex = 0;
@@ -53,6 +55,7 @@ public static class ParsingSessions
     {
         const string rootKey = "session_schedule";
         using JsonDocument document = JsonDocument.Parse(json);
+        RequireNoCursor(document, rootKey);
         JsonElement rows = CalendarJson.Block(document, rootKey, FuturesSessionColumns);
         List<TradingPeriodWriteDTO> result = new(rows.GetArrayLength());
         int rowIndex = 0;
@@ -62,10 +65,10 @@ public static class ParsingSessions
             CalendarJson.CheckRow(row, FuturesSessionColumns.Length, rootKey, rowIndex);
             result.Add(new TradingPeriodWriteDTO
             {
-                TradeDate = CalendarJson.RequiredDate(row, 0, rootKey, "tradedate"),
+                TradeDate = CalendarJson.RequiredDate(row, 0, rootKey, "trade_session_date"),
                 Market = "futures",
-                SecId = NormalizeFuturesScope(CalendarJson.Str(row, 1)),
-                BoardId = NormalizeFuturesScope(CalendarJson.Str(row, 2)),
+                BoardId = NormalizeFuturesScope(CalendarJson.Str(row, 1)),
+                SecId = NormalizeFuturesScope(CalendarJson.Str(row, 2)),
                 PeriodType = CalendarJson.Required(row, 3, rootKey, "type"),
                 TimeFrom = RequiredTimestamp(row, 4, rootKey, "time_from"),
                 TimeTill = CalendarJson.Stamp(row, 5, rootKey, "time_till"),
@@ -75,6 +78,13 @@ public static class ParsingSessions
         }
 
         return result;
+    }
+
+    private static void RequireNoCursor(JsonDocument document, string rootKey)
+    {
+        if (document.RootElement.TryGetProperty($"{rootKey}.cursor", out _))
+            CalendarSchema.Mismatch(
+                $"[{rootKey}] В ответе появился блок курсора: источник начал отдавать расписание постранично.");
     }
 
     private static DateTime CombineStockTime(
