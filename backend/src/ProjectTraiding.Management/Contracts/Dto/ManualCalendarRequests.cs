@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace ProjectTraiding.Management.Contracts.Dto
 {
     public sealed record ManualEventCreateRequest
@@ -17,6 +19,7 @@ namespace ProjectTraiding.Management.Contracts.Dto
 
     public sealed record ManualEventCreateResponse(Guid Id, int RowsWritten);
 
+    [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
     public sealed record TradingPeriodCreateRequest
     {
         public DateOnly? TradeDate { get; init; }
@@ -30,6 +33,10 @@ namespace ProjectTraiding.Management.Contracts.Dto
         public string? Note { get; init; }
     }
 
-    public sealed record TradingPeriodCreateResponse(Guid Id);
+    [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+    public sealed record TradingPeriodBatchCreateRequest(
+        IReadOnlyList<TradingPeriodCreateRequest> Periods);
+
+    public sealed record TradingPeriodBatchCreateResponse(IReadOnlyList<Guid> Ids);
 
 }

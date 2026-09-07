@@ -128,6 +128,104 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
             }
         }
 
+        public async Task<IReadOnlyList<Guid>> CreateManyAsync(
+            IReadOnlyList<TradingPeriodCreateCommand> commands,
+            CancellationToken ct)
+        {
+            await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
+            await using NpgsqlTransaction transaction = await connection.BeginTransactionAsync(ct);
+            try
+            {
+                List<Guid> ids = new List<Guid>(commands.Count);
+                for (int index = 0; index < commands.Count; index++)
+                    ids.Add(await CreateAsync(connection, transaction, commands[index], ct));
+
+                await transaction.CommitAsync(ct);
+                return ids;
+            }
+            catch
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                throw;
+            }
+        }
+
+        public async Task<int> UpdateAsync(
+            Guid id,
+            TradingPeriodCreateCommand command,
+            CancellationToken ct)
+        {
+            await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
+            await using NpgsqlCommand dbCommand = new NpgsqlCommand("""
+                UPDATE moex_trading_periods
+                SET trade_date = @trade_date,
+                    market = @market,
+                    boardid = @boardid,
+                    secid = @secid,
+                    session = @session,
+                    period_type = @period_type,
+                    time_from = @time_from,
+                    time_till = @time_till,
+                    note = @note,
+                    updated_at = now()
+                WHERE id = @id AND data_source = 'manual'
+                """, connection);
+            dbCommand.Parameters.Add("@id", NpgsqlDbType.Uuid).Value = id;
+            AddCommandParameters(dbCommand, command);
+            return await dbCommand.ExecuteNonQueryAsync(ct);
+        }
+
+        public async Task<int> DeleteAsync(Guid id, CancellationToken ct)
+        {
+            await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
+            await using NpgsqlCommand dbCommand = new NpgsqlCommand("""
+                DELETE FROM moex_trading_periods
+                WHERE id = @id AND data_source = 'manual'
+                """, connection);
+            dbCommand.Parameters.Add("@id", NpgsqlDbType.Uuid).Value = id;
+            return await dbCommand.ExecuteNonQueryAsync(ct);
+        }
+
+        private static async Task<Guid> CreateAsync(
+            NpgsqlConnection connection,
+            NpgsqlTransaction transaction,
+            TradingPeriodCreateCommand command,
+            CancellationToken ct)
+        {
+            await using NpgsqlCommand dbCommand = new NpgsqlCommand("""
+                INSERT INTO moex_trading_periods
+                    (trade_date, market, boardid, secid, session, period_type,
+                     time_from, time_till, data_source, note)
+                VALUES (@trade_date, @market, @boardid, @secid, @session, @period_type,
+                        @time_from, @time_till, 'manual', @note)
+                RETURNING id
+                """, connection, transaction);
+            AddCommandParameters(dbCommand, command);
+
+            object? scalar = await dbCommand.ExecuteScalarAsync(ct);
+            return scalar is Guid id
+                ? id
+                : throw new InvalidOperationException("INSERT INTO moex_trading_periods did not return id.");
+        }
+
+        private static void AddCommandParameters(
+            NpgsqlCommand dbCommand,
+            TradingPeriodCreateCommand command)
+        {
+            dbCommand.Parameters.Add("@trade_date", NpgsqlDbType.Date).Value = command.TradeDate;
+            dbCommand.Parameters.Add("@market", NpgsqlDbType.Text).Value = command.Market;
+            dbCommand.Parameters.Add("@boardid", NpgsqlDbType.Text).Value = command.Boardid;
+            dbCommand.Parameters.Add("@secid", NpgsqlDbType.Text).Value = command.Secid;
+            dbCommand.Parameters.Add("@session", NpgsqlDbType.Smallint).Value =
+                (object?)command.Session ?? DBNull.Value;
+            dbCommand.Parameters.Add("@period_type", NpgsqlDbType.Text).Value = command.PeriodType;
+            dbCommand.Parameters.Add("@time_from", NpgsqlDbType.Timestamp).Value = command.TimeFrom;
+            dbCommand.Parameters.Add("@time_till", NpgsqlDbType.Timestamp).Value =
+                (object?)command.TimeTill ?? DBNull.Value;
+            dbCommand.Parameters.Add("@note", NpgsqlDbType.Text).Value =
+                (object?)command.Note ?? DBNull.Value;
+        }
+
         private readonly record struct TradingPeriodDayKey(string Market, DateOnly TradeDate);
     }
 }
