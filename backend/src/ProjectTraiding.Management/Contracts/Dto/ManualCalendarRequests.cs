@@ -19,15 +19,17 @@ namespace ProjectTraiding.Management.Contracts.Dto
 
     public sealed record TradingPeriodCreateRequest
     {
+        public DateOnly? TradeDate { get; init; }
         public string? Market { get; init; }
-        public DateOnly? ValidFrom { get; init; }
-        public DateOnly? ValidTill { get; init; }
         public string? Boardid { get; init; }
         public string? Secid { get; init; }
         public short? Session { get; init; }
         public string? PeriodType { get; init; }
         public DateTime? TimeFrom { get; init; }
         public DateTime? TimeTill { get; init; }
+        public string? Note { get; init; }
     }
+
+    public sealed record TradingPeriodCreateResponse(Guid Id);
 
 }

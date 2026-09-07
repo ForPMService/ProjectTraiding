@@ -23,6 +23,7 @@ namespace ProjectTraiding.Management.Contracts
     [JsonSerializable(typeof(ManualEventCreateRequest))]
     [JsonSerializable(typeof(ManualEventCreateResponse))]
     [JsonSerializable(typeof(TradingPeriodCreateRequest))]
+    [JsonSerializable(typeof(TradingPeriodCreateResponse))]
     [JsonSerializable(typeof(LoadResultDto))]
     [JsonSerializable(typeof(LoadResultDto[]))]
     [JsonSerializable(typeof(ApiErrorDto))]

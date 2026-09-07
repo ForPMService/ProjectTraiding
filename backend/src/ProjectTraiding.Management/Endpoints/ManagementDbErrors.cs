@@ -100,16 +100,16 @@ namespace ProjectTraiding.Management.Endpoints
         }
 
         /// <summary>
-        /// Маршрут периода внутри торгового дня. Первичный ключ составной, поэтому повторная
-        /// отправка того же периода даёт нарушение уникальности.
+        /// Маршрут периода внутри торгового дня. Повторная отправка того же периода
+        /// даёт нарушение уникальности бизнес-ключа.
         /// </summary>
         internal static string? MapTradingPeriod(ILogger logger, string route, PostgresException ex)
         {
             ManagementEndpointLogMessages.DbErrorMapped(logger, route, ex.SqlState ?? "?");
             return ex.SqlState switch
             {
-                "23505" => "такой период уже задан: совпадают market, validFrom, validTill, boardid, secid, periodType и timeFrom",
-                "23514" => "недопустимое значение market или validFrom позже validTill (страховка)",
+                "23505" => "такой период уже задан: совпадают market, tradeDate, boardid, secid, session, periodType и timeFrom",
+                "23514" => "недопустимое значение market или dataSource (страховка)",
                 _ => null
             };
         }

@@ -1,13 +1,13 @@
 namespace ProjectTraiding.CustomFeatures.Contracts
 {
     public readonly record struct TradingPeriodCreateCommand(
+        DateOnly TradeDate,
         string Market,
-        DateOnly ValidFrom,
-        DateOnly ValidTill,
         string Boardid,
+        string Secid,
         string PeriodType,
         DateTime TimeFrom,
-        string? Secid,
         short? Session,
-        DateTime? TimeTill);
+        DateTime? TimeTill,
+        string? Note);
 }

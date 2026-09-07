@@ -70,11 +70,14 @@ namespace ProjectTraiding.Management.Endpoints
                 try
                 {
                     TradingPeriodCreateCommand command = new(
-                        request.Market!, request.ValidFrom!.Value, request.ValidTill!.Value,
-                        request.Boardid!, request.PeriodType!, request.TimeFrom!.Value,
-                        request.Secid, request.Session, request.TimeTill);
-                    int rowsWritten = await writer.CreateAsync(command, ct);
-                    return CalendarResponse(rowsWritten);
+                        request.TradeDate!.Value, request.Market!,
+                        request.Boardid ?? string.Empty, request.Secid ?? string.Empty,
+                        request.PeriodType!, request.TimeFrom!.Value,
+                        request.Session, request.TimeTill, request.Note);
+                    Guid id = await writer.CreateAsync(command, ct);
+                    return Results.Json(
+                        new TradingPeriodCreateResponse(id),
+                        ManagementJsonContext.Default.TradingPeriodCreateResponse);
                 }
                 catch (PostgresException ex)
                 {
@@ -114,16 +117,10 @@ namespace ProjectTraiding.Management.Endpoints
 
         private static string? ValidateTradingPeriod(TradingPeriodCreateRequest request)
         {
+            if (request.TradeDate is null)
+                return "tradeDate обязателен";
             if (!MoexDomainRules.IsMarket(request.Market))
                 return "market должен быть stock или futures";
-            if (request.ValidFrom is null)
-                return "validFrom обязателен";
-            if (request.ValidTill is null)
-                return "validTill обязателен";
-            if (request.ValidFrom > request.ValidTill)
-                return "validFrom не может быть позже validTill";
-            if (string.IsNullOrWhiteSpace(request.Boardid))
-                return "boardid обязателен";
             if (string.IsNullOrWhiteSpace(request.PeriodType))
                 return "periodType обязателен";
             if (request.TimeFrom is null)
