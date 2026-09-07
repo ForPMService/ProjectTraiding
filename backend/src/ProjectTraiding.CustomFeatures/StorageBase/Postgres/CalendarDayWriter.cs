@@ -81,7 +81,7 @@ public sealed class CalendarDayWriter
                     moex_update_time   = EXCLUDED.moex_update_time,
                     engine_is_work_day = EXCLUDED.engine_is_work_day,
                     updated_at         = now()
-                WHERE moex_calendar_days.data_source NOT IN ('observed', 'manual');
+                WHERE moex_calendar_days.data_source <> 'manual';
                 """, connection, transaction);
 
             command.Parameters.Add("@trade_date", NpgsqlDbType.Array | NpgsqlDbType.Date).Value = tradeDates;
