@@ -87,40 +87,6 @@ namespace ProjectTraiding.Management.Endpoints
                 }
             });
 
-            routes.MapPost("/management/calendar/period-types", async (
-                TradingPeriodTypeCreateRequest request,
-                TradingPeriodTypeWriter writer,
-                ILogger<ManualCalendarEndpointsLog> logger,
-                CancellationToken ct) =>
-            {
-                const string route = "POST /management/calendar/period-types";
-                ManagementEndpointLogMessages.OperationStarted(logger, route);
-
-                string? error = ValidateTradingPeriodType(request);
-                if (error is not null)
-                {
-                    ManagementEndpointLogMessages.ValidationRejected(logger, route, error);
-                    return Results.BadRequest(error);
-                }
-
-                try
-                {
-                    TradingPeriodTypeCreateCommand command = new(
-                        request.Market!, request.TypeCode!, request.Title!);
-                    int rowsWritten = await writer.CreateAsync(command, ct);
-                    return CalendarResponse(rowsWritten);
-                }
-                catch (PostgresException ex)
-                {
-                    string? message = ManagementDbErrors.MapTradingPeriodType(logger, route, ex);
-
-                    if (message is null)
-                        throw;
-
-                    return Results.BadRequest(message);
-                }
-            });
-
             return routes;
         }
 
@@ -165,15 +131,5 @@ namespace ProjectTraiding.Management.Endpoints
             return null;
         }
 
-        private static string? ValidateTradingPeriodType(TradingPeriodTypeCreateRequest request)
-        {
-            if (!MoexDomainRules.IsMarket(request.Market))
-                return "market должен быть stock или futures";
-            if (string.IsNullOrWhiteSpace(request.TypeCode))
-                return "typeCode обязателен";
-            if (string.IsNullOrWhiteSpace(request.Title))
-                return "title обязателен";
-            return null;
-        }
     }
 }

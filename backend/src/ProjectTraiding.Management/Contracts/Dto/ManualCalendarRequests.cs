@@ -30,10 +30,4 @@ namespace ProjectTraiding.Management.Contracts.Dto
         public DateTime? TimeTill { get; init; }
     }
 
-    public sealed record TradingPeriodTypeCreateRequest
-    {
-        public string? Market { get; init; }
-        public string? TypeCode { get; init; }
-        public string? Title { get; init; }
-    }
 }

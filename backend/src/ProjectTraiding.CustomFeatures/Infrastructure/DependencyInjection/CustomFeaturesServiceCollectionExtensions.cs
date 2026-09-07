@@ -11,7 +11,6 @@ namespace ProjectTraiding.CustomFeatures.Infrastructure.DependencyInjection
             services.AddTransient<InstrumentRelationWriter>();
             services.AddTransient<ManualEventWriter>();
             services.AddTransient<TradingPeriodWriter>();
-            services.AddTransient<TradingPeriodTypeWriter>();
             services.AddTransient<CalendarDayWriter>();
             services.AddTransient<CalendarReferenceWriter>();
             services.AddTransient<CalendarLoader>();

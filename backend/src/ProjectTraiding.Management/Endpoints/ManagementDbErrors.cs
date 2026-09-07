@@ -114,16 +114,5 @@ namespace ProjectTraiding.Management.Endpoints
             };
         }
 
-        /// <summary>Маршрут типа периода: уникальность пары рынка и кода, страховка по рынку.</summary>
-        internal static string? MapTradingPeriodType(ILogger logger, string route, PostgresException ex)
-        {
-            ManagementEndpointLogMessages.DbErrorMapped(logger, route, ex.SqlState ?? "?");
-            return ex.SqlState switch
-            {
-                "23505" => "такой тип периода уже задан для этого рынка",
-                "23514" => "market должен быть одним из: stock, futures (страховка)",
-                _ => null
-            };
-        }
     }
 }
