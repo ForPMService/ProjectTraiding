@@ -8,6 +8,8 @@ namespace ProjectTraiding.CustomFeatures.Loading;
 public sealed class CalendarLoader
 {
     private const int ListingPageSize = 1000;
+    private const string StockBoardId = "TQBR";
+    private const string FuturesBoardId = "RFUD";
     private static readonly DateOnly DefaultFrom = new DateOnly(2021, 1, 1);
 
     private readonly CalendarApimClient _apimClient;
@@ -103,13 +105,13 @@ public sealed class CalendarLoader
         {
             RfudSecurityDTO row = activeFutures[index];
             if (!string.IsNullOrWhiteSpace(row.SecId))
-                activeFuturesKeys.Add(new InstrumentBoardKey(row.SecId, "RFUD"));
+                activeFuturesKeys.Add(new InstrumentBoardKey(row.SecId, FuturesBoardId));
         }
 
         List<InstrumentBoardIntervalDTO> intervals =
             new List<InstrumentBoardIntervalDTO>(stockListing.Count + futuresListing.Count);
-        AppendIntervals(stockListing, "stock", activeStock, intervals);
-        AppendIntervals(futuresListing, "futures", activeFuturesKeys, intervals);
+        AppendIntervals(stockListing, "stock", StockBoardId, activeStock, intervals);
+        AppendIntervals(futuresListing, "futures", FuturesBoardId, activeFuturesKeys, intervals);
 
         CalendarBulkWriteResult result = await _referenceWriter.ReplaceIntervalsAsync(intervals, ct);
         return result.RowsWritten;
@@ -249,12 +251,15 @@ public sealed class CalendarLoader
     private static void AppendIntervals(
         IReadOnlyList<ListingIntervalDTO> source,
         string market,
+        string boardId,
         HashSet<InstrumentBoardKey> active,
         List<InstrumentBoardIntervalDTO> output)
     {
         for (int index = 0; index < source.Count; index++)
         {
             ListingIntervalDTO row = source[index];
+            if (!string.Equals(row.BoardId, boardId, StringComparison.Ordinal))
+                continue;
             if (row.HistoryFrom is null)
                 continue;
             InstrumentBoardKey key = new InstrumentBoardKey(row.SecId, row.BoardId);
