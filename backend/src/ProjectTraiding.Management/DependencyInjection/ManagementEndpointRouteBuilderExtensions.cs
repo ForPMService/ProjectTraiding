@@ -17,6 +17,7 @@ namespace ProjectTraiding.Management.DependencyInjection
             routes.MapCalendarEndpoints();
             routes.MapInstrumentCardLoadEndpoints();
             routes.MapManualCalendarEndpoints();
+            routes.MapDividendEventEndpoints();
             return routes;
         }
     }

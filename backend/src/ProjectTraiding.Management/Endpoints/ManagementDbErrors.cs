@@ -98,5 +98,19 @@ namespace ProjectTraiding.Management.Endpoints
             };
         }
 
+        /// <summary>
+        /// Маршруты дивидендных событий: страховочное ограничение типа события и
+        /// требование валюты при заданной сумме.
+        /// </summary>
+        internal static string? MapDividendEvent(ILogger logger, string route, PostgresException ex)
+        {
+            ManagementEndpointLogMessages.DbErrorMapped(logger, route, ex.SqlState ?? "?");
+            return ex.SqlState switch
+            {
+                "23514" => "недопустимое значение eventType или сумма без currency (страховка)",
+                _ => null
+            };
+        }
+
     }
 }

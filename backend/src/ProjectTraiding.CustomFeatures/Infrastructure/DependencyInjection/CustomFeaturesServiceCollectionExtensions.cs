@@ -9,6 +9,7 @@ namespace ProjectTraiding.CustomFeatures.Infrastructure.DependencyInjection
         {
             services.AddTransient<BrokerTariffWriter>();
             services.AddTransient<InstrumentRelationWriter>();
+            services.AddTransient<DividendEventWriter>();
             services.AddTransient<TradingPeriodWriter>();
             services.AddTransient<CalendarDayWriter>();
             services.AddTransient<CalendarReferenceWriter>();
