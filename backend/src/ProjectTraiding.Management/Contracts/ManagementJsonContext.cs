@@ -20,8 +20,6 @@ namespace ProjectTraiding.Management.Contracts
     [JsonSerializable(typeof(CalendarLoadRequest))]
     [JsonSerializable(typeof(CalendarDayOverrideRequest))]
     [JsonSerializable(typeof(CalendarOperationResponse))]
-    [JsonSerializable(typeof(ManualEventCreateRequest))]
-    [JsonSerializable(typeof(ManualEventCreateResponse))]
     [JsonSerializable(typeof(TradingPeriodCreateRequest))]
     [JsonSerializable(typeof(TradingPeriodBatchCreateRequest))]
     [JsonSerializable(typeof(TradingPeriodBatchCreateResponse))]

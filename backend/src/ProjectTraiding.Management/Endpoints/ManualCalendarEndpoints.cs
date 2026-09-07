@@ -12,45 +12,6 @@ namespace ProjectTraiding.Management.Endpoints
     {
         public static IEndpointRouteBuilder MapManualCalendarEndpoints(this IEndpointRouteBuilder routes)
         {
-            routes.MapPost("/management/events", async (
-                ManualEventCreateRequest request,
-                ManualEventWriter writer,
-                ILogger<ManualCalendarEndpointsLog> logger,
-                CancellationToken ct) =>
-            {
-                const string route = "POST /management/events";
-                ManagementEndpointLogMessages.OperationStarted(logger, route);
-
-                string? error = ValidateManualEvent(request);
-                if (error is not null)
-                {
-                    ManagementEndpointLogMessages.ValidationRejected(logger, route, error);
-                    return Results.BadRequest(error);
-                }
-
-                try
-                {
-                    ManualEventCreateCommand command = new(
-                        request.Secid!, request.EventType!, request.EventStage!,
-                        request.EventDate!.Value, request.KnownFrom!.Value,
-                        request.RecordDate, request.LastTradeDate, request.PaymentDate,
-                        request.Amount, request.Currency, request.SourceNote);
-                    Guid id = await writer.CreateAsync(command, ct);
-                    return Results.Json(
-                        new ManualEventCreateResponse(id, 1),
-                        ManagementJsonContext.Default.ManualEventCreateResponse);
-                }
-                catch (PostgresException ex)
-                {
-                    string? message = ManagementDbErrors.MapManualEvent(logger, route, ex);
-
-                    if (message is null)
-                        throw;
-
-                    return Results.BadRequest(message);
-                }
-            });
-
             routes.MapPost("/management/calendar/periods", async (
                 TradingPeriodBatchCreateRequest request,
                 TradingPeriodWriter writer,
@@ -144,21 +105,6 @@ namespace ProjectTraiding.Management.Endpoints
             return Results.Json(
                 new CalendarOperationResponse(rowsWritten),
                 ManagementJsonContext.Default.CalendarOperationResponse);
-        }
-
-        private static string? ValidateManualEvent(ManualEventCreateRequest request)
-        {
-            if (string.IsNullOrWhiteSpace(request.Secid))
-                return "secid обязателен";
-            if (request.EventType is not ("dividend" or "meeting" or "issue" or "buyback" or "delisting_announced"))
-                return "eventType должен быть dividend, meeting, issue, buyback или delisting_announced";
-            if (request.EventStage is not ("announced" or "recommended" or "approved" or "completed" or "cancelled"))
-                return "eventStage должен быть announced, recommended, approved, completed или cancelled";
-            if (request.EventDate is null)
-                return "eventDate обязателен";
-            if (request.KnownFrom is null)
-                return "knownFrom обязателен";
-            return null;
         }
 
         private static string? ValidateTradingPeriod(TradingPeriodCreateRequest request)
