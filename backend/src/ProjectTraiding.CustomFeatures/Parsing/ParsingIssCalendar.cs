@@ -30,8 +30,6 @@ public static class ParsingIssCalendar
             {
                 TradeDate = CalendarJson.RequiredDate(row, 0, rootKey, "date"),
                 IsWorkDay = CalendarJson.Int(row, 1),
-                StartTime = CalendarJson.Time(row, 2, rootKey, "start_time"),
-                StopTime = CalendarJson.Time(row, 3, rootKey, "stop_time"),
             });
             rowIndex++;
         }

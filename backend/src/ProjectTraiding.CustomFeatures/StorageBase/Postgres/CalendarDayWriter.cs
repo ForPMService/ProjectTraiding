@@ -35,8 +35,6 @@ public sealed class CalendarDayWriter
             int[] isTradedValues = new int[days.Count];
             DateOnly?[] tradeSessionDates = new DateOnly?[days.Count];
             string?[] reasons = new string?[days.Count];
-            TimeOnly?[] startTimes = new TimeOnly?[days.Count];
-            TimeOnly?[] stopTimes = new TimeOnly?[days.Count];
             string[] dataSources = new string[days.Count];
             DateTime?[] updateTimes = new DateTime?[days.Count];
             int?[] engineIsWorkDayValues = new int?[days.Count];
@@ -50,8 +48,6 @@ public sealed class CalendarDayWriter
                 isTradedValues[index] = day.IsTraded;
                 tradeSessionDates[index] = day.TradeSessionDate;
                 reasons[index] = day.Reason;
-                startTimes[index] = day.StartTime;
-                stopTimes[index] = day.StopTime;
                 dataSources[index] = day.DataSource;
                 updateTimes[index] = day.MoexUpdateTime;
                 engineIsWorkDayValues[index] = day.EngineIsWorkDay;
@@ -62,29 +58,25 @@ public sealed class CalendarDayWriter
             await using NpgsqlCommand command = new NpgsqlCommand("""
                 INSERT INTO moex_calendar_days
                     (trade_date, market, is_traded, trade_session_date, reason,
-                     start_time, stop_time, data_source, moex_update_time, engine_is_work_day)
+                     data_source, moex_update_time, engine_is_work_day)
                 SELECT s.trade_date, s.market, s.is_traded, s.trade_session_date, s.reason,
-                       s.start_time, s.stop_time, s.data_source, s.moex_update_time,
-                       s.engine_is_work_day
+                       s.data_source, s.moex_update_time, s.engine_is_work_day
                 FROM (
                     SELECT DISTINCT ON (t.trade_date, t.market)
                            t.trade_date, t.market, t.is_traded, t.trade_session_date, t.reason,
-                           t.start_time, t.stop_time, t.data_source, t.moex_update_time,
-                           t.engine_is_work_day
+                           t.data_source, t.moex_update_time, t.engine_is_work_day
                     FROM unnest(@trade_date, @market, @is_traded, @trade_session_date, @reason,
-                                @start_time, @stop_time, @data_source, @moex_update_time,
+                                @data_source, @moex_update_time,
                                 @engine_is_work_day)
                          WITH ORDINALITY AS t(trade_date, market, is_traded, trade_session_date,
-                                              reason, start_time, stop_time, data_source,
-                                              moex_update_time, engine_is_work_day, ord)
+                                              reason, data_source, moex_update_time,
+                                              engine_is_work_day, ord)
                     ORDER BY t.trade_date, t.market, t.ord DESC
                 ) AS s
                 ON CONFLICT (trade_date, market) DO UPDATE SET
                     is_traded          = EXCLUDED.is_traded,
                     trade_session_date = EXCLUDED.trade_session_date,
                     reason             = EXCLUDED.reason,
-                    start_time         = EXCLUDED.start_time,
-                    stop_time          = EXCLUDED.stop_time,
                     data_source        = EXCLUDED.data_source,
                     moex_update_time   = EXCLUDED.moex_update_time,
                     engine_is_work_day = EXCLUDED.engine_is_work_day,
@@ -97,8 +89,6 @@ public sealed class CalendarDayWriter
             command.Parameters.Add("@is_traded", NpgsqlDbType.Array | NpgsqlDbType.Integer).Value = isTradedValues;
             command.Parameters.Add("@trade_session_date", NpgsqlDbType.Array | NpgsqlDbType.Date).Value = tradeSessionDates;
             command.Parameters.Add("@reason", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = reasons;
-            command.Parameters.Add("@start_time", NpgsqlDbType.Array | NpgsqlDbType.Time).Value = startTimes;
-            command.Parameters.Add("@stop_time", NpgsqlDbType.Array | NpgsqlDbType.Time).Value = stopTimes;
             command.Parameters.Add("@data_source", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = dataSources;
             command.Parameters.Add("@moex_update_time", NpgsqlDbType.Array | NpgsqlDbType.Timestamp).Value = updateTimes;
             command.Parameters.Add("@engine_is_work_day", NpgsqlDbType.Array | NpgsqlDbType.Integer).Value = engineIsWorkDayValues;

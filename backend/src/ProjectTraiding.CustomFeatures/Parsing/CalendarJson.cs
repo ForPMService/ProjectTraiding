@@ -102,18 +102,6 @@ public static class CalendarJson
         return value!.Value;
     }
 
-    public static TimeOnly? Time(JsonElement row, int position, string rootKey, string field)
-    {
-        string? raw = Str(row, position);
-        if (string.IsNullOrWhiteSpace(raw))
-            return null;
-        TimeOnly parsed;
-        if (!TimeOnly.TryParseExact(
-                raw, "HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out parsed))
-            CalendarSchema.Mismatch($"[{rootKey}] Некорректное время '{field}': '{raw}'.");
-        return parsed;
-    }
-
     public static DateTime? Stamp(JsonElement row, int position, string rootKey, string field)
     {
         string? raw = Str(row, position);

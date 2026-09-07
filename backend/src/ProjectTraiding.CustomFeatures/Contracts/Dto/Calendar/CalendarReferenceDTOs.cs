@@ -4,8 +4,6 @@ public record EngineDailyTableDTO
 {
     public DateOnly TradeDate { get; init; }
     public int? IsWorkDay { get; init; }
-    public TimeOnly? StartTime { get; init; }
-    public TimeOnly? StopTime { get; init; }
 }
 
 public record ListingIntervalDTO

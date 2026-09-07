@@ -200,7 +200,7 @@ public sealed class CalendarLoader
         for (int index = 0; index < rows.Count; index++)
         {
             EngineDailyTableDTO row = rows[index];
-            result[row.TradeDate] = new EngineDayTimes(row.StartTime, row.StopTime, row.IsWorkDay);
+            result[row.TradeDate] = new EngineDayTimes(row.IsWorkDay);
         }
         return result;
     }
@@ -224,8 +224,6 @@ public sealed class CalendarLoader
             IsTraded = RequireIsTraded(ownDay, market),
             TradeSessionDate = ownDay.TradeSessionDate,
             Reason = ownDay.Reason,
-            StartTime = engineTimes.StartTime,
-            StopTime = engineTimes.StopTime,
             EngineIsWorkDay = engineTimes.IsWorkDay,
             DataSource = "calendar",
             MoexUpdateTime = ownDay.UpdateTime,
@@ -284,7 +282,6 @@ public sealed class CalendarLoader
             throw new ArgumentException("dateFrom не может быть позже dateTill.");
     }
 
-    private readonly record struct EngineDayTimes(
-        TimeOnly? StartTime, TimeOnly? StopTime, int? IsWorkDay);
+    private readonly record struct EngineDayTimes(int? IsWorkDay);
     private readonly record struct InstrumentBoardKey(string SecId, string BoardId);
 }
