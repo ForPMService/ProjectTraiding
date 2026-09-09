@@ -13,6 +13,8 @@ namespace ProjectTraiding.CustomFeatures.Infrastructure.DependencyInjection
             services.AddTransient<TradingPeriodWriter>();
             services.AddTransient<CalendarDayWriter>();
             services.AddTransient<CalendarReferenceWriter>();
+            services.AddTransient<CbRateMeetingFactWriter>();
+            services.AddTransient<CbRateCalendarWriter>();
             services.AddTransient<CalendarLoader>();
             return services;
         }
