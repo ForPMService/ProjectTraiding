@@ -23,7 +23,7 @@ public sealed class CalendarReferenceWriter
         await using NpgsqlTransaction transaction = await connection.BeginTransactionAsync(ct);
 
         await using NpgsqlCommand deleteCommand = new NpgsqlCommand(
-            "DELETE FROM moex_instrument_board_intervals", connection, transaction);
+            "DELETE FROM custom_features_instrument_board_intervals", connection, transaction);
         await deleteCommand.ExecuteNonQueryAsync(ct);
 
         string[] markets = new string[intervals.Count];
@@ -43,7 +43,7 @@ public sealed class CalendarReferenceWriter
         }
 
         await using NpgsqlCommand insertCommand = new NpgsqlCommand("""
-            INSERT INTO moex_instrument_board_intervals
+            INSERT INTO custom_features_instrument_board_intervals
                 (market, secid, boardid, valid_from, valid_till)
             SELECT s.market, s.secid, s.boardid, s.valid_from, s.valid_till
             FROM (
@@ -81,7 +81,7 @@ public sealed class CalendarReferenceWriter
         await using NpgsqlTransaction transaction = await connection.BeginTransactionAsync(ct);
 
         await using NpgsqlCommand deleteCommand = new NpgsqlCommand("""
-            DELETE FROM moex_futures_expirations
+            DELETE FROM custom_features_futures_expirations
             WHERE expiration_date BETWEEN @date_from AND @date_till
             """, connection, transaction);
         deleteCommand.Parameters.Add("@date_from", NpgsqlDbType.Date).Value = dateFrom;
@@ -107,7 +107,7 @@ public sealed class CalendarReferenceWriter
         }
 
         await using NpgsqlCommand insertCommand = new NpgsqlCommand("""
-            INSERT INTO moex_futures_expirations
+            INSERT INTO custom_features_futures_expirations
                 (secid, asset_code, expiration_date, expiration_type, end_date, weekend_session)
             SELECT s.secid, s.asset_code, s.expiration_date, s.expiration_type, s.end_date,
                    s.weekend_session
@@ -154,7 +154,7 @@ public sealed class CalendarReferenceWriter
         await using NpgsqlTransaction transaction = await connection.BeginTransactionAsync(ct);
 
         await using NpgsqlCommand deleteCommand = new NpgsqlCommand("""
-            DELETE FROM moex_splits
+            DELETE FROM custom_features_splits
             WHERE trade_date BETWEEN @date_from AND @date_till
             """, connection, transaction);
         deleteCommand.Parameters.Add("@date_from", NpgsqlDbType.Date).Value = dateFrom;
@@ -176,7 +176,7 @@ public sealed class CalendarReferenceWriter
         }
 
         await using NpgsqlCommand insertCommand = new NpgsqlCommand("""
-            INSERT INTO moex_splits (trade_date, secid, before_qty, after_qty)
+            INSERT INTO custom_features_splits (trade_date, secid, before_qty, after_qty)
             SELECT s.trade_date, s.secid, s.before_qty, s.after_qty
             FROM (
                 SELECT DISTINCT ON (t.trade_date, t.secid)

@@ -39,7 +39,7 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
         {
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
             await using NpgsqlCommand dbCommand = new NpgsqlCommand("""
-                DELETE FROM features_cb_rate_calendar
+                DELETE FROM custom_features_cb_rate_calendar
                 WHERE d >= @date_from AND d <= @date_till
                 """, connection);
             dbCommand.Parameters.Add("@date_from", NpgsqlDbType.Date).Value = dateFrom;
@@ -58,7 +58,7 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
             CancellationToken ct)
         {
             await using NpgsqlCommand dbCommand = new NpgsqlCommand("""
-                INSERT INTO features_cb_rate_calendar
+                INSERT INTO custom_features_cb_rate_calendar
                     (d, rate_announced, rate_effective,
                      roisfix_1w, roisfix_2w, roisfix_1m, roisfix_2m, roisfix_3m,
                      roisfix_6m, roisfix_1y, roisfix_2y, roisfix_known_at,
@@ -70,23 +70,23 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
                         @ruonia, @ruonia_status, @ruonia_known_at,
                         @expert_rate, @expert_source, @expert_known_at)
                 ON CONFLICT (d) DO UPDATE SET
-                    rate_announced   = CASE WHEN @rate_present    THEN EXCLUDED.rate_announced   ELSE features_cb_rate_calendar.rate_announced   END,
-                    rate_effective   = CASE WHEN @rate_present    THEN EXCLUDED.rate_effective   ELSE features_cb_rate_calendar.rate_effective   END,
-                    roisfix_1w       = CASE WHEN @roisfix_present THEN EXCLUDED.roisfix_1w       ELSE features_cb_rate_calendar.roisfix_1w       END,
-                    roisfix_2w       = CASE WHEN @roisfix_present THEN EXCLUDED.roisfix_2w       ELSE features_cb_rate_calendar.roisfix_2w       END,
-                    roisfix_1m       = CASE WHEN @roisfix_present THEN EXCLUDED.roisfix_1m       ELSE features_cb_rate_calendar.roisfix_1m       END,
-                    roisfix_2m       = CASE WHEN @roisfix_present THEN EXCLUDED.roisfix_2m       ELSE features_cb_rate_calendar.roisfix_2m       END,
-                    roisfix_3m       = CASE WHEN @roisfix_present THEN EXCLUDED.roisfix_3m       ELSE features_cb_rate_calendar.roisfix_3m       END,
-                    roisfix_6m       = CASE WHEN @roisfix_present THEN EXCLUDED.roisfix_6m       ELSE features_cb_rate_calendar.roisfix_6m       END,
-                    roisfix_1y       = CASE WHEN @roisfix_present THEN EXCLUDED.roisfix_1y       ELSE features_cb_rate_calendar.roisfix_1y       END,
-                    roisfix_2y       = CASE WHEN @roisfix_present THEN EXCLUDED.roisfix_2y       ELSE features_cb_rate_calendar.roisfix_2y       END,
-                    roisfix_known_at = CASE WHEN @roisfix_present THEN EXCLUDED.roisfix_known_at ELSE features_cb_rate_calendar.roisfix_known_at END,
-                    ruonia           = CASE WHEN @ruonia_present  THEN EXCLUDED.ruonia           ELSE features_cb_rate_calendar.ruonia           END,
-                    ruonia_status    = CASE WHEN @ruonia_present  THEN EXCLUDED.ruonia_status    ELSE features_cb_rate_calendar.ruonia_status    END,
-                    ruonia_known_at  = CASE WHEN @ruonia_present  THEN EXCLUDED.ruonia_known_at  ELSE features_cb_rate_calendar.ruonia_known_at  END,
-                    expert_rate      = CASE WHEN @expert_present  THEN EXCLUDED.expert_rate      ELSE features_cb_rate_calendar.expert_rate      END,
-                    expert_source    = CASE WHEN @expert_present  THEN EXCLUDED.expert_source    ELSE features_cb_rate_calendar.expert_source    END,
-                    expert_known_at  = CASE WHEN @expert_present  THEN EXCLUDED.expert_known_at  ELSE features_cb_rate_calendar.expert_known_at  END
+                    rate_announced   = CASE WHEN @rate_present    THEN EXCLUDED.rate_announced   ELSE custom_features_cb_rate_calendar.rate_announced   END,
+                    rate_effective   = CASE WHEN @rate_present    THEN EXCLUDED.rate_effective   ELSE custom_features_cb_rate_calendar.rate_effective   END,
+                    roisfix_1w       = CASE WHEN @roisfix_present THEN EXCLUDED.roisfix_1w       ELSE custom_features_cb_rate_calendar.roisfix_1w       END,
+                    roisfix_2w       = CASE WHEN @roisfix_present THEN EXCLUDED.roisfix_2w       ELSE custom_features_cb_rate_calendar.roisfix_2w       END,
+                    roisfix_1m       = CASE WHEN @roisfix_present THEN EXCLUDED.roisfix_1m       ELSE custom_features_cb_rate_calendar.roisfix_1m       END,
+                    roisfix_2m       = CASE WHEN @roisfix_present THEN EXCLUDED.roisfix_2m       ELSE custom_features_cb_rate_calendar.roisfix_2m       END,
+                    roisfix_3m       = CASE WHEN @roisfix_present THEN EXCLUDED.roisfix_3m       ELSE custom_features_cb_rate_calendar.roisfix_3m       END,
+                    roisfix_6m       = CASE WHEN @roisfix_present THEN EXCLUDED.roisfix_6m       ELSE custom_features_cb_rate_calendar.roisfix_6m       END,
+                    roisfix_1y       = CASE WHEN @roisfix_present THEN EXCLUDED.roisfix_1y       ELSE custom_features_cb_rate_calendar.roisfix_1y       END,
+                    roisfix_2y       = CASE WHEN @roisfix_present THEN EXCLUDED.roisfix_2y       ELSE custom_features_cb_rate_calendar.roisfix_2y       END,
+                    roisfix_known_at = CASE WHEN @roisfix_present THEN EXCLUDED.roisfix_known_at ELSE custom_features_cb_rate_calendar.roisfix_known_at END,
+                    ruonia           = CASE WHEN @ruonia_present  THEN EXCLUDED.ruonia           ELSE custom_features_cb_rate_calendar.ruonia           END,
+                    ruonia_status    = CASE WHEN @ruonia_present  THEN EXCLUDED.ruonia_status    ELSE custom_features_cb_rate_calendar.ruonia_status    END,
+                    ruonia_known_at  = CASE WHEN @ruonia_present  THEN EXCLUDED.ruonia_known_at  ELSE custom_features_cb_rate_calendar.ruonia_known_at  END,
+                    expert_rate      = CASE WHEN @expert_present  THEN EXCLUDED.expert_rate      ELSE custom_features_cb_rate_calendar.expert_rate      END,
+                    expert_source    = CASE WHEN @expert_present  THEN EXCLUDED.expert_source    ELSE custom_features_cb_rate_calendar.expert_source    END,
+                    expert_known_at  = CASE WHEN @expert_present  THEN EXCLUDED.expert_known_at  ELSE custom_features_cb_rate_calendar.expert_known_at  END
                 """, connection, transaction);
 
             dbCommand.Parameters.Add("@d", NpgsqlDbType.Date).Value = command.D;

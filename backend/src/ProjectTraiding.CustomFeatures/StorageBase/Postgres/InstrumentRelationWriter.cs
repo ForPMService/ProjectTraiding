@@ -18,7 +18,7 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
 
         public async Task<ContextWriteResult> UpsertAsync(InstrumentRelationUpsertCommand command, CancellationToken ct)
         {
-            const string table = "moex_instrument_relations";
+            const string table = "custom_features_instrument_relations";
             CustomFeaturesWriterLogMessages.WriteStarted(_logger, table);
             long startTs = Stopwatch.GetTimestamp();
 
@@ -29,7 +29,7 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
             {
                 // ON CONFLICT по ключу UNIQUE NULLS NOT DISTINCT → перезапись редактируемых полей.
                 await using NpgsqlCommand cmd = new NpgsqlCommand("""
-                INSERT INTO moex_instrument_relations
+                INSERT INTO custom_features_instrument_relations
                     (source_secid, target_secid, target_asset_code, relation_type, confidence, comment)
                 VALUES
                     (@source_secid, @target_secid, @target_asset_code, @relation_type, @confidence, @comment)
@@ -51,7 +51,7 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
                 object? scalar = await cmd.ExecuteScalarAsync(ct);
                 long id = scalar is long value
                     ? value
-                    : throw new InvalidOperationException("INSERT INTO moex_instrument_relations did not return id.");
+                    : throw new InvalidOperationException("INSERT INTO custom_features_instrument_relations did not return id.");
 
                 await transaction.CommitAsync(ct);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);

@@ -21,7 +21,7 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
 
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
             await using NpgsqlCommand dbCommand = new NpgsqlCommand("""
-                INSERT INTO features_cb_rate_meeting_facts
+                INSERT INTO custom_features_cb_rate_meeting_facts
                     (cycle_id, fact_type, meeting_date, scheduled_publication_at, known_at,
                      published_at, rate_before, rate_after, effective_from, is_cancelled)
                 VALUES (@cycle_id, @fact_type, @meeting_date, @scheduled_publication_at, @known_at,
@@ -48,7 +48,7 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
             return scalar is Guid id
                 ? (id, cycleId)
                 : throw new InvalidOperationException(
-                    "INSERT INTO features_cb_rate_meeting_facts did not return id.");
+                    "INSERT INTO custom_features_cb_rate_meeting_facts did not return id.");
         }
     }
 }

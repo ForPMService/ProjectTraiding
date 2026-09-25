@@ -8,7 +8,7 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
     public sealed class BrokerTariffWriter
     {
         private const string SqlWithoutCurrency = """
-            INSERT INTO moex_broker_tariffs
+            INSERT INTO custom_features_broker_tariffs
                 (broker_name, tariff_name, market, fee_type, fee_value,
                  min_fee, turnover_threshold, valid_from, valid_till, comment)
             VALUES
@@ -18,7 +18,7 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
             """;
 
         private const string SqlWithCurrency = """
-            INSERT INTO moex_broker_tariffs
+            INSERT INTO custom_features_broker_tariffs
                 (broker_name, tariff_name, market, fee_type, fee_value, fee_currency,
                  min_fee, turnover_threshold, valid_from, valid_till, comment)
             VALUES
@@ -38,7 +38,7 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
 
         public async Task<ContextWriteResult> CreateAsync(BrokerTariffCreateCommand command, CancellationToken ct)
         {
-            const string table = "moex_broker_tariffs";
+            const string table = "custom_features_broker_tariffs";
             CustomFeaturesWriterLogMessages.WriteStarted(_logger, table);
             long startTs = Stopwatch.GetTimestamp();
 
@@ -68,7 +68,7 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
                 object? scalar = await cmd.ExecuteScalarAsync(ct);
                 long id = scalar is long value
                     ? value
-                    : throw new InvalidOperationException("INSERT INTO moex_broker_tariffs did not return id.");
+                    : throw new InvalidOperationException("INSERT INTO custom_features_broker_tariffs did not return id.");
 
                 await transaction.CommitAsync(ct);
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);

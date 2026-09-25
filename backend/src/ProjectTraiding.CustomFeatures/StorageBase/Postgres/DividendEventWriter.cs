@@ -39,7 +39,7 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
         {
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
             await using NpgsqlCommand dbCommand = new NpgsqlCommand("""
-                UPDATE moex_dividend_events
+                UPDATE custom_features_dividend_events
                 SET secid = @secid,
                     event_type = @event_type,
                     event_date = @event_date,
@@ -61,7 +61,7 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
         {
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
             await using NpgsqlCommand dbCommand = new NpgsqlCommand("""
-                DELETE FROM moex_dividend_events
+                DELETE FROM custom_features_dividend_events
                 WHERE id = @id
                 """, connection);
             dbCommand.Parameters.Add("@id", NpgsqlDbType.Uuid).Value = id;
@@ -75,7 +75,7 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
             CancellationToken ct)
         {
             await using NpgsqlCommand dbCommand = new NpgsqlCommand("""
-                INSERT INTO moex_dividend_events
+                INSERT INTO custom_features_dividend_events
                     (secid, event_type, event_date, known_at, is_cancelled, dividend_amount,
                      currency, record_date, last_eligible_trade_date, payment_date, source_note)
                 VALUES (@secid, @event_type, @event_date, @known_at, @is_cancelled, @dividend_amount,
@@ -99,7 +99,7 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
             object? scalar = await dbCommand.ExecuteScalarAsync(ct);
             return scalar is Guid id
                 ? id
-                : throw new InvalidOperationException("INSERT INTO moex_dividend_events did not return id.");
+                : throw new InvalidOperationException("INSERT INTO custom_features_dividend_events did not return id.");
         }
 
         private static void AddUpdateParameters(

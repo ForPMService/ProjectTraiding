@@ -43,7 +43,7 @@ namespace ProjectTraiding.Management.Endpoints
                     ContextWriteResult w = await writer.CreateAsync(command, ct);
                     ManagementResultDto dto = new(
                         Operation: "create_broker_tariff",
-                        Target: "moex_broker_tariffs",
+                        Target: "custom_features_broker_tariffs",
                         Status: "ok",
                         Id: w.Id.Value,
                         RowsWritten: w.RowsWritten,

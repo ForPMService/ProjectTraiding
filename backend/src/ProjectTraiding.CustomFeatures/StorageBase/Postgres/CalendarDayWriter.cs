@@ -20,7 +20,7 @@ public sealed class CalendarDayWriter
         IReadOnlyList<CalendarDayWriteDTO> days,
         CancellationToken ct)
     {
-        const string table = "moex_calendar_days";
+        const string table = "custom_features_calendar_days";
         CustomFeaturesWriterLogMessages.BulkWriteStarted(_logger, table, days.Count);
         long startTimestamp = Stopwatch.GetTimestamp();
         int rowsWritten = 0;
@@ -56,7 +56,7 @@ public sealed class CalendarDayWriter
             currentKey = "<пачка>";
 
             await using NpgsqlCommand command = new NpgsqlCommand("""
-                INSERT INTO moex_calendar_days
+                INSERT INTO custom_features_calendar_days
                     (trade_date, market, is_traded, trade_session_date, reason,
                      data_source, moex_update_time, engine_is_work_day)
                 SELECT s.trade_date, s.market, s.is_traded, s.trade_session_date, s.reason,
@@ -81,7 +81,7 @@ public sealed class CalendarDayWriter
                     moex_update_time   = EXCLUDED.moex_update_time,
                     engine_is_work_day = EXCLUDED.engine_is_work_day,
                     updated_at         = now()
-                WHERE moex_calendar_days.data_source <> 'manual';
+                WHERE custom_features_calendar_days.data_source <> 'manual';
                 """, connection, transaction);
 
             command.Parameters.Add("@trade_date", NpgsqlDbType.Array | NpgsqlDbType.Date).Value = tradeDates;
@@ -118,7 +118,7 @@ public sealed class CalendarDayWriter
     {
         await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
         await using NpgsqlCommand command = new NpgsqlCommand("""
-            UPDATE moex_calendar_days
+            UPDATE custom_features_calendar_days
             SET is_traded = @is_traded,
                 data_source = 'manual',
                 note = @note,

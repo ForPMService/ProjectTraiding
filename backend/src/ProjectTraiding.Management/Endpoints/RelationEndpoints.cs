@@ -43,7 +43,7 @@ namespace ProjectTraiding.Management.Endpoints
                     ContextWriteResult w = await writer.UpsertAsync(command, ct);
                     ManagementResultDto dto = new(
                         Operation: "upsert_instrument_relation",
-                        Target: "moex_instrument_relations",
+                        Target: "custom_features_instrument_relations",
                         Status: "ok",
                         Id: w.Id.Value,
                         RowsWritten: w.RowsWritten,

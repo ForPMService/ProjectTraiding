@@ -19,7 +19,7 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
         {
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
             await using NpgsqlCommand dbCommand = new NpgsqlCommand("""
-                INSERT INTO moex_trading_periods
+                INSERT INTO custom_features_trading_periods
                     (trade_date, market, boardid, secid, session, period_type,
                      time_from, time_till, data_source, note)
                 VALUES (@trade_date, @market, @boardid, @secid, @session, @period_type,
@@ -42,7 +42,7 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
             object? scalar = await dbCommand.ExecuteScalarAsync(ct);
             return scalar is Guid id
                 ? id
-                : throw new InvalidOperationException("INSERT INTO moex_trading_periods did not return id.");
+                : throw new InvalidOperationException("INSERT INTO custom_features_trading_periods did not return id.");
         }
 
         public async Task<CalendarBulkWriteResult> ReplaceCalendarSessionsAsync(
@@ -72,7 +72,7 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
             try
             {
                 await using NpgsqlCommand deleteCommand = new NpgsqlCommand("""
-                    DELETE FROM moex_trading_periods
+                    DELETE FROM custom_features_trading_periods
                     WHERE data_source = 'calendar'
                       AND (market, trade_date) IN (
                           SELECT market, trade_date
@@ -83,12 +83,12 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
                 await deleteCommand.ExecuteNonQueryAsync(ct);
 
                 await using NpgsqlCommand insertCommand = new NpgsqlCommand("""
-                    INSERT INTO moex_trading_periods
+                    INSERT INTO custom_features_trading_periods
                         (trade_date, market, boardid, secid, session, period_type,
                          time_from, time_till, moex_update_time, data_source)
                     VALUES (@trade_date, @market, @boardid, @secid, @session, @period_type,
                             @time_from, @time_till, @moex_update_time, 'calendar')
-                    ON CONFLICT ON CONSTRAINT uq_moex_trading_periods_business DO NOTHING
+                    ON CONFLICT ON CONSTRAINT uq_custom_features_trading_periods_business DO NOTHING
                     """, connection, transaction);
                 insertCommand.Parameters.Add("@trade_date", NpgsqlDbType.Date);
                 insertCommand.Parameters.Add("@market", NpgsqlDbType.Text);
@@ -157,7 +157,7 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
         {
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
             await using NpgsqlCommand dbCommand = new NpgsqlCommand("""
-                UPDATE moex_trading_periods
+                UPDATE custom_features_trading_periods
                 SET trade_date = @trade_date,
                     market = @market,
                     boardid = @boardid,
@@ -179,7 +179,7 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
         {
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
             await using NpgsqlCommand dbCommand = new NpgsqlCommand("""
-                DELETE FROM moex_trading_periods
+                DELETE FROM custom_features_trading_periods
                 WHERE id = @id AND data_source = 'manual'
                 """, connection);
             dbCommand.Parameters.Add("@id", NpgsqlDbType.Uuid).Value = id;
@@ -193,7 +193,7 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
             CancellationToken ct)
         {
             await using NpgsqlCommand dbCommand = new NpgsqlCommand("""
-                INSERT INTO moex_trading_periods
+                INSERT INTO custom_features_trading_periods
                     (trade_date, market, boardid, secid, session, period_type,
                      time_from, time_till, data_source, note)
                 VALUES (@trade_date, @market, @boardid, @secid, @session, @period_type,
@@ -205,7 +205,7 @@ namespace ProjectTraiding.CustomFeatures.StorageBase.Postgres
             object? scalar = await dbCommand.ExecuteScalarAsync(ct);
             return scalar is Guid id
                 ? id
-                : throw new InvalidOperationException("INSERT INTO moex_trading_periods did not return id.");
+                : throw new InvalidOperationException("INSERT INTO custom_features_trading_periods did not return id.");
         }
 
         private static void AddCommandParameters(
