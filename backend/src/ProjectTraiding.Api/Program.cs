@@ -14,6 +14,7 @@ using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using ProjectTraiding.Observability.Infrastructure.DependencyInjection;
+using ProjectTraiding.Telegram;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -33,6 +34,7 @@ builder.Services.AddCustomFeaturesCalendarSource(builder.Configuration);
 builder.Services.AddMoexLoading(builder.Configuration);
 builder.Services.AddMoexRealtimeReceiver(builder.Configuration);
 builder.Services.AddMoexAlgopackCurrentDay(builder.Configuration);
+builder.Services.AddTelegram(builder.Configuration);
 
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
