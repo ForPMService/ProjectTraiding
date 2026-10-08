@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Options;
 using ProjectTraiding.Api.Infrastructure;
+using ProjectTraiding.Api.Telegram;
 using ProjectTraiding.CustomFeatures.Infrastructure.DependencyInjection;
 using ProjectTraiding.CustomFeatures.Options;
 #if DEBUG
@@ -39,6 +40,7 @@ builder.Services.AddTelegram(builder.Configuration);
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, ManagementJsonContext.Default);
+    options.SerializerOptions.TypeInfoResolverChain.Insert(0, TelegramAuthJsonContext.Default);
 });
 // Граф генерации описания интерфейса собирается только в среде разработки:
 // маршрут MapOpenApi отображается там же, в поставке он недостижим.
@@ -81,6 +83,7 @@ app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
 }));
 
 app.MapObservabilityEndpoints();
+app.MapTelegramAuthorizationEndpoints();
 
 // Управление — под ведро управления (редкие команды оператора).
 RouteGroupBuilder managementRoutes = app
