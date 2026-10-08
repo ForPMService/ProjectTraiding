@@ -6,5 +6,6 @@
     <Project Path="src/ProjectTraiding.Management/ProjectTraiding.Management.csproj" />
     <Project Path="src/ProjectTraiding.Moex/ProjectTraiding.Moex.csproj" />
     <Project Path="src/ProjectTraiding.Observability/ProjectTraiding.Observability.csproj" />
+    <Project Path="src/ProjectTraiding.Telegram/ProjectTraiding.Telegram.csproj" Id="e11f62a1-7d42-4983-8f7f-f1bc4d198982" />
   </Folder>
 </Solution>
