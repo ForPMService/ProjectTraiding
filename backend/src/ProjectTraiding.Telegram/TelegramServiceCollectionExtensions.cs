@@ -11,6 +11,7 @@ public static class TelegramServiceCollectionExtensions
         services.AddOptions<TelegramOptions>()
             .Bind(configuration.GetSection("Telegram"));
         services.AddSingleton<TelegramAccountSession>();
+        services.AddSingleton<TelegramUpdateHandler>();
         services.AddHostedService<TelegramChannelReceiverService>();
         return services;
     }

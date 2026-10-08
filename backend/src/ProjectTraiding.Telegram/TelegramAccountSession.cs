@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TL;
@@ -17,6 +18,7 @@ public sealed class TelegramAccountSession : IAsyncDisposable
 
     private readonly TelegramOptions _options;
     private readonly ILogger<TelegramAccountSession> _logger;
+    private readonly TelegramUpdateHandler _handler;
     private readonly object _stateLock = new();
     private readonly SemaphoreSlim _loginGate = new(1, 1);
     private readonly SemaphoreSlim _closeGate = new(1, 1);
@@ -27,10 +29,23 @@ public sealed class TelegramAccountSession : IAsyncDisposable
     private string? _expectedField;
     private WTelegram.Client? _client;
     private WTelegram.UpdateManager? _manager;
+    private Dictionary<long, TelegramUpdateHandler.ChannelInfo>? _channels;
+    private DateTime _readyAtUtc;
 
-    public TelegramAccountSession(IOptions<TelegramOptions> options, ILogger<TelegramAccountSession> logger)
+    public TelegramAccountSession(IOptions<TelegramOptions> options, IConfiguration configuration,
+        ILogger<TelegramAccountSession> logger,
+        TelegramUpdateHandler handler)
     {
         _logger = logger;
+        _handler = handler;
+        string? enabledValue = configuration["Telegram:Enabled"];
+        if (enabledValue is null || bool.TryParse(enabledValue, out bool enabled) && !enabled)
+        {
+            // При выключенном модуле не привязываем даже некорректные неиспользуемые секреты/пути.
+            _options = new TelegramOptions();
+            _state = AccountState.Disabled;
+            return;
+        }
         try
         {
             _options = options.Value;
@@ -74,9 +89,10 @@ public sealed class TelegramAccountSession : IAsyncDisposable
                     // Неверный ответ завершает единственную последовательность входа.
                     MaxCodePwdAttempts = 1
                 };
+                _client.OnOther += HandleOtherAsync;
+                // Менеджер подписывается последним: Client ожидает Task последнего обработчика OnOther.
                 _manager = _client.WithUpdateManager(HandleUpdateAsync, _options.UpdateStatePath);
                 _manager.Log = null;
-                _client.OnOther += HandleOtherAsync;
             }
             await ContinueLoginAsync(_options.PhoneNumber);
         }
@@ -151,13 +167,49 @@ public sealed class TelegramAccountSession : IAsyncDisposable
     internal Task<bool> WaitForAuthorizationAsync(CancellationToken token) => _authorized.Task.WaitAsync(token);
     internal Task WaitUntilFinishedAsync(CancellationToken token) => _finished.Task.WaitAsync(token);
 
+    internal (WTelegram.Client Client, WTelegram.UpdateManager Manager)? GetAuthorizedConnection()
+    {
+        lock (_stateLock)
+        {
+            if (_state != AccountState.Authorized || _client is null || _manager is null) return null;
+            return (_client, _manager);
+        }
+    }
+
+    internal string[] ConfiguredChannels => _options.Channels;
+
+    internal void BeginReceiving(Dictionary<long, TelegramUpdateHandler.ChannelInfo> channels)
+    {
+        lock (_stateLock)
+        {
+            if (_state != AccountState.Authorized || _lifetime.IsCancellationRequested) return;
+            _channels = channels;
+            _readyAtUtc = DateTime.UtcNow;
+            _state = AccountState.Receiving;
+            _logger.LogInformation("Telegram: приём включён для {ChannelCount} каналов; ReadyAt={ReadyAt:O}, ReadyAt.Kind={ReadyAtKind}.",
+                channels.Count, _readyAtUtc, _readyAtUtc.Kind);
+        }
+    }
+
     private static void DiscardLibraryLog(int level, string message) { }
-    private Task HandleUpdateAsync(Update update) => Task.CompletedTask;
+    private Task HandleUpdateAsync(Update update)
+    {
+        try
+        {
+            lock (_stateLock)
+            {
+                if (_state == AccountState.Receiving && _channels is not null)
+                    _handler.Handle(update, _channels, _readyAtUtc);
+            }
+        }
+        catch (Exception) { MarkFailed("ошибка обработки обновления Telegram"); }
+        return Task.CompletedTask;
+    }
 
     private Task HandleOtherAsync(IObject notification)
     {
         if (notification is ReactorError)
-            return FailAsync("соединение Telegram завершилось ошибкой");
+            MarkFailed("соединение Telegram завершилось ошибкой");
         return Task.CompletedTask;
     }
 
@@ -213,11 +265,18 @@ public sealed class TelegramAccountSession : IAsyncDisposable
     {
         _state = AccountState.Error;
         _expectedField = null;
+        _channels = null;
         _authorized.TrySetResult(false);
         _finished.TrySetResult();
     }
 
     internal async Task FailAsync(string safeError)
+    {
+        MarkFailed(safeError);
+        await CloseClientAsync();
+    }
+
+    private void MarkFailed(string safeError)
     {
         lock (_stateLock)
         {
@@ -225,7 +284,8 @@ public sealed class TelegramAccountSession : IAsyncDisposable
             SetErrorLocked();
         }
         _logger.LogError("Telegram: {TelegramError}.", safeError);
-        await CloseClientAsync();
+        // Очистка выполняется службой, а не внутри callback UpdateManager с захваченным его semaphore.
+        _lifetime.Cancel();
     }
 
     internal async Task StopAsync()
@@ -234,6 +294,7 @@ public sealed class TelegramAccountSession : IAsyncDisposable
         {
             if (_state is not AccountState.Disabled and not AccountState.Error) _state = AccountState.Stopped;
             _expectedField = null;
+            _channels = null;
             _authorized.TrySetResult(false);
             _finished.TrySetResult();
         }
@@ -247,10 +308,13 @@ public sealed class TelegramAccountSession : IAsyncDisposable
         try
         {
             WTelegram.Client? client;
+            WTelegram.UpdateManager? manager;
             lock (_stateLock)
             {
                 client = _client;
                 _client = null;
+                manager = _manager;
+                _manager = null;
             }
             if (client is null) return;
             client.OnOther -= HandleOtherAsync;
@@ -259,6 +323,13 @@ public sealed class TelegramAccountSession : IAsyncDisposable
             {
                 lock (_stateLock) SetErrorLocked();
                 _logger.LogError("Telegram: ошибка освобождения клиента.");
+            }
+            // Порядок из Program_ListenUpdates: DisposeAsync клиента, затем SaveState.
+            try { manager?.SaveState(_options.UpdateStatePath); }
+            catch (Exception)
+            {
+                lock (_stateLock) SetErrorLocked();
+                _logger.LogError("Telegram: ошибка сохранения состояния обновлений.");
             }
         }
         finally { _closeGate.Release(); }
