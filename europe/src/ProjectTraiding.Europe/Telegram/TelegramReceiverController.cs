@@ -12,6 +12,8 @@ public sealed class TelegramReceiverController : IDisposable
     private readonly TelegramOptions _options;
     private readonly ILogger<TelegramReceiverController> _logger;
     private readonly IMeterFactory _meterFactory;
+    private readonly TelegramChannelCatalog _catalog;
+    private bool _catalogLoaded;
     private readonly object _stateLock = new();
     private readonly SemaphoreSlim _commands = new(1, 1);
     private readonly SemaphoreSlim _faultSignal = new(0, 1);
@@ -45,6 +47,7 @@ public sealed class TelegramReceiverController : IDisposable
         _options = options;
         _logger = logger;
         _meterFactory = meterFactory;
+        _catalog = new(options, logger, meterFactory);
         _state = options.Enabled ? TelegramReceiverState.Stopped : TelegramReceiverState.Disabled;
         Meter meter = meterFactory.Create("ProjectTraiding.Europe.Telegram");
         _received = meter.CreateCounter<long>("telegram.updates.received");
@@ -95,6 +98,12 @@ public sealed class TelegramReceiverController : IDisposable
                 _lastError = null;
                 SetStateLocked(TelegramReceiverState.Starting);
             }
+            try { await EnsureCatalogAsync(cancellationToken); }
+            catch (TelegramStorageException failure)
+            {
+                RecordFailure(failure);
+                return new(TelegramCommandOutcome.Failed, failure.Category);
+            }
             TelegramAccountSession session = new(_options, HandleUpdate, SignalFault, _logger, _meterFactory);
             lock (_stateLock) _session = session;
             try
@@ -112,7 +121,18 @@ public sealed class TelegramReceiverController : IDisposable
                     }
                     return new(TelegramCommandOutcome.Unavailable, TelegramErrorCategory.AuthorizationRequired);
                 }
-                Dictionary<long, TelegramUpdateHandler.ChannelInfo> channels = await session.ResolveChannelsAsync(_usernames, cancellationToken);
+                TelegramAccountSession.ChannelResolution resolution = await session.ResolveChannelsAsync(_usernames, cancellationToken);
+                if (resolution.UnavailableUsername is not null)
+                {
+                    lock (_stateLock)
+                    {
+                        SetErrorLocked(TelegramErrorCategory.SourceChannelUnavailable);
+                        _lastError = "SourceChannelUnavailable: @" + resolution.UnavailableUsername;
+                        SetStateLocked(TelegramReceiverState.Error);
+                    }
+                    await CleanupAsync(CancellationToken.None);
+                    return new(TelegramCommandOutcome.Unavailable, TelegramErrorCategory.SourceChannelUnavailable);
+                }
                 lock (_stateLock)
                 {
                     if (_state == TelegramReceiverState.Error)
@@ -124,7 +144,7 @@ public sealed class TelegramReceiverController : IDisposable
                         SingleReader = true,
                         SingleWriter = false
                     });
-                    _snapshot = channels;
+                    _snapshot = resolution.Channels;
                     _consumerCancellation = new CancellationTokenSource();
                     _consumer = ConsumeAsync(_queue.Reader, _consumerCancellation.Token);
                     _readyAtUtc = DateTimeOffset.UtcNow;
@@ -345,6 +365,95 @@ public sealed class TelegramReceiverController : IDisposable
     }
 
     internal void SetBotState(string state) { lock (_stateLock) _botState = state; }
+
+    internal async Task InitializeAsync(CancellationToken cancellationToken)
+    {
+        if (!_options.Enabled) return;
+        if (!await _commands.WaitAsync(_options.CommandWaitTimeout, cancellationToken)) return;
+        try { await EnsureCatalogAsync(cancellationToken); }
+        catch (TelegramStorageException failure) { RecordFailure(failure); }
+        finally { _commands.Release(); }
+    }
+
+    private async Task EnsureCatalogAsync(CancellationToken cancellationToken)
+    {
+        if (_catalogLoaded) return;
+        string[] usernames = await _catalog.LoadAsync(cancellationToken);
+        lock (_stateLock) { _usernames = usernames; _catalogLoaded = true; }
+    }
+
+    /// <summary>Checks a currently accessible broadcast channel, persists, then replaces admission.</summary>
+    public async Task<TelegramReceiverCommandResult> AddChannelAsync(string username, CancellationToken cancellationToken)
+    {
+        if (!TelegramChannelCatalog.TryNormalize(username, out string normalized)) return new(TelegramCommandOutcome.InvalidInput);
+        if (!await _commands.WaitAsync(_options.CommandWaitTimeout, cancellationToken)) return new(TelegramCommandOutcome.Conflict);
+        try
+        {
+            TelegramAccountSession? session;
+            lock (_stateLock)
+            {
+                foreach (string existing in _usernames)
+                    if (existing == normalized) return new(TelegramCommandOutcome.AlreadyApplied);
+                session = _session;
+                if (!_accepting || session is null || !session.Authorized) return new(TelegramCommandOutcome.Unavailable);
+                if (_usernames.Length >= _options.MaxChannels) return new(TelegramCommandOutcome.Conflict, null, "Channel limit reached.");
+            }
+            string[] next = new string[_usernames.Length + 1];
+            Array.Copy(_usernames, next, _usernames.Length);
+            next[^1] = normalized;
+            TelegramAccountSession.ChannelResolution resolution;
+            try { resolution = await session.ResolveChannelsAsync(next, cancellationToken); }
+            catch (TelegramSourceException failure)
+            {
+                // An inaccessible new channel is a normal refusal, preserving the current admission.
+                TelegramLog.Failure(_logger, failure.Operation, failure.Category);
+                lock (_stateLock) { _lastErrorCode = failure.Category; _lastError = failure.Category.ToString(); }
+                return new(TelegramCommandOutcome.Unavailable, failure.Category);
+            }
+            if (resolution.UnavailableUsername is not null)
+                return new(TelegramCommandOutcome.Unavailable, TelegramErrorCategory.SourceChannelUnavailable,
+                    "SourceChannelUnavailable: @" + resolution.UnavailableUsername);
+            await _catalog.SaveAsync(next, cancellationToken);
+            lock (_stateLock) { _usernames = next; _snapshot = resolution.Channels; }
+            return new(TelegramCommandOutcome.Applied);
+        }
+        catch (TelegramStorageException failure)
+        {
+            lock (_stateLock) { _lastErrorCode = failure.Category; _lastError = failure.Category.ToString(); }
+            return new(TelegramCommandOutcome.Failed, failure.Category);
+        }
+        finally { _commands.Release(); }
+    }
+
+    /// <summary>Atomically persists removal, leaving previously accepted publications in the queue.</summary>
+    public async Task<TelegramReceiverCommandResult> RemoveChannelAsync(string username, CancellationToken cancellationToken)
+    {
+        if (!TelegramChannelCatalog.TryNormalize(username, out string normalized)) return new(TelegramCommandOutcome.InvalidInput);
+        if (!await _commands.WaitAsync(_options.CommandWaitTimeout, cancellationToken)) return new(TelegramCommandOutcome.Conflict);
+        try
+        {
+            if (!_options.Enabled) return new(TelegramCommandOutcome.Unavailable);
+            await EnsureCatalogAsync(cancellationToken);
+            int index = Array.IndexOf(_usernames, normalized);
+            if (index < 0) return new(TelegramCommandOutcome.AlreadyApplied);
+            string[] next = new string[_usernames.Length - 1];
+            Array.Copy(_usernames, 0, next, 0, index);
+            Array.Copy(_usernames, index + 1, next, index, next.Length - index);
+            Dictionary<long, TelegramUpdateHandler.ChannelInfo> snapshot = [];
+            lock (_stateLock)
+                foreach (KeyValuePair<long, TelegramUpdateHandler.ChannelInfo> entry in _snapshot)
+                    if (entry.Value.Username != normalized) snapshot.Add(entry.Key, entry.Value);
+            await _catalog.SaveAsync(next, cancellationToken);
+            lock (_stateLock) { _usernames = next; _snapshot = snapshot; }
+            return new(TelegramCommandOutcome.Applied);
+        }
+        catch (TelegramStorageException failure)
+        {
+            lock (_stateLock) { _lastErrorCode = failure.Category; _lastError = failure.Category.ToString(); }
+            return new(TelegramCommandOutcome.Failed, failure.Category);
+        }
+        finally { _commands.Release(); }
+    }
 
     /// <summary>The host calls this after the hosted runtime has completed shutdown.</summary>
     public void Dispose()

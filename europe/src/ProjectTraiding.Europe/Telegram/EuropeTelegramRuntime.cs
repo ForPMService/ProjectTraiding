@@ -10,6 +10,7 @@ internal sealed class EuropeTelegramRuntime(TelegramReceiverController controlle
     {
         try
         {
+            await controller.InitializeAsync(stoppingToken);
             if (options.Enabled && options.AutoStart) await controller.StartAsync(stoppingToken);
             await controller.WatchFaultsAsync(stoppingToken);
         }

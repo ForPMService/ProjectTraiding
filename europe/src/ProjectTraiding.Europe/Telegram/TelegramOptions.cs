@@ -14,6 +14,7 @@ public sealed class TelegramOptions
     public string UpdateStatePath { get; init; } = string.Empty;
     public string ChannelsPath { get; init; } = string.Empty;
     public int QueueCapacity { get; init; }
+    public int MaxChannels { get; init; }
     public TimeSpan OperationTimeout { get; init; } = TimeSpan.FromSeconds(30);
     public TimeSpan ForwardTimeout { get; init; } = TimeSpan.FromSeconds(20);
     public TimeSpan DrainTimeout { get; init; } = TimeSpan.FromSeconds(30);
@@ -39,7 +40,7 @@ public sealed class TelegramOptions
             throw new InvalidOperationException("InvalidConfiguration: Telegram binding failed.");
         }
         if (!options.Enabled || options.ApiId <= 0 || options.ApiHash.Length != 32
-            || string.IsNullOrWhiteSpace(options.PhoneNumber) || options.QueueCapacity <= 0
+            || string.IsNullOrWhiteSpace(options.PhoneNumber) || options.QueueCapacity <= 0 || options.MaxChannels <= 0
             || !string.IsNullOrEmpty(options.OutboundProxyUrl)
             || options.ControlPeerId <= 0 || options.ControlPeerKind is not ("User" or "Chat" or "Channel")
             || !ValidTimeout(options.OperationTimeout) || !ValidTimeout(options.ForwardTimeout)

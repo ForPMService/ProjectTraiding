@@ -10,6 +10,8 @@ namespace ProjectTraiding.Europe.Telegram;
 internal sealed class TelegramAccountSession(TelegramOptions options, Action<Update> onUpdate,
     Action<TelegramErrorCategory> onFault, ILogger logger, IMeterFactory meterFactory)
 {
+    internal sealed record ChannelResolution(Dictionary<long, TelegramUpdateHandler.ChannelInfo> Channels,
+        string? UnavailableUsername = null);
     private readonly object _sync = new();
     private readonly Task?[] _pending = new Task?[3];
     private readonly Histogram<double> _duration = meterFactory.Create("ProjectTraiding.Europe.Telegram").CreateHistogram<double>("telegram.mtproto.duration", "s");
@@ -55,7 +57,7 @@ internal sealed class TelegramAccountSession(TelegramOptions options, Action<Upd
         catch (Exception error) { throw TelegramSourceException.Classify(error, "session-open"); }
     }
 
-    internal async Task<Dictionary<long, TelegramUpdateHandler.ChannelInfo>> ResolveChannelsAsync(
+    internal async Task<ChannelResolution> ResolveChannelsAsync(
         IReadOnlyList<string> usernames, CancellationToken cancellationToken)
     {
         Client client = GetClient();
@@ -76,10 +78,10 @@ internal sealed class TelegramAccountSession(TelegramOptions options, Action<Upd
                 }
             }
             if (match is null)
-                throw new TelegramSourceException(TelegramErrorCategory.SourceChannelUnavailable, "resolve-channel");
+                return new([], username);
             result.Add(match.id, new(username, match.title));
         }
-        return result;
+        return new(result);
     }
 
     private Client GetClient()
