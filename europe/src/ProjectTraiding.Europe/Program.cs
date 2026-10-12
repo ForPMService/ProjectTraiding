@@ -8,16 +8,11 @@ HostApplicationBuilder builder = Host.CreateApplicationBuilder(new HostApplicati
     ContentRootPath = AppContext.BaseDirectory
 });
 TelegramOptions telegram = TelegramOptions.Load(builder.Configuration);
-EuropeTelegramBotOptions bot = EuropeTelegramBotOptions.Load(builder.Configuration);
 builder.Services.AddSingleton(telegram);
-builder.Services.AddSingleton(bot);
-builder.Services.AddMetrics();
-builder.Services.AddSingleton<TelegramReceiverController>();
-builder.Services.AddHostedService<EuropeTelegramRuntime>();
-// Hosted services stop in reverse registration order: polling stops before receiver draining.
-builder.Services.AddHostedService<EuropeTelegramBot>();
-builder.Services.Configure<HostOptions>(options =>
-    options.ShutdownTimeout = telegram.DrainTimeout + telegram.CloseTimeout + bot.RequestTimeout);
+// Both host and future publication subscribers must use the same runtime instance.
+builder.Services.AddSingleton<EuropeTelegramRuntime>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<EuropeTelegramRuntime>());
+builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = telegram.ShutdownTimeout);
 
 using IHost host = builder.Build();
 await host.RunAsync();
