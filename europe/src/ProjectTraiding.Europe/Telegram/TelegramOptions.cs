@@ -2,7 +2,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace ProjectTraiding.Europe.Telegram;
 
-/// <summary>Fixed startup sources and destination bot; credentials are supplied by the environment.</summary>
+/// <summary>Настройки единственной пользовательской сессии, исходных каналов и бота-получателя.</summary>
 public sealed class TelegramOptions
 {
     public bool Enabled { get; init; }
@@ -17,6 +17,7 @@ public sealed class TelegramOptions
     public TimeSpan OperationTimeout { get; init; } = TimeSpan.FromSeconds(30);
     public TimeSpan ShutdownTimeout { get; init; } = TimeSpan.FromSeconds(30);
 
+    /// <summary>Читает настройки и проверяет обязательные параметры до запуска Telegram-сессии.</summary>
     internal static TelegramOptions Load(IConfiguration configuration)
     {
         string? enabledText = configuration["Telegram:Enabled"];
@@ -53,6 +54,7 @@ public sealed class TelegramOptions
         return options;
     }
 
+    /// <summary>Нормализует и проверяет публичное имя Telegram без начального знака @.</summary>
     internal static string NormalizeUsername(string username)
     {
         string candidate = username.Trim().TrimStart('@');
@@ -64,8 +66,10 @@ public sealed class TelegramOptions
         return candidate;
     }
 
+    /// <summary>Проверяет положительный интервал, допустимый для тайм-аута запроса.</summary>
     private static bool ValidTimeout(TimeSpan timeout) => timeout > TimeSpan.Zero && timeout.TotalMilliseconds <= int.MaxValue;
 
+    /// <summary>Не допускает хранение сессии и состояния обновлений внутри репозитория или каталога сборки.</summary>
     private static bool ValidStoragePath(string path)
     {
         if (!Path.IsPathFullyQualified(path) || string.IsNullOrEmpty(Path.GetFileName(path))) return false;

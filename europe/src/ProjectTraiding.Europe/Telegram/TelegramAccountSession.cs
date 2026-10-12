@@ -3,7 +3,7 @@ using WTelegram;
 
 namespace ProjectTraiding.Europe.Telegram;
 
-// Owns one client and its update manager for the entire host lifetime.
+/// <summary>Владеет единственной пользовательской сессией Telegram на время работы хоста.</summary>
 internal sealed class TelegramAccountSession(TelegramOptions options,
     Action<TelegramChannelPost> publish, Action<Exception> fail) : IAsyncDisposable
 {
@@ -13,6 +13,7 @@ internal sealed class TelegramAccountSession(TelegramOptions options,
     private InputPeerUser? _destination;
     private Task? _request;
 
+    /// <summary>Подключает уже авторизованную сессию, проверяет фиксированные источники и включает приём.</summary>
     internal async Task ConnectAsync(CancellationToken cancellationToken)
     {
         try
@@ -65,7 +66,7 @@ internal sealed class TelegramAccountSession(TelegramOptions options,
 
             _channels = channels;
             _destination = new InputPeerUser(bot.id, bot.access_hash);
-            // Register reception only after the fixed source map and destination are ready.
+            // Приём включается только после подготовки фиксированного списка источников и бота-получателя.
             _manager = _client.WithUpdateManager(HandleUpdateAsync, options.UpdateStatePath);
             _manager.Log = null;
             dialogs.CollectUsersChats(_manager.Users, _manager.Chats);
@@ -73,11 +74,12 @@ internal sealed class TelegramAccountSession(TelegramOptions options,
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception)
         {
-            // Library exception messages may contain account data; the host receives only a safe exception.
+            // Сообщения библиотеки могут содержать данные аккаунта; хост получает только безопасное описание сбоя.
             throw new InvalidOperationException("Unable to initialize the authorized Telegram session, source channels or destination bot.");
         }
     }
 
+    /// <summary>Передаёт исходное сообщение выбранному боту средствами нативной пересылки Telegram.</summary>
     internal async Task ForwardAsync(TelegramChannelPost post, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -97,15 +99,17 @@ internal sealed class TelegramAccountSession(TelegramOptions options,
         }
     }
 
+    /// <summary>Ожидает один запрос с тайм-аутом, сохраняя его для корректного освобождения клиента.</summary>
     private async Task<T> AwaitRequestAsync<T>(Task<T> request, CancellationToken cancellationToken)
     {
-        // Initialization and forwarding are sequential: only one physical request can be outstanding.
-        // WaitAsync cancels waiting, so a timed-out request is observed again after disposing the client.
+        // Инициализация и пересылка идут последовательно, поэтому одновременно выполняется не более одного запроса.
+        // WaitAsync ограничивает ожидание; незавершённый запрос наблюдается после освобождения клиента.
         _request = request;
         try { return await request.WaitAsync(options.OperationTimeout, cancellationToken); }
         finally { if (request.IsCompleted) _request = null; }
     }
 
+    /// <summary>Преобразует обновление и передаёт публикацию приёмнику; сбой входящей обработки виден хосту.</summary>
     private Task HandleUpdateAsync(Update update)
     {
         try
@@ -120,6 +124,7 @@ internal sealed class TelegramAccountSession(TelegramOptions options,
         return Task.CompletedTask;
     }
 
+    /// <summary>Сообщает хосту об ошибке входящего соединения отдельно от ошибок пересылки.</summary>
     private Task HandleOtherAsync(IObject notification)
     {
         if (notification is ReactorError)
@@ -127,8 +132,10 @@ internal sealed class TelegramAccountSession(TelegramOptions options,
         return Task.CompletedTask;
     }
 
+    /// <summary>Отключает журнал библиотеки, который может содержать данные пользовательской сессии.</summary>
     private static void DiscardLibraryLog(int level, string message) { }
 
+    /// <summary>Закрывает Telegram-клиент и сохраняет состояние обновлений после его остановки.</summary>
     public async ValueTask DisposeAsync()
     {
         if (_client is null) return;
@@ -141,14 +148,14 @@ internal sealed class TelegramAccountSession(TelegramOptions options,
                 if (_request is not null)
                 {
                     try { await _request; }
-                    // This is how WTelegram 4.4.9 aborts pending RPCs during DisposeAsync.
+                    // Так WTelegram 4.4.9 завершает ожидающие RPC-запросы при DisposeAsync.
                     catch (ObjectDisposedException) { }
                     catch (OperationCanceledException) { }
                 }
             }
             finally
             {
-                // SaveState is synchronous in the library and must follow client disposal.
+                // В библиотеке SaveState синхронен и вызывается после освобождения клиента.
                 _manager?.SaveState(options.UpdateStatePath);
             }
         }

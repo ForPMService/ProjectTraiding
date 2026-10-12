@@ -1,5 +1,5 @@
 namespace ProjectTraiding.Europe.Telegram;
 
-/// <summary>A publication accepted by the adapter. Both timestamps represent UTC instants.</summary>
+/// <summary>Неизменяемые данные принятой публикации; оба момента времени указаны в UTC.</summary>
 public sealed record TelegramChannelPost(long ChannelId, string? ChannelUsername, string ChannelTitle,
     int MessageId, string Text, DateTimeOffset PublishedAt, DateTimeOffset ReceivedAt);
