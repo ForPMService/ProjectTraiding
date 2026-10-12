@@ -14,6 +14,8 @@ builder.Services.AddSingleton(bot);
 builder.Services.AddMetrics();
 builder.Services.AddSingleton<TelegramReceiverController>();
 builder.Services.AddHostedService<EuropeTelegramRuntime>();
+// Hosted services stop in reverse registration order: polling stops before receiver draining.
+builder.Services.AddHostedService<EuropeTelegramBot>();
 builder.Services.Configure<HostOptions>(options =>
     options.ShutdownTimeout = telegram.DrainTimeout + telegram.CloseTimeout + bot.RequestTimeout);
 
