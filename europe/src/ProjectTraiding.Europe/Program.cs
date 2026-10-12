@@ -7,6 +7,9 @@ TelegramOptions telegram = TelegramOptions.Load(builder.Configuration);
 EuropeTelegramBotOptions bot = EuropeTelegramBotOptions.Load(builder.Configuration);
 builder.Services.AddSingleton(telegram);
 builder.Services.AddSingleton(bot);
+builder.Services.AddMetrics();
+builder.Services.AddSingleton<TelegramReceiverController>();
+builder.Services.AddHostedService<EuropeTelegramRuntime>();
 builder.Services.Configure<HostOptions>(options =>
     options.ShutdownTimeout = telegram.DrainTimeout + telegram.CloseTimeout + bot.RequestTimeout);
 
