@@ -11,7 +11,9 @@ internal sealed class TelegramAccountSession(TelegramOptions options, Action<Upd
     Action<TelegramErrorCategory> onFault, ILogger logger, IMeterFactory meterFactory)
 {
     internal sealed record ChannelResolution(Dictionary<long, TelegramUpdateHandler.ChannelInfo> Channels,
+        Dictionary<long, InputPeer> SourcePeers, InputPeer? ControlPeer,
         string? UnavailableUsername = null);
+    internal sealed record TelegramForwardResult(bool Forwarded, TelegramErrorCategory? ErrorCode = null);
     private readonly object _sync = new();
     private readonly Task?[] _pending = new Task?[3];
     private readonly Histogram<double> _duration = meterFactory.Create("ProjectTraiding.Europe.Telegram").CreateHistogram<double>("telegram.mtproto.duration", "s");
@@ -21,10 +23,13 @@ internal sealed class TelegramAccountSession(TelegramOptions options, Action<Upd
     private UpdateManager? _manager;
     private Task? _closing;
     private bool _unusable;
+    private Dictionary<long, InputPeer> _sourcePeers = [];
+    private HashSet<long> _activeSources = [];
+    private readonly Dictionary<long, int> _pendingBySource = [];
+    private InputPeer? _controlPeer;
 
     internal bool Authorized { get; private set; }
     internal bool Closed { get; private set; }
-    internal bool CleanupPending => _closing is { IsCompleted: false };
 
     internal async Task<bool> StartAsync(CancellationToken cancellationToken)
     {
@@ -63,7 +68,9 @@ internal sealed class TelegramAccountSession(TelegramOptions options, Action<Upd
         Client client = GetClient();
         Messages_Dialogs dialogs = await AwaitRpcAsync(client.Messages_GetAllDialogs(), "dialogs", 1,
             options.OperationTimeout, cancellationToken);
+        dialogs.CollectUsersChats(_manager!.Users, _manager.Chats);
         Dictionary<long, TelegramUpdateHandler.ChannelInfo> result = [];
+        Dictionary<long, InputPeer> peers = [];
         foreach (string username in usernames)
         {
             Channel? match = null;
@@ -78,17 +85,104 @@ internal sealed class TelegramAccountSession(TelegramOptions options, Action<Upd
                 }
             }
             if (match is null)
-                return new([], username);
+                return new([], [], null, username);
+            // Forwarding into a subscribed broadcast destination would create a feedback loop.
+            if (options.ControlPeerKind == "Channel" && match.id == options.ControlPeerId)
+                return new([], [], null, username);
             result.Add(match.id, new(username, match.title));
+            peers.Add(match.id, new InputPeerChannel(match.id, match.access_hash));
         }
-        return new(result);
+        return new(result, peers, ResolveControlPeer(dialogs));
+    }
+
+    internal void ApplyChannels(ChannelResolution resolution)
+    {
+        lock (_sync)
+        {
+            HashSet<long> active = new(resolution.SourcePeers.Keys);
+            foreach (long channelId in _pendingBySource.Keys)
+                if (!resolution.SourcePeers.ContainsKey(channelId) && _sourcePeers.TryGetValue(channelId, out InputPeer? peer))
+                    resolution.SourcePeers.Add(channelId, peer);
+            _sourcePeers = resolution.SourcePeers;
+            _activeSources = active;
+            _controlPeer = resolution.ControlPeer;
+        }
+    }
+
+    internal void RetainSource(long channelId)
+    {
+        lock (_sync)
+        {
+            _pendingBySource.TryGetValue(channelId, out int count);
+            _pendingBySource[channelId] = count + 1;
+        }
+    }
+
+    internal void ReleaseSource(long channelId)
+    {
+        lock (_sync)
+        {
+            if (!_pendingBySource.TryGetValue(channelId, out int count)) return;
+            if (count > 1) { _pendingBySource[channelId] = count - 1; return; }
+            _pendingBySource.Remove(channelId);
+            if (!_activeSources.Contains(channelId)) _sourcePeers.Remove(channelId);
+        }
+    }
+
+    internal void RetireSource(long channelId)
+    {
+        lock (_sync)
+        {
+            _activeSources.Remove(channelId);
+            if (!_pendingBySource.ContainsKey(channelId)) _sourcePeers.Remove(channelId);
+        }
+    }
+
+    private InputPeer? ResolveControlPeer(Messages_Dialogs dialogs)
+    {
+        if (options.ControlPeerKind == "User")
+        {
+            if (dialogs.users.TryGetValue(options.ControlPeerId, out User? user)
+                && (user.flags & User.Flags.min) == 0 && user.access_hash != 0)
+                return new InputPeerUser(user.id, user.access_hash);
+            return null;
+        }
+        if (!dialogs.chats.TryGetValue(options.ControlPeerId, out ChatBase? chat)) return null;
+        if (options.ControlPeerKind == "Chat" && chat is Chat group && (group.flags & Chat.Flags.left) == 0)
+            return new InputPeerChat(group.id);
+        if (options.ControlPeerKind == "Channel" && chat is Channel channel
+            && (channel.flags & (Channel.Flags.left | Channel.Flags.min)) == 0 && channel.access_hash != 0)
+            return new InputPeerChannel(channel.id, channel.access_hash);
+        return null;
+    }
+
+    internal async Task<TelegramForwardResult> ForwardAsync(TelegramChannelPost post, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        InputPeer? source;
+        InputPeer? destination;
+        lock (_sync)
+        {
+            _sourcePeers.TryGetValue(post.ChannelId, out source);
+            destination = _controlPeer;
+        }
+        if (source is null) return new(false, TelegramErrorCategory.SourceChannelUnavailable);
+        if (destination is null) return new(false, TelegramErrorCategory.ControlPeerUnavailable);
+        Client client = GetClient();
+        Message[] forwarded = await AwaitRpcAsync(client.ForwardMessagesAsync(source, [post.MessageId],
+            destination, drop_author: false), "forward", 2, options.ForwardTimeout, cancellationToken);
+        // A completed request without a confirmed forwarded message is not reported as delivery.
+        return forwarded.Length == 1 && forwarded[0] is { id: > 0 }
+            ? new(true) : new(false, TelegramErrorCategory.Unexpected);
     }
 
     private Client GetClient()
     {
         lock (_sync)
         {
-            if (_unusable || !Authorized || _client is null)
+            if (_unusable)
+                throw new TelegramSourceException(TelegramErrorCategory.TransportUnavailable, "connection");
+            if (!Authorized || _client is null)
                 throw new TelegramSourceException(TelegramErrorCategory.AuthorizationRequired, "connection");
             return _client;
         }
@@ -124,7 +218,6 @@ internal sealed class TelegramAccountSession(TelegramOptions options, Action<Upd
         {
             outcome = "cancelled";
             lock (_sync) _unusable = true;
-            onFault(TelegramErrorCategory.TransportUnavailable);
             throw;
         }
         catch (Exception error)
@@ -150,7 +243,9 @@ internal sealed class TelegramAccountSession(TelegramOptions options, Action<Upd
     internal async Task CloseAsync(CancellationToken cancellationToken)
     {
         Task closing;
-        lock (_sync) closing = _closing ??= CloseClientAsync();
+        // Closing is invoked only by the serialized command owner. Do not hold _sync while Dispose starts:
+        // library completion callbacks can need the controller's admission lock (controller -> session order).
+        closing = _closing ??= CloseClientAsync();
         try { await closing.WaitAsync(options.CloseTimeout, cancellationToken); }
         catch (TimeoutException)
         {
@@ -160,34 +255,53 @@ internal sealed class TelegramAccountSession(TelegramOptions options, Action<Upd
 
     private async Task CloseClientAsync()
     {
+        // Publish the tracked closing task before synchronous library state persistence can run.
+        await Task.Yield();
         try
         {
-        Authorized = false;
-        Client? client = _client;
-        _client = null;
-        if (client is not null)
-        {
-            client.OnOther -= HandleOtherAsync;
-            try { await client.DisposeAsync(); }
-            catch (Exception error) { throw TelegramSourceException.Classify(error, "session-close"); }
-        }
-        foreach (Task? pending in _pending)
-        {
-            if (pending is null) continue;
-            try { await pending; }
-            catch (Exception error)
+            Client? client;
+            lock (_sync)
             {
-                TelegramSourceException failure = TelegramSourceException.Classify(error, "pending-rpc");
-                TelegramLog.Failure(logger, failure.Operation, failure.Category);
+                Authorized = false;
+                client = _client;
+                _client = null;
             }
-        }
-        Closed = true;
-        // Library SaveState is synchronous; its required order is DisposeAsync -> SaveState.
-        try { _manager?.SaveState(options.UpdateStatePath); }
-        catch (Exception)
-        {
-            throw new TelegramBoundaryException(TelegramErrorCategory.StorageFailure, "update-state-save");
-        }
+            if (client is not null)
+            {
+                client.OnOther -= HandleOtherAsync;
+                try { await client.DisposeAsync(); }
+                catch (Exception error) { throw TelegramSourceException.Classify(error, "session-close"); }
+            }
+            foreach (Task? pending in _pending)
+            {
+                if (pending is null) continue;
+                try { await pending; }
+                catch (OperationCanceledException)
+                {
+                    // Client disposal cancels outstanding library RPCs; this is normal shutdown.
+                }
+                catch (Exception error)
+                {
+                    TelegramSourceException failure = TelegramSourceException.Classify(error, "pending-rpc");
+                    TelegramLog.Failure(logger, failure.Operation, failure.Category);
+                }
+            }
+            // Library SaveState is synchronous; its required order is DisposeAsync -> SaveState.
+            long started = Stopwatch.GetTimestamp();
+            string outcome = "success";
+            try { _manager?.SaveState(options.UpdateStatePath); }
+            catch (Exception)
+            {
+                outcome = "StorageFailure";
+                throw new TelegramBoundaryException(TelegramErrorCategory.StorageFailure, "update-state-save");
+            }
+            finally
+            {
+                _duration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds,
+                    new("operation", "update-state-save"), new("outcome", outcome));
+                _outcomes.Add(1, new("operation", "update-state-save"), new("outcome", outcome));
+                Closed = true;
+            }
         }
         finally
         {

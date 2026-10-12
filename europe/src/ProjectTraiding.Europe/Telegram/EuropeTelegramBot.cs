@@ -28,13 +28,13 @@ internal sealed class EuropeTelegramBot(EuropeTelegramBotOptions options, Telegr
         using HttpClient http = new(transport, disposeHandler: false) { Timeout = options.RequestTimeout };
         using ActivitySource activities = new("ProjectTraiding.Europe.Telegram.Bot");
         // Library retries are disabled: every physical request passes the same sequential throttle.
-        TelegramBotClientOptions clientOptions = new(options.BotToken) { RetryCount = 0, RetryThreshold = 0 };
-        _client = new TelegramBotClient(clientOptions, http, stoppingToken);
         int offset = 0;
         int consecutiveFailures = 0;
         SetState("Polling");
         try
         {
+            TelegramBotClientOptions clientOptions = new(options.BotToken) { RetryCount = 0, RetryThreshold = 0 };
+            _client = new TelegramBotClient(clientOptions, http, stoppingToken);
             while (!stoppingToken.IsCancellationRequested)
             {
                 try

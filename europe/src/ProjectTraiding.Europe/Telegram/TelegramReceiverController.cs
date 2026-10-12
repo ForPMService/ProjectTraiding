@@ -20,6 +20,9 @@ public sealed class TelegramReceiverController : IDisposable
     private readonly Counter<long> _received;
     private readonly Counter<long> _admission;
     private readonly Counter<long> _transitions;
+    private readonly Counter<long> _forwardOutcomes;
+    private readonly Histogram<double> _forwardDuration;
+    private readonly ActivitySource _activities = new("ProjectTraiding.Europe.Telegram.Receiver");
     private TelegramReceiverState _state;
     private TelegramErrorCategory? _lastErrorCode;
     private string? _lastError;
@@ -36,8 +39,8 @@ public sealed class TelegramReceiverController : IDisposable
     private bool _drainAborted;
     private long _accepted;
     private long _overflow;
-    private long _forwarded = 0;
-    private long _forwardFailures = 0;
+    private long _forwarded;
+    private long _forwardFailures;
     private long _possiblyLost;
     private string _botState = "Disabled";
 
@@ -53,6 +56,8 @@ public sealed class TelegramReceiverController : IDisposable
         _received = meter.CreateCounter<long>("telegram.updates.received");
         _admission = meter.CreateCounter<long>("telegram.publications.admission");
         _transitions = meter.CreateCounter<long>("telegram.receiver.transitions");
+        _forwardOutcomes = meter.CreateCounter<long>("telegram.forward.outcomes");
+        _forwardDuration = meter.CreateHistogram<double>("telegram.forward.duration", "s");
     }
 
     /// <summary>Returns a snapshot without waiting for network operations.</summary>
@@ -62,7 +67,8 @@ public sealed class TelegramReceiverController : IDisposable
             return new(_state, _lastErrorCode, _lastError, _lastReceivedAtUtc,
                 _queue?.Reader.Count ?? 0, _options.QueueCapacity, _accepted, _overflow,
                 _forwarded, _forwardFailures, _possiblyLost, _drainCompleted,
-                _session is not null && _state is TelegramReceiverState.Error or TelegramReceiverState.Stopping,
+                (_session is not null || _consumer is not null)
+                    && _state is TelegramReceiverState.Error or TelegramReceiverState.Stopping,
                 _botState);
     }
 
@@ -103,6 +109,11 @@ public sealed class TelegramReceiverController : IDisposable
             {
                 RecordFailure(failure);
                 return new(TelegramCommandOutcome.Failed, failure.Category);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                lock (_stateLock) SetStateLocked(TelegramReceiverState.Stopped);
+                throw;
             }
             TelegramAccountSession session = new(_options, HandleUpdate, SignalFault, _logger, _meterFactory);
             lock (_stateLock) _session = session;
@@ -145,8 +156,9 @@ public sealed class TelegramReceiverController : IDisposable
                         SingleWriter = false
                     });
                     _snapshot = resolution.Channels;
+                    session.ApplyChannels(resolution);
                     _consumerCancellation = new CancellationTokenSource();
-                    _consumer = ConsumeAsync(_queue.Reader, _consumerCancellation.Token);
+                    _consumer = ConsumeAsync(_queue.Reader, session, _consumerCancellation.Token);
                     _readyAtUtc = DateTimeOffset.UtcNow;
                     _accepting = true;
                     _drainCompleted = false;
@@ -165,6 +177,11 @@ public sealed class TelegramReceiverController : IDisposable
             {
                 RecordFailure(failure);
                 await CleanupAsync(CancellationToken.None);
+                if (failure.Category == TelegramErrorCategory.AuthorizationRequired)
+                {
+                    lock (_stateLock) if (_session is null) SetStateLocked(TelegramReceiverState.AuthorizationRequired);
+                    return new(TelegramCommandOutcome.Unavailable, failure.Category);
+                }
                 return new(TelegramCommandOutcome.Failed, failure.Category);
             }
         }
@@ -263,14 +280,63 @@ public sealed class TelegramReceiverController : IDisposable
         }
     }
 
-    private async Task ConsumeAsync(ChannelReader<TelegramChannelPost> reader, CancellationToken cancellationToken)
+    private async Task ConsumeAsync(ChannelReader<TelegramChannelPost> reader, TelegramAccountSession session,
+        CancellationToken cancellationToken)
     {
         try
         {
             await foreach (TelegramChannelPost post in reader.ReadAllAsync(cancellationToken))
             {
-                // Prompt 1 intermediate commit only accounts for the accepted publication.
-                _admission.Add(1, new KeyValuePair<string, object?>("outcome", "consumed"));
+                long started = Stopwatch.GetTimestamp();
+                string outcome = "success";
+                using Activity? activity = _activities.StartActivity("forward-original");
+                activity?.SetTag("telegram.channel_id", post.ChannelId);
+                activity?.SetTag("telegram.message_id", post.MessageId);
+                try
+                {
+                    TelegramAccountSession.TelegramForwardResult result = await session.ForwardAsync(post, cancellationToken);
+                    lock (_stateLock)
+                    {
+                        if (result.Forwarded) _forwarded++;
+                        else
+                        {
+                            _forwardFailures++;
+                            _lastErrorCode = result.ErrorCode;
+                            _lastError = result.ErrorCode?.ToString();
+                        }
+                    }
+                    if (!result.Forwarded)
+                    {
+                        outcome = result.ErrorCode?.ToString() ?? "Unexpected";
+                        TelegramLog.PublicationFailure(_logger, post.ChannelId, post.MessageId,
+                            result.ErrorCode ?? TelegramErrorCategory.Unexpected);
+                    }
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    outcome = "cancelled";
+                    lock (_stateLock) _possiblyLost++;
+                    throw;
+                }
+                catch (TelegramBoundaryException failure)
+                {
+                    outcome = failure.Category.ToString();
+                    lock (_stateLock)
+                    {
+                        _forwardFailures++;
+                        _lastErrorCode = failure.Category;
+                        _lastError = failure.Category.ToString();
+                    }
+                    TelegramLog.PublicationFailure(_logger, post.ChannelId, post.MessageId, failure.Category);
+                    // Forward-only refusal does not undo admission or manufacture a semantic result.
+                }
+                finally
+                {
+                    session.ReleaseSource(post.ChannelId);
+                    _forwardDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds,
+                        new KeyValuePair<string, object?>("outcome", outcome));
+                    _forwardOutcomes.Add(1, new KeyValuePair<string, object?>("outcome", outcome));
+                }
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -294,6 +360,7 @@ public sealed class TelegramReceiverController : IDisposable
             TelegramChannelPost? post = TelegramUpdateHandler.Convert(update, _snapshot, _readyAtUtc, receivedAtUtc, _logger);
             if (post is null) { _admission.Add(1, new KeyValuePair<string, object?>("outcome", "filtered")); return; }
             _lastReceivedAtUtc = receivedAtUtc;
+            _session?.RetainSource(post.ChannelId);
             if (_queue.Writer.TryWrite(post))
             {
                 _accepted++;
@@ -301,6 +368,7 @@ public sealed class TelegramReceiverController : IDisposable
                 return;
             }
             _overflow++;
+            _session?.ReleaseSource(post.ChannelId);
             _possiblyLost++;
             _admission.Add(1, new KeyValuePair<string, object?>("outcome", "overflow"));
             TelegramLog.PublicationFailure(_logger, post.ChannelId, post.MessageId, TelegramErrorCategory.QueueOverflow);
@@ -414,13 +482,24 @@ public sealed class TelegramReceiverController : IDisposable
                 return new(TelegramCommandOutcome.Unavailable, TelegramErrorCategory.SourceChannelUnavailable,
                     "SourceChannelUnavailable: @" + resolution.UnavailableUsername);
             await _catalog.SaveAsync(next, cancellationToken);
-            lock (_stateLock) { _usernames = next; _snapshot = resolution.Channels; }
+            lock (_stateLock)
+            {
+                session.ApplyChannels(resolution);
+                _usernames = next;
+                _snapshot = resolution.Channels;
+            }
             return new(TelegramCommandOutcome.Applied);
         }
         catch (TelegramStorageException failure)
         {
             lock (_stateLock) { _lastErrorCode = failure.Category; _lastError = failure.Category.ToString(); }
             return new(TelegramCommandOutcome.Failed, failure.Category);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            bool cleaned = await CleanupAsync(CancellationToken.None);
+            lock (_stateLock) SetStateLocked(cleaned ? TelegramReceiverState.Stopped : TelegramReceiverState.Error);
+            throw;
         }
         finally { _commands.Release(); }
     }
@@ -444,7 +523,13 @@ public sealed class TelegramReceiverController : IDisposable
                 foreach (KeyValuePair<long, TelegramUpdateHandler.ChannelInfo> entry in _snapshot)
                     if (entry.Value.Username != normalized) snapshot.Add(entry.Key, entry.Value);
             await _catalog.SaveAsync(next, cancellationToken);
-            lock (_stateLock) { _usernames = next; _snapshot = snapshot; }
+            lock (_stateLock)
+            {
+                foreach (KeyValuePair<long, TelegramUpdateHandler.ChannelInfo> entry in _snapshot)
+                    if (entry.Value.Username == normalized) _session?.RetireSource(entry.Key);
+                _usernames = next;
+                _snapshot = snapshot;
+            }
             return new(TelegramCommandOutcome.Applied);
         }
         catch (TelegramStorageException failure)
@@ -461,5 +546,6 @@ public sealed class TelegramReceiverController : IDisposable
         _commands.Dispose();
         _faultSignal.Dispose();
         _consumerCancellation?.Dispose();
+        _activities.Dispose();
     }
 }
