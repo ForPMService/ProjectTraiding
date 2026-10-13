@@ -6,7 +6,7 @@ using ProjectTraiding.Europe.Telegram;
 namespace ProjectTraiding.Europe.News;
 
 /// <summary>Полный готовый снимок: справочники и настройки одного Realtime-разбора не меняются в ходе вызова.</summary>
-public sealed record NewsConfigurationDTO(string Version, string PromptVersion, string Prompt,
+public sealed record NewsAgentPromptSnapshot(string Version, string PromptVersion, string Prompt,
     string Mode, ImmutableArray<string> EventTypes, ImmutableArray<NewsGlobalEventDTO> GlobalEvents,
     ImmutableArray<NewsInstrumentContextDTO> Instruments, JsonElement JsonSchema,
     string Model, int MaxOutputTokens, float Temperature, bool WebSearchEnabled)
@@ -21,12 +21,12 @@ public sealed record NewsGlobalEventDTO(long Id, string Name);
 public sealed record NewsInstrumentContextDTO(string Secid, string Name, string InstrumentType, string? BaseAsset);
 
 /// <summary>Техническая упаковка входа без повторения промпта и схемы, уже переданных параметрами запроса.</summary>
-internal sealed record NewsAnalysisInputDTO(string Mode, ImmutableArray<string> EventTypes,
+internal sealed record NewsLlmRequest(string Mode, ImmutableArray<string> EventTypes,
     ImmutableArray<NewsGlobalEventDTO> GlobalEvents, ImmutableArray<NewsInstrumentContextDTO> Instruments,
     TelegramChannelPost Publication);
 
 /// <summary>Предметный ответ v3; отказ от полезных фактов отличается от технической ошибки.</summary>
-public sealed record NewsAnalysisDTO(
+public sealed record NewsLlmResponse(
     [property: JsonRequired] bool Accepted,
     [property: JsonRequired] ImmutableArray<NewsFactDTO> Facts);
 
@@ -47,17 +47,17 @@ public sealed record NewsInstrumentAssessmentDTO(
     [property: JsonRequired] double? InstrumentSignificance);
 
 /// <summary>Внутренний выход следующему этапу без утверждения доставки или времени записи в российской базе.</summary>
-public sealed record NewsAnalysisResultDTO(TelegramChannelPost Publication, string Json,
+public sealed record NewsAgentResult(TelegramChannelPost Publication, string Json,
     string ConfigurationVersion, string Model, string AgentVersion);
 
 /// <summary>Сериализация прикладных данных без рефлексии; все поля ответа обязательны, включая nullable.</summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower,
     UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, RespectNullableAnnotations = true,
     RespectRequiredConstructorParameters = true, AllowDuplicateProperties = false)]
-[JsonSerializable(typeof(NewsConfigurationDTO))]
-[JsonSerializable(typeof(NewsAnalysisInputDTO))]
-[JsonSerializable(typeof(NewsAnalysisDTO))]
-internal sealed partial class NewsJsonContext : JsonSerializerContext
+[JsonSerializable(typeof(NewsAgentPromptSnapshot))]
+[JsonSerializable(typeof(NewsLlmRequest))]
+[JsonSerializable(typeof(NewsLlmResponse))]
+internal sealed partial class NewsAgentJsonContext : JsonSerializerContext
 {
     // Схема выводится только из полей и ограничений v3. Справочники окончательно проверяет будущий Writer.
     internal const string ContractSchema = """

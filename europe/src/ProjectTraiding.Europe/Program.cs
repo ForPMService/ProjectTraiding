@@ -10,7 +10,7 @@ HostApplicationBuilder builder = Host.CreateApplicationBuilder(new HostApplicati
     ContentRootPath = AppContext.BaseDirectory
 });
 TelegramOptions telegram = TelegramOptions.Load(builder.Configuration);
-EuropeNewsOptions news = EuropeNewsOptions.Load(builder.Configuration);
+NewsAgentOptions news = NewsAgentOptions.Load(builder.Configuration);
 builder.Services.AddSingleton(telegram);
 builder.Services.AddSingleton(news);
 // Хост и будущие подписчики публикаций используют один экземпляр приёмника.
@@ -18,8 +18,8 @@ builder.Services.AddSingleton<EuropeTelegramRuntime>();
 if (news.Enabled)
 {
     // StartAsync подписывает LLM до запуска Telegram; оба контура используют тот же экземпляр приёмника.
-    builder.Services.AddSingleton<EuropeNewsProcessor>();
-    builder.Services.AddHostedService(provider => provider.GetRequiredService<EuropeNewsProcessor>());
+    builder.Services.AddSingleton<NewsAgentExecutor>();
+    builder.Services.AddHostedService(provider => provider.GetRequiredService<NewsAgentExecutor>());
 }
 builder.Services.AddHostedService(provider => provider.GetRequiredService<EuropeTelegramRuntime>());
 builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = telegram.ShutdownTimeout);

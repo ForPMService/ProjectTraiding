@@ -6,11 +6,11 @@
 
 ## Изменённые файлы
 
-- `src/ProjectTraiding.Europe/News/EuropeNewsProcessor.cs` — очередь, потребители,
+- `src/ProjectTraiding.Europe/News/NewsAgentExecutor.cs` — очередь, потребители,
   локальный приём снимка, один LLM-запрос, техническая проверка и выход результата.
 - `src/ProjectTraiding.Europe/News/NewsContracts.cs` — неизменяемые DTO, JSON-контекст
   и строгая схема, выведенная из полей и ограничений контракта v3.
-- `src/ProjectTraiding.Europe/News/EuropeNewsOptions.cs` — проверка операторских пределов.
+- `src/ProjectTraiding.Europe/News/NewsAgentOptions.cs` — проверка операторских пределов.
 - `src/ProjectTraiding.Europe/Program.cs` — регистрация обработчика перед Telegram.
 - `src/ProjectTraiding.Europe/ProjectTraiding.Europe.csproj` — официальный адаптер.
 - `src/ProjectTraiding.Europe/appsettings.json` — выключенный контур без реквизитов.
@@ -78,13 +78,13 @@ Schema и поиск передаются совместно через пров
 и `OPENAI_API_KEY`. Ключ читается только из среды. Настройки проверяются при старте,
 до создания клиента. Размеры очереди и число исполнителей владелец выбирает сам.
 
-`EuropeNewsProcessor.SetConfiguration(NewsConfigurationDTO)` принимает готовый
+`NewsAgentExecutor.UpdatePromptSnapshot(NewsAgentPromptSnapshot)` принимает готовый
 полный снимок: Version, PromptVersion, Prompt, Mode=Realtime, EventTypes,
 GlobalEvents, Instruments с secid/названием/типом/базовым активом, JsonSchema,
 Model, MaxOutputTokens (1..32768), Temperature (0..2), WebSearchEnabled.
 Пустые справочники сюжетов и инструментов допустимы; отсутствующие массивы,
 пустой промпт, неверный режим/модель/схема отклоняются до замены. Схема должна
-соответствовать `NewsJsonContext.ContractSchema`; это структурная часть v3,
+соответствовать `NewsAgentJsonContext.ContractSchema`; это структурная часть v3,
 а не альтернативный предметный контракт.
 
 Все DTO неизменяемы, коллекции — ImmutableArray. Схема клонируется независимо
@@ -120,7 +120,7 @@ accepted/facts, непустые строковые поля, nullable-поля,
 Существование event_type/global_event/secid и уникальность secid внутри факта
 окончательно проверяет будущий российский Writer.
 
-Единственный выход — `ResultReady`: исходная TelegramChannelPost, фактический JSON,
+Единственный выход — `AnalysisCompleted`: исходная TelegramChannelPost, фактический JSON,
 ConfigurationVersion, фактическая Model и вычисленная AgentVersion.
 **Подписчика сейчас нет; результат не сохраняется и не считается доставленным.**
 При старте об этом есть одно предупреждение. Текущая синхронная точка предполагает
@@ -142,17 +142,17 @@ ApplicationStopping отменяет текущие запросы и закры
 
 | Тип | Что теряется без него |
 |---|---|
-| EuropeNewsProcessor | владение очередью/потребителями, изоляция вызова и остановки |
-| EuropeNewsOptions | типизированная валидация операторских пределов |
-| NewsConfigurationDTO | атомарный полный неизменяемый снимок |
+| NewsAgentExecutor | владение очередью/потребителями, изоляция вызова и остановки |
+| NewsAgentOptions | типизированная валидация операторских пределов |
+| NewsAgentPromptSnapshot | атомарный полный неизменяемый снимок |
 | NewsGlobalEventDTO | типизированные id/name существующего сюжета |
 | NewsInstrumentContextDTO | обязательный контекст разрешённого инструмента |
-| NewsAnalysisInputDTO | именованная AOT-упаковка входа без дублирования промпта/схемы |
-| NewsAnalysisDTO | обязательные accepted/facts и проверка их согласованности |
+| NewsLlmRequest | именованная AOT-упаковка входа без дублирования промпта/схемы |
+| NewsLlmResponse | обязательные accepted/facts и проверка их согласованности |
 | NewsFactDTO | точная структура факта с nullable-полями и вложенными оценками |
 | NewsInstrumentAssessmentDTO | типы и диапазоны оценки инструмента |
-| NewsAnalysisResultDTO | явная внутренняя граница публикация/JSON/версия/модель |
-| NewsJsonContext | сериализация и десериализация без прикладной рефлексии |
+| NewsAgentResult | явная внутренняя граница публикация/JSON/версия/модель |
+| NewsAgentJsonContext | сериализация и десериализация без прикладной рефлексии |
 
 Подсчёт до/после одинаков: все `*.cs` под `europe/src`, без bin/obj;
 строки — сумма `(Get-Content <file>).Count`, включая пустые строки и комментарии;

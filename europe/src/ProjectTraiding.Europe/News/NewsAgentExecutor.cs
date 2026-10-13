@@ -12,19 +12,19 @@ using ProjectTraiding.Europe.Telegram;
 namespace ProjectTraiding.Europe.News;
 
 /// <summary>Владеет общей ограниченной очередью и фиксированными потребителями; изолирует однократный LLM-вызов.</summary>
-public sealed partial class EuropeNewsProcessor : BackgroundService
+public sealed partial class NewsAgentExecutor : BackgroundService
 {
     private readonly EuropeTelegramRuntime _telegram;
-    private readonly EuropeNewsOptions _options;
-    private readonly ILogger<EuropeNewsProcessor> _logger;
+    private readonly NewsAgentOptions _options;
+    private readonly ILogger<NewsAgentExecutor> _logger;
     private readonly IHostApplicationLifetime _lifetime;
     private readonly IChatClient _client;
     private readonly Channel<TelegramChannelPost> _publications;
-    private NewsConfigurationDTO? _configuration;
+    private NewsAgentPromptSnapshot? _promptSnapshot;
 
     /// <summary>Создаёт только инфраструктуру клиента; конструктор не обращается к API.</summary>
-    public EuropeNewsProcessor(EuropeTelegramRuntime telegram, EuropeNewsOptions options,
-        ILogger<EuropeNewsProcessor> logger, IHostApplicationLifetime lifetime)
+    public NewsAgentExecutor(EuropeTelegramRuntime telegram, NewsAgentOptions options,
+        ILogger<NewsAgentExecutor> logger, IHostApplicationLifetime lifetime)
     {
         _telegram = telegram;
         _options = options;
@@ -51,30 +51,30 @@ public sealed partial class EuropeNewsProcessor : BackgroundService
     }
 
     /// <summary>Единственный внутренний выход; подписчик должен быть коротким, потокобезопасным и не выполнять I/O.</summary>
-    public event Action<NewsAnalysisResultDTO>? ResultReady;
+    public event Action<NewsAgentResult>? AnalysisCompleted;
 
     /// <summary>Проверяет полный готовый снимок до атомарной замены; текущие операции сохраняют прежнюю версию.</summary>
-    public void SetConfiguration(NewsConfigurationDTO configuration)
+    public void UpdatePromptSnapshot(NewsAgentPromptSnapshot snapshot)
     {
-        ArgumentNullException.ThrowIfNull(configuration);
-        ValidateConfiguration(configuration);
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ValidatePromptSnapshot(snapshot);
         // Clone отделяет схему от времени жизни JsonDocument вызывающего кода.
-        NewsConfigurationDTO snapshot = configuration with { JsonSchema = configuration.JsonSchema.Clone() };
-        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(snapshot, NewsJsonContext.Default.NewsConfigurationDTO);
+        snapshot = snapshot with { JsonSchema = snapshot.JsonSchema.Clone() };
+        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(snapshot, NewsAgentJsonContext.Default.NewsAgentPromptSnapshot);
         snapshot = snapshot with { AgentVersion = "news-v3:" + Convert.ToHexString(SHA256.HashData(bytes)) };
-        Interlocked.Exchange(ref _configuration, snapshot);
+        Interlocked.Exchange(ref _promptSnapshot, snapshot);
     }
 
     /// <summary>Подписка выполняется синхронно до запуска следующей hosted-роли Telegram.</summary>
     public override Task StartAsync(CancellationToken cancellationToken)
     {
-        _telegram.PublicationReceived += Enqueue;
-        if (ResultReady is null) LogWarning(_logger, "Потребитель результата LLM не подключён; выдача не означает доставку.");
+        _telegram.PublicationReceived += EnqueuePublication;
+        if (AnalysisCompleted is null) LogWarning(_logger, "Потребитель результата LLM не подключён; выдача не означает доставку.");
         return base.StartAsync(cancellationToken);
     }
 
     /// <summary>Callback не ждёт потребителей и не выполняет сетевые или файловые операции.</summary>
-    private void Enqueue(TelegramChannelPost publication)
+    private void EnqueuePublication(TelegramChannelPost publication)
     {
         if (!_publications.Writer.TryWrite(publication))
             LogWarning(_logger, "Очередь LLM недоступна; публикация пропущена для анализа.");
@@ -87,23 +87,23 @@ public sealed partial class EuropeNewsProcessor : BackgroundService
             stoppingToken, _lifetime.ApplicationStopping);
         using CancellationTokenRegistration stopping = lifetime.Token.Register(Complete);
         Task[] workers = new Task[_options.Workers];
-        for (int index = 0; index < workers.Length; index++) workers[index] = ConsumeAsync(lifetime.Token);
+        for (int index = 0; index < workers.Length; index++) workers[index] = ProcessPublicationsAsync(lifetime.Token);
         try { await Task.WhenAll(workers); }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
         finally
         {
-            _telegram.PublicationReceived -= Enqueue;
+            _telegram.PublicationReceived -= EnqueuePublication;
             Complete();
         }
     }
 
     /// <summary>Снимок читается на старте разбора, а ошибка одной публикации не завершает общий поток.</summary>
-    private async Task ConsumeAsync(CancellationToken cancellationToken)
+    private async Task ProcessPublicationsAsync(CancellationToken cancellationToken)
     {
         await foreach (TelegramChannelPost publication in _publications.Reader.ReadAllAsync(cancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            NewsConfigurationDTO? snapshot = Volatile.Read(ref _configuration);
+            NewsAgentPromptSnapshot? snapshot = Volatile.Read(ref _promptSnapshot);
             if (snapshot is null)
             {
                 LogWarning(_logger, "Нет полного снимка конфигурации; публикация пропущена без вызова LLM.");
@@ -127,9 +127,9 @@ public sealed partial class EuropeNewsProcessor : BackgroundService
                 ChatMessage[] messages =
                 [
                     new(ChatRole.System, snapshot.Prompt),
-                    new(ChatRole.User, JsonSerializer.Serialize(new NewsAnalysisInputDTO(snapshot.Mode,
+                    new(ChatRole.User, JsonSerializer.Serialize(new NewsLlmRequest(snapshot.Mode,
                         snapshot.EventTypes, snapshot.GlobalEvents, snapshot.Instruments, publication),
-                        NewsJsonContext.Default.NewsAnalysisInputDTO))
+                        NewsAgentJsonContext.Default.NewsLlmRequest))
                 ];
                 request.Token.ThrowIfCancellationRequested();
                 ChatResponse response = await _client.GetResponseAsync(messages, options, request.Token);
@@ -142,11 +142,11 @@ public sealed partial class EuropeNewsProcessor : BackgroundService
                     foreach (AIContent content in message.Contents)
                         if (content is ErrorContent) throw new InvalidDataException("Отказ LLM.");
                 string json = response.Text;
-                ValidateResponse(json);
+                ValidateLlmResponse(json);
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                    ResultReady?.Invoke(new(publication, json, snapshot.Version, response.ModelId, snapshot.AgentVersion));
+                    AnalysisCompleted?.Invoke(new(publication, json, snapshot.Version, response.ModelId, snapshot.AgentVersion));
                 }
                 catch (Exception)
                 {
@@ -169,7 +169,7 @@ public sealed partial class EuropeNewsProcessor : BackgroundService
 #pragma warning restore OPENAI001
 
     /// <summary>Допускает только полный Realtime-снимок и модель с документированной поддержкой schema и web search.</summary>
-    private static void ValidateConfiguration(NewsConfigurationDTO snapshot)
+    private static void ValidatePromptSnapshot(NewsAgentPromptSnapshot snapshot)
     {
         if (string.IsNullOrWhiteSpace(snapshot.Version) || string.IsNullOrWhiteSpace(snapshot.PromptVersion)
             || string.IsNullOrWhiteSpace(snapshot.Prompt) || snapshot.Mode != "Realtime"
@@ -186,15 +186,15 @@ public sealed partial class EuropeNewsProcessor : BackgroundService
             if (item is null || string.IsNullOrWhiteSpace(item.Secid) || string.IsNullOrWhiteSpace(item.Name)
                 || string.IsNullOrWhiteSpace(item.InstrumentType) || item.BaseAsset is not null && string.IsNullOrWhiteSpace(item.BaseAsset))
                 throw new ArgumentException("Неполный контекст инструмента.");
-        using JsonDocument schema = JsonDocument.Parse(NewsJsonContext.ContractSchema);
+        using JsonDocument schema = JsonDocument.Parse(NewsAgentJsonContext.ContractSchema);
         if (!JsonElement.DeepEquals(snapshot.JsonSchema, schema.RootElement))
             throw new ArgumentException("JSON Schema не соответствует контракту News v3.");
     }
 
     /// <summary>Проверяет структуру и технические ограничения v3; существование справочников остаётся Writer.</summary>
-    private static void ValidateResponse(string json)
+    private static void ValidateLlmResponse(string json)
     {
-        NewsAnalysisDTO analysis = JsonSerializer.Deserialize(json, NewsJsonContext.Default.NewsAnalysisDTO)
+        NewsLlmResponse analysis = JsonSerializer.Deserialize(json, NewsAgentJsonContext.Default.NewsLlmResponse)
             ?? throw new InvalidDataException("Отсутствует ответ v3.");
         if (analysis.Facts.IsDefault || analysis.Accepted && analysis.Facts.IsEmpty || !analysis.Accepted && !analysis.Facts.IsEmpty)
             throw new InvalidDataException("Несогласованные accepted/facts.");
@@ -230,7 +230,7 @@ public sealed partial class EuropeNewsProcessor : BackgroundService
     /// <summary>Снимает подписку и отменяет текущие операции в пределах срока остановки хоста.</summary>
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        _telegram.PublicationReceived -= Enqueue;
+        _telegram.PublicationReceived -= EnqueuePublication;
         Complete();
         await base.StopAsync(cancellationToken);
         if (ExecuteTask is { IsCompleted: false })
@@ -240,7 +240,7 @@ public sealed partial class EuropeNewsProcessor : BackgroundService
     /// <summary>Освобождает адаптер и подписку; фоновые операции должны быть остановлены хостом.</summary>
     public override void Dispose()
     {
-        _telegram.PublicationReceived -= Enqueue;
+        _telegram.PublicationReceived -= EnqueuePublication;
         base.Dispose();
         _client.Dispose();
     }
