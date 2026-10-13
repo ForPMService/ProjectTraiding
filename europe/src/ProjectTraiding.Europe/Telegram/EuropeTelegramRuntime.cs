@@ -12,7 +12,7 @@ public sealed partial class EuropeTelegramRuntime(TelegramOptions options, ILogg
     private Channel<TelegramChannelPost>? _forwarding;
     private CancellationToken _stoppingToken;
 
-    /// <summary>Синхронно передаёт публикацию следующему этапу; параллельная обработка пока не реализована.</summary>
+    /// <summary>Синхронно передаёт публикацию следующему этапу; подписчик отвечает за собственную неблокирующую очередь.</summary>
     public event Action<TelegramChannelPost>? PublicationReceived;
 
     /// <summary>Запускает одну сессию и последовательно пересылает принятые оригиналы.</summary>
