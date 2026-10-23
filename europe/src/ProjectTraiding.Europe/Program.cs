@@ -1,6 +1,7 @@
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.DependencyInjection;
 using OpenAI;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Hosting;
 using ProjectTraiding.Europe;
 using ProjectTraiding.Europe.News;
@@ -32,11 +33,22 @@ if (args.Length > 0 && args[0] == "--openai-chat")
     string model = Environment.GetEnvironmentVariable("OPENAI_MODEL") is { Length: > 0 } selectedModel
         ? selectedModel
         : "gpt-6-luna";
-    OpenAIClient client = new(apiKey);
-    AIAgent agent = client.GetResponsesClient().AsAIAgent(
-        model: model,
-        instructions: "Отвечай по-русски. Если данных недостаточно, сообщи об этом.",
-        name: "EuropeChatProbe");
+OpenAIClient client = new(apiKey);
+
+using IChatClient chatClient =
+    client.GetChatClient(model).AsIChatClient();
+
+ChatClientAgent agent = new(chatClient, new ChatClientAgentOptions
+{
+    Name = "EuropeChatProbe",
+    ChatOptions = new ChatOptions
+    {
+        Instructions = "Отвечай по-русски. Если данных недостаточно, сообщи об этом.",
+        ModelId = model,
+        ToolMode = ChatToolMode.None
+    },
+    UseProvidedChatClientAsIs = true
+});
 
     string question = string.Join(" ", args, 1, args.Length - 1);
     AgentResponse response = await agent.RunAsync(question);
