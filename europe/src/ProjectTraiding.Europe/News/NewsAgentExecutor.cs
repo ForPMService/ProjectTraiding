@@ -3,8 +3,8 @@ using System.ClientModel.Primitives;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Channels;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OpenAI.Responses;
@@ -68,6 +68,19 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         Interlocked.Exchange(ref _promptSnapshot, snapshot);
     }
 
+    /// <summary>Изолированная проверка использует ту же сборку запроса и валидатор, что и очередь.</summary>
+    internal async Task<string> AnalyzeForDiagnosticsAsync(TelegramChannelPost publication,
+        CancellationToken cancellationToken)
+    {
+        NewsAgentPromptSnapshot snapshot = Volatile.Read(ref _promptSnapshot)
+            ?? throw new InvalidOperationException("Нет полного снимка конфигурации News.");
+        using CancellationTokenSource request = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        request.CancelAfter(_options.RequestTimeout);
+        ChatResponse response = await GetValidatedResponseAsync(publication, snapshot, request.Token);
+        cancellationToken.ThrowIfCancellationRequested();
+        return response.Text;
+    }
+
     /// <summary>Подписка выполняется синхронно до запуска следующей hosted-роли Telegram.</summary>
     public override Task StartAsync(CancellationToken cancellationToken)
     {
@@ -116,40 +129,11 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             request.CancelAfter(_options.RequestTimeout);
             try
             {
-                ChatOptions options = new()
-                {
-                    ModelId = snapshot.Model,
-                    MaxOutputTokens = snapshot.MaxOutputTokens,
-                    Temperature = snapshot.Temperature,
-                    ResponseFormat = ChatResponseFormat.ForJsonSchema(snapshot.JsonSchema, "news_v3"),
-                    AdditionalProperties = new() { ["strict"] = true },
-                    Tools = snapshot.WebSearchEnabled ? [new HostedWebSearchTool()] : null,
-                    ToolMode = ChatToolMode.Auto,
-                    RawRepresentationFactory = CreateRequestOptions
-                };
-                ChatMessage[] messages =
-                [
-                    new(ChatRole.System, snapshot.Prompt),
-                    new(ChatRole.User, JsonSerializer.Serialize(new NewsLlmRequest(snapshot.Mode,
-                        snapshot.EventTypes, snapshot.GlobalEvents, snapshot.Instruments, publication),
-                        NewsAgentJsonContext.Default.NewsLlmRequest))
-                ];
-                request.Token.ThrowIfCancellationRequested();
-                ChatResponse response = await _client.GetResponseAsync(messages, options, request.Token);
-#pragma warning disable OPENAI001
-                if (response.RawRepresentation is not ResponseResult { Status: ResponseStatus.Completed }
-                    || response.ModelId != snapshot.Model)
-                    throw new InvalidDataException("Незавершённый ответ LLM.");
-#pragma warning restore OPENAI001
-                foreach (ChatMessage message in response.Messages)
-                    foreach (AIContent content in message.Contents)
-                        if (content is ErrorContent) throw new InvalidDataException("Отказ LLM.");
-                string json = response.Text;
-                ValidateLlmResponse(json);
+                ChatResponse response = await GetValidatedResponseAsync(publication, snapshot, request.Token);
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                    AnalysisCompleted?.Invoke(new(publication, json, snapshot.Version, response.ModelId, snapshot.AgentVersion));
+                    AnalysisCompleted?.Invoke(new(publication, response.Text, snapshot.Version, response.ModelId!, snapshot.AgentVersion));
                 }
                 catch (Exception)
                 {
@@ -164,6 +148,43 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             catch (InvalidDataException) { LogWarning(_logger, "Отказ LLM, незавершённый ответ или нарушение контракта v3."); }
             catch (Exception) { LogWarning(_logger, "Техническая ошибка операции LLM; результат отсутствует."); }
         }
+    }
+
+    /// <summary>Возвращает только один завершённый ответ, прошедший проверку отказа и контракта v3.</summary>
+    private async Task<ChatResponse> GetValidatedResponseAsync(TelegramChannelPost publication,
+        NewsAgentPromptSnapshot snapshot, CancellationToken cancellationToken)
+    {
+        ChatOptions options = new()
+        {
+            ModelId = snapshot.Model,
+            MaxOutputTokens = snapshot.MaxOutputTokens,
+            Temperature = snapshot.Temperature,
+            ResponseFormat = ChatResponseFormat.ForJsonSchema(snapshot.JsonSchema, "news_v3"),
+            AdditionalProperties = new() { ["strict"] = true },
+            Tools = snapshot.WebSearchEnabled ? [new HostedWebSearchTool()] : null,
+            ToolMode = ChatToolMode.Auto,
+            RawRepresentationFactory = CreateRequestOptions
+        };
+        ChatMessage[] messages =
+        [
+            new(ChatRole.System, snapshot.Prompt),
+            new(ChatRole.User, JsonSerializer.Serialize(new NewsLlmRequest(snapshot.Mode,
+                snapshot.EventTypes, snapshot.GlobalEvents, snapshot.Instruments, publication),
+                NewsAgentJsonContext.Default.NewsLlmRequest))
+        ];
+        cancellationToken.ThrowIfCancellationRequested();
+        ChatResponse response = await _client.GetResponseAsync(messages, options, cancellationToken);
+#pragma warning disable OPENAI001
+        if (response.RawRepresentation is not ResponseResult { Status: ResponseStatus.Completed }
+            || response.ModelId != snapshot.Model)
+            throw new InvalidDataException("Незавершённый ответ LLM.");
+#pragma warning restore OPENAI001
+        foreach (ChatMessage message in response.Messages)
+            foreach (AIContent content in message.Contents)
+                if (content is ErrorContent) throw new InvalidDataException("Отказ LLM.");
+        ValidateLlmResponse(response.Text);
+        cancellationToken.ThrowIfCancellationRequested();
+        return response;
     }
 
     /// <summary>Штатная точка расширения адаптера отключает серверное сохранение без дополнительного HTTP-слоя.</summary>
@@ -195,14 +216,16 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     }
 
     /// <summary>Проверяет структуру и технические ограничения v3; существование справочников остаётся Writer.</summary>
-    private static void ValidateLlmResponse(string json)
+    internal static void ValidateLlmResponse(string json)
     {
-        NewsLlmResponse analysis = JsonSerializer.Deserialize(json, NewsAgentJsonContext.Default.NewsLlmResponse)
+        using JsonDocument document = JsonDocument.Parse(json);
+        if (document.RootElement.ValueKind != JsonValueKind.Object)
+            throw new InvalidDataException("Корень ответа v3 должен быть объектом.");
+        NewsLlmResponse analysis = document.RootElement.Deserialize(NewsAgentJsonContext.Default.NewsLlmResponse)
             ?? throw new InvalidDataException("Отсутствует ответ v3.");
         if (analysis.Facts.IsDefault || analysis.Accepted && analysis.Facts.IsEmpty || !analysis.Accepted && !analysis.Facts.IsEmpty)
             throw new InvalidDataException("Несогласованные accepted/facts.");
         // DateTimeOffset допускает строку без зоны; контракт не должен зависеть от локального времени сервера.
-        using JsonDocument document = JsonDocument.Parse(json);
         foreach (JsonElement fact in document.RootElement.GetProperty("facts").EnumerateArray())
         {
             string? time = fact.GetProperty("occurred_at").GetString();

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.DependencyInjection;
 using OpenAI;
@@ -15,8 +16,8 @@ if (args.Length == 1 && args[0] == "--agent-aot-probe")
 
 HostApplicationBuilder builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
 {
-    // Текст вопроса не разбирается как аргумент конфигурации; источники Host остаются стандартными.
-    Args = args.Length > 0 && args[0] == "--openai-chat" ? [] : args,
+    // Аргументы диагностики — это данные, а не CLI-значения конфигурации.
+    Args = args.Length > 0 && (args[0] == "--openai-chat" || args[0] == "--news-json-probe") ? [] : args,
     ContentRootPath = AppContext.BaseDirectory
 });
 
@@ -62,6 +63,30 @@ if (args.Length > 0 && args[0] == "--openai-chat")
     return;
 }
 
+if (args.Length > 0 && args[0] == "--news-json-probe")
+{
+    if (args.Length is not (1 or 3))
+    {
+        Console.Error.WriteLine("Использование: --news-json-probe [publication.json snapshot.json]");
+        Environment.ExitCode = 2;
+        return;
+    }
+
+    try
+    {
+        RunNewsJsonContractChecks();
+        Console.WriteLine("Локальные проверки JSON-контракта v3 пройдены.");
+        if (args.Length == 3)
+            await RunNewsJsonProbeAsync(builder, args[1], args[2]);
+    }
+    catch (Exception)
+    {
+        Console.Error.WriteLine("Проверка News JSON завершилась ошибкой; результат не выдан.");
+        Environment.ExitCode = 1;
+    }
+    return;
+}
+
 // Регистрирует один экземпляр приёмника для хоста и его подписчиков.
 TelegramOptions telegram = TelegramOptions.Load(builder.Configuration);
 NewsAgentOptions news = NewsAgentOptions.Load(builder.Configuration);
@@ -80,3 +105,68 @@ builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = tel
 
 using IHost host = builder.Build();
 await host.RunAsync();
+
+static void RunNewsJsonContractChecks()
+{
+    const string acceptedWithoutFacts = """{"accepted":false,"facts":[]}""";
+    const string acceptedWithFact = """{"accepted":true,"facts":[{"event_type":"other","summary":"synthetic","occurred_at":null,"global_event_id":null,"new_global_event_name":null,"instruments":[]}] }""";
+    NewsAgentExecutor.ValidateLlmResponse(acceptedWithoutFacts);
+    NewsAgentExecutor.ValidateLlmResponse(acceptedWithFact);
+
+    ExpectRejected("""{"accepted":true,"facts":[]}""", "accepted=true с пустыми facts");
+    ExpectRejected("""{"accepted":false,"facts":[{"event_type":"other","summary":"synthetic","occurred_at":null,"global_event_id":null,"new_global_event_name":null,"instruments":[]}]}""",
+        "accepted=false с фактами");
+    ExpectRejected("""{"accepted":true,"facts":[{"event_type":"other","occurred_at":null,"global_event_id":null,"new_global_event_name":null,"instruments":[]}]}""",
+        "отсутствующее обязательное поле");
+    ExpectRejected("""{"accepted":false,"facts":[],"unexpected":true}""", "постороннее поле");
+    ExpectRejected("""{"accepted":false,"accepted":false,"facts":[]}""", "повторяющееся поле");
+    ExpectRejected("""{"accepted":true,"facts":[{"event_type":"other","summary":"synthetic","occurred_at":null,"global_event_id":null,"new_global_event_name":null,"instruments":[{"secid":"SYNTH","instrument_relevance":1.01,"direction":null,"instrument_significance":null}]}]}""",
+        "оценка вне диапазона");
+    ExpectRejected("""{"accepted":true,"facts":[""", "повреждённый JSON");
+
+    static void ExpectRejected(string json, string caseName)
+    {
+        try
+        {
+            NewsAgentExecutor.ValidateLlmResponse(json);
+        }
+        catch (Exception error) when (error is JsonException or InvalidDataException)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException($"Валидатор принял случай: {caseName}.");
+    }
+}
+
+static async Task RunNewsJsonProbeAsync(HostApplicationBuilder builder, string publicationPath, string snapshotPath)
+{
+    string publicationJson = await File.ReadAllTextAsync(publicationPath);
+    TelegramChannelPost publication = JsonSerializer.Deserialize(publicationJson,
+        NewsAgentJsonContext.Default.TelegramChannelPost)
+        ?? throw new InvalidDataException("Файл публикации не содержит Telegram-публикацию.");
+    string snapshotJson = await File.ReadAllTextAsync(snapshotPath);
+    NewsAgentPromptSnapshot snapshot = JsonSerializer.Deserialize(snapshotJson,
+        NewsAgentJsonContext.Default.NewsAgentPromptSnapshot)
+        ?? throw new InvalidDataException("Файл снимка не содержит конфигурацию News.");
+    if (snapshot.WebSearchEnabled)
+        throw new InvalidDataException("Изолированная проверка должна выполняться без web search.");
+
+    NewsAgentOptions options = new()
+    {
+        Enabled = true,
+        QueueCapacity = 1,
+        Workers = 1,
+        RequestTimeout = TimeSpan.FromSeconds(30)
+    };
+    builder.Services.AddSingleton<TelegramOptions>(new TelegramOptions());
+    builder.Services.AddSingleton(options);
+    builder.Services.AddSingleton<EuropeTelegramRuntime>();
+    builder.Services.AddSingleton<NewsAgentExecutor>();
+
+    using IHost diagnosticHost = builder.Build();
+    NewsAgentExecutor executor = diagnosticHost.Services.GetRequiredService<NewsAgentExecutor>();
+    executor.UpdatePromptSnapshot(snapshot);
+    string responseJson = await executor.AnalyzeForDiagnosticsAsync(publication, CancellationToken.None);
+    Console.WriteLine(responseJson);
+}

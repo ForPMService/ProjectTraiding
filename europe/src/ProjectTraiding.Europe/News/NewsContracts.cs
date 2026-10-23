@@ -55,6 +55,7 @@ public sealed record NewsAgentResult(TelegramChannelPost Publication, string Jso
     UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, RespectNullableAnnotations = true,
     RespectRequiredConstructorParameters = true, AllowDuplicateProperties = false)]
 [JsonSerializable(typeof(NewsAgentPromptSnapshot))]
+[JsonSerializable(typeof(TelegramChannelPost))]
 [JsonSerializable(typeof(NewsLlmRequest))]
 [JsonSerializable(typeof(NewsLlmResponse))]
 internal sealed partial class NewsAgentJsonContext : JsonSerializerContext
