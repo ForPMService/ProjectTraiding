@@ -7,6 +7,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Primitives;
 using OpenAI.Responses;
 using ProjectTraiding.Europe.Telegram;
 
@@ -19,18 +20,30 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     private readonly NewsAgentOptions _options;
     private readonly ILogger<NewsAgentExecutor> _logger;
     private readonly IHostApplicationLifetime _lifetime;
+    private readonly IConfiguration _configuration;
     private readonly IChatClient _client;
     private readonly Channel<TelegramChannelPost> _publications;
-    private NewsAgentPromptSnapshot? _promptSnapshot;
+    private readonly object _configurationGate = new();
+    private IDisposable? _configurationReloadRegistration;
+    private NewsAgentExecutionSnapshot? _executionSnapshot;
 
     /// <summary>Создаёт только инфраструктуру клиента; конструктор не обращается к API.</summary>
     public NewsAgentExecutor(EuropeTelegramRuntime telegram, NewsAgentOptions options,
         ILogger<NewsAgentExecutor> logger, IHostApplicationLifetime lifetime, IConfiguration configuration)
+        : this(telegram, options, logger, lifetime, configuration, CreateChatClient(options, configuration))
+    {
+    }
+
+    internal NewsAgentExecutor(EuropeTelegramRuntime telegram, NewsAgentOptions options,
+        ILogger<NewsAgentExecutor> logger, IHostApplicationLifetime lifetime, IConfiguration configuration,
+        IChatClient chatClient)
     {
         _telegram = telegram;
         _options = options;
         _logger = logger;
         _lifetime = lifetime;
+        _configuration = configuration;
+        _client = chatClient;
         _publications = Channel.CreateBounded<TelegramChannelPost>(new BoundedChannelOptions(options.QueueCapacity)
         {
             FullMode = BoundedChannelFullMode.Wait,
@@ -38,6 +51,11 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             SingleReader = options.Workers == 1,
             SingleWriter = false
         });
+        _configurationReloadRegistration = ChangeToken.OnChange(configuration.GetReloadToken, OnConfigurationReload);
+    }
+
+    private static IChatClient CreateChatClient(NewsAgentOptions options, IConfiguration configuration)
+    {
         // SDK по умолчанию повторяет запросы: здесь физический запрос разрешён только один.
         // OPENAI001 обозначает экспериментальный SDK/адаптер Responses, а не агента или оркестратор.
 #pragma warning disable OPENAI001
@@ -49,7 +67,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         string? apiKey = configuration["OpenAI:ApiKey"];
         if (string.IsNullOrWhiteSpace(apiKey))
             throw new InvalidOperationException("Отсутствует OpenAI:ApiKey в конфигурации.");
-        _client = new ResponsesClient(new ApiKeyCredential(apiKey), clientOptions).AsIChatClient();
+        return new ResponsesClient(new ApiKeyCredential(apiKey), clientOptions).AsIChatClient();
 #pragma warning restore OPENAI001
     }
 
@@ -63,16 +81,52 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         ValidatePromptSnapshot(snapshot);
         // Clone отделяет схему от времени жизни JsonDocument вызывающего кода.
         snapshot = snapshot with { JsonSchema = snapshot.JsonSchema.Clone() };
-        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(snapshot, NewsAgentJsonContext.Default.NewsAgentPromptSnapshot);
-        snapshot = snapshot with { AgentVersion = "news-v3:" + Convert.ToHexString(SHA256.HashData(bytes)) };
-        Interlocked.Exchange(ref _promptSnapshot, snapshot);
+        lock (_configurationGate)
+        {
+            OpenAiProfileOptions profile = OpenAiProfileOptions.Load(_configuration);
+            Interlocked.Exchange(ref _executionSnapshot, CreateExecutionSnapshot(profile, snapshot));
+        }
+    }
+
+    internal NewsAgentExecutionSnapshot? CurrentExecutionSnapshot => Volatile.Read(ref _executionSnapshot);
+
+    private static NewsAgentExecutionSnapshot CreateExecutionSnapshot(OpenAiProfileOptions profile,
+        NewsAgentPromptSnapshot subject)
+    {
+        ReasoningEffort? reasoningEffort = ValidateProfile(profile);
+        NewsAgentVersionMaterial material = new(profile.Provider, profile.Model, reasoningEffort, subject);
+        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(material,
+            NewsAgentJsonContext.Default.NewsAgentVersionMaterial);
+        string agentVersion = "news-v3:" + Convert.ToHexString(SHA256.HashData(bytes));
+        return new NewsAgentExecutionSnapshot(subject, profile, reasoningEffort, agentVersion);
+    }
+
+    private void OnConfigurationReload()
+    {
+        try
+        {
+            lock (_configurationGate)
+            {
+                NewsAgentExecutionSnapshot? current = Volatile.Read(ref _executionSnapshot);
+                if (current is null) return;
+
+                OpenAiProfileOptions profile = OpenAiProfileOptions.Load(_configuration);
+                NewsAgentExecutionSnapshot replacement = CreateExecutionSnapshot(profile, current.Subject);
+                if (replacement.AgentVersion != current.AgentVersion)
+                    Interlocked.Exchange(ref _executionSnapshot, replacement);
+            }
+        }
+        catch (Exception error)
+        {
+            LogWarning(_logger, $"Обновление профиля News отклонено: {error.Message}");
+        }
     }
 
     /// <summary>Изолированная проверка использует ту же сборку запроса и валидатор, что и очередь.</summary>
     internal async Task<string> AnalyzeForDiagnosticsAsync(TelegramChannelPost publication,
         CancellationToken cancellationToken)
     {
-        NewsAgentPromptSnapshot snapshot = Volatile.Read(ref _promptSnapshot)
+        NewsAgentExecutionSnapshot snapshot = Volatile.Read(ref _executionSnapshot)
             ?? throw new InvalidOperationException("Нет полного снимка конфигурации News.");
         using CancellationTokenSource request = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         request.CancelAfter(_options.RequestTimeout);
@@ -119,7 +173,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         await foreach (TelegramChannelPost publication in _publications.Reader.ReadAllAsync(cancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            NewsAgentPromptSnapshot? snapshot = Volatile.Read(ref _promptSnapshot);
+            NewsAgentExecutionSnapshot? snapshot = Volatile.Read(ref _executionSnapshot);
             if (snapshot is null)
             {
                 LogWarning(_logger, "Нет полного снимка конфигурации; публикация пропущена без вызова LLM.");
@@ -133,7 +187,8 @@ public sealed partial class NewsAgentExecutor : BackgroundService
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                    AnalysisCompleted?.Invoke(new(publication, response.Text, snapshot.Version, response.ModelId!, snapshot.AgentVersion));
+                    AnalysisCompleted?.Invoke(new(publication, response.Text, snapshot.Subject.Version,
+                        response.ModelId!, snapshot.AgentVersion));
                 }
                 catch (Exception)
                 {
@@ -152,13 +207,15 @@ public sealed partial class NewsAgentExecutor : BackgroundService
 
     /// <summary>Возвращает только один завершённый ответ, прошедший проверку отказа и контракта v3.</summary>
     private async Task<ChatResponse> GetValidatedResponseAsync(TelegramChannelPost publication,
-        NewsAgentPromptSnapshot snapshot, CancellationToken cancellationToken)
+        NewsAgentExecutionSnapshot execution, CancellationToken cancellationToken)
     {
+        NewsAgentPromptSnapshot snapshot = execution.Subject;
         ChatOptions options = new()
         {
-            ModelId = snapshot.Model,
+            ModelId = execution.Profile.Model,
             MaxOutputTokens = snapshot.MaxOutputTokens,
             Temperature = snapshot.Temperature,
+            Reasoning = execution.ReasoningEffort is { } effort ? new ReasoningOptions { Effort = effort } : null,
             ResponseFormat = ChatResponseFormat.ForJsonSchema(snapshot.JsonSchema, "news_v3"),
             AdditionalProperties = new() { ["strict"] = true },
             Tools = snapshot.WebSearchEnabled ? [new HostedWebSearchTool()] : null,
@@ -176,7 +233,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         ChatResponse response = await _client.GetResponseAsync(messages, options, cancellationToken);
 #pragma warning disable OPENAI001
         if (response.RawRepresentation is not ResponseResult { Status: ResponseStatus.Completed }
-            || response.ModelId != snapshot.Model)
+            || response.ModelId != execution.Profile.Model)
             throw new InvalidDataException("Незавершённый ответ LLM.");
 #pragma warning restore OPENAI001
         foreach (ChatMessage message in response.Messages)
@@ -197,7 +254,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     {
         if (string.IsNullOrWhiteSpace(snapshot.Version) || string.IsNullOrWhiteSpace(snapshot.PromptVersion)
             || string.IsNullOrWhiteSpace(snapshot.Prompt) || snapshot.Mode != "Realtime"
-            || snapshot.Model != "gpt-4.1-2025-04-14" || snapshot.MaxOutputTokens is < 1 or > 32768
+            || snapshot.MaxOutputTokens is < 1 or > 32768
             || !float.IsFinite(snapshot.Temperature) || snapshot.Temperature is < 0 or > 2
             || snapshot.EventTypes.IsDefaultOrEmpty || snapshot.GlobalEvents.IsDefault || snapshot.Instruments.IsDefault)
             throw new ArgumentException("Неполный или неподдерживаемый снимок News.");
@@ -213,6 +270,21 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         using JsonDocument schema = JsonDocument.Parse(NewsAgentJsonContext.ContractSchema);
         if (!JsonElement.DeepEquals(snapshot.JsonSchema, schema.RootElement))
             throw new ArgumentException("JSON Schema не соответствует контракту News v3.");
+    }
+
+    private static ReasoningEffort? ValidateProfile(OpenAiProfileOptions profile)
+    {
+        if (!string.Equals(profile.Provider, "OpenAI", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Для News подключён только провайдер OpenAI.");
+
+        return profile.Model switch
+        {
+            "gpt-4.1-2025-04-14" => null,
+            // GPT-6 Luna разрешает temperature при reasoning.effort=none.
+            "gpt-6-luna" => ReasoningEffort.None,
+            _ => throw new InvalidOperationException(
+                "Модель активного профиля не подтверждена для News Structured Outputs и настроек запроса.")
+        };
     }
 
     /// <summary>Проверяет структуру и технические ограничения v3; существование справочников остаётся Writer.</summary>
@@ -267,6 +339,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     public override void Dispose()
     {
         _telegram.PublicationReceived -= EnqueuePublication;
+        Interlocked.Exchange(ref _configurationReloadRegistration, null)?.Dispose();
         base.Dispose();
         _client.Dispose();
     }

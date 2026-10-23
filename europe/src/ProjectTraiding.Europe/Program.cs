@@ -75,7 +75,8 @@ if (args.Length > 0 && args[0] == "--news-json-probe")
     try
     {
         NewsJsonContractChecks.Run();
-        Console.WriteLine("Локальные проверки JSON-контракта v3 пройдены.");
+        await NewsAgentContextChecks.RunAsync();
+        Console.WriteLine("Локальные проверки контекста News и JSON-контракта v3 пройдены.");
         if (args.Length == 3)
             await RunNewsJsonProbeAsync(builder, args[1], args[2]);
     }

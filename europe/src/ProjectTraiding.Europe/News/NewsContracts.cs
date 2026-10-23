@@ -1,18 +1,25 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.AI;
+using ProjectTraiding.Europe;
 using ProjectTraiding.Europe.Telegram;
 
 namespace ProjectTraiding.Europe.News;
 
-/// <summary>Полный готовый снимок: справочники и настройки одного Realtime-разбора не меняются в ходе вызова.</summary>
+/// <summary>Полный предметный снимок; активный профиль модели захватывается вместе с ним перед разбором.</summary>
 public sealed record NewsAgentPromptSnapshot(string Version, string PromptVersion, string Prompt,
     string Mode, ImmutableArray<string> EventTypes, ImmutableArray<NewsGlobalEventDTO> GlobalEvents,
     ImmutableArray<NewsInstrumentContextDTO> Instruments, JsonElement JsonSchema,
-    string Model, int MaxOutputTokens, float Temperature, bool WebSearchEnabled)
-{
-    [JsonIgnore] internal string AgentVersion { get; init; } = "";
-}
+    int MaxOutputTokens, float Temperature, bool WebSearchEnabled);
+
+/// <summary>Один неизменяемый набор модели и предметного контекста, захваченный публикацией.</summary>
+internal sealed record NewsAgentExecutionSnapshot(NewsAgentPromptSnapshot Subject,
+    OpenAiProfileOptions Profile, ReasoningEffort? ReasoningEffort, string AgentVersion);
+
+/// <summary>Только значимые настройки, вошедшие в agent_version; секреты сюда не передаются.</summary>
+internal sealed record NewsAgentVersionMaterial(string Provider, string Model,
+    ReasoningEffort? ReasoningEffort, NewsAgentPromptSnapshot Subject);
 
 /// <summary>Существующий глобальный сюжет из справочника российского контура.</summary>
 public sealed record NewsGlobalEventDTO(long Id, string Name);
@@ -55,6 +62,7 @@ public sealed record NewsAgentResult(TelegramChannelPost Publication, string Jso
     UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, RespectNullableAnnotations = true,
     RespectRequiredConstructorParameters = true, AllowDuplicateProperties = false)]
 [JsonSerializable(typeof(NewsAgentPromptSnapshot))]
+[JsonSerializable(typeof(NewsAgentVersionMaterial))]
 [JsonSerializable(typeof(TelegramChannelPost))]
 [JsonSerializable(typeof(NewsLlmRequest))]
 [JsonSerializable(typeof(NewsLlmResponse))]
