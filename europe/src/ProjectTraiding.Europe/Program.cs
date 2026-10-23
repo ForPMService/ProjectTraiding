@@ -1,7 +1,14 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using ProjectTraiding.Europe;
 using ProjectTraiding.Europe.News;
 using ProjectTraiding.Europe.Telegram;
+
+if (args.Length == 1 && args[0] == "--agent-aot-probe")
+{
+    Environment.ExitCode = await AgentAotProbe.RunAsync();
+    return;
+}
 
 // Собирает минимальный хост и регистрирует один экземпляр приёмника для хоста и его подписчиков.
 HostApplicationBuilder builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
