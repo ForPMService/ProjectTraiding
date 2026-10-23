@@ -13,6 +13,13 @@ if (args.Length == 1 && args[0] == "--agent-aot-probe")
     return;
 }
 
+HostApplicationBuilder builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
+{
+    // Текст вопроса не разбирается как аргумент конфигурации; источники Host остаются стандартными.
+    Args = args.Length > 0 && args[0] == "--openai-chat" ? [] : args,
+    ContentRootPath = AppContext.BaseDirectory
+});
+
 if (args.Length > 0 && args[0] == "--openai-chat")
 {
     if (args.Length < 2)
@@ -22,33 +29,31 @@ if (args.Length > 0 && args[0] == "--openai-chat")
         return;
     }
 
-    string? apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+    string? apiKey = builder.Configuration["OpenAI:ApiKey"];
     if (string.IsNullOrWhiteSpace(apiKey))
     {
-        Console.Error.WriteLine("Не задан OPENAI_API_KEY.");
+        Console.Error.WriteLine("Не задан OpenAI:ApiKey в конфигурации.");
         Environment.ExitCode = 2;
         return;
     }
 
-    string model = Environment.GetEnvironmentVariable("OPENAI_MODEL") is { Length: > 0 } selectedModel
-        ? selectedModel
-        : "gpt-6-luna";
-OpenAIClient client = new(apiKey);
+    OpenAiProfileOptions profile = OpenAiProfileOptions.Load(builder.Configuration);
+    OpenAIClient client = new(apiKey);
 
-using IChatClient chatClient =
-    client.GetChatClient(model).AsIChatClient();
+    using IChatClient chatClient =
+        client.GetChatClient(profile.Model).AsIChatClient();
 
-ChatClientAgent agent = new(chatClient, new ChatClientAgentOptions
-{
-    Name = "EuropeChatProbe",
-    ChatOptions = new ChatOptions
+    ChatClientAgent agent = new(chatClient, new ChatClientAgentOptions
     {
-        Instructions = "Отвечай по-русски. Если данных недостаточно, сообщи об этом.",
-        ModelId = model,
-        ToolMode = ChatToolMode.None
-    },
-    UseProvidedChatClientAsIs = true
-});
+        Name = "EuropeChatProbe",
+        ChatOptions = new ChatOptions
+        {
+            Instructions = "Отвечай по-русски. Если данных недостаточно, сообщи об этом.",
+            ModelId = profile.Model,
+            ToolMode = ChatToolMode.None
+        },
+        UseProvidedChatClientAsIs = true
+    });
 
     string question = string.Join(" ", args, 1, args.Length - 1);
     AgentResponse response = await agent.RunAsync(question);
@@ -57,12 +62,7 @@ ChatClientAgent agent = new(chatClient, new ChatClientAgentOptions
     return;
 }
 
-// Собирает минимальный хост и регистрирует один экземпляр приёмника для хоста и его подписчиков.
-HostApplicationBuilder builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
-{
-    Args = args,
-    ContentRootPath = AppContext.BaseDirectory
-});
+// Регистрирует один экземпляр приёмника для хоста и его подписчиков.
 TelegramOptions telegram = TelegramOptions.Load(builder.Configuration);
 NewsAgentOptions news = NewsAgentOptions.Load(builder.Configuration);
 builder.Services.AddSingleton(telegram);

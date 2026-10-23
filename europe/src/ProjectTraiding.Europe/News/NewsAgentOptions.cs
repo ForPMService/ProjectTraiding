@@ -17,8 +17,8 @@ public sealed class NewsAgentOptions
         NewsAgentOptions options = configuration.GetSection("News").Get<NewsAgentOptions>()!;
         if (options.QueueCapacity is < 1 or > 65536 || options.Workers is < 1 or > 64
             || options.RequestTimeout <= TimeSpan.Zero || options.RequestTimeout > TimeSpan.FromMinutes(10)
-            || string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OPENAI_API_KEY")))
-            throw new InvalidOperationException("Некорректные пределы News или отсутствует OPENAI_API_KEY в среде.");
+            || string.IsNullOrWhiteSpace(configuration["OpenAI:ApiKey"]))
+            throw new InvalidOperationException("Некорректные пределы News или отсутствует OpenAI:ApiKey в конфигурации.");
         return options;
     }
 }

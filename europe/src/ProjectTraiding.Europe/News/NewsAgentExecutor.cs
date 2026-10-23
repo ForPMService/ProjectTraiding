@@ -3,6 +3,7 @@ using System.ClientModel.Primitives;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Channels;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -24,7 +25,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
 
     /// <summary>Создаёт только инфраструктуру клиента; конструктор не обращается к API.</summary>
     public NewsAgentExecutor(EuropeTelegramRuntime telegram, NewsAgentOptions options,
-        ILogger<NewsAgentExecutor> logger, IHostApplicationLifetime lifetime)
+        ILogger<NewsAgentExecutor> logger, IHostApplicationLifetime lifetime, IConfiguration configuration)
     {
         _telegram = telegram;
         _options = options;
@@ -45,8 +46,10 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             RetryPolicy = new ClientRetryPolicy(0),
             NetworkTimeout = options.RequestTimeout
         };
-        _client = new ResponsesClient(new ApiKeyCredential(Environment.GetEnvironmentVariable("OPENAI_API_KEY")!),
-            clientOptions).AsIChatClient();
+        string? apiKey = configuration["OpenAI:ApiKey"];
+        if (string.IsNullOrWhiteSpace(apiKey))
+            throw new InvalidOperationException("Отсутствует OpenAI:ApiKey в конфигурации.");
+        _client = new ResponsesClient(new ApiKeyCredential(apiKey), clientOptions).AsIChatClient();
 #pragma warning restore OPENAI001
     }
 
