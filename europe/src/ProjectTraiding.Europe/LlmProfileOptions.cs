@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 
@@ -9,43 +10,80 @@ public sealed record LlmProfileOptions(string Name, string Provider, string Mode
 {
     private const string DefaultXaiEndpoint = "https://api.x.ai/v1";
 
-    public static LlmProfileOptions Load(IConfiguration configuration)
+    public static LlmProfileOptions Load(IConfiguration configuration) =>
+        LoadConfiguredActiveProfile(configuration, LoadCatalog(configuration));
+
+    internal static ImmutableArray<LlmProfileOptions> LoadCatalog(IConfiguration configuration)
     {
-        string? activeProvider = configuration["LLM:ActiveProvider"];
-        string provider = activeProvider?.Trim().ToUpperInvariant() switch
-        {
-            "OPENAI" => "OpenAI",
-            "XAI" => "XAI",
-            _ => throw new InvalidOperationException("LLM:ActiveProvider должен быть OpenAI или XAI.")
-        };
+        ImmutableArray<LlmProfileOptions>.Builder profiles = ImmutableArray.CreateBuilder<LlmProfileOptions>();
+        AddProviderProfiles(configuration, "OpenAI", profiles);
+        AddProviderProfiles(configuration, "XAI", profiles);
+        return profiles.ToImmutable();
+    }
+
+    internal static LlmProfileOptions LoadConfiguredActiveProfile(IConfiguration configuration,
+        ImmutableArray<LlmProfileOptions> profiles)
+    {
+        string? provider = NormalizeProvider(configuration["LLM:ActiveProvider"]);
+        if (provider is null)
+            throw new InvalidOperationException("LLM:ActiveProvider должен быть OpenAI или XAI.");
 
         string? name = configuration[$"{provider}:ActiveProfile"];
         if (string.IsNullOrWhiteSpace(name))
             throw new InvalidOperationException($"Не задано имя активного профиля {provider}.");
 
-        IConfigurationSection profile = configuration.GetSection($"{provider}:Profiles").GetSection(name);
-        string? model = profile["Model"];
-        if (string.IsNullOrWhiteSpace(model))
-            throw new InvalidOperationException($"Активный профиль {provider} должен содержать модель.");
+        LlmProfileOptions? selected = null;
+        foreach (LlmProfileOptions profile in profiles)
+        {
+            if (profile.Provider != provider || !string.Equals(profile.Name, name, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (selected is not null)
+                throw new InvalidOperationException($"Активный профиль {provider} неоднозначен.");
+            selected = profile;
+        }
+        return selected ?? throw new InvalidOperationException($"Активный профиль {provider} отсутствует в каталоге.");
+    }
 
+    internal static string? NormalizeProvider(string? value) => value?.Trim().ToUpperInvariant() switch
+    {
+        "OPENAI" => "OpenAI",
+        "XAI" => "XAI",
+        _ => null
+    };
+
+    private static void AddProviderProfiles(IConfiguration configuration, string provider,
+        ImmutableArray<LlmProfileOptions>.Builder profiles)
+    {
+        IConfigurationSection providerProfiles = configuration.GetSection($"{provider}:Profiles");
+        string? endpoint = provider == "XAI" ? NormalizeXaiEndpoint(configuration["XAI:Endpoint"]) : null;
+        foreach (IConfigurationSection profileSection in providerProfiles.GetChildren())
+        {
+            string? model = profileSection["Model"];
+            if (string.IsNullOrWhiteSpace(model))
+                throw new InvalidOperationException($"Профиль {provider}:{profileSection.Key} должен содержать модель.");
+
+            ReasoningEffort? reasoningEffort = GetReasoningEffort(provider, model);
+            profiles.Add(new LlmProfileOptions(profileSection.Key, provider, model, endpoint, reasoningEffort));
+        }
+    }
+
+    private static ReasoningEffort? GetReasoningEffort(string provider, string model)
+    {
         if (provider == "OpenAI")
         {
-            ReasoningEffort? reasoningEffort = model switch
+            return model switch
             {
                 "gpt-4.1-2025-04-14" => null,
                 "gpt-6-luna" => Microsoft.Extensions.AI.ReasoningEffort.None,
                 _ => throw new InvalidOperationException("Модель профиля OpenAI не подтверждена для News.")
             };
-            return new LlmProfileOptions(name, provider, model, null, reasoningEffort);
         }
 
-        string endpoint = NormalizeXaiEndpoint(configuration["XAI:Endpoint"]);
-        ReasoningEffort xaiReasoningEffort = model switch
+        return model switch
         {
             "grok-4.7" or "grok-4.6" => Microsoft.Extensions.AI.ReasoningEffort.High,
             _ => throw new InvalidOperationException("Модель профиля XAI не подтверждена для News Structured Outputs.")
         };
-        return new LlmProfileOptions(name, provider, model, endpoint, xaiReasoningEffort);
     }
 
     internal static string GetApiKey(IConfiguration configuration, LlmProfileOptions profile)
@@ -72,4 +110,18 @@ public sealed record LlmProfileOptions(string Name, string Provider, string Mode
 
         return $"{uri.GetLeftPart(UriPartial.Authority)}/v1";
     }
+}
+
+/// <summary>Секреты из одной принятой конфигурации; тип не сериализуется и не включается в версии агента.</summary>
+internal sealed record LlmProviderCredentials(string? OpenAiApiKey, string? XaiApiKey)
+{
+    internal static LlmProviderCredentials Load(IConfiguration configuration) =>
+        new(configuration["OpenAI:ApiKey"], configuration["XAI:ApiKey"]);
+
+    internal string? GetApiKey(string provider) => provider switch
+    {
+        "OpenAI" => OpenAiApiKey,
+        "XAI" => XaiApiKey,
+        _ => null
+    };
 }

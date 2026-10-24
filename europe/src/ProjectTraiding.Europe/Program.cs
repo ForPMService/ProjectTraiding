@@ -1,6 +1,15 @@
+using System.Globalization;
 using System.Text.Json;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Agents.AI;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Primitives;
 using OpenAI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Hosting;
@@ -14,7 +23,7 @@ if (args.Length == 1 && args[0] == "--agent-aot-probe")
     return;
 }
 
-HostApplicationBuilder builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
+WebApplicationBuilder builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions
 {
     // Аргументы диагностики — это данные, а не CLI-значения конфигурации.
     Args = args.Length > 0 && (args[0] == "--openai-chat" || args[0] == "--news-json-probe") ? [] : args,
@@ -95,6 +104,8 @@ if (args.Length > 0 && args[0] == "--news-json-probe")
     return;
 }
 
+ConfigureLoopbackUrls(builder);
+
 // Регистрирует один экземпляр приёмника для хоста и его подписчиков.
 TelegramOptions telegram = TelegramOptions.Load(builder.Configuration);
 NewsAgentOptions news = NewsAgentOptions.Load(builder.Configuration);
@@ -102,19 +113,87 @@ builder.Services.AddSingleton(telegram);
 builder.Services.AddSingleton(news);
 // Хост и будущие подписчики публикаций используют один экземпляр приёмника.
 builder.Services.AddSingleton<EuropeTelegramRuntime>();
-if (news.Enabled)
-{
-    // StartAsync подписывает LLM до запуска Telegram; оба контура используют тот же экземпляр приёмника.
-    builder.Services.AddSingleton<NewsAgentExecutor>();
-    builder.Services.AddHostedService(provider => provider.GetRequiredService<NewsAgentExecutor>());
-}
+// Состояние управления LLM доступно даже без промпта и при выключенном контуре News.
+builder.Services.AddSingleton<NewsAgentExecutor>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<NewsAgentExecutor>());
 builder.Services.AddHostedService(provider => provider.GetRequiredService<EuropeTelegramRuntime>());
 builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = telegram.ShutdownTimeout);
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.TypeInfoResolverChain.Insert(0, LlmManagementHttpJsonContext.Default);
+});
 
-using IHost host = builder.Build();
-await host.RunAsync();
+WebApplication app = builder.Build();
+int minimumSwitchIntervalSeconds = LoadMinimumSwitchIntervalSeconds(builder.Configuration);
+IConfigurationRoot configurationRoot = builder.Configuration;
+using IDisposable intervalReloadRegistration = ChangeToken.OnChange(configurationRoot.GetReloadToken,
+    () => ReloadMinimumSwitchInterval(builder.Configuration, app, ref minimumSwitchIntervalSeconds));
 
-static async Task RunNewsJsonProbeAsync(HostApplicationBuilder builder, string publicationPath, string snapshotPath)
+object postRateGate = new();
+TimeProvider timeProvider = TimeProvider.System;
+long lastAdmittedPostTimestamp = 0;
+bool hasAdmittedPost = false;
+app.Use(async (HttpContext context, RequestDelegate next) =>
+{
+    bool isSwitchPost = HttpMethods.IsPost(context.Request.Method)
+        && string.Equals(context.Request.Path.Value, "/llm/models/active", StringComparison.OrdinalIgnoreCase);
+    if (!isSwitchPost)
+    {
+        await next(context);
+        return;
+    }
+
+    bool isLimited = false;
+    int retryAfterSeconds = 0;
+    long timestamp = timeProvider.GetTimestamp();
+    lock (postRateGate)
+    {
+        int intervalSeconds = Volatile.Read(ref minimumSwitchIntervalSeconds);
+        TimeSpan remaining = hasAdmittedPost
+            ? TimeSpan.FromSeconds(intervalSeconds) - timeProvider.GetElapsedTime(lastAdmittedPostTimestamp, timestamp)
+            : TimeSpan.Zero;
+        if (remaining > TimeSpan.Zero)
+        {
+            isLimited = true;
+            retryAfterSeconds = Math.Max(1, (int)Math.Ceiling(remaining.TotalSeconds));
+        }
+        else
+        {
+            lastAdmittedPostTimestamp = timestamp;
+            hasAdmittedPost = true;
+        }
+    }
+
+    if (isLimited)
+    {
+        context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        context.Response.Headers["Retry-After"] = retryAfterSeconds.ToString(CultureInfo.InvariantCulture);
+        await context.Response.WriteAsJsonAsync(new LlmManagementErrorDTO("Too many model changes. Retry later."),
+            LlmManagementHttpJsonContext.Default.LlmManagementErrorDTO, null, context.RequestAborted);
+        return;
+    }
+
+    await next(context);
+});
+
+app.MapGet("/llm/models", static (NewsAgentExecutor executor) =>
+{
+    LlmProfileCatalogView catalog = executor.GetProfileCatalogView();
+    LlmModelDTO[] models = new LlmModelDTO[catalog.Profiles.Length];
+    for (int index = 0; index < models.Length; index++)
+    {
+        LlmProfileOptions profile = catalog.Profiles[index];
+        bool isActive = profile.Provider == catalog.ActiveProfile.Provider
+            && profile.Name == catalog.ActiveProfile.Name;
+        models[index] = new LlmModelDTO(profile.Provider, profile.Model, isActive);
+    }
+    return TypedResults.Ok(models);
+});
+app.MapPost("/llm/models/active", HandleActivateModelAsync);
+
+await app.RunAsync();
+
+static async Task RunNewsJsonProbeAsync(WebApplicationBuilder builder, string publicationPath, string snapshotPath)
 {
     string publicationJson = await File.ReadAllTextAsync(publicationPath);
     TelegramChannelPost publication = JsonSerializer.Deserialize(publicationJson,
@@ -144,4 +223,121 @@ static async Task RunNewsJsonProbeAsync(HostApplicationBuilder builder, string p
     executor.UpdatePromptSnapshot(snapshot);
     string responseJson = await executor.AnalyzeForDiagnosticsAsync(publication, CancellationToken.None);
     Console.WriteLine(responseJson);
+}
+
+static async Task<Results<Ok<LlmModelDTO>, BadRequest<LlmManagementErrorDTO>,
+    Conflict<LlmManagementErrorDTO>, JsonHttpResult<LlmManagementErrorDTO>>> HandleActivateModelAsync(
+    HttpContext context, NewsAgentExecutor executor)
+{
+    if (!context.Request.HasJsonContentType())
+        return TypedResults.BadRequest(new LlmManagementErrorDTO("Content-Type must be application/json."));
+
+    LlmActiveModelRequestDTO? request;
+    try
+    {
+        request = await JsonSerializer.DeserializeAsync(context.Request.Body,
+            LlmManagementHttpJsonContext.Default.LlmActiveModelRequestDTO, context.RequestAborted);
+    }
+    catch (JsonException)
+    {
+        return TypedResults.BadRequest(new LlmManagementErrorDTO("The request body is not valid JSON."));
+    }
+
+    if (request is null)
+        return TypedResults.BadRequest(new LlmManagementErrorDTO("The request body must contain provider and model."));
+
+    LlmModelSelectionResult result = executor.ActivateModel(request.Provider, request.Model);
+    return result.Failure switch
+    {
+        LlmModelSelectionFailure.InvalidProvider => TypedResults.BadRequest(
+            new LlmManagementErrorDTO("Provider is required.")),
+        LlmModelSelectionFailure.UnknownProvider => TypedResults.BadRequest(
+            new LlmManagementErrorDTO("Provider is not configured.")),
+        LlmModelSelectionFailure.InvalidModel => TypedResults.BadRequest(
+            new LlmManagementErrorDTO("Model is required.")),
+        LlmModelSelectionFailure.UnknownModel => TypedResults.BadRequest(
+            new LlmManagementErrorDTO("Model is not configured for this provider.")),
+        LlmModelSelectionFailure.AmbiguousModel => TypedResults.Conflict(
+            new LlmManagementErrorDTO("This model identifier matches multiple profiles.")),
+        LlmModelSelectionFailure.MissingApiKey => TypedResults.Json(
+            new LlmManagementErrorDTO("The selected provider has no configured API key."),
+            LlmManagementHttpJsonContext.Default.LlmManagementErrorDTO,
+            statusCode: StatusCodes.Status503ServiceUnavailable),
+        LlmModelSelectionFailure.Unavailable => TypedResults.Json(
+            new LlmManagementErrorDTO("The selected provider client is unavailable."),
+            LlmManagementHttpJsonContext.Default.LlmManagementErrorDTO,
+            statusCode: StatusCodes.Status503ServiceUnavailable),
+        _ when result.Profile is not null => TypedResults.Ok(
+            new LlmModelDTO(result.Profile.Provider, result.Profile.Model, true)),
+        _ => TypedResults.Json(new LlmManagementErrorDTO("The model selection could not be applied."),
+            LlmManagementHttpJsonContext.Default.LlmManagementErrorDTO,
+            statusCode: StatusCodes.Status503ServiceUnavailable)
+    };
+}
+
+static int LoadMinimumSwitchIntervalSeconds(IConfiguration configuration)
+{
+    string? configuredValue = configuration["LLM:Management:MinSwitchIntervalSeconds"];
+    if (configuredValue is null) return 10;
+    if (!int.TryParse(configuredValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out int seconds)
+        || seconds <= 0)
+        throw new InvalidOperationException("LLM:Management:MinSwitchIntervalSeconds must be a positive integer.");
+    return seconds;
+}
+
+static void ReloadMinimumSwitchInterval(IConfiguration configuration, WebApplication app, ref int currentSeconds)
+{
+    try
+    {
+        Volatile.Write(ref currentSeconds, LoadMinimumSwitchIntervalSeconds(configuration));
+    }
+    catch (InvalidOperationException)
+    {
+        app.Logger.LogWarning("Обновление интервала переключения LLM отклонено; действует последнее корректное значение.");
+    }
+}
+
+static void ConfigureLoopbackUrls(WebApplicationBuilder builder)
+{
+    string? urls = builder.Configuration["urls"]
+        ?? Environment.GetEnvironmentVariable("ASPNETCORE_URLS")
+        ?? builder.Configuration["Urls"];
+    if (string.IsNullOrWhiteSpace(urls))
+    {
+        string? httpPorts = Environment.GetEnvironmentVariable("ASPNETCORE_HTTP_PORTS")
+            ?? Environment.GetEnvironmentVariable("DOTNET_HTTP_PORTS");
+        if (!string.IsNullOrWhiteSpace(httpPorts))
+        {
+            string[] ports = httpPorts.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            urls = string.Join(';', ports.Select(static port => $"http://127.0.0.1:{port}"));
+        }
+        else
+        {
+            urls = "http://127.0.0.1:5000";
+        }
+    }
+
+    ValidateLoopbackUrls(urls);
+    IConfigurationSection endpoints = builder.Configuration.GetSection("Kestrel:Endpoints");
+    foreach (IConfigurationSection endpoint in endpoints.GetChildren())
+    {
+        string? endpointUrl = endpoint["Url"];
+        if (string.IsNullOrWhiteSpace(endpointUrl))
+            throw new InvalidOperationException("Kestrel endpoints must explicitly bind to loopback.");
+        ValidateLoopbackUrls(endpointUrl);
+    }
+    builder.WebHost.UseUrls(urls);
+}
+
+static void ValidateLoopbackUrls(string urls)
+{
+    string[] addresses = urls.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    if (addresses.Length == 0)
+        throw new InvalidOperationException("At least one loopback HTTP address must be configured.");
+    foreach (string address in addresses)
+    {
+        if (!Uri.TryCreate(address, UriKind.Absolute, out Uri? uri) || uri.Scheme != Uri.UriSchemeHttp
+            || !uri.IsLoopback || !string.IsNullOrEmpty(uri.UserInfo) || uri.AbsolutePath != "/")
+            throw new InvalidOperationException("LLM management HTTP endpoints may listen only on loopback HTTP addresses.");
+    }
 }

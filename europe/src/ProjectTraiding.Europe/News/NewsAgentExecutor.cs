@@ -1,6 +1,8 @@
 using System.ClientModel;
 using System.ClientModel.Primitives;
+using System.Collections.Immutable;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.Agents.AI;
@@ -23,11 +25,11 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     private readonly IHostApplicationLifetime _lifetime;
     private readonly IConfiguration _configuration;
     private readonly Dictionary<string, IChatClient> _chatClients;
-    private readonly ChatClientAgent _agent;
+    private ChatClientAgent? _agent;
     private readonly Channel<TelegramChannelPost> _publications;
     private readonly object _configurationGate = new();
     private IDisposable? _configurationReloadRegistration;
-    private NewsAgentExecutionSnapshot? _executionSnapshot;
+    private LlmManagementRuntimeSnapshot _runtimeSnapshot;
 
     /// <summary>Создаёт только инфраструктуру клиента; конструктор не обращается к API.</summary>
     public NewsAgentExecutor(EuropeTelegramRuntime telegram, NewsAgentOptions options,
@@ -45,20 +47,26 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         _logger = logger;
         _lifetime = lifetime;
         _configuration = configuration;
-        LlmProfileOptions activeProfile = LlmProfileOptions.Load(configuration);
-        IChatClient activeChatClient = chatClient ?? CreateChatClient(options, activeProfile,
-            LlmProfileOptions.GetApiKey(configuration, activeProfile));
-        _chatClients = new Dictionary<string, IChatClient>(StringComparer.Ordinal)
-        {
-            [GetClientCacheKey(activeProfile.Provider, activeProfile.Endpoint)] = activeChatClient
-        };
+        ImmutableArray<LlmProfileOptions> profiles = LlmProfileOptions.LoadCatalog(configuration);
+        LlmProviderCredentials credentials = LlmProviderCredentials.Load(configuration);
+        LlmProfileOptions activeProfile = LlmProfileOptions.LoadConfiguredActiveProfile(configuration, profiles);
+        IChatClient? activeChatClient = chatClient;
+        string? activeApiKey = credentials.GetApiKey(activeProfile.Provider);
+        if (activeChatClient is null && !string.IsNullOrWhiteSpace(activeApiKey))
+            activeChatClient = CreateChatClient(options, activeProfile, activeApiKey);
+        if (activeChatClient is null && options.Enabled)
+            throw new InvalidOperationException($"Отсутствует {activeProfile.Provider}:ApiKey в конфигурации.");
+
+        _chatClients = new Dictionary<string, IChatClient>(StringComparer.Ordinal);
+        if (activeChatClient is not null)
+            _chatClients.Add(GetClientCacheKey(activeProfile, activeApiKey), activeChatClient);
         if (xaiChatClient is not null && activeProfile.Provider != "XAI")
-            _chatClients.Add(GetClientCacheKey("XAI", LlmProfileOptions.GetXaiEndpoint(configuration)), xaiChatClient);
-        _agent = new ChatClientAgent(activeChatClient, new ChatClientAgentOptions
-        {
-            UseProvidedChatClientAsIs = true
-        });
-        _publications = Channel.CreateBounded<TelegramChannelPost>(new BoundedChannelOptions(options.QueueCapacity)
+            _chatClients.Add(GetClientCacheKey("XAI", LlmProfileOptions.GetXaiEndpoint(configuration), null), xaiChatClient);
+        if (activeChatClient is not null) _agent = CreateAgent(activeChatClient);
+        _runtimeSnapshot = new LlmManagementRuntimeSnapshot(profiles, credentials, activeProfile,
+            activeChatClient, false, null);
+        _publications = Channel.CreateBounded<TelegramChannelPost>(new BoundedChannelOptions(
+            options.Enabled ? options.QueueCapacity : 1)
         {
             FullMode = BoundedChannelFullMode.Wait,
             AllowSynchronousContinuations = false,
@@ -68,11 +76,16 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         _configurationReloadRegistration = ChangeToken.OnChange(configuration.GetReloadToken, OnConfigurationReload);
     }
 
-    private IChatClient GetOrCreateChatClient(LlmProfileOptions profile)
+    private IChatClient GetOrCreateChatClient(LlmProfileOptions profile, LlmProviderCredentials credentials)
     {
-        string apiKey = LlmProfileOptions.GetApiKey(_configuration, profile);
-        string key = GetClientCacheKey(profile.Provider, profile.Endpoint);
+        string? apiKey = credentials.GetApiKey(profile.Provider);
+        if (string.IsNullOrWhiteSpace(apiKey))
+            throw new InvalidOperationException($"Отсутствует {profile.Provider}:ApiKey в конфигурации.");
+
+        string key = GetClientCacheKey(profile, apiKey);
         if (_chatClients.TryGetValue(key, out IChatClient? chatClient)) return chatClient;
+        string injectedKey = GetClientCacheKey(profile, null);
+        if (_chatClients.TryGetValue(injectedKey, out chatClient)) return chatClient;
 
         IChatClient createdClient = CreateChatClient(_options, profile, apiKey);
         _chatClients.Add(key, createdClient);
@@ -92,7 +105,19 @@ public sealed partial class NewsAgentExecutor : BackgroundService
 #pragma warning restore OPENAI001
     }
 
-    private static string GetClientCacheKey(string provider, string? endpoint) => $"{provider}:{endpoint}";
+    private static string GetClientCacheKey(LlmProfileOptions profile, string? apiKey) =>
+        GetClientCacheKey(profile.Provider, profile.Endpoint, apiKey);
+
+    private static string GetClientCacheKey(string provider, string? endpoint, string? apiKey)
+    {
+        string credentialFingerprint = apiKey is null
+            ? "injected"
+            : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey)));
+        return $"{provider}:{endpoint}:{credentialFingerprint}";
+    }
+
+    private static ChatClientAgent CreateAgent(IChatClient chatClient) => new(chatClient,
+        new ChatClientAgentOptions { UseProvidedChatClientAsIs = true });
 
     /// <summary>Единственный внутренний выход; подписчик должен быть коротким, потокобезопасным и не выполнять I/O.</summary>
     public event Action<NewsAgentResult>? AnalysisCompleted;
@@ -106,15 +131,92 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         snapshot = snapshot with { JsonSchema = snapshot.JsonSchema.Clone() };
         lock (_configurationGate)
         {
-            LlmProfileOptions profile = LlmProfileOptions.Load(_configuration);
-            Interlocked.Exchange(ref _executionSnapshot, CreateExecutionSnapshot(profile, snapshot));
+            LlmManagementRuntimeSnapshot current = Volatile.Read(ref _runtimeSnapshot);
+            IChatClient chatClient = current.ActiveChatClient
+                ?? GetOrCreateChatClient(current.ActiveProfile, current.Credentials);
+            NewsAgentExecutionSnapshot execution = CreateExecutionSnapshot(current.ActiveProfile, snapshot, chatClient);
+            if (_agent is null) _agent = CreateAgent(chatClient);
+            Interlocked.Exchange(ref _runtimeSnapshot, current with
+            {
+                ActiveChatClient = chatClient,
+                Execution = execution
+            });
         }
     }
 
-    internal NewsAgentExecutionSnapshot? CurrentExecutionSnapshot => Volatile.Read(ref _executionSnapshot);
+    internal NewsAgentExecutionSnapshot? CurrentExecutionSnapshot => Volatile.Read(ref _runtimeSnapshot).Execution;
+
+    internal LlmProfileCatalogView GetProfileCatalogView()
+    {
+        LlmManagementRuntimeSnapshot snapshot = Volatile.Read(ref _runtimeSnapshot);
+        return new LlmProfileCatalogView(snapshot.Profiles, snapshot.ActiveProfile);
+    }
+
+    internal LlmModelSelectionResult ActivateModel(string? provider, string? model)
+    {
+        if (string.IsNullOrWhiteSpace(provider))
+            return new LlmModelSelectionResult(LlmModelSelectionFailure.InvalidProvider, null);
+        string? canonicalProvider = LlmProfileOptions.NormalizeProvider(provider);
+        if (canonicalProvider is null)
+            return new LlmModelSelectionResult(LlmModelSelectionFailure.UnknownProvider, null);
+        if (string.IsNullOrWhiteSpace(model))
+            return new LlmModelSelectionResult(LlmModelSelectionFailure.InvalidModel, null);
+
+        lock (_configurationGate)
+        {
+            LlmManagementRuntimeSnapshot current = Volatile.Read(ref _runtimeSnapshot);
+            int matches = 0;
+            LlmProfileOptions? selected = null;
+            foreach (LlmProfileOptions profile in current.Profiles)
+            {
+                if (profile.Provider != canonicalProvider || profile.Model != model) continue;
+                selected = profile;
+                matches++;
+            }
+            if (matches == 0)
+                return new LlmModelSelectionResult(
+                    current.Profiles.Any(profile => profile.Provider == canonicalProvider)
+                        ? LlmModelSelectionFailure.UnknownModel
+                        : LlmModelSelectionFailure.UnknownProvider, null);
+            if (matches > 1)
+                return new LlmModelSelectionResult(LlmModelSelectionFailure.AmbiguousModel, null);
+            if (string.IsNullOrWhiteSpace(current.Credentials.GetApiKey(selected!.Provider)))
+                return new LlmModelSelectionResult(LlmModelSelectionFailure.MissingApiKey, null);
+
+            try
+            {
+                IChatClient chatClient = ProfileEquals(current.ActiveProfile, selected!)
+                    ? current.ActiveChatClient ?? GetOrCreateChatClient(selected!, current.Credentials)
+                    : GetOrCreateChatClient(selected!, current.Credentials);
+                NewsAgentExecutionSnapshot? execution = current.Execution;
+                if (execution is not null
+                    && (!ProfileEquals(execution.Profile, selected!) || !ReferenceEquals(execution.ChatClient, chatClient)))
+                    execution = CreateExecutionSnapshot(selected!, execution.Subject, chatClient);
+
+                if (_agent is null) _agent = CreateAgent(chatClient);
+                if (!current.HttpSelectionOverridesConfiguration || !ProfileEquals(current.ActiveProfile, selected!)
+                    || !ReferenceEquals(current.ActiveChatClient, chatClient) || current.Execution != execution)
+                {
+                    LlmManagementRuntimeSnapshot replacement = current with
+                    {
+                        ActiveProfile = selected!,
+                        ActiveChatClient = chatClient,
+                        HttpSelectionOverridesConfiguration = true,
+                        Execution = execution
+                    };
+                    Interlocked.Exchange(ref _runtimeSnapshot, replacement);
+                }
+                return new LlmModelSelectionResult(LlmModelSelectionFailure.None, selected);
+            }
+            catch (Exception error) when (error is InvalidOperationException or ArgumentException or FormatException)
+            {
+                return new LlmModelSelectionResult(LlmModelSelectionFailure.Unavailable, null);
+            }
+        }
+    }
 
     private NewsAgentExecutionSnapshot CreateExecutionSnapshot(LlmProfileOptions profile,
-        NewsAgentPromptSnapshot subject)
+        NewsAgentPromptSnapshot subject, IChatClient chatClient)
     {
         if (profile.Provider == "XAI" && subject.Temperature > 1f)
             throw new InvalidOperationException("Для XAI News Temperature не должна превышать 1.");
@@ -124,7 +226,6 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(material,
             NewsAgentJsonContext.Default.NewsAgentVersionMaterial);
         string agentVersion = "news-v3:" + Convert.ToHexString(SHA256.HashData(bytes));
-        IChatClient chatClient = GetOrCreateChatClient(profile);
         return new NewsAgentExecutionSnapshot(subject, profile, chatClient, agentVersion);
     }
 
@@ -134,26 +235,72 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         {
             lock (_configurationGate)
             {
-                NewsAgentExecutionSnapshot? current = Volatile.Read(ref _executionSnapshot);
-                if (current is null) return;
+                LlmManagementRuntimeSnapshot current = Volatile.Read(ref _runtimeSnapshot);
+                ImmutableArray<LlmProfileOptions> profiles = LlmProfileOptions.LoadCatalog(_configuration);
+                LlmProviderCredentials credentials = LlmProviderCredentials.Load(_configuration);
+                LlmProfileOptions activeProfile = current.HttpSelectionOverridesConfiguration
+                    ? ResolvePreservedProfile(current.ActiveProfile, profiles)
+                    : LlmProfileOptions.LoadConfiguredActiveProfile(_configuration, profiles);
 
-                LlmProfileOptions profile = LlmProfileOptions.Load(_configuration);
-                NewsAgentExecutionSnapshot replacement = CreateExecutionSnapshot(profile, current.Subject);
-                if (replacement.AgentVersion != current.AgentVersion)
-                    Interlocked.Exchange(ref _executionSnapshot, replacement);
+                bool clientRequired = _options.Enabled || current.HttpSelectionOverridesConfiguration;
+                string? activeApiKey = credentials.GetApiKey(activeProfile.Provider);
+                if (clientRequired && string.IsNullOrWhiteSpace(activeApiKey))
+                    throw new InvalidOperationException("The active provider key is missing.");
+                IChatClient? activeChatClient = string.IsNullOrWhiteSpace(activeApiKey)
+                    ? null
+                    : GetOrCreateChatClient(activeProfile, credentials);
+
+                NewsAgentExecutionSnapshot? execution = current.Execution;
+                if (execution is not null)
+                {
+                    if (activeChatClient is null)
+                        throw new InvalidOperationException("The active provider client is unavailable.");
+                    if (!ProfileEquals(execution.Profile, activeProfile)
+                        || !ReferenceEquals(execution.ChatClient, activeChatClient))
+                        execution = CreateExecutionSnapshot(activeProfile, execution.Subject, activeChatClient);
+                }
+
+                if (_agent is null && activeChatClient is not null) _agent = CreateAgent(activeChatClient);
+                bool changed = !current.Profiles.SequenceEqual(profiles)
+                    || current.Credentials != credentials
+                    || !ProfileEquals(current.ActiveProfile, activeProfile)
+                    || !ReferenceEquals(current.ActiveChatClient, activeChatClient)
+                    || !ReferenceEquals(current.Execution, execution);
+                if (changed)
+                    Interlocked.Exchange(ref _runtimeSnapshot, new LlmManagementRuntimeSnapshot(profiles,
+                        credentials, activeProfile, activeChatClient, current.HttpSelectionOverridesConfiguration,
+                        execution));
             }
         }
-        catch (Exception error)
+        catch (Exception)
         {
-            LogWarning(_logger, $"Обновление профиля News отклонено: {error.Message}");
+            LogWarning(_logger, "Обновление LLM-конфигурации отклонено; применённое состояние сохранено.");
         }
     }
+
+    private static LlmProfileOptions ResolvePreservedProfile(LlmProfileOptions activeProfile,
+        ImmutableArray<LlmProfileOptions> profiles)
+    {
+        LlmProfileOptions? match = null;
+        foreach (LlmProfileOptions profile in profiles)
+        {
+            if (profile.Provider != activeProfile.Provider || profile.Model != activeProfile.Model) continue;
+            if (match is not null)
+                throw new InvalidOperationException("The active model became ambiguous.");
+            match = profile;
+        }
+        return match ?? throw new InvalidOperationException("The active model was removed from configuration.");
+    }
+
+    private static bool ProfileEquals(LlmProfileOptions first, LlmProfileOptions second) =>
+        first.Provider == second.Provider && first.Name == second.Name && first.Model == second.Model
+        && first.Endpoint == second.Endpoint && first.ReasoningEffort == second.ReasoningEffort;
 
     /// <summary>Изолированная проверка использует ту же сборку запроса и валидатор, что и очередь.</summary>
     internal async Task<string> AnalyzeForDiagnosticsAsync(TelegramChannelPost publication,
         CancellationToken cancellationToken)
     {
-        NewsAgentExecutionSnapshot snapshot = Volatile.Read(ref _executionSnapshot)
+        NewsAgentExecutionSnapshot snapshot = Volatile.Read(ref _runtimeSnapshot).Execution
             ?? throw new InvalidOperationException("Нет полного снимка конфигурации News.");
         using CancellationTokenSource request = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         request.CancelAfter(_options.RequestTimeout);
@@ -165,8 +312,12 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     /// <summary>Подписка выполняется синхронно до запуска следующей hosted-роли Telegram.</summary>
     public override Task StartAsync(CancellationToken cancellationToken)
     {
-        _telegram.PublicationReceived += EnqueuePublication;
-        if (AnalysisCompleted is null) LogWarning(_logger, "Потребитель результата LLM не подключён; выдача не означает доставку.");
+        if (_options.Enabled)
+        {
+            _telegram.PublicationReceived += EnqueuePublication;
+            if (AnalysisCompleted is null)
+                LogWarning(_logger, "Потребитель результата LLM не подключён; выдача не означает доставку.");
+        }
         return base.StartAsync(cancellationToken);
     }
 
@@ -180,6 +331,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     /// <summary>Все постоянные потребители читают одну очередь; отмена хоста распространяется на текущие запросы.</summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (!_options.Enabled) return;
         using CancellationTokenSource lifetime = CancellationTokenSource.CreateLinkedTokenSource(
             stoppingToken, _lifetime.ApplicationStopping);
         using CancellationTokenRegistration stopping = lifetime.Token.Register(Complete);
@@ -200,7 +352,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         await foreach (TelegramChannelPost publication in _publications.Reader.ReadAllAsync(cancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            NewsAgentExecutionSnapshot? snapshot = Volatile.Read(ref _executionSnapshot);
+            NewsAgentExecutionSnapshot? snapshot = Volatile.Read(ref _runtimeSnapshot).Execution;
             if (snapshot is null)
             {
                 LogWarning(_logger, "Нет полного снимка конфигурации; публикация пропущена без вызова LLM.");
@@ -261,7 +413,9 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             ChatClientFactory = _ => execution.ChatClient
         };
         cancellationToken.ThrowIfCancellationRequested();
-        AgentResponse agentResponse = await _agent.RunAsync(messages, options: runOptions,
+        ChatClientAgent agent = Volatile.Read(ref _agent)
+            ?? throw new InvalidOperationException("Клиент активной модели не настроен.");
+        AgentResponse agentResponse = await agent.RunAsync(messages, options: runOptions,
             cancellationToken: cancellationToken);
         ChatResponse response = agentResponse.AsChatResponse();
 #pragma warning disable OPENAI001

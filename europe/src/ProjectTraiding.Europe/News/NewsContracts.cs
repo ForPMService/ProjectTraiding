@@ -17,6 +17,28 @@ public sealed record NewsAgentPromptSnapshot(string Version, string PromptVersio
 internal sealed record NewsAgentExecutionSnapshot(NewsAgentPromptSnapshot Subject,
     LlmProfileOptions Profile, IChatClient ChatClient, string AgentVersion);
 
+/// <summary>Единый применённый каталог, выбор, клиент и предметный снимок для HTTP и очереди.</summary>
+internal sealed record LlmManagementRuntimeSnapshot(ImmutableArray<LlmProfileOptions> Profiles,
+    LlmProviderCredentials Credentials, LlmProfileOptions ActiveProfile, IChatClient? ActiveChatClient,
+    bool HttpSelectionOverridesConfiguration, NewsAgentExecutionSnapshot? Execution);
+
+internal readonly record struct LlmProfileCatalogView(ImmutableArray<LlmProfileOptions> Profiles,
+    LlmProfileOptions ActiveProfile);
+
+internal enum LlmModelSelectionFailure
+{
+    None,
+    InvalidProvider,
+    UnknownProvider,
+    InvalidModel,
+    UnknownModel,
+    AmbiguousModel,
+    MissingApiKey,
+    Unavailable
+}
+
+internal sealed record LlmModelSelectionResult(LlmModelSelectionFailure Failure, LlmProfileOptions? Profile);
+
 /// <summary>Только значимые настройки, вошедшие в agent_version; секреты сюда не передаются.</summary>
 internal sealed record NewsAgentVersionMaterial(string Provider, string Model,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Endpoint,
