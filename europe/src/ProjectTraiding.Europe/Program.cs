@@ -16,6 +16,8 @@ using Microsoft.Extensions.Hosting;
 using ProjectTraiding.Europe;
 using ProjectTraiding.Europe.News;
 using ProjectTraiding.Europe.Telegram;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Trace;
 
 if (args.Length == 1 && args[0] == "--agent-aot-probe")
 {
@@ -29,6 +31,7 @@ WebApplicationBuilder builder = WebApplication.CreateSlimBuilder(new WebApplicat
     Args = args.Length > 0 && (args[0] == "--openai-chat" || args[0] == "--news-json-probe") ? [] : args,
     ContentRootPath = AppContext.BaseDirectory
 });
+ConfigureOpenTelemetry(builder);
 
 if (args.Length > 0 && args[0] == "--openai-chat")
 {
@@ -91,7 +94,16 @@ if (args.Length > 0 && args[0] == "--news-json-probe")
     try
     {
         NewsJsonContractChecks.Run();
-        await NewsAgentContextChecks.RunAsync();
+        if (args.Length == 1)
+        {
+            using IHost contextCheckHost = builder.Build();
+            InitializeOpenTelemetryProviders(contextCheckHost.Services);
+            await NewsAgentContextChecks.RunAsync();
+        }
+        else
+        {
+            await NewsAgentContextChecks.RunAsync();
+        }
         Console.WriteLine("Локальные проверки контекста News и JSON-контракта v3 пройдены.");
         if (args.Length == 3)
             await RunNewsJsonProbeAsync(builder, args[1], args[2]);
@@ -168,6 +180,8 @@ app.Use(async (HttpContext context, RequestDelegate next) =>
     {
         context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
         context.Response.Headers["Retry-After"] = retryAfterSeconds.ToString(CultureInfo.InvariantCulture);
+        context.RequestServices.GetRequiredService<NewsAgentExecutor>()
+            .LogModelSelectionRejected(StatusCodes.Status429TooManyRequests, "rate_limited");
         await context.Response.WriteAsJsonAsync(new LlmManagementErrorDTO("Too many model changes. Retry later."),
             LlmManagementHttpJsonContext.Default.LlmManagementErrorDTO, null, context.RequestAborted);
         return;
@@ -191,6 +205,7 @@ app.MapGet("/llm/models", static (NewsAgentExecutor executor) =>
 });
 app.MapPost("/llm/models/active", HandleActivateModelAsync);
 
+app.Services.GetRequiredService<NewsAgentExecutor>().LogStartupState();
 await app.RunAsync();
 
 static async Task RunNewsJsonProbeAsync(WebApplicationBuilder builder, string publicationPath, string snapshotPath)
@@ -219,10 +234,11 @@ static async Task RunNewsJsonProbeAsync(WebApplicationBuilder builder, string pu
     builder.Services.AddSingleton<NewsAgentExecutor>();
 
     using IHost diagnosticHost = builder.Build();
+    InitializeOpenTelemetryProviders(diagnosticHost.Services);
     NewsAgentExecutor executor = diagnosticHost.Services.GetRequiredService<NewsAgentExecutor>();
     executor.UpdatePromptSnapshot(snapshot);
-    string responseJson = await executor.AnalyzeForDiagnosticsAsync(publication, CancellationToken.None);
-    Console.WriteLine(responseJson);
+    await executor.AnalyzeForDiagnosticsAsync(publication, CancellationToken.None);
+    Console.WriteLine("Пробный запрос LLM завершён; ответ прошёл проверки.");
 }
 
 static async Task<Results<Ok<LlmModelDTO>, BadRequest<LlmManagementErrorDTO>,
@@ -230,7 +246,10 @@ static async Task<Results<Ok<LlmModelDTO>, BadRequest<LlmManagementErrorDTO>,
     HttpContext context, NewsAgentExecutor executor)
 {
     if (!context.Request.HasJsonContentType())
+    {
+        executor.LogModelSelectionRejected(StatusCodes.Status400BadRequest, "invalid_content_type");
         return TypedResults.BadRequest(new LlmManagementErrorDTO("Content-Type must be application/json."));
+    }
 
     LlmActiveModelRequestDTO? request;
     try
@@ -240,13 +259,27 @@ static async Task<Results<Ok<LlmModelDTO>, BadRequest<LlmManagementErrorDTO>,
     }
     catch (JsonException)
     {
+        executor.LogModelSelectionRejected(StatusCodes.Status400BadRequest, "malformed_json");
         return TypedResults.BadRequest(new LlmManagementErrorDTO("The request body is not valid JSON."));
     }
 
     if (request is null)
+    {
+        executor.LogModelSelectionRejected(StatusCodes.Status400BadRequest, "missing_request_fields");
         return TypedResults.BadRequest(new LlmManagementErrorDTO("The request body must contain provider and model."));
+    }
 
     LlmModelSelectionResult result = executor.ActivateModel(request.Provider, request.Model);
+    int statusCode = result.Failure switch
+    {
+        LlmModelSelectionFailure.InvalidProvider or LlmModelSelectionFailure.UnknownProvider
+            or LlmModelSelectionFailure.InvalidModel or LlmModelSelectionFailure.UnknownModel => StatusCodes.Status400BadRequest,
+        LlmModelSelectionFailure.AmbiguousModel => StatusCodes.Status409Conflict,
+        LlmModelSelectionFailure.MissingApiKey or LlmModelSelectionFailure.Unavailable => StatusCodes.Status503ServiceUnavailable,
+        _ when result.Failure == LlmModelSelectionFailure.None && result.Profile is not null => StatusCodes.Status200OK,
+        _ => StatusCodes.Status503ServiceUnavailable
+    };
+    executor.LogModelSelection(result, statusCode);
     return result.Failure switch
     {
         LlmModelSelectionFailure.InvalidProvider => TypedResults.BadRequest(
@@ -273,6 +306,33 @@ static async Task<Results<Ok<LlmModelDTO>, BadRequest<LlmManagementErrorDTO>,
             LlmManagementHttpJsonContext.Default.LlmManagementErrorDTO,
             statusCode: StatusCodes.Status503ServiceUnavailable)
     };
+}
+
+static void ConfigureOpenTelemetry(WebApplicationBuilder builder)
+{
+    bool enableConsoleExporter = builder.Environment.IsDevelopment()
+        && builder.Configuration.GetValue<bool>("Telemetry:ConsoleExporterEnabled");
+    // The package marks this stable runtime source identifier as experimental.
+#pragma warning disable MAAI001
+    string sourceName = OpenTelemetryAgent.DefaultSourceName;
+#pragma warning restore MAAI001
+    builder.Services.AddOpenTelemetry()
+        .WithTracing(tracing =>
+        {
+            tracing.AddSource(sourceName);
+            if (enableConsoleExporter) tracing.AddConsoleExporter();
+        })
+        .WithMetrics(metrics =>
+        {
+            metrics.AddMeter(sourceName);
+            if (enableConsoleExporter) metrics.AddConsoleExporter();
+        });
+}
+
+static void InitializeOpenTelemetryProviders(IServiceProvider services)
+{
+    services.GetRequiredService<TracerProvider>();
+    services.GetRequiredService<MeterProvider>();
 }
 
 static int LoadMinimumSwitchIntervalSeconds(IConfiguration configuration)

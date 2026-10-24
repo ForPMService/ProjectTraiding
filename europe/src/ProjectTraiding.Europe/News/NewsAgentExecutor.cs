@@ -1,6 +1,8 @@
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Collections.Immutable;
+using System.Diagnostics;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -23,9 +25,10 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     private readonly NewsAgentOptions _options;
     private readonly ILogger<NewsAgentExecutor> _logger;
     private readonly IHostApplicationLifetime _lifetime;
+    private readonly IHostEnvironment? _environment;
     private readonly IConfiguration _configuration;
     private readonly Dictionary<string, IChatClient> _chatClients;
-    private ChatClientAgent? _agent;
+    private AIAgent? _agent;
     private readonly Channel<TelegramChannelPost> _publications;
     private readonly object _configurationGate = new();
     private IDisposable? _configurationReloadRegistration;
@@ -33,19 +36,21 @@ public sealed partial class NewsAgentExecutor : BackgroundService
 
     /// <summary>Создаёт только инфраструктуру клиента; конструктор не обращается к API.</summary>
     public NewsAgentExecutor(EuropeTelegramRuntime telegram, NewsAgentOptions options,
-        ILogger<NewsAgentExecutor> logger, IHostApplicationLifetime lifetime, IConfiguration configuration)
-        : this(telegram, options, logger, lifetime, configuration, null)
+        ILogger<NewsAgentExecutor> logger, IHostApplicationLifetime lifetime, IConfiguration configuration,
+        IHostEnvironment environment)
+        : this(telegram, options, logger, lifetime, configuration, null, null, environment)
     {
     }
 
     internal NewsAgentExecutor(EuropeTelegramRuntime telegram, NewsAgentOptions options,
         ILogger<NewsAgentExecutor> logger, IHostApplicationLifetime lifetime, IConfiguration configuration,
-        IChatClient? chatClient, IChatClient? xaiChatClient = null)
+        IChatClient? chatClient, IChatClient? xaiChatClient = null, IHostEnvironment? environment = null)
     {
         _telegram = telegram;
         _options = options;
         _logger = logger;
         _lifetime = lifetime;
+        _environment = environment;
         _configuration = configuration;
         ImmutableArray<LlmProfileOptions> profiles = LlmProfileOptions.LoadCatalog(configuration);
         LlmProviderCredentials credentials = LlmProviderCredentials.Load(configuration);
@@ -116,8 +121,11 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         return $"{provider}:{endpoint}:{credentialFingerprint}";
     }
 
-    private static ChatClientAgent CreateAgent(IChatClient chatClient) => new(chatClient,
-        new ChatClientAgentOptions { UseProvidedChatClientAsIs = true });
+    private static AIAgent CreateAgent(IChatClient chatClient) => new ChatClientAgent(chatClient,
+        new ChatClientAgentOptions { UseProvidedChatClientAsIs = true })
+        .AsBuilder()
+        .UseOpenTelemetry(null, static telemetry => telemetry.EnableSensitiveData = false)
+        .Build(null!);
 
     /// <summary>Единственный внутренний выход; подписчик должен быть коротким, потокобезопасным и не выполнять I/O.</summary>
     public event Action<NewsAgentResult>? AnalysisCompleted;
@@ -145,6 +153,45 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     }
 
     internal NewsAgentExecutionSnapshot? CurrentExecutionSnapshot => Volatile.Read(ref _runtimeSnapshot).Execution;
+
+    internal void LogStartupState()
+    {
+        LlmManagementRuntimeSnapshot snapshot = Volatile.Read(ref _runtimeSnapshot);
+        LogStartup(_logger, snapshot.ActiveProfile.Provider, snapshot.ActiveProfile.Model,
+            snapshot.Execution is not null);
+    }
+
+    internal void LogModelSelection(LlmModelSelectionResult result, int httpStatusCode)
+    {
+        if (result.Failure != LlmModelSelectionFailure.None || result.Profile is null)
+        {
+            LogModelSelectionRejected(_logger, httpStatusCode, GetSelectionFailureCategory(result.Failure));
+            return;
+        }
+
+        if (result.Changed && result.PreviousProfile is not null)
+        {
+            LogModelSelectionChanged(_logger, result.PreviousProfile.Provider, result.PreviousProfile.Model,
+                result.Profile.Provider, result.Profile.Model);
+            return;
+        }
+
+        LogModelSelectionUnchanged(_logger, result.Profile.Provider, result.Profile.Model);
+    }
+
+    internal void LogModelSelectionRejected(int httpStatusCode, string reasonCategory) =>
+        LogModelSelectionRejected(_logger, httpStatusCode, reasonCategory);
+
+    private static string GetSelectionFailureCategory(LlmModelSelectionFailure failure) => failure switch
+    {
+        LlmModelSelectionFailure.InvalidProvider or LlmModelSelectionFailure.InvalidModel => "invalid_request",
+        LlmModelSelectionFailure.UnknownProvider => "provider_unconfigured",
+        LlmModelSelectionFailure.UnknownModel => "model_missing",
+        LlmModelSelectionFailure.AmbiguousModel => "ambiguous_profile",
+        LlmModelSelectionFailure.MissingApiKey => "provider_key_missing",
+        LlmModelSelectionFailure.Unavailable => "client_unavailable",
+        _ => "selection_not_applied"
+    };
 
     internal LlmProfileCatalogView GetProfileCatalogView()
     {
@@ -206,7 +253,11 @@ public sealed partial class NewsAgentExecutor : BackgroundService
                     };
                     Interlocked.Exchange(ref _runtimeSnapshot, replacement);
                 }
-                return new LlmModelSelectionResult(LlmModelSelectionFailure.None, selected);
+                LlmManagementRuntimeSnapshot applied = Volatile.Read(ref _runtimeSnapshot);
+                bool changed = current.ActiveProfile.Provider != applied.ActiveProfile.Provider
+                    || current.ActiveProfile.Model != applied.ActiveProfile.Model;
+                return new LlmModelSelectionResult(LlmModelSelectionFailure.None, applied.ActiveProfile,
+                    current.ActiveProfile, changed);
             }
             catch (Exception error) when (error is InvalidOperationException or ArgumentException or FormatException)
             {
@@ -231,6 +282,9 @@ public sealed partial class NewsAgentExecutor : BackgroundService
 
     private void OnConfigurationReload()
     {
+        LlmProfileOptions? previousAppliedProfile = null;
+        LlmProfileOptions? newAppliedProfile = null;
+        bool subjectSnapshotAvailable = false;
         try
         {
             lock (_configurationGate)
@@ -267,10 +321,22 @@ public sealed partial class NewsAgentExecutor : BackgroundService
                     || !ReferenceEquals(current.ActiveChatClient, activeChatClient)
                     || !ReferenceEquals(current.Execution, execution);
                 if (changed)
+                {
                     Interlocked.Exchange(ref _runtimeSnapshot, new LlmManagementRuntimeSnapshot(profiles,
                         credentials, activeProfile, activeChatClient, current.HttpSelectionOverridesConfiguration,
                         execution));
+                    if (!ProfileEquals(current.ActiveProfile, activeProfile))
+                    {
+                        previousAppliedProfile = current.ActiveProfile;
+                        newAppliedProfile = activeProfile;
+                        subjectSnapshotAvailable = execution is not null;
+                    }
+                }
             }
+
+            if (previousAppliedProfile is not null && newAppliedProfile is not null)
+                LogConfigurationModelApplied(_logger, previousAppliedProfile.Provider, previousAppliedProfile.Model,
+                    newAppliedProfile.Provider, newAppliedProfile.Model, subjectSnapshotAvailable);
         }
         catch (Exception)
         {
@@ -375,11 +441,12 @@ public sealed partial class NewsAgentExecutor : BackgroundService
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-            catch (OperationCanceledException) { LogWarning(_logger, "Истёк срок операции LLM; результат отсутствует."); }
-            catch (ClientResultException) { LogWarning(_logger, "Ошибка API LLM; результат отсутствует."); }
-            catch (HttpRequestException) { LogWarning(_logger, "Ошибка сети LLM; результат отсутствует."); }
-            catch (JsonException) { LogWarning(_logger, "Ответ LLM нарушает JSON-контракт v3."); }
-            catch (InvalidDataException) { LogWarning(_logger, "Отказ LLM, незавершённый ответ или нарушение контракта v3."); }
+            // GetValidatedResponseAsync records these request and validation outcomes with operation context.
+            catch (OperationCanceledException) { }
+            catch (ClientResultException) { }
+            catch (HttpRequestException) { }
+            catch (JsonException) { }
+            catch (InvalidDataException) { }
             catch (Exception) { LogWarning(_logger, "Техническая ошибка операции LLM; результат отсутствует."); }
         }
     }
@@ -413,28 +480,99 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             ChatClientFactory = _ => execution.ChatClient
         };
         cancellationToken.ThrowIfCancellationRequested();
-        ChatClientAgent agent = Volatile.Read(ref _agent)
+        AIAgent agent = Volatile.Read(ref _agent)
             ?? throw new InvalidOperationException("Клиент активной модели не настроен.");
-        AgentResponse agentResponse = await agent.RunAsync(messages, options: runOptions,
-            cancellationToken: cancellationToken);
-        ChatResponse response = agentResponse.AsChatResponse();
-#pragma warning disable OPENAI001
-        bool completedResponse = execution.Profile.Provider switch
+
+        Activity? currentActivity = Activity.Current;
+        string? traceId = currentActivity?.IdFormat == ActivityIdFormat.W3C
+            ? currentActivity.TraceId.ToString()
+            : null;
+        string operationId = traceId ?? Guid.NewGuid().ToString("N");
+        DateTimeOffset sentAtUtc = DateTimeOffset.UtcNow;
+        LogLlmRequestStarted(_logger, operationId, traceId, execution.Profile.Provider,
+            execution.Profile.Model, execution.AgentVersion, sentAtUtc.ToString("O", CultureInfo.InvariantCulture));
+        long startedTimestamp = Stopwatch.GetTimestamp();
+        AgentResponse agentResponse;
+        ChatResponse response;
+        try
         {
-            "OpenAI" => response.RawRepresentation is ResponseResult { Status: ResponseStatus.Completed }
-                && response.ModelId == execution.Profile.Model,
-            // xAI Responses uses the OpenAI-compatible response envelope with status and model fields.
-            "XAI" => response.RawRepresentation is ResponseResult { Status: ResponseStatus.Completed }
-                && response.ModelId == execution.Profile.Model,
-            _ => false
-        };
-        if (!completedResponse)
-            throw new InvalidDataException("Незавершённый ответ LLM.");
+            agentResponse = await agent.RunAsync(messages, options: runOptions,
+                cancellationToken: cancellationToken);
+            response = agentResponse.AsChatResponse();
+        }
+        catch (Exception error)
+        {
+            TimeSpan failedDuration = Stopwatch.GetElapsedTime(startedTimestamp);
+            string failedDurationText = failedDuration.TotalMilliseconds.ToString("F2", CultureInfo.InvariantCulture);
+            if (error is OperationCanceledException && _lifetime.ApplicationStopping.IsCancellationRequested)
+            {
+                LogLlmRequestCancelled(_logger, operationId, execution.Profile.Provider, execution.Profile.Model,
+                    "application_stopping", failedDurationText);
+            }
+            else
+            {
+                string failureCategory = error switch
+                {
+                    OperationCanceledException => "timeout_or_cancelled",
+                    ClientResultException => "provider_api_error",
+                    HttpRequestException => "network_error",
+                    _ => "unexpected_error"
+                };
+                LogLlmRequestFailed(_logger, operationId, execution.Profile.Provider, execution.Profile.Model,
+                    failureCategory, failedDurationText);
+            }
+            throw;
+        }
+
+        TimeSpan elapsed = Stopwatch.GetElapsedTime(startedTimestamp);
+        DateTimeOffset receivedAtUtc = DateTimeOffset.UtcNow;
+        long? inputTokenCount = response.Usage?.InputTokenCount;
+        long? outputTokenCount = response.Usage?.OutputTokenCount;
+        string? averageTokensPerSecond = outputTokenCount is long outputTokens && elapsed > TimeSpan.Zero
+            ? (outputTokens / elapsed.TotalSeconds).ToString("F2", CultureInfo.InvariantCulture)
+            : null;
+        LogLlmResponseReceived(_logger, operationId, traceId, execution.Profile.Provider,
+            execution.Profile.Model, response.ModelId, response.ResponseId, response.FinishReason?.ToString(),
+            receivedAtUtc.ToString("O", CultureInfo.InvariantCulture),
+            elapsed.TotalMilliseconds.ToString("F2", CultureInfo.InvariantCulture),
+            inputTokenCount, outputTokenCount, averageTokensPerSecond);
+        if (_environment?.IsDevelopment() == true)
+            LogLlmDevelopmentResponse(_logger, operationId, response.Text);
+
+#pragma warning disable OPENAI001
+        bool responseStatusCompleted = response.RawRepresentation is ResponseResult { Status: ResponseStatus.Completed };
 #pragma warning restore OPENAI001
+        bool reportedModelMatchesRequest = response.ModelId == execution.Profile.Model;
+        LogLlmResponseStatus(_logger, operationId, responseStatusCompleted, reportedModelMatchesRequest);
+        if (!responseStatusCompleted || !reportedModelMatchesRequest)
+        {
+            string failureCategory = !responseStatusCompleted ? "response_not_completed" : "reported_model_mismatch";
+            LogLlmValidationResult(_logger, operationId, "response_status", "rejected", failureCategory);
+            throw new InvalidDataException("Незавершённый ответ LLM.");
+        }
+
         foreach (ChatMessage message in response.Messages)
             foreach (AIContent content in message.Contents)
-                if (content is ErrorContent) throw new InvalidDataException("Отказ LLM.");
-        ValidateLlmResponse(response.Text);
+                if (content is ErrorContent)
+                {
+                    LogLlmValidationResult(_logger, operationId, "response_content", "rejected", "model_refusal");
+                    throw new InvalidDataException("Отказ LLM.");
+                }
+        try
+        {
+            ValidateLlmResponse(response.Text);
+        }
+        catch (JsonException)
+        {
+            LogLlmValidationResult(_logger, operationId, "json_v3", "rejected", "invalid_json");
+            throw;
+        }
+        catch (InvalidDataException)
+        {
+            LogLlmValidationResult(_logger, operationId, "json_v3", "rejected", "contract_violation");
+            throw;
+        }
+        LogLlmValidationResult(_logger, operationId, "json_v3", "passed", "none");
         cancellationToken.ThrowIfCancellationRequested();
         return response;
     }
@@ -532,4 +670,62 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     /// <summary>Не включает исходный текст, промпт, JSON, реквизиты или сырые исключения.</summary>
     [LoggerMessage(EventId = 2, Level = LogLevel.Warning, Message = "{Message}")]
     private static partial void LogWarning(ILogger logger, string message);
+
+    [LoggerMessage(EventId = 3, Level = LogLevel.Information,
+        Message = "Europe startup applied LLM selection: provider={Provider} model={Model} subjectSnapshotAvailable={SubjectSnapshotAvailable}.")]
+    private static partial void LogStartup(ILogger logger, string provider, string model, bool subjectSnapshotAvailable);
+
+    [LoggerMessage(EventId = 4, Level = LogLevel.Information,
+        Message = "LLM model selection applied: {PreviousProvider}/{PreviousModel} -> {Provider}/{Model}; applies to next requests, in-flight requests continue with their captured snapshot.")]
+    private static partial void LogModelSelectionChanged(ILogger logger, string previousProvider, string previousModel,
+        string provider, string model);
+
+    [LoggerMessage(EventId = 5, Level = LogLevel.Information,
+        Message = "LLM model selection accepted without change: provider={Provider} model={Model}.")]
+    private static partial void LogModelSelectionUnchanged(ILogger logger, string provider, string model);
+
+    [LoggerMessage(EventId = 6, Level = LogLevel.Warning,
+        Message = "LLM model selection rejected: httpStatusCode={HttpStatusCode} reasonCategory={ReasonCategory}.")]
+    private static partial void LogModelSelectionRejected(ILogger logger, int httpStatusCode, string reasonCategory);
+
+    [LoggerMessage(EventId = 7, Level = LogLevel.Information,
+        Message = "LLM configuration applied selection: {PreviousProvider}/{PreviousModel} -> {Provider}/{Model}; subjectSnapshotAvailable={SubjectSnapshotAvailable}.")]
+    private static partial void LogConfigurationModelApplied(ILogger logger, string previousProvider, string previousModel,
+        string provider, string model, bool subjectSnapshotAvailable);
+
+    [LoggerMessage(EventId = 8, Level = LogLevel.Information,
+        Message = "LLM request started: operationId={OperationId} traceId={TraceId} provider={Provider} model={RequestedModel} agent_version={AgentVersion} sentAtUtc={SentAtUtc}.")]
+    private static partial void LogLlmRequestStarted(ILogger logger, string operationId, string? traceId,
+        string provider, string requestedModel, string agentVersion, string sentAtUtc);
+
+    [LoggerMessage(EventId = 9, Level = LogLevel.Information,
+        Message = "LLM response received: operationId={OperationId} traceId={TraceId} provider={Provider} requestedModel={RequestedModel} reportedModel={ReportedModel} responseId={ResponseId} finishReason={FinishReason} receivedAtUtc={ReceivedAtUtc} callDurationMs={CallDurationMs} inputTokens={InputTokenCount} outputTokens={OutputTokenCount} averageTokensPerSecondOverFullCall={AverageTokensPerSecond}.")]
+    private static partial void LogLlmResponseReceived(ILogger logger, string operationId, string? traceId,
+        string provider, string requestedModel, string? reportedModel, string? responseId, string? finishReason,
+        string receivedAtUtc, string callDurationMs, long? inputTokenCount, long? outputTokenCount,
+        string? averageTokensPerSecond);
+
+    [LoggerMessage(EventId = 10, Level = LogLevel.Information,
+        Message = "LLM response text (Development only): operationId={OperationId} responseText={ResponseText}")]
+    private static partial void LogLlmDevelopmentResponse(ILogger logger, string operationId, string responseText);
+
+    [LoggerMessage(EventId = 11, Level = LogLevel.Information,
+        Message = "LLM technical completion check: operationId={OperationId} responseStatusCompleted={ResponseStatusCompleted} reportedModelMatchesRequest={ReportedModelMatchesRequest}.")]
+    private static partial void LogLlmResponseStatus(ILogger logger, string operationId,
+        bool responseStatusCompleted, bool reportedModelMatchesRequest);
+
+    [LoggerMessage(EventId = 12, Level = LogLevel.Information,
+        Message = "LLM response validation: operationId={OperationId} stage={Stage} outcome={Outcome} reasonCategory={ReasonCategory}.")]
+    private static partial void LogLlmValidationResult(ILogger logger, string operationId, string stage,
+        string outcome, string reasonCategory);
+
+    [LoggerMessage(EventId = 13, Level = LogLevel.Warning,
+        Message = "LLM request failed: operationId={OperationId} provider={Provider} model={Model} failureCategory={FailureCategory} callDurationMs={CallDurationMs}.")]
+    private static partial void LogLlmRequestFailed(ILogger logger, string operationId, string provider,
+        string model, string failureCategory, string callDurationMs);
+
+    [LoggerMessage(EventId = 14, Level = LogLevel.Information,
+        Message = "LLM request cancelled: operationId={OperationId} provider={Provider} model={Model} cancellationCategory={CancellationCategory} callDurationMs={CallDurationMs}.")]
+    private static partial void LogLlmRequestCancelled(ILogger logger, string operationId, string provider,
+        string model, string cancellationCategory, string callDurationMs);
 }

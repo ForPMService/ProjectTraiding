@@ -37,7 +37,8 @@ internal enum LlmModelSelectionFailure
     Unavailable
 }
 
-internal sealed record LlmModelSelectionResult(LlmModelSelectionFailure Failure, LlmProfileOptions? Profile);
+internal sealed record LlmModelSelectionResult(LlmModelSelectionFailure Failure, LlmProfileOptions? Profile,
+    LlmProfileOptions? PreviousProfile = null, bool Changed = false);
 
 /// <summary>Только значимые настройки, вошедшие в agent_version; секреты сюда не передаются.</summary>
 internal sealed record NewsAgentVersionMaterial(string Provider, string Model,
