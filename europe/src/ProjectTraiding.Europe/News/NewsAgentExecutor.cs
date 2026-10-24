@@ -3,6 +3,7 @@ using System.ClientModel.Primitives;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Channels;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -22,6 +23,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     private readonly IHostApplicationLifetime _lifetime;
     private readonly IConfiguration _configuration;
     private readonly IChatClient _client;
+    private readonly ChatClientAgent _agent;
     private readonly Channel<TelegramChannelPost> _publications;
     private readonly object _configurationGate = new();
     private IDisposable? _configurationReloadRegistration;
@@ -44,6 +46,10 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         _lifetime = lifetime;
         _configuration = configuration;
         _client = chatClient;
+        _agent = new ChatClientAgent(chatClient, new ChatClientAgentOptions
+        {
+            UseProvidedChatClientAsIs = true
+        });
         _publications = Channel.CreateBounded<TelegramChannelPost>(new BoundedChannelOptions(options.QueueCapacity)
         {
             FullMode = BoundedChannelFullMode.Wait,
@@ -210,9 +216,10 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         NewsAgentExecutionSnapshot execution, CancellationToken cancellationToken)
     {
         NewsAgentPromptSnapshot snapshot = execution.Subject;
-        ChatOptions options = new()
+        ChatOptions chatOptions = new()
         {
             ModelId = execution.Profile.Model,
+            Instructions = snapshot.Prompt,
             MaxOutputTokens = snapshot.MaxOutputTokens,
             Temperature = snapshot.Temperature,
             Reasoning = execution.ReasoningEffort is { } effort ? new ReasoningOptions { Effort = effort } : null,
@@ -224,13 +231,15 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         };
         ChatMessage[] messages =
         [
-            new(ChatRole.System, snapshot.Prompt),
             new(ChatRole.User, JsonSerializer.Serialize(new NewsLlmRequest(snapshot.Mode,
                 snapshot.EventTypes, snapshot.GlobalEvents, snapshot.Instruments, publication),
                 NewsAgentJsonContext.Default.NewsLlmRequest))
         ];
+        ChatClientAgentRunOptions runOptions = new(chatOptions);
         cancellationToken.ThrowIfCancellationRequested();
-        ChatResponse response = await _client.GetResponseAsync(messages, options, cancellationToken);
+        AgentResponse agentResponse = await _agent.RunAsync(messages, options: runOptions,
+            cancellationToken: cancellationToken);
+        ChatResponse response = agentResponse.AsChatResponse();
 #pragma warning disable OPENAI001
         if (response.RawRepresentation is not ResponseResult { Status: ResponseStatus.Completed }
             || response.ModelId != execution.Profile.Model)
