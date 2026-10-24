@@ -14,11 +14,19 @@ public sealed class NewsAgentOptions
     public static NewsAgentOptions Load(IConfiguration configuration)
     {
         if (!configuration.GetValue<bool>("News:Enabled")) return new();
-        NewsAgentOptions options = configuration.GetSection("News").Get<NewsAgentOptions>()!;
+        NewsAgentOptions options = new()
+        {
+            Enabled = true,
+            QueueCapacity = configuration.GetValue<int>("News:QueueCapacity"),
+            Workers = configuration.GetValue<int>("News:Workers"),
+            RequestTimeout = configuration.GetValue("News:RequestTimeout", TimeSpan.FromSeconds(30))
+        };
         if (options.QueueCapacity is < 1 or > 65536 || options.Workers is < 1 or > 64
-            || options.RequestTimeout <= TimeSpan.Zero || options.RequestTimeout > TimeSpan.FromMinutes(10)
-            || string.IsNullOrWhiteSpace(configuration["OpenAI:ApiKey"]))
-            throw new InvalidOperationException("Некорректные пределы News или отсутствует OpenAI:ApiKey в конфигурации.");
+            || options.RequestTimeout <= TimeSpan.Zero || options.RequestTimeout > TimeSpan.FromMinutes(10))
+            throw new InvalidOperationException("Некорректные пределы News.");
+
+        LlmProfileOptions profile = LlmProfileOptions.Load(configuration);
+        _ = LlmProfileOptions.GetApiKey(configuration, profile);
         return options;
     }
 }

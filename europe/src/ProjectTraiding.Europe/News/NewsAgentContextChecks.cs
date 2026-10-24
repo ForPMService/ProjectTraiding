@@ -10,7 +10,7 @@ using ProjectTraiding.Europe.Telegram;
 
 namespace ProjectTraiding.Europe.News;
 
-/// <summary>Локальная управляемая проверка замены контекста без сети и без API-вызовов.</summary>
+/// <summary>Локальная управляемая проверка замены контекста и клиента без сети и без API-вызовов.</summary>
 internal static class NewsAgentContextChecks
 {
     internal static async Task RunAsync()
@@ -18,34 +18,43 @@ internal static class NewsAgentContextChecks
         IConfigurationRoot configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
+                ["News:Enabled"] = "true",
+                ["News:QueueCapacity"] = "1",
+                ["News:Workers"] = "1",
+                ["News:RequestTimeout"] = "00:00:30",
+                ["LLM:ActiveProvider"] = "OpenAI",
+                ["OpenAI:ApiKey"] = "local-openai-key",
                 ["OpenAI:ActiveProfile"] = "default",
-                ["OpenAI:Profiles:default:Provider"] = "OpenAI",
                 ["OpenAI:Profiles:default:Model"] = "gpt-6-luna",
-                ["OpenAI:Profiles:gpt41:Provider"] = "OpenAI",
-                ["OpenAI:Profiles:gpt41:Model"] = "gpt-4.1-2025-04-14"
+                ["OpenAI:Profiles:gpt41:Model"] = "gpt-4.1-2025-04-14",
+                ["XAI:Endpoint"] = "https://api.x.ai/v1",
+                ["XAI:ActiveProfile"] = "default",
+                ["XAI:Profiles:default:Model"] = "grok-4.7",
+                ["XAI:Profiles:grok46:Model"] = "grok-4.6"
             })
             .Build();
-        ControlledChatClient chatClient = new();
+
+        NewsAgentOptions options = NewsAgentOptions.Load(configuration);
+        ControlledChatClient openAiClient = new("OpenAI");
+        ControlledChatClient xaiClient = new("XAI");
         EuropeTelegramRuntime telegram = new(new TelegramOptions(), NullLogger<EuropeTelegramRuntime>.Instance);
-        NewsAgentExecutor executor = new(telegram, new NewsAgentOptions
-        {
-            QueueCapacity = 1,
-            Workers = 1,
-            RequestTimeout = TimeSpan.FromSeconds(30)
-        }, NullLogger<NewsAgentExecutor>.Instance, null!, configuration, chatClient);
+        NewsAgentExecutor executor = new(telegram, options, NullLogger<NewsAgentExecutor>.Instance,
+            null!, configuration, openAiClient, xaiClient);
 
         try
         {
+            if (configuration["XAI:ApiKey"] is not null)
+                throw new InvalidOperationException("Активный OpenAI не должен требовать ключ XAI.");
+
             NewsAgentPromptSnapshot oldSubject = CreateSnapshot("snapshot-a", "prompt-a", "Synthetic prompt A",
                 ["A", "B", "C"]);
             executor.UpdatePromptSnapshot(oldSubject);
             string oldVersion = executor.CurrentExecutionSnapshot!.AgentVersion;
 
-            Task oldRequest = executor.AnalyzeForDiagnosticsAsync(CreatePublication(), CancellationToken.None);
-            ControlledChatClient.CapturedCall oldCall = await chatClient.NextCallAsync();
-            AssertCall(oldCall, "gpt-6-luna", "Synthetic prompt A", ["A", "B", "C"]);
-            if (oldCall.ReasoningEffort != ReasoningEffort.None)
-                throw new InvalidOperationException("GPT-6 Luna не получил совместимые reasoning-настройки.");
+            Task oldOpenAiRequest = executor.AnalyzeForDiagnosticsAsync(CreatePublication(), CancellationToken.None);
+            ControlledChatClient.CapturedCall oldOpenAiCall = await openAiClient.NextCallAsync();
+            AssertCall(oldOpenAiCall, "OpenAI", "gpt-6-luna", "Synthetic prompt A", ["A", "B", "C"],
+                ReasoningEffort.None);
 
             NewsAgentPromptSnapshot newSubject = CreateSnapshot("snapshot-b", "prompt-b", "Synthetic prompt B",
                 ["A", "C", "D"]);
@@ -58,21 +67,51 @@ internal static class NewsAgentContextChecks
             if (newExecution.AgentVersion == oldVersion || newExecution.Profile.Model != "gpt-4.1-2025-04-14")
                 throw new InvalidOperationException("agent_version не отражает активный профиль и снимок.");
 
-            Task newRequest = executor.AnalyzeForDiagnosticsAsync(CreatePublication(), CancellationToken.None);
-            ControlledChatClient.CapturedCall newCall = await chatClient.NextCallAsync();
-            AssertCall(newCall, "gpt-4.1-2025-04-14", "Synthetic prompt B", ["A", "C", "D"]);
-            if (newCall.ReasoningEffort is not null)
-                throw new InvalidOperationException("В профиль GPT-4.1 попала настройка reasoning от другой модели.");
-            if (chatClient.DisposeCount != 0)
-                throw new InvalidOperationException("IChatClient освобождён, пока запросы ещё удерживаются.");
+            Task newOpenAiRequest = executor.AnalyzeForDiagnosticsAsync(CreatePublication(), CancellationToken.None);
+            ControlledChatClient.CapturedCall newOpenAiCall = await openAiClient.NextCallAsync();
+            AssertCall(newOpenAiCall, "OpenAI", "gpt-4.1-2025-04-14", "Synthetic prompt B", ["A", "C", "D"], null);
 
-            chatClient.Release(oldCall.Number);
-            chatClient.Release(newCall.Number);
-            await ExpectControlledFailureAsync(oldRequest);
-            await ExpectControlledFailureAsync(newRequest);
+            configuration["OpenAI:ApiKey"] = null;
+            configuration["XAI:ApiKey"] = "local-xai-key";
+            configuration["LLM:ActiveProvider"] = "XAI";
+            configuration["XAI:ActiveProfile"] = "default";
+            configuration.Reload();
+            NewsAgentOptions xaiOptions = NewsAgentOptions.Load(configuration);
+            if (!xaiOptions.Enabled)
+                throw new InvalidOperationException("Активный XAI профиль не загрузил настройки News.");
 
-            string currentVersion = executor.CurrentExecutionSnapshot!.AgentVersion;
-            NewsAgentPromptSnapshot invalid = newSubject with { Prompt = " " };
+            NewsAgentExecutionSnapshot xaiExecution = executor.CurrentExecutionSnapshot
+                ?? throw new InvalidOperationException("После переключения отсутствует рабочая конфигурация News.");
+            if (xaiExecution.Profile.Provider != "XAI" || xaiExecution.Profile.Model != "grok-4.7"
+                || xaiExecution.AgentVersion == newExecution.AgentVersion)
+                throw new InvalidOperationException("Снимок не переключился на независимый профиль XAI.");
+
+            Task oldXaiRequest = executor.AnalyzeForDiagnosticsAsync(CreatePublication(), CancellationToken.None);
+            ControlledChatClient.CapturedCall oldXaiCall = await xaiClient.NextCallAsync();
+            AssertCall(oldXaiCall, "XAI", "grok-4.7", "Synthetic prompt B", ["A", "C", "D"],
+                ReasoningEffort.High);
+
+            NewsAgentPromptSnapshot newestSubject = CreateSnapshot("snapshot-c", "prompt-c", "Synthetic prompt C",
+                ["A", "D", "E"]);
+            executor.UpdatePromptSnapshot(newestSubject);
+            configuration["XAI:ActiveProfile"] = "grok46";
+            configuration.Reload();
+
+            NewsAgentExecutionSnapshot newestExecution = executor.CurrentExecutionSnapshot
+                ?? throw new InvalidOperationException("После смены модели XAI отсутствует рабочая конфигурация.");
+            if (newestExecution.Profile.Provider != "XAI" || newestExecution.Profile.Model != "grok-4.6")
+                throw new InvalidOperationException("Смена модели XAI не обновила целый снимок.");
+
+            Task newXaiRequest = executor.AnalyzeForDiagnosticsAsync(CreatePublication(), CancellationToken.None);
+            ControlledChatClient.CapturedCall newXaiCall = await xaiClient.NextCallAsync();
+            AssertCall(newXaiCall, "XAI", "grok-4.6", "Synthetic prompt C", ["A", "D", "E"],
+                ReasoningEffort.High);
+
+            if (openAiClient.DisposeCount != 0 || xaiClient.DisposeCount != 0)
+                throw new InvalidOperationException("Клиент освобождён, пока старые запросы ещё выполняются.");
+
+            string currentVersion = newestExecution.AgentVersion;
+            NewsAgentPromptSnapshot invalid = newestSubject with { Prompt = " " };
             try
             {
                 executor.UpdatePromptSnapshot(invalid);
@@ -84,26 +123,53 @@ internal static class NewsAgentContextChecks
             if (executor.CurrentExecutionSnapshot!.AgentVersion != currentVersion)
                 throw new InvalidOperationException("Отклонённый снимок заменил последнюю рабочую конфигурацию.");
 
-            configuration["OpenAI:Profiles:gpt41:Provider"] = "Anthropic";
+            try
+            {
+                executor.UpdatePromptSnapshot(newestSubject with { Temperature = 1.1f });
+                throw new InvalidOperationException("XAI принял недопустимый Temperature.");
+            }
+            catch (InvalidOperationException error) when (error.Message == "Для XAI News Temperature не должна превышать 1.")
+            {
+            }
+            if (executor.CurrentExecutionSnapshot!.AgentVersion != currentVersion)
+                throw new InvalidOperationException("Недопустимый XAI Temperature заменил последнюю рабочую конфигурацию.");
+
+            configuration["XAI:Profiles:grok46:Model"] = "unsupported-model";
             configuration.Reload();
             if (executor.CurrentExecutionSnapshot!.AgentVersion != currentVersion)
-                throw new InvalidOperationException("Неподдерживаемый профиль заменил последнюю рабочую конфигурацию.");
+                throw new InvalidOperationException("Некорректный активный профиль заменил рабочую конфигурацию.");
 
-            Task retainedRequest = executor.AnalyzeForDiagnosticsAsync(CreatePublication(), CancellationToken.None);
-            ControlledChatClient.CapturedCall retainedCall = await chatClient.NextCallAsync();
-            AssertCall(retainedCall, "gpt-4.1-2025-04-14", "Synthetic prompt B", ["A", "C", "D"]);
-            chatClient.Release(retainedCall.Number);
-            await ExpectControlledFailureAsync(retainedRequest);
+            configuration["XAI:Profiles:grok46:Model"] = "grok-4.6";
+            configuration["XAI:ApiKey"] = null;
+            configuration.Reload();
+            if (executor.CurrentExecutionSnapshot!.AgentVersion != currentVersion)
+                throw new InvalidOperationException("Профиль без активного ключа заменил рабочую конфигурацию.");
+
+            openAiClient.Release(oldOpenAiCall.Number);
+            openAiClient.Release(newOpenAiCall.Number);
+            xaiClient.Release(oldXaiCall.Number);
+            xaiClient.Release(newXaiCall.Number);
+            await ExpectControlledFailureAsync(oldOpenAiRequest);
+            await ExpectControlledFailureAsync(newOpenAiRequest);
+            await ExpectControlledFailureAsync(oldXaiRequest);
+            await ExpectControlledFailureAsync(newXaiRequest);
         }
         finally
         {
-            chatClient.ReleaseAll();
+            openAiClient.ReleaseAll();
+            xaiClient.ReleaseAll();
             executor.Dispose();
             telegram.Dispose();
         }
 
-        if (chatClient.DisposeCount != 1)
-            throw new InvalidOperationException("Управляемый IChatClient должен освобождаться только при закрытии исполнителя.");
+        if (openAiClient.DisposeCount != 1 || xaiClient.DisposeCount != 1)
+            throw new InvalidOperationException("Каждый управляемый IChatClient должен освобождаться при закрытии исполнителя.");
+
+        IConfigurationRoot disabledConfiguration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["News:Enabled"] = "false" })
+            .Build();
+        if (NewsAgentOptions.Load(disabledConfiguration).Enabled)
+            throw new InvalidOperationException("Выключенный контур News не должен требовать настройки провайдера.");
     }
 
     private static NewsAgentPromptSnapshot CreateSnapshot(string version, string promptVersion, string prompt,
@@ -120,11 +186,14 @@ internal static class NewsAgentContextChecks
     private static TelegramChannelPost CreatePublication() => new(1, null, "Synthetic", 1,
         "Local context capture check", DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch);
 
-    private static void AssertCall(ControlledChatClient.CapturedCall call, string expectedModel,
-        string expectedPrompt, ImmutableArray<string> expectedSecids)
+    private static void AssertCall(ControlledChatClient.CapturedCall call, string expectedProvider,
+        string expectedModel, string expectedPrompt, ImmutableArray<string> expectedSecids,
+        ReasoningEffort? expectedReasoningEffort)
     {
-        if (call.ModelId != expectedModel || call.SystemPrompt != expectedPrompt)
-            throw new InvalidOperationException("Вызов не захватил ожидаемые модель и промпт.");
+        if (call.Provider != expectedProvider || call.ModelId != expectedModel || call.Instructions != expectedPrompt)
+            throw new InvalidOperationException("Вызов смешал провайдера, модель или промпт из разных снимков.");
+        if (call.ReasoningEffort != expectedReasoningEffort)
+            throw new InvalidOperationException("Вызов получил настройки reasoning другого профиля.");
         if (call.Temperature is not { } temperature || Math.Abs(temperature - 0.2f) > 0.0001f)
             throw new InvalidOperationException("Вызов не захватил ожидаемую настройку temperature.");
 
@@ -159,6 +228,9 @@ internal static class NewsAgentContextChecks
         private int _callCount;
         private int _disposeCount;
 
+        internal ControlledChatClient(string provider) => this.Provider = provider;
+
+        internal string Provider { get; }
         internal int DisposeCount => Volatile.Read(ref _disposeCount);
 
         public async Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null,
@@ -168,8 +240,10 @@ internal static class NewsAgentContextChecks
             TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
             _releases[number] = release;
             ChatMessage[] capturedMessages = messages.ToArray();
-            await _calls.Writer.WriteAsync(new CapturedCall(number, options?.ModelId, options?.Temperature,
-                options?.Reasoning?.Effort, capturedMessages[0].Text, capturedMessages[1].Text), cancellationToken);
+            if (capturedMessages.Length != 1 || capturedMessages[0].Role != ChatRole.User)
+                throw new InvalidOperationException("Промпт должен передаваться один раз через Instructions.");
+            await _calls.Writer.WriteAsync(new CapturedCall(number, Provider, options?.ModelId, options?.Temperature,
+                options?.Reasoning?.Effort, options?.Instructions, capturedMessages[0].Text), cancellationToken);
             await release.Task.WaitAsync(cancellationToken);
             throw new InvalidOperationException(ReleasedMessage);
         }
@@ -180,7 +254,7 @@ internal static class NewsAgentContextChecks
 
         public object? GetService(Type serviceType, object? serviceKey = null) => null;
 
-        public async Task<CapturedCall> NextCallAsync() => await _calls.Reader.ReadAsync()
+        internal async Task<CapturedCall> NextCallAsync() => await _calls.Reader.ReadAsync()
             .AsTask().WaitAsync(TimeSpan.FromSeconds(10));
 
         internal void Release(int number)
@@ -199,7 +273,7 @@ internal static class NewsAgentContextChecks
             _calls.Writer.TryComplete();
         }
 
-        internal sealed record CapturedCall(int Number, string? ModelId, float? Temperature,
-            ReasoningEffort? ReasoningEffort, string SystemPrompt, string UserInput);
+        internal sealed record CapturedCall(int Number, string Provider, string? ModelId, float? Temperature,
+            ReasoningEffort? ReasoningEffort, string? Instructions, string UserInput);
     }
 }

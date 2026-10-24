@@ -30,6 +30,14 @@ if (args.Length > 0 && args[0] == "--openai-chat")
         return;
     }
 
+    LlmProfileOptions profile = LlmProfileOptions.Load(builder.Configuration);
+    if (profile.Provider != "OpenAI")
+    {
+        Console.Error.WriteLine("Для --openai-chat установите LLM:ActiveProvider=OpenAI.");
+        Environment.ExitCode = 2;
+        return;
+    }
+
     string? apiKey = builder.Configuration["OpenAI:ApiKey"];
     if (string.IsNullOrWhiteSpace(apiKey))
     {
@@ -38,7 +46,6 @@ if (args.Length > 0 && args[0] == "--openai-chat")
         return;
     }
 
-    OpenAiProfileOptions profile = OpenAiProfileOptions.Load(builder.Configuration);
     OpenAIClient client = new(apiKey);
 
     using IChatClient chatClient =

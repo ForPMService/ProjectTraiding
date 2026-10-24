@@ -15,10 +15,11 @@ public sealed record NewsAgentPromptSnapshot(string Version, string PromptVersio
 
 /// <summary>Один неизменяемый набор модели и предметного контекста, захваченный публикацией.</summary>
 internal sealed record NewsAgentExecutionSnapshot(NewsAgentPromptSnapshot Subject,
-    OpenAiProfileOptions Profile, ReasoningEffort? ReasoningEffort, string AgentVersion);
+    LlmProfileOptions Profile, IChatClient ChatClient, string AgentVersion);
 
 /// <summary>Только значимые настройки, вошедшие в agent_version; секреты сюда не передаются.</summary>
 internal sealed record NewsAgentVersionMaterial(string Provider, string Model,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Endpoint,
     ReasoningEffort? ReasoningEffort, NewsAgentPromptSnapshot Subject);
 
 /// <summary>Существующий глобальный сюжет из справочника российского контура.</summary>

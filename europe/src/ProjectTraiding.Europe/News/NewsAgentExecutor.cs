@@ -22,7 +22,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     private readonly ILogger<NewsAgentExecutor> _logger;
     private readonly IHostApplicationLifetime _lifetime;
     private readonly IConfiguration _configuration;
-    private readonly IChatClient _client;
+    private readonly Dictionary<string, IChatClient> _chatClients;
     private readonly ChatClientAgent _agent;
     private readonly Channel<TelegramChannelPost> _publications;
     private readonly object _configurationGate = new();
@@ -32,21 +32,29 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     /// <summary>Создаёт только инфраструктуру клиента; конструктор не обращается к API.</summary>
     public NewsAgentExecutor(EuropeTelegramRuntime telegram, NewsAgentOptions options,
         ILogger<NewsAgentExecutor> logger, IHostApplicationLifetime lifetime, IConfiguration configuration)
-        : this(telegram, options, logger, lifetime, configuration, CreateChatClient(options, configuration))
+        : this(telegram, options, logger, lifetime, configuration, null)
     {
     }
 
     internal NewsAgentExecutor(EuropeTelegramRuntime telegram, NewsAgentOptions options,
         ILogger<NewsAgentExecutor> logger, IHostApplicationLifetime lifetime, IConfiguration configuration,
-        IChatClient chatClient)
+        IChatClient? chatClient, IChatClient? xaiChatClient = null)
     {
         _telegram = telegram;
         _options = options;
         _logger = logger;
         _lifetime = lifetime;
         _configuration = configuration;
-        _client = chatClient;
-        _agent = new ChatClientAgent(chatClient, new ChatClientAgentOptions
+        LlmProfileOptions activeProfile = LlmProfileOptions.Load(configuration);
+        IChatClient activeChatClient = chatClient ?? CreateChatClient(options, activeProfile,
+            LlmProfileOptions.GetApiKey(configuration, activeProfile));
+        _chatClients = new Dictionary<string, IChatClient>(StringComparer.Ordinal)
+        {
+            [GetClientCacheKey(activeProfile.Provider, activeProfile.Endpoint)] = activeChatClient
+        };
+        if (xaiChatClient is not null && activeProfile.Provider != "XAI")
+            _chatClients.Add(GetClientCacheKey("XAI", LlmProfileOptions.GetXaiEndpoint(configuration)), xaiChatClient);
+        _agent = new ChatClientAgent(activeChatClient, new ChatClientAgentOptions
         {
             UseProvidedChatClientAsIs = true
         });
@@ -60,22 +68,31 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         _configurationReloadRegistration = ChangeToken.OnChange(configuration.GetReloadToken, OnConfigurationReload);
     }
 
-    private static IChatClient CreateChatClient(NewsAgentOptions options, IConfiguration configuration)
+    private IChatClient GetOrCreateChatClient(LlmProfileOptions profile)
     {
-        // SDK по умолчанию повторяет запросы: здесь физический запрос разрешён только один.
-        // OPENAI001 обозначает экспериментальный SDK/адаптер Responses, а не агента или оркестратор.
+        string apiKey = LlmProfileOptions.GetApiKey(_configuration, profile);
+        string key = GetClientCacheKey(profile.Provider, profile.Endpoint);
+        if (_chatClients.TryGetValue(key, out IChatClient? chatClient)) return chatClient;
+
+        IChatClient createdClient = CreateChatClient(_options, profile, apiKey);
+        _chatClients.Add(key, createdClient);
+        return createdClient;
+    }
+
+    private static IChatClient CreateChatClient(NewsAgentOptions options, LlmProfileOptions profile, string apiKey)
+    {
 #pragma warning disable OPENAI001
         ResponsesClientOptions clientOptions = new()
         {
             RetryPolicy = new ClientRetryPolicy(0),
-            NetworkTimeout = options.RequestTimeout
+            NetworkTimeout = options.RequestTimeout,
+            Endpoint = profile.Endpoint is null ? null : new Uri(profile.Endpoint)
         };
-        string? apiKey = configuration["OpenAI:ApiKey"];
-        if (string.IsNullOrWhiteSpace(apiKey))
-            throw new InvalidOperationException("Отсутствует OpenAI:ApiKey в конфигурации.");
         return new ResponsesClient(new ApiKeyCredential(apiKey), clientOptions).AsIChatClient();
 #pragma warning restore OPENAI001
     }
+
+    private static string GetClientCacheKey(string provider, string? endpoint) => $"{provider}:{endpoint}";
 
     /// <summary>Единственный внутренний выход; подписчик должен быть коротким, потокобезопасным и не выполнять I/O.</summary>
     public event Action<NewsAgentResult>? AnalysisCompleted;
@@ -89,22 +106,26 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         snapshot = snapshot with { JsonSchema = snapshot.JsonSchema.Clone() };
         lock (_configurationGate)
         {
-            OpenAiProfileOptions profile = OpenAiProfileOptions.Load(_configuration);
+            LlmProfileOptions profile = LlmProfileOptions.Load(_configuration);
             Interlocked.Exchange(ref _executionSnapshot, CreateExecutionSnapshot(profile, snapshot));
         }
     }
 
     internal NewsAgentExecutionSnapshot? CurrentExecutionSnapshot => Volatile.Read(ref _executionSnapshot);
 
-    private static NewsAgentExecutionSnapshot CreateExecutionSnapshot(OpenAiProfileOptions profile,
+    private NewsAgentExecutionSnapshot CreateExecutionSnapshot(LlmProfileOptions profile,
         NewsAgentPromptSnapshot subject)
     {
-        ReasoningEffort? reasoningEffort = ValidateProfile(profile);
-        NewsAgentVersionMaterial material = new(profile.Provider, profile.Model, reasoningEffort, subject);
+        if (profile.Provider == "XAI" && subject.Temperature > 1f)
+            throw new InvalidOperationException("Для XAI News Temperature не должна превышать 1.");
+
+        NewsAgentVersionMaterial material = new(profile.Provider, profile.Model, profile.Endpoint,
+            profile.ReasoningEffort, subject);
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(material,
             NewsAgentJsonContext.Default.NewsAgentVersionMaterial);
         string agentVersion = "news-v3:" + Convert.ToHexString(SHA256.HashData(bytes));
-        return new NewsAgentExecutionSnapshot(subject, profile, reasoningEffort, agentVersion);
+        IChatClient chatClient = GetOrCreateChatClient(profile);
+        return new NewsAgentExecutionSnapshot(subject, profile, chatClient, agentVersion);
     }
 
     private void OnConfigurationReload()
@@ -116,7 +137,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
                 NewsAgentExecutionSnapshot? current = Volatile.Read(ref _executionSnapshot);
                 if (current is null) return;
 
-                OpenAiProfileOptions profile = OpenAiProfileOptions.Load(_configuration);
+                LlmProfileOptions profile = LlmProfileOptions.Load(_configuration);
                 NewsAgentExecutionSnapshot replacement = CreateExecutionSnapshot(profile, current.Subject);
                 if (replacement.AgentVersion != current.AgentVersion)
                     Interlocked.Exchange(ref _executionSnapshot, replacement);
@@ -222,7 +243,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             Instructions = snapshot.Prompt,
             MaxOutputTokens = snapshot.MaxOutputTokens,
             Temperature = snapshot.Temperature,
-            Reasoning = execution.ReasoningEffort is { } effort ? new ReasoningOptions { Effort = effort } : null,
+            Reasoning = execution.Profile.ReasoningEffort is { } effort ? new ReasoningOptions { Effort = effort } : null,
             ResponseFormat = ChatResponseFormat.ForJsonSchema(snapshot.JsonSchema, "news_v3"),
             AdditionalProperties = new() { ["strict"] = true },
             Tools = snapshot.WebSearchEnabled ? [new HostedWebSearchTool()] : null,
@@ -235,14 +256,25 @@ public sealed partial class NewsAgentExecutor : BackgroundService
                 snapshot.EventTypes, snapshot.GlobalEvents, snapshot.Instruments, publication),
                 NewsAgentJsonContext.Default.NewsLlmRequest))
         ];
-        ChatClientAgentRunOptions runOptions = new(chatOptions);
+        ChatClientAgentRunOptions runOptions = new(chatOptions)
+        {
+            ChatClientFactory = _ => execution.ChatClient
+        };
         cancellationToken.ThrowIfCancellationRequested();
         AgentResponse agentResponse = await _agent.RunAsync(messages, options: runOptions,
             cancellationToken: cancellationToken);
         ChatResponse response = agentResponse.AsChatResponse();
 #pragma warning disable OPENAI001
-        if (response.RawRepresentation is not ResponseResult { Status: ResponseStatus.Completed }
-            || response.ModelId != execution.Profile.Model)
+        bool completedResponse = execution.Profile.Provider switch
+        {
+            "OpenAI" => response.RawRepresentation is ResponseResult { Status: ResponseStatus.Completed }
+                && response.ModelId == execution.Profile.Model,
+            // xAI Responses uses the OpenAI-compatible response envelope with status and model fields.
+            "XAI" => response.RawRepresentation is ResponseResult { Status: ResponseStatus.Completed }
+                && response.ModelId == execution.Profile.Model,
+            _ => false
+        };
+        if (!completedResponse)
             throw new InvalidDataException("Незавершённый ответ LLM.");
 #pragma warning restore OPENAI001
         foreach (ChatMessage message in response.Messages)
@@ -279,21 +311,6 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         using JsonDocument schema = JsonDocument.Parse(NewsAgentJsonContext.ContractSchema);
         if (!JsonElement.DeepEquals(snapshot.JsonSchema, schema.RootElement))
             throw new ArgumentException("JSON Schema не соответствует контракту News v3.");
-    }
-
-    private static ReasoningEffort? ValidateProfile(OpenAiProfileOptions profile)
-    {
-        if (!string.Equals(profile.Provider, "OpenAI", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Для News подключён только провайдер OpenAI.");
-
-        return profile.Model switch
-        {
-            "gpt-4.1-2025-04-14" => null,
-            // GPT-6 Luna разрешает temperature при reasoning.effort=none.
-            "gpt-6-luna" => ReasoningEffort.None,
-            _ => throw new InvalidOperationException(
-                "Модель активного профиля не подтверждена для News Structured Outputs и настроек запроса.")
-        };
     }
 
     /// <summary>Проверяет структуру и технические ограничения v3; существование справочников остаётся Writer.</summary>
@@ -350,7 +367,12 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         _telegram.PublicationReceived -= EnqueuePublication;
         Interlocked.Exchange(ref _configurationReloadRegistration, null)?.Dispose();
         base.Dispose();
-        _client.Dispose();
+        lock (_configurationGate)
+        {
+            HashSet<IChatClient> disposedClients = new(ReferenceEqualityComparer.Instance);
+            foreach (IChatClient chatClient in _chatClients.Values)
+                if (disposedClients.Add(chatClient)) chatClient.Dispose();
+        }
     }
 
     /// <summary>Не включает исходный текст, промпт, JSON, реквизиты или сырые исключения.</summary>
