@@ -26,11 +26,14 @@ internal static class NewsAgentContextChecks
                 ["OpenAI:ApiKey"] = "local-openai-key",
                 ["OpenAI:ActiveProfile"] = "default",
                 ["OpenAI:Profiles:default:Model"] = "gpt-6-luna",
+                ["OpenAI:Profiles:default:ReasoningEffort"] = "None",
                 ["OpenAI:Profiles:gpt41:Model"] = "gpt-4.1-2025-04-14",
                 ["XAI:Endpoint"] = "https://api.x.ai/v1",
                 ["XAI:ActiveProfile"] = "default",
                 ["XAI:Profiles:default:Model"] = "grok-4.7",
-                ["XAI:Profiles:grok46:Model"] = "grok-4.6"
+                ["XAI:Profiles:default:ReasoningEffort"] = "High",
+                ["XAI:Profiles:grok46:Model"] = "grok-4.6",
+                ["XAI:Profiles:grok46:ReasoningEffort"] = "High"
             })
             .Build();
 
@@ -134,12 +137,12 @@ internal static class NewsAgentContextChecks
             if (executor.CurrentExecutionSnapshot!.AgentVersion != currentVersion)
                 throw new InvalidOperationException("Недопустимый XAI Temperature заменил последнюю рабочую конфигурацию.");
 
-            configuration["XAI:Profiles:grok46:Model"] = "unsupported-model";
+            configuration["XAI:Profiles:grok46:ReasoningEffort"] = "unsupported";
             configuration.Reload();
             if (executor.CurrentExecutionSnapshot!.AgentVersion != currentVersion)
-                throw new InvalidOperationException("Некорректный активный профиль заменил рабочую конфигурацию.");
+                throw new InvalidOperationException("Некорректный ReasoningEffort заменил рабочую конфигурацию.");
 
-            configuration["XAI:Profiles:grok46:Model"] = "grok-4.6";
+            configuration["XAI:Profiles:grok46:ReasoningEffort"] = "High";
             configuration["XAI:ApiKey"] = null;
             configuration.Reload();
             if (executor.CurrentExecutionSnapshot!.AgentVersion != currentVersion)

@@ -4,7 +4,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace ProjectTraiding.Europe;
 
-/// <summary>Загружает поддержанный профиль только выбранного провайдера; ключ не входит в снимок.</summary>
+/// <summary>Загружает профиль только выбранного провайдера; ключ не входит в снимок.</summary>
 public sealed record LlmProfileOptions(string Name, string Provider, string Model, string? Endpoint,
     ReasoningEffort? ReasoningEffort)
 {
@@ -62,28 +62,23 @@ public sealed record LlmProfileOptions(string Name, string Provider, string Mode
             if (string.IsNullOrWhiteSpace(model))
                 throw new InvalidOperationException($"Профиль {provider}:{profileSection.Key} должен содержать модель.");
 
-            ReasoningEffort? reasoningEffort = GetReasoningEffort(provider, model);
+            ReasoningEffort? reasoningEffort = null;
+            string? configuredReasoningEffort = profileSection["ReasoningEffort"];
+            if (configuredReasoningEffort is not null)
+            {
+                string reasoningEffortName = configuredReasoningEffort.Trim();
+                if (reasoningEffortName.Length == 0
+                    || !Enum.TryParse(reasoningEffortName, true, out ReasoningEffort parsedReasoningEffort)
+                    || !Enum.IsDefined(parsedReasoningEffort)
+                    || !string.Equals(Enum.GetName(parsedReasoningEffort), reasoningEffortName,
+                        StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException(
+                        $"Профиль {provider}:{profileSection.Key} содержит некорректный ReasoningEffort.");
+                reasoningEffort = parsedReasoningEffort;
+            }
+
             profiles.Add(new LlmProfileOptions(profileSection.Key, provider, model, endpoint, reasoningEffort));
         }
-    }
-
-    private static ReasoningEffort? GetReasoningEffort(string provider, string model)
-    {
-        if (provider == "OpenAI")
-        {
-            return model switch
-            {
-                "gpt-4.1-2025-04-14" => null,
-                "gpt-6-luna" => Microsoft.Extensions.AI.ReasoningEffort.None,
-                _ => throw new InvalidOperationException("Модель профиля OpenAI не подтверждена для News.")
-            };
-        }
-
-        return model switch
-        {
-            "grok-4.7" or "grok-4.6" => Microsoft.Extensions.AI.ReasoningEffort.High,
-            _ => throw new InvalidOperationException("Модель профиля XAI не подтверждена для News Structured Outputs.")
-        };
     }
 
     internal static string GetApiKey(IConfiguration configuration, LlmProfileOptions profile)
