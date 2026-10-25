@@ -109,9 +109,9 @@ if (args.Length > 0 && args[0] == "--news-json-probe")
         if (args.Length == 3)
             await RunNewsJsonProbeAsync(builder, args[1], args[2]);
     }
-    catch (Exception error)
+    catch (Exception)
     {
-        Console.Error.WriteLine($"Проверка News JSON завершилась ошибкой ({error.GetType().Name}): {error.Message}");
+        Console.Error.WriteLine("Проверка News JSON завершилась ошибкой; результат не выдан.");
         Environment.ExitCode = 1;
     }
     return;
@@ -255,17 +255,10 @@ static async Task<IResult> HandleNewsSnapshotAsync(HttpContext context, NewsAgen
     {
         return TypedResults.BadRequest(new NewsSnapshotApplyDTO("InvalidRequest", executor.GetSnapshotStatus().Revision));
     }
-    catch (InvalidOperationException)
+    catch (InvalidOperationException error) when (error.Message.EndsWith(":ApiKey в конфигурации.", StringComparison.Ordinal))
     {
         NewsAgentExecutor.LogSnapshotApplicationFailed(context.RequestServices.GetRequiredService<ILogger<NewsAgentExecutor>>(),
             "active_provider_unavailable");
-        return TypedResults.Json(new NewsSnapshotApplyDTO("Unavailable", executor.GetSnapshotStatus().Revision),
-            NewsAgentJsonContext.Default.NewsSnapshotApplyDTO, statusCode: StatusCodes.Status503ServiceUnavailable);
-    }
-    catch (Exception)
-    {
-        NewsAgentExecutor.LogSnapshotApplicationFailed(context.RequestServices.GetRequiredService<ILogger<NewsAgentExecutor>>(),
-            "unexpected_application_error");
         return TypedResults.Json(new NewsSnapshotApplyDTO("Unavailable", executor.GetSnapshotStatus().Revision),
             NewsAgentJsonContext.Default.NewsSnapshotApplyDTO, statusCode: StatusCodes.Status503ServiceUnavailable);
     }
