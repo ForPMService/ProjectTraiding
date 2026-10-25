@@ -21,12 +21,15 @@ namespace ProjectTraiding.Europe.News;
 /// <summary>Владеет общей ограниченной очередью и фиксированными потребителями; изолирует однократный LLM-вызов.</summary>
 public sealed partial class NewsAgentExecutor : BackgroundService
 {
+    public const string ActivitySourceName = "ProjectTraiding.Europe.News";
+
     private readonly EuropeTelegramRuntime _telegram;
     private readonly NewsAgentOptions _options;
     private readonly ILogger<NewsAgentExecutor> _logger;
     private readonly IHostApplicationLifetime _lifetime;
     private readonly IHostEnvironment? _environment;
     private readonly IConfiguration _configuration;
+    private readonly ActivitySource _activitySource;
     private readonly Dictionary<string, IChatClient> _chatClients;
     private AIAgent? _agent;
     private readonly Channel<TelegramChannelPost> _publications;
@@ -52,6 +55,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         _lifetime = lifetime;
         _environment = environment;
         _configuration = configuration;
+        _activitySource = new ActivitySource(ActivitySourceName);
         ImmutableArray<LlmProfileOptions> profiles = LlmProfileOptions.LoadCatalog(configuration);
         LlmProviderCredentials credentials = LlmProviderCredentials.Load(configuration);
         LlmProfileOptions activeProfile = LlmProfileOptions.LoadConfiguredActiveProfile(configuration, profiles);
@@ -483,11 +487,12 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         AIAgent agent = Volatile.Read(ref _agent)
             ?? throw new InvalidOperationException("Клиент активной модели не настроен.");
 
+        using Activity? operationActivity = _activitySource.StartActivity("news.llm.request", ActivityKind.Internal);
         Activity? currentActivity = Activity.Current;
         string? traceId = currentActivity?.IdFormat == ActivityIdFormat.W3C
             ? currentActivity.TraceId.ToString()
             : null;
-        string operationId = traceId ?? Guid.NewGuid().ToString("N");
+        string operationId = Guid.NewGuid().ToString("N");
         DateTimeOffset sentAtUtc = DateTimeOffset.UtcNow;
         LogLlmRequestStarted(_logger, operationId, traceId, execution.Profile.Provider,
             execution.Profile.Model, execution.AgentVersion, sentAtUtc.ToString("O", CultureInfo.InvariantCulture));
@@ -506,7 +511,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             string failedDurationText = failedDuration.TotalMilliseconds.ToString("F2", CultureInfo.InvariantCulture);
             if (error is OperationCanceledException && _lifetime.ApplicationStopping.IsCancellationRequested)
             {
-                LogLlmRequestCancelled(_logger, operationId, execution.Profile.Provider, execution.Profile.Model,
+                LogLlmRequestCancelled(_logger, operationId, traceId, execution.Profile.Provider, execution.Profile.Model,
                     "application_stopping", failedDurationText);
             }
             else
@@ -518,7 +523,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
                     HttpRequestException => "network_error",
                     _ => "unexpected_error"
                 };
-                LogLlmRequestFailed(_logger, operationId, execution.Profile.Provider, execution.Profile.Model,
+                LogLlmRequestFailed(_logger, operationId, traceId, execution.Profile.Provider, execution.Profile.Model,
                     failureCategory, failedDurationText);
             }
             throw;
@@ -537,17 +542,17 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             elapsed.TotalMilliseconds.ToString("F2", CultureInfo.InvariantCulture),
             inputTokenCount, outputTokenCount, averageTokensPerSecond);
         if (_environment?.IsDevelopment() == true)
-            LogLlmDevelopmentResponse(_logger, operationId, response.Text);
+            LogLlmDevelopmentResponse(_logger, operationId, traceId, response.Text);
 
 #pragma warning disable OPENAI001
         bool responseStatusCompleted = response.RawRepresentation is ResponseResult { Status: ResponseStatus.Completed };
 #pragma warning restore OPENAI001
         bool reportedModelMatchesRequest = response.ModelId == execution.Profile.Model;
-        LogLlmResponseStatus(_logger, operationId, responseStatusCompleted, reportedModelMatchesRequest);
+        LogLlmResponseStatus(_logger, operationId, traceId, responseStatusCompleted, reportedModelMatchesRequest);
         if (!responseStatusCompleted || !reportedModelMatchesRequest)
         {
             string failureCategory = !responseStatusCompleted ? "response_not_completed" : "reported_model_mismatch";
-            LogLlmValidationResult(_logger, operationId, "response_status", "rejected", failureCategory);
+            LogLlmValidationResult(_logger, operationId, traceId, "response_status", "rejected", failureCategory);
             throw new InvalidDataException("Незавершённый ответ LLM.");
         }
 
@@ -555,7 +560,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             foreach (AIContent content in message.Contents)
                 if (content is ErrorContent)
                 {
-                    LogLlmValidationResult(_logger, operationId, "response_content", "rejected", "model_refusal");
+                    LogLlmValidationResult(_logger, operationId, traceId, "response_content", "rejected", "model_refusal");
                     throw new InvalidDataException("Отказ LLM.");
                 }
         try
@@ -564,15 +569,15 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         }
         catch (JsonException)
         {
-            LogLlmValidationResult(_logger, operationId, "json_v3", "rejected", "invalid_json");
+            LogLlmValidationResult(_logger, operationId, traceId, "json_v3", "rejected", "invalid_json");
             throw;
         }
         catch (InvalidDataException)
         {
-            LogLlmValidationResult(_logger, operationId, "json_v3", "rejected", "contract_violation");
+            LogLlmValidationResult(_logger, operationId, traceId, "json_v3", "rejected", "contract_violation");
             throw;
         }
-        LogLlmValidationResult(_logger, operationId, "json_v3", "passed", "none");
+        LogLlmValidationResult(_logger, operationId, traceId, "json_v3", "passed", "none");
         cancellationToken.ThrowIfCancellationRequested();
         return response;
     }
@@ -659,6 +664,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         _telegram.PublicationReceived -= EnqueuePublication;
         Interlocked.Exchange(ref _configurationReloadRegistration, null)?.Dispose();
         base.Dispose();
+        _activitySource.Dispose();
         lock (_configurationGate)
         {
             HashSet<IChatClient> disposedClients = new(ReferenceEqualityComparer.Instance);
@@ -706,26 +712,26 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         string? averageTokensPerSecond);
 
     [LoggerMessage(EventId = 10, Level = LogLevel.Information,
-        Message = "LLM response text (Development only): operationId={OperationId} responseText={ResponseText}")]
-    private static partial void LogLlmDevelopmentResponse(ILogger logger, string operationId, string responseText);
+        Message = "LLM response text (Development only): operationId={OperationId} traceId={TraceId} responseText={ResponseText}")]
+    private static partial void LogLlmDevelopmentResponse(ILogger logger, string operationId, string? traceId, string responseText);
 
     [LoggerMessage(EventId = 11, Level = LogLevel.Information,
-        Message = "LLM technical completion check: operationId={OperationId} responseStatusCompleted={ResponseStatusCompleted} reportedModelMatchesRequest={ReportedModelMatchesRequest}.")]
-    private static partial void LogLlmResponseStatus(ILogger logger, string operationId,
+        Message = "LLM technical completion check: operationId={OperationId} traceId={TraceId} responseStatusCompleted={ResponseStatusCompleted} reportedModelMatchesRequest={ReportedModelMatchesRequest}.")]
+    private static partial void LogLlmResponseStatus(ILogger logger, string operationId, string? traceId,
         bool responseStatusCompleted, bool reportedModelMatchesRequest);
 
     [LoggerMessage(EventId = 12, Level = LogLevel.Information,
-        Message = "LLM response validation: operationId={OperationId} stage={Stage} outcome={Outcome} reasonCategory={ReasonCategory}.")]
-    private static partial void LogLlmValidationResult(ILogger logger, string operationId, string stage,
+        Message = "LLM response validation: operationId={OperationId} traceId={TraceId} stage={Stage} outcome={Outcome} reasonCategory={ReasonCategory}.")]
+    private static partial void LogLlmValidationResult(ILogger logger, string operationId, string? traceId, string stage,
         string outcome, string reasonCategory);
 
     [LoggerMessage(EventId = 13, Level = LogLevel.Warning,
-        Message = "LLM request failed: operationId={OperationId} provider={Provider} model={Model} failureCategory={FailureCategory} callDurationMs={CallDurationMs}.")]
-    private static partial void LogLlmRequestFailed(ILogger logger, string operationId, string provider,
+        Message = "LLM request failed: operationId={OperationId} traceId={TraceId} provider={Provider} model={Model} failureCategory={FailureCategory} callDurationMs={CallDurationMs}.")]
+    private static partial void LogLlmRequestFailed(ILogger logger, string operationId, string? traceId, string provider,
         string model, string failureCategory, string callDurationMs);
 
     [LoggerMessage(EventId = 14, Level = LogLevel.Information,
-        Message = "LLM request cancelled: operationId={OperationId} provider={Provider} model={Model} cancellationCategory={CancellationCategory} callDurationMs={CallDurationMs}.")]
-    private static partial void LogLlmRequestCancelled(ILogger logger, string operationId, string provider,
+        Message = "LLM request cancelled: operationId={OperationId} traceId={TraceId} provider={Provider} model={Model} cancellationCategory={CancellationCategory} callDurationMs={CallDurationMs}.")]
+    private static partial void LogLlmRequestCancelled(ILogger logger, string operationId, string? traceId, string provider,
         string model, string cancellationCategory, string callDurationMs);
 }

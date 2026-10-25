@@ -320,6 +320,7 @@ static void ConfigureOpenTelemetry(WebApplicationBuilder builder)
         .WithTracing(tracing =>
         {
             tracing.AddSource(sourceName);
+            tracing.AddSource(NewsAgentExecutor.ActivitySourceName);
             if (enableConsoleExporter) tracing.AddConsoleExporter();
         })
         .WithMetrics(metrics =>
