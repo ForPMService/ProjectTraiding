@@ -299,7 +299,8 @@ static async Task RunNewsJsonProbeAsync(WebApplicationBuilder builder, string pu
     InitializeOpenTelemetryProviders(diagnosticHost.Services);
     NewsAgentExecutor executor = diagnosticHost.Services.GetRequiredService<NewsAgentExecutor>();
     executor.UpdatePromptSnapshot(snapshot);
-    await executor.AnalyzeForDiagnosticsAsync(publication, CancellationToken.None);
+    NewsPublicationInput input = NewsAgentExecutor.ConvertTelegramPublication(publication);
+    await executor.AnalyzeForDiagnosticsAsync(input, CancellationToken.None);
     Console.WriteLine("Пробный запрос LLM завершён; ответ прошёл проверки.");
 }
 

@@ -32,7 +32,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     private readonly ActivitySource _activitySource;
     private readonly Dictionary<string, IChatClient> _chatClients;
     private AIAgent? _agent;
-    private readonly Channel<TelegramChannelPost> _publications;
+    private readonly Channel<NewsPublicationInput> _publications;
     private readonly object _configurationGate = new();
     private readonly TaskCompletionSource _firstSnapshotReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private IDisposable? _configurationReloadRegistration;
@@ -75,7 +75,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         if (activeChatClient is not null) _agent = CreateAgent(activeChatClient);
         _runtimeSnapshot = new LlmManagementRuntimeSnapshot(profiles, credentials, activeProfile,
             activeChatClient, false, null);
-        _publications = Channel.CreateBounded<TelegramChannelPost>(new BoundedChannelOptions(
+        _publications = Channel.CreateBounded<NewsPublicationInput>(new BoundedChannelOptions(
             options.Enabled ? options.QueueCapacity : 1)
         {
             FullMode = BoundedChannelFullMode.Wait,
@@ -401,7 +401,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         && first.Endpoint == second.Endpoint && first.ReasoningEffort == second.ReasoningEffort;
 
     /// <summary>Изолированная проверка использует ту же сборку запроса и валидатор, что и очередь.</summary>
-    internal async Task<string> AnalyzeForDiagnosticsAsync(TelegramChannelPost publication,
+    internal async Task<string> AnalyzeForDiagnosticsAsync(NewsPublicationInput publication,
         CancellationToken cancellationToken)
     {
         NewsAgentExecutionSnapshot snapshot = Volatile.Read(ref _runtimeSnapshot).Execution
@@ -418,7 +418,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     {
         if (_options.Enabled)
         {
-            _telegram.PublicationReceived += EnqueuePublication;
+            _telegram.PublicationReceived += EnqueueTelegramPublication;
             if (AnalysisCompleted is null)
                 LogWarning(_logger, "Потребитель результата LLM не подключён; выдача не означает доставку.");
         }
@@ -426,10 +426,61 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     }
 
     /// <summary>Callback не ждёт потребителей и не выполняет сетевые или файловые операции.</summary>
-    internal void EnqueuePublication(TelegramChannelPost publication)
+    public bool TryEnqueuePublication(NewsPublicationInput publication)
     {
-        if (!_publications.Writer.TryWrite(publication))
-            LogWarning(_logger, "Очередь LLM недоступна; публикация пропущена для анализа.");
+        ArgumentNullException.ThrowIfNull(publication);
+        if (string.IsNullOrWhiteSpace(publication.Source))
+            throw new ArgumentException("Source must contain a source identifier.", nameof(publication));
+        if (string.IsNullOrWhiteSpace(publication.RawText))
+            throw new ArgumentException("RawText must contain publication text.", nameof(publication));
+        JsonElement ownedMetadata;
+        try
+        {
+            if (publication.SourceMetadata.ValueKind != JsonValueKind.Object)
+                throw new ArgumentException("SourceMetadata must be a JSON object.", nameof(publication));
+            ownedMetadata = publication.SourceMetadata.Clone();
+        }
+        catch (ObjectDisposedException)
+        {
+            throw new ArgumentException("SourceMetadata must be a live JSON object.", nameof(publication));
+        }
+        if (publication.ReceivedAt.Offset != TimeSpan.Zero
+            || publication.PublishedAt is DateTimeOffset publishedAt && publishedAt.Offset != TimeSpan.Zero)
+            throw new ArgumentException("Publication timestamps must use UTC.", nameof(publication));
+
+        NewsPublicationInput ownedPublication = publication with { SourceMetadata = ownedMetadata };
+        if (_publications.Writer.TryWrite(ownedPublication)) return true;
+        LogWarning(_logger, "Очередь LLM недоступна; публикация пропущена для анализа.");
+        return false;
+    }
+
+    /// <summary>Преобразует Telegram-вход в независимый общий контракт и изолирует дефект адаптера.</summary>
+    internal void EnqueueTelegramPublication(TelegramChannelPost post)
+    {
+        try
+        {
+            if (!TryEnqueuePublication(ConvertTelegramPublication(post)))
+                return;
+        }
+        catch (ArgumentException)
+        {
+            LogWarning(_logger, "Публикация Telegram отклонена: invalid_publication.");
+        }
+        catch (JsonException)
+        {
+            LogWarning(_logger, "Публикация Telegram отклонена: metadata_serialization.");
+        }
+    }
+
+    internal static NewsPublicationInput ConvertTelegramPublication(TelegramChannelPost post)
+    {
+        ArgumentNullException.ThrowIfNull(post);
+        NewsTelegramMetadataDTO metadata = new(post.ChannelId, post.ChannelUsername, post.ChannelTitle,
+            post.MessageId);
+        JsonElement sourceMetadata = JsonSerializer.SerializeToElement(metadata,
+            NewsAgentJsonContext.Default.NewsTelegramMetadataDTO);
+        return new NewsPublicationInput("Telegram", post.Text, post.PublishedAt.ToUniversalTime(),
+            post.ReceivedAt.ToUniversalTime(), sourceMetadata);
     }
 
     /// <summary>Все постоянные потребители читают одну очередь; отмена хоста распространяется на текущие запросы.</summary>
@@ -445,7 +496,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
         {
-            _telegram.PublicationReceived -= EnqueuePublication;
+            _telegram.PublicationReceived -= EnqueueTelegramPublication;
             Complete();
             return;
         }
@@ -455,7 +506,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
         finally
         {
-            _telegram.PublicationReceived -= EnqueuePublication;
+            _telegram.PublicationReceived -= EnqueueTelegramPublication;
             Complete();
         }
     }
@@ -463,7 +514,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     /// <summary>Снимок читается на старте разбора, а ошибка одной публикации не завершает общий поток.</summary>
     private async Task ProcessPublicationsAsync(CancellationToken cancellationToken)
     {
-        await foreach (TelegramChannelPost publication in _publications.Reader.ReadAllAsync(cancellationToken))
+        await foreach (NewsPublicationInput publication in _publications.Reader.ReadAllAsync(cancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
             NewsAgentExecutionSnapshot? snapshot = Volatile.Read(ref _runtimeSnapshot).Execution;
@@ -500,7 +551,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     }
 
     /// <summary>Возвращает только один завершённый ответ, прошедший проверку отказа и контракта v3.</summary>
-    private async Task<ChatResponse> GetValidatedResponseAsync(TelegramChannelPost publication,
+    private async Task<ChatResponse> GetValidatedResponseAsync(NewsPublicationInput publication,
         NewsAgentExecutionSnapshot execution, CancellationToken cancellationToken)
     {
         NewsAgentPromptSnapshot snapshot = execution.Subject;
@@ -695,7 +746,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     /// <summary>Снимает подписку и отменяет текущие операции в пределах срока остановки хоста.</summary>
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        _telegram.PublicationReceived -= EnqueuePublication;
+        _telegram.PublicationReceived -= EnqueueTelegramPublication;
         Complete();
         await base.StopAsync(cancellationToken);
         if (ExecuteTask is { IsCompleted: false })
@@ -705,7 +756,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     /// <summary>Освобождает адаптер и подписку; фоновые операции должны быть остановлены хостом.</summary>
     public override void Dispose()
     {
-        _telegram.PublicationReceived -= EnqueuePublication;
+        _telegram.PublicationReceived -= EnqueueTelegramPublication;
         Interlocked.Exchange(ref _configurationReloadRegistration, null)?.Dispose();
         base.Dispose();
         _activitySource.Dispose();

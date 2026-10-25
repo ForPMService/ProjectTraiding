@@ -2,8 +2,8 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.AI;
-using ProjectTraiding.Europe;
 using ProjectTraiding.Europe.Telegram;
+using ProjectTraiding.Europe;
 
 namespace ProjectTraiding.Europe.News;
 
@@ -59,10 +59,14 @@ public sealed record NewsGlobalEventDTO(long Id, string Name);
 /// <summary>Минимальный контекст инструмента по разделу 11 контракта v3; базовый актив может отсутствовать.</summary>
 public sealed record NewsInstrumentContextDTO(string Secid, string Name, string InstrumentType, string? BaseAsset);
 
+/// <summary>Единый неизменяемый вход анализа для публикаций из разных источников.</summary>
+public sealed record NewsPublicationInput(string Source, string RawText, DateTimeOffset? PublishedAt,
+    DateTimeOffset ReceivedAt, JsonElement SourceMetadata);
+
 /// <summary>Техническая упаковка входа без повторения промпта и схемы, уже переданных параметрами запроса.</summary>
 internal sealed record NewsLlmRequest(string Mode, ImmutableArray<string> EventTypes,
     ImmutableArray<NewsGlobalEventDTO> GlobalEvents, ImmutableArray<NewsInstrumentContextDTO> Instruments,
-    TelegramChannelPost Publication);
+    NewsPublicationInput Publication);
 
 /// <summary>Предметный ответ v3; отказ от полезных фактов отличается от технической ошибки.</summary>
 public sealed record NewsLlmResponse(
@@ -86,7 +90,7 @@ public sealed record NewsInstrumentAssessmentDTO(
     [property: JsonRequired] double? InstrumentSignificance);
 
 /// <summary>Внутренний выход следующему этапу без утверждения доставки или времени записи в российской базе.</summary>
-public sealed record NewsAgentResult(TelegramChannelPost Publication, string Json,
+public sealed record NewsAgentResult(NewsPublicationInput Publication, string Json,
     string ConfigurationVersion, string Model, string AgentVersion);
 
 /// <summary>Сериализация прикладных данных без рефлексии; все поля ответа обязательны, включая nullable.</summary>
@@ -98,8 +102,11 @@ public sealed record NewsAgentResult(TelegramChannelPost Publication, string Jso
 [JsonSerializable(typeof(NewsSnapshotStatusDTO))]
 [JsonSerializable(typeof(NewsAgentVersionMaterial))]
 [JsonSerializable(typeof(TelegramChannelPost))]
+[JsonSerializable(typeof(NewsPublicationInput))]
+[JsonSerializable(typeof(NewsTelegramMetadataDTO))]
 [JsonSerializable(typeof(NewsLlmRequest))]
 [JsonSerializable(typeof(NewsLlmResponse))]
+[JsonSerializable(typeof(NewsAgentResult))]
 internal sealed partial class NewsAgentJsonContext : JsonSerializerContext
 {
     // Схема выводится только из полей и ограничений v3. Справочники окончательно проверяет будущий Writer.

@@ -97,10 +97,28 @@ internal static class NewsAgentContextChecks
                 != NewsSnapshotApplyStatus.AlreadyApplied)
                 throw new InvalidOperationException("Семантически одинаковая JSON Schema не распознана.");
 
-            Task oldOpenAiRequest = executor.AnalyzeForDiagnosticsAsync(CreatePublication(), CancellationToken.None);
+            TelegramChannelPost telegramPost = new(17, "sample_channel", "Sample", 23,
+                "Original Telegram text", DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch);
+            NewsPublicationInput telegramInput = NewsAgentExecutor.ConvertTelegramPublication(telegramPost);
+            if (telegramInput.Source != "Telegram" || telegramInput.RawText != telegramPost.Text
+                || telegramInput.PublishedAt != telegramPost.PublishedAt
+                || telegramInput.ReceivedAt != telegramPost.ReceivedAt
+                || telegramInput.SourceMetadata.GetProperty("channel_id").GetInt64() != 17
+                || telegramInput.SourceMetadata.GetProperty("message_id").GetInt32() != 23
+                || telegramInput.SourceMetadata.TryGetProperty("text", out _))
+                throw new InvalidOperationException("Telegram не преобразован в общий контракт без потерь и дублирования.");
+            NewsAgentResult result = new(telegramInput, "{}", "snapshot", "model", "agent");
+            string serializedResult = JsonSerializer.Serialize(result, NewsAgentJsonContext.Default.NewsAgentResult);
+            using JsonDocument resultJson = JsonDocument.Parse(serializedResult);
+            if (resultJson.RootElement.GetProperty("publication").GetProperty("source_metadata")
+                .GetProperty("channel_id").GetInt64() != 17)
+                throw new InvalidOperationException("Сериализация NewsAgentResult потеряла общий контракт публикации.");
+
+            Task oldOpenAiRequest = executor.AnalyzeForDiagnosticsAsync(telegramInput, CancellationToken.None);
             ControlledChatClient.CapturedCall oldOpenAiCall = await openAiClient.NextCallAsync();
             AssertCall(oldOpenAiCall, "OpenAI", "gpt-6-luna", "Synthetic prompt A", ["A", "B", "C"],
                 ReasoningEffort.None);
+            AssertPublication(oldOpenAiCall, telegramInput);
 
             NewsAgentPromptSnapshot newSubject = CreateSnapshot("snapshot-b", "prompt-b", "Synthetic prompt B",
                 ["A", "C", "D"], 3);
@@ -114,7 +132,7 @@ internal static class NewsAgentContextChecks
             if (newExecution.AgentVersion == oldVersion || newExecution.Profile.Model != "gpt-4.1-2025-04-14")
                 throw new InvalidOperationException("agent_version не отражает активный профиль и снимок.");
 
-            Task newOpenAiRequest = executor.AnalyzeForDiagnosticsAsync(CreatePublication(), CancellationToken.None);
+            Task newOpenAiRequest = executor.AnalyzeForDiagnosticsAsync(telegramInput, CancellationToken.None);
             ControlledChatClient.CapturedCall newOpenAiCall = await openAiClient.NextCallAsync();
             AssertCall(newOpenAiCall, "OpenAI", "gpt-4.1-2025-04-14", "Synthetic prompt B", ["A", "C", "D"], null);
 
@@ -133,7 +151,7 @@ internal static class NewsAgentContextChecks
                 || xaiExecution.AgentVersion == newExecution.AgentVersion)
                 throw new InvalidOperationException("Снимок не переключился на независимый профиль XAI.");
 
-            Task oldXaiRequest = executor.AnalyzeForDiagnosticsAsync(CreatePublication(), CancellationToken.None);
+            Task oldXaiRequest = executor.AnalyzeForDiagnosticsAsync(telegramInput, CancellationToken.None);
             ControlledChatClient.CapturedCall oldXaiCall = await xaiClient.NextCallAsync();
             AssertCall(oldXaiCall, "XAI", "grok-4.7", "Synthetic prompt B", ["A", "C", "D"],
                 ReasoningEffort.High);
@@ -149,7 +167,7 @@ internal static class NewsAgentContextChecks
             if (newestExecution.Profile.Provider != "XAI" || newestExecution.Profile.Model != "grok-4.6")
                 throw new InvalidOperationException("Смена модели XAI не обновила целый снимок.");
 
-            Task newXaiRequest = executor.AnalyzeForDiagnosticsAsync(CreatePublication(), CancellationToken.None);
+            Task newXaiRequest = executor.AnalyzeForDiagnosticsAsync(telegramInput, CancellationToken.None);
             ControlledChatClient.CapturedCall newXaiCall = await xaiClient.NextCallAsync();
             AssertCall(newXaiCall, "XAI", "grok-4.6", "Synthetic prompt C", ["A", "D", "E"],
                 ReasoningEffort.High);
@@ -241,8 +259,31 @@ internal static class NewsAgentContextChecks
         using IHost host = BuildManagedHost(configuration, options, client);
         await host.StartAsync();
         NewsAgentExecutor executor = host.Services.GetRequiredService<NewsAgentExecutor>();
-        executor.EnqueuePublication(CreatePublication());
-        executor.EnqueuePublication(CreatePublication());
+        using (JsonDocument metadata = JsonDocument.Parse("{\"marker\":\"local\"}"))
+        {
+            AssertInvalidInput(executor, new NewsPublicationInput(" ", "text", null, DateTimeOffset.UnixEpoch,
+                metadata.RootElement));
+            AssertInvalidInput(executor, new NewsPublicationInput("Bigdata", " \t", null, DateTimeOffset.UnixEpoch,
+                metadata.RootElement));
+            using JsonDocument array = JsonDocument.Parse("[]");
+            AssertInvalidInput(executor, new NewsPublicationInput("Bigdata", "text", null, DateTimeOffset.UnixEpoch,
+                array.RootElement));
+            AssertInvalidInput(executor, new NewsPublicationInput("Bigdata", "text", null,
+                new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.FromHours(2)), metadata.RootElement));
+            AssertInvalidInput(executor, new NewsPublicationInput("Bigdata", "text",
+                new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.FromHours(2)), DateTimeOffset.UnixEpoch,
+                metadata.RootElement));
+        }
+        bool acceptedBeforeSnapshot;
+        using (JsonDocument queuedMetadata = JsonDocument.Parse("{\"marker\":\"owned\"}"))
+        {
+            NewsPublicationInput queued = new("Telegram", "queued", null, DateTimeOffset.UnixEpoch,
+                queuedMetadata.RootElement);
+            acceptedBeforeSnapshot = executor.TryEnqueuePublication(queued);
+        }
+        if (!acceptedBeforeSnapshot
+            || executor.TryEnqueuePublication(CreateSyntheticPublication("Bigdata", "overflow")))
+            throw new InvalidOperationException("Ограниченная очередь не отклонила вторую публикацию без снимка.");
         await Task.Delay(50);
         if (client.CallCount != 0)
             throw new InvalidOperationException("Очередь вызвала клиента до первого снимка.");
@@ -251,6 +292,13 @@ internal static class NewsAgentContextChecks
             throw new InvalidOperationException("Управляемый хост не применил первый снимок.");
         ControlledChatClient.CapturedCall call = await client.NextCallAsync();
         AssertCall(call, "OpenAI", "gpt-6-luna", "Worker prompt", ["W"], null);
+        using (JsonDocument captured = JsonDocument.Parse(call.UserInput))
+        {
+            JsonElement publication = captured.RootElement.GetProperty("publication");
+            if (publication.GetProperty("raw_text").GetString() != "queued"
+                || publication.GetProperty("source_metadata").GetProperty("marker").GetString() != "owned")
+                throw new InvalidOperationException("Метаданные очереди зависели от освобождённого JsonDocument.");
+        }
         string firstAgentVersion = executor.CurrentExecutionSnapshot!.AgentVersion;
         LlmModelSelectionResult selection = executor.ActivateModel("OpenAI", "gpt-4.1-2025-04-14");
         if (selection.Failure != LlmModelSelectionFailure.None
@@ -259,7 +307,8 @@ internal static class NewsAgentContextChecks
             || executor.CurrentExecutionSnapshot!.AgentVersion == firstAgentVersion)
             throw new InvalidOperationException("Смена модели и снимка не обновила атомарную конфигурацию.");
         client.Release(call.Number);
-        executor.EnqueuePublication(CreatePublication());
+        if (!executor.TryEnqueuePublication(CreateSyntheticPublication("Bigdata", "second")))
+            throw new InvalidOperationException("Общая очередь отклонила публикацию после освобождения места.");
         ControlledChatClient.CapturedCall updatedCall = await client.NextCallAsync();
         AssertCall(updatedCall, "OpenAI", "gpt-4.1-2025-04-14", "Updated worker prompt", ["W", "X"], null);
         client.Release(updatedCall.Number);
@@ -272,10 +321,70 @@ internal static class NewsAgentContextChecks
         using IHost waitingHost = BuildManagedHost(configuration, options, cancelledClient);
         await waitingHost.StartAsync();
         NewsAgentExecutor waitingExecutor = waitingHost.Services.GetRequiredService<NewsAgentExecutor>();
-        waitingExecutor.EnqueuePublication(CreatePublication());
+        waitingExecutor.TryEnqueuePublication(CreateSyntheticPublication("Telegram", "waiting"));
         await waitingHost.StopAsync(TimeSpan.FromSeconds(2));
-        if (cancelledClient.CallCount != 0)
+        if (cancelledClient.CallCount != 0
+            || waitingExecutor.TryEnqueuePublication(CreateSyntheticPublication("Bigdata", "after close")))
             throw new InvalidOperationException("Отмена до первого снимка вызвала клиента.");
+
+        await RunParallelPublicationChecksAsync(configuration);
+        await RunBusyStopChecksAsync(configuration);
+    }
+
+    private static async Task RunParallelPublicationChecksAsync(IConfigurationRoot configuration)
+    {
+        NewsAgentOptions options = new()
+        {
+            Enabled = true,
+            QueueCapacity = 2,
+            Workers = 2,
+            RequestTimeout = TimeSpan.FromSeconds(30)
+        };
+        ControlledChatClient client = new("OpenAI");
+        using IHost host = BuildManagedHost(configuration, options, client);
+        await host.StartAsync();
+        NewsAgentExecutor executor = host.Services.GetRequiredService<NewsAgentExecutor>();
+        NewsPublicationInput telegram = CreateSyntheticPublication("Telegram", "parallel telegram");
+        NewsPublicationInput bigdata = CreateSyntheticPublication("Bigdata", "parallel bigdata");
+        if (!executor.TryEnqueuePublication(telegram) || !executor.TryEnqueuePublication(bigdata))
+            throw new InvalidOperationException("Общая очередь не приняла две параллельные публикации.");
+        executor.UpdatePromptSnapshot(CreateSnapshot("parallel", "parallel", "Parallel prompt", ["P"], 1));
+        ControlledChatClient.CapturedCall first = await client.NextCallAsync();
+        ControlledChatClient.CapturedCall second = await client.NextCallAsync();
+        if (client.CallCount != 2)
+            throw new InvalidOperationException("Два работника не начали вызовы LLM до освобождения первого.");
+        bool firstTelegram = first.UserInput.Contains("parallel telegram", StringComparison.Ordinal);
+        bool secondTelegram = second.UserInput.Contains("parallel telegram", StringComparison.Ordinal);
+        AssertPublication(first, firstTelegram ? telegram : bigdata);
+        AssertPublication(second, secondTelegram ? telegram : bigdata);
+        if (firstTelegram == secondTelegram || first.Instructions != "Parallel prompt"
+            || second.Instructions != "Parallel prompt")
+            throw new InvalidOperationException("Параллельные вызовы смешали источники или снимок.");
+        client.Release(second.Number);
+        client.Release(first.Number);
+        await host.StopAsync(TimeSpan.FromSeconds(2));
+    }
+
+    private static async Task RunBusyStopChecksAsync(IConfigurationRoot configuration)
+    {
+        NewsAgentOptions options = new()
+        {
+            Enabled = true,
+            QueueCapacity = 1,
+            Workers = 1,
+            RequestTimeout = TimeSpan.FromSeconds(30)
+        };
+        ControlledChatClient client = new("OpenAI");
+        using IHost host = BuildManagedHost(configuration, options, client);
+        await host.StartAsync();
+        NewsAgentExecutor executor = host.Services.GetRequiredService<NewsAgentExecutor>();
+        executor.UpdatePromptSnapshot(CreateSnapshot("busy", "busy", "Busy prompt", ["B"], 1));
+        if (!executor.TryEnqueuePublication(CreateSyntheticPublication("Bigdata", "busy")))
+            throw new InvalidOperationException("Очередь не приняла публикацию для проверки остановки.");
+        await client.NextCallAsync();
+        await host.StopAsync(TimeSpan.FromSeconds(2));
+        if (executor.TryEnqueuePublication(CreateSyntheticPublication("Bigdata", "after stop")))
+            throw new InvalidOperationException("После остановки исполнителя публикация принята.");
     }
 
     private static IHost BuildManagedHost(IConfigurationRoot configuration, NewsAgentOptions options,
@@ -327,8 +436,41 @@ internal static class NewsAgentContextChecks
         return JsonDocument.Parse(output.ToArray());
     }
 
-    private static TelegramChannelPost CreatePublication() => new(1, null, "Synthetic", 1,
+    private static TelegramChannelPost CreateTelegramPublication() => new(1, null, "Synthetic", 1,
         "Local context capture check", DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch);
+
+    private static NewsPublicationInput CreateSyntheticPublication(string source, string rawText)
+    {
+        using JsonDocument metadata = JsonDocument.Parse("{\"marker\":\"local\"}");
+        return new NewsPublicationInput(source, rawText, DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch,
+            metadata.RootElement.Clone());
+    }
+
+    private static void AssertInvalidInput(NewsAgentExecutor executor, NewsPublicationInput publication)
+    {
+        try
+        {
+            executor.TryEnqueuePublication(publication);
+        }
+        catch (ArgumentException)
+        {
+            return;
+        }
+        throw new InvalidOperationException("Некорректная публикация не была отклонена до записи в очередь.");
+    }
+
+    private static void AssertPublication(ControlledChatClient.CapturedCall call, NewsPublicationInput expected)
+    {
+        using JsonDocument input = JsonDocument.Parse(call.UserInput);
+        JsonElement publication = input.RootElement.GetProperty("publication");
+        bool sourceOk = publication.GetProperty("source").GetString() == expected.Source;
+        bool textOk = publication.GetProperty("raw_text").GetString() == expected.RawText;
+        bool publishedOk = publication.GetProperty("published_at").GetDateTimeOffset() == expected.PublishedAt;
+        bool receivedOk = publication.GetProperty("received_at").GetDateTimeOffset() == expected.ReceivedAt;
+        bool metadataOk = JsonElement.DeepEquals(publication.GetProperty("source_metadata"), expected.SourceMetadata);
+        if (!sourceOk || !textOk || !publishedOk || !receivedOk || !metadataOk)
+            throw new InvalidOperationException($"Общая схема запроса изменила поля публикации: {sourceOk}/{textOk}/{publishedOk}/{receivedOk}/{metadataOk}.");
+    }
 
     private static void AssertCall(ControlledChatClient.CapturedCall call, string expectedProvider,
         string expectedModel, string expectedPrompt, ImmutableArray<string> expectedSecids,
