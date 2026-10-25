@@ -428,6 +428,12 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     /// <summary>Callback не ждёт потребителей и не выполняет сетевые или файловые операции.</summary>
     public bool TryEnqueuePublication(NewsPublicationInput publication)
     {
+        if (!_options.Enabled)
+        {
+            LogWarning(_logger, "Обработка News выключена; публикация пропущена.");
+            return false;
+        }
+
         ArgumentNullException.ThrowIfNull(publication);
         if (string.IsNullOrWhiteSpace(publication.Source))
             throw new ArgumentException("Source must contain a source identifier.", nameof(publication));

@@ -231,10 +231,34 @@ internal static class NewsAgentContextChecks
             throw new InvalidOperationException("Каждый управляемый IChatClient должен освобождаться при закрытии исполнителя.");
 
         IConfigurationRoot disabledConfiguration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["News:Enabled"] = "false" })
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["News:Enabled"] = "false",
+                ["LLM:ActiveProvider"] = "OpenAI",
+                ["OpenAI:ActiveProfile"] = "default",
+                ["OpenAI:Profiles:default:Model"] = "gpt-6-luna"
+            })
             .Build();
-        if (NewsAgentOptions.Load(disabledConfiguration).Enabled)
+        NewsAgentOptions disabledOptions = NewsAgentOptions.Load(disabledConfiguration);
+        if (disabledOptions.Enabled)
             throw new InvalidOperationException("Выключенный контур News не должен требовать настройки провайдера.");
+        ControlledChatClient disabledClient = new("OpenAI");
+        EuropeTelegramRuntime disabledTelegram = new(new TelegramOptions(),
+            NullLogger<EuropeTelegramRuntime>.Instance);
+        NewsAgentExecutor disabledExecutor = new(disabledTelegram, disabledOptions,
+            NullLogger<NewsAgentExecutor>.Instance, null!, disabledConfiguration, disabledClient);
+        try
+        {
+            if (disabledExecutor.TryEnqueuePublication(CreateSyntheticPublication("Bigdata", "disabled")))
+                throw new InvalidOperationException("Выключенный контур News принял публикацию в очередь.");
+            if (disabledClient.CallCount != 0)
+                throw new InvalidOperationException("Выключенный контур News вызвал клиента.");
+        }
+        finally
+        {
+            disabledExecutor.Dispose();
+            disabledTelegram.Dispose();
+        }
 
         await RunWorkerGateChecksAsync();
     }
