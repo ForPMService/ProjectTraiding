@@ -28,7 +28,8 @@ if (args.Length == 1 && args[0] == "--agent-aot-probe")
 WebApplicationBuilder builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions
 {
     // Аргументы диагностики — это данные, а не CLI-значения конфигурации.
-    Args = args.Length > 0 && (args[0] == "--openai-chat" || args[0] == "--news-json-probe") ? [] : args,
+    Args = args.Length > 0 && (args[0] == "--openai-chat" || args[0] == "--news-json-probe"
+        || args[0] == "--news-snapshot-example") ? [] : args,
     ContentRootPath = AppContext.BaseDirectory
 });
 ConfigureOpenTelemetry(builder);
@@ -108,11 +109,17 @@ if (args.Length > 0 && args[0] == "--news-json-probe")
         if (args.Length == 3)
             await RunNewsJsonProbeAsync(builder, args[1], args[2]);
     }
-    catch (Exception)
+    catch (Exception error)
     {
-        Console.Error.WriteLine("Проверка News JSON завершилась ошибкой; результат не выдан.");
+        Console.Error.WriteLine($"Проверка News JSON завершилась ошибкой ({error.GetType().Name}): {error.Message}");
         Environment.ExitCode = 1;
     }
+    return;
+}
+
+if (args.Length == 1 && args[0] == "--news-snapshot-example")
+{
+    Console.WriteLine(NewsAgentContextChecks.CreateExampleJson());
     return;
 }
 
@@ -133,6 +140,7 @@ builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = tel
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, LlmManagementHttpJsonContext.Default);
+    options.SerializerOptions.TypeInfoResolverChain.Insert(0, NewsAgentJsonContext.Default);
 });
 
 WebApplication app = builder.Build();
@@ -205,8 +213,69 @@ app.MapGet("/llm/models", static (NewsAgentExecutor executor) =>
 });
 app.MapPost("/llm/models/active", HandleActivateModelAsync);
 
+if (app.Environment.IsDevelopment())
+{
+    app.MapGet("/news/snapshot/status", static (NewsAgentExecutor executor) =>
+        TypedResults.Json(executor.GetSnapshotStatus(), NewsAgentJsonContext.Default.NewsSnapshotStatusDTO));
+    app.MapPost("/news/snapshot", HandleNewsSnapshotAsync);
+}
+
 app.Services.GetRequiredService<NewsAgentExecutor>().LogStartupState();
 await app.RunAsync();
+
+static async Task<IResult> HandleNewsSnapshotAsync(HttpContext context, NewsAgentExecutor executor)
+{
+    if (!context.Request.HasJsonContentType())
+        return TypedResults.BadRequest(new NewsSnapshotApplyDTO("InvalidRequest", executor.GetSnapshotStatus().Revision));
+
+    NewsAgentPromptSnapshot? request;
+    try
+    {
+        request = await JsonSerializer.DeserializeAsync(context.Request.Body,
+            NewsAgentJsonContext.Default.NewsAgentPromptSnapshot, context.RequestAborted);
+    }
+    catch (JsonException)
+    {
+        return TypedResults.BadRequest(new NewsSnapshotApplyDTO("InvalidRequest", executor.GetSnapshotStatus().Revision));
+    }
+
+    if (request is null)
+        return TypedResults.BadRequest(new NewsSnapshotApplyDTO("InvalidRequest", executor.GetSnapshotStatus().Revision));
+
+    NewsSnapshotApplyStatus result;
+    try
+    {
+        result = executor.UpdatePromptSnapshot(request);
+    }
+    catch (ArgumentException)
+    {
+        return TypedResults.BadRequest(new NewsSnapshotApplyDTO("InvalidRequest", executor.GetSnapshotStatus().Revision));
+    }
+    catch (InvalidOperationException error) when (error.Message.StartsWith("Для XAI News Temperature", StringComparison.Ordinal))
+    {
+        return TypedResults.BadRequest(new NewsSnapshotApplyDTO("InvalidRequest", executor.GetSnapshotStatus().Revision));
+    }
+    catch (InvalidOperationException)
+    {
+        NewsAgentExecutor.LogSnapshotApplicationFailed(context.RequestServices.GetRequiredService<ILogger<NewsAgentExecutor>>(),
+            "active_provider_unavailable");
+        return TypedResults.Json(new NewsSnapshotApplyDTO("Unavailable", executor.GetSnapshotStatus().Revision),
+            NewsAgentJsonContext.Default.NewsSnapshotApplyDTO, statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+    catch (Exception)
+    {
+        NewsAgentExecutor.LogSnapshotApplicationFailed(context.RequestServices.GetRequiredService<ILogger<NewsAgentExecutor>>(),
+            "unexpected_application_error");
+        return TypedResults.Json(new NewsSnapshotApplyDTO("Unavailable", executor.GetSnapshotStatus().Revision),
+            NewsAgentJsonContext.Default.NewsSnapshotApplyDTO, statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    NewsSnapshotStatusDTO status = executor.GetSnapshotStatus();
+    NewsSnapshotApplyDTO response = new(result.ToString(), status.Revision);
+    int httpStatus = result is NewsSnapshotApplyStatus.Conflict or NewsSnapshotApplyStatus.Stale
+        ? StatusCodes.Status409Conflict : StatusCodes.Status200OK;
+    return TypedResults.Json(response, NewsAgentJsonContext.Default.NewsSnapshotApplyDTO, statusCode: httpStatus);
+}
 
 static async Task RunNewsJsonProbeAsync(WebApplicationBuilder builder, string publicationPath, string snapshotPath)
 {

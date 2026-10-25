@@ -11,7 +11,15 @@ namespace ProjectTraiding.Europe.News;
 public sealed record NewsAgentPromptSnapshot(string Version, string PromptVersion, string Prompt,
     string Mode, ImmutableArray<string> EventTypes, ImmutableArray<NewsGlobalEventDTO> GlobalEvents,
     ImmutableArray<NewsInstrumentContextDTO> Instruments, JsonElement JsonSchema,
-    int MaxOutputTokens, float Temperature, bool WebSearchEnabled);
+    int MaxOutputTokens, float Temperature, bool WebSearchEnabled,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? Revision = null);
+
+public enum NewsSnapshotApplyStatus { Applied, AlreadyApplied, Conflict, Stale }
+
+public sealed record NewsSnapshotApplyDTO(string Status, long? Revision);
+
+public sealed record NewsSnapshotStatusDTO(bool HasSnapshot, bool WaitingForFirstSnapshot, long? Revision,
+    string? Version, string? PromptVersion, string? AgentVersion);
 
 /// <summary>Один неизменяемый набор модели и предметного контекста, захваченный публикацией.</summary>
 internal sealed record NewsAgentExecutionSnapshot(NewsAgentPromptSnapshot Subject,
@@ -86,6 +94,8 @@ public sealed record NewsAgentResult(TelegramChannelPost Publication, string Jso
     UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, RespectNullableAnnotations = true,
     RespectRequiredConstructorParameters = true, AllowDuplicateProperties = false)]
 [JsonSerializable(typeof(NewsAgentPromptSnapshot))]
+[JsonSerializable(typeof(NewsSnapshotApplyDTO))]
+[JsonSerializable(typeof(NewsSnapshotStatusDTO))]
 [JsonSerializable(typeof(NewsAgentVersionMaterial))]
 [JsonSerializable(typeof(TelegramChannelPost))]
 [JsonSerializable(typeof(NewsLlmRequest))]

@@ -34,6 +34,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     private AIAgent? _agent;
     private readonly Channel<TelegramChannelPost> _publications;
     private readonly object _configurationGate = new();
+    private readonly TaskCompletionSource _firstSnapshotReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private IDisposable? _configurationReloadRegistration;
     private LlmManagementRuntimeSnapshot _runtimeSnapshot;
 
@@ -134,16 +135,26 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     /// <summary>Единственный внутренний выход; подписчик должен быть коротким, потокобезопасным и не выполнять I/O.</summary>
     public event Action<NewsAgentResult>? AnalysisCompleted;
 
-    /// <summary>Проверяет полный готовый снимок до атомарной замены; текущие операции сохраняют прежнюю версию.</summary>
-    public void UpdatePromptSnapshot(NewsAgentPromptSnapshot snapshot)
+    /// <summary>Проверяет редакцию до атомарной замены; текущие операции сохраняют прежнюю версию.</summary>
+    public NewsSnapshotApplyStatus UpdatePromptSnapshot(NewsAgentPromptSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ValidatePromptSnapshot(snapshot);
-        // Clone отделяет схему от времени жизни JsonDocument вызывающего кода.
-        snapshot = snapshot with { JsonSchema = snapshot.JsonSchema.Clone() };
+        using JsonDocument canonicalSchema = JsonDocument.Parse(NewsAgentJsonContext.ContractSchema);
+        // Store the built-in schema so equivalent property order cannot change agent_version.
+        snapshot = snapshot with { JsonSchema = canonicalSchema.RootElement.Clone() };
         lock (_configurationGate)
         {
             LlmManagementRuntimeSnapshot current = Volatile.Read(ref _runtimeSnapshot);
+            NewsAgentPromptSnapshot? previous = current.Execution?.Subject;
+            if (previous is not null)
+            {
+                if (snapshot.Revision < previous.Revision) return NewsSnapshotApplyStatus.Stale;
+                if (snapshot.Revision == previous.Revision)
+                    return SubjectsEqual(previous, snapshot)
+                        ? NewsSnapshotApplyStatus.AlreadyApplied
+                        : NewsSnapshotApplyStatus.Conflict;
+            }
             IChatClient chatClient = current.ActiveChatClient
                 ?? GetOrCreateChatClient(current.ActiveProfile, current.Credentials);
             NewsAgentExecutionSnapshot execution = CreateExecutionSnapshot(current.ActiveProfile, snapshot, chatClient);
@@ -153,7 +164,30 @@ public sealed partial class NewsAgentExecutor : BackgroundService
                 ActiveChatClient = chatClient,
                 Execution = execution
             });
+            _firstSnapshotReady.TrySetResult();
+            return NewsSnapshotApplyStatus.Applied;
         }
+    }
+
+    internal NewsSnapshotStatusDTO GetSnapshotStatus()
+    {
+        LlmManagementRuntimeSnapshot snapshot = Volatile.Read(ref _runtimeSnapshot);
+        NewsAgentExecutionSnapshot? execution = snapshot.Execution;
+        return new NewsSnapshotStatusDTO(execution is not null,
+            _options.Enabled && execution is null, execution?.Subject.Revision, execution?.Subject.Version,
+            execution?.Subject.PromptVersion, execution?.AgentVersion);
+    }
+
+    private static bool SubjectsEqual(NewsAgentPromptSnapshot first, NewsAgentPromptSnapshot second)
+    {
+        NewsAgentPromptSnapshot left = first with { Revision = null };
+        NewsAgentPromptSnapshot right = second with { Revision = null };
+        return left.Version == right.Version && left.PromptVersion == right.PromptVersion && left.Prompt == right.Prompt
+            && left.Mode == right.Mode && left.EventTypes.SequenceEqual(right.EventTypes)
+            && left.GlobalEvents.SequenceEqual(right.GlobalEvents) && left.Instruments.SequenceEqual(right.Instruments)
+            && JsonElement.DeepEquals(left.JsonSchema, right.JsonSchema)
+            && left.MaxOutputTokens == right.MaxOutputTokens && left.Temperature == right.Temperature
+            && left.WebSearchEnabled == right.WebSearchEnabled;
     }
 
     internal NewsAgentExecutionSnapshot? CurrentExecutionSnapshot => Volatile.Read(ref _runtimeSnapshot).Execution;
@@ -277,7 +311,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             throw new InvalidOperationException("Для XAI News Temperature не должна превышать 1.");
 
         NewsAgentVersionMaterial material = new(profile.Provider, profile.Model, profile.Endpoint,
-            profile.ReasoningEffort, subject);
+            profile.ReasoningEffort, subject with { Revision = null });
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(material,
             NewsAgentJsonContext.Default.NewsAgentVersionMaterial);
         string agentVersion = "news-v3:" + Convert.ToHexString(SHA256.HashData(bytes));
@@ -392,7 +426,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     }
 
     /// <summary>Callback не ждёт потребителей и не выполняет сетевые или файловые операции.</summary>
-    private void EnqueuePublication(TelegramChannelPost publication)
+    internal void EnqueuePublication(TelegramChannelPost publication)
     {
         if (!_publications.Writer.TryWrite(publication))
             LogWarning(_logger, "Очередь LLM недоступна; публикация пропущена для анализа.");
@@ -405,6 +439,16 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         using CancellationTokenSource lifetime = CancellationTokenSource.CreateLinkedTokenSource(
             stoppingToken, _lifetime.ApplicationStopping);
         using CancellationTokenRegistration stopping = lifetime.Token.Register(Complete);
+        try
+        {
+            await _firstSnapshotReady.Task.WaitAsync(lifetime.Token);
+        }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
+        {
+            _telegram.PublicationReceived -= EnqueuePublication;
+            Complete();
+            return;
+        }
         Task[] workers = new Task[_options.Workers];
         for (int index = 0; index < workers.Length; index++) workers[index] = ProcessPublicationsAsync(lifetime.Token);
         try { await Task.WhenAll(workers); }
@@ -588,9 +632,9 @@ public sealed partial class NewsAgentExecutor : BackgroundService
 #pragma warning restore OPENAI001
 
     /// <summary>Допускает только полный Realtime-снимок и модель с документированной поддержкой schema и web search.</summary>
-    private static void ValidatePromptSnapshot(NewsAgentPromptSnapshot snapshot)
+    internal static void ValidatePromptSnapshot(NewsAgentPromptSnapshot snapshot)
     {
-        if (string.IsNullOrWhiteSpace(snapshot.Version) || string.IsNullOrWhiteSpace(snapshot.PromptVersion)
+        if (snapshot.Revision is null or <= 0 || string.IsNullOrWhiteSpace(snapshot.Version) || string.IsNullOrWhiteSpace(snapshot.PromptVersion)
             || string.IsNullOrWhiteSpace(snapshot.Prompt) || snapshot.Mode != "Realtime"
             || snapshot.MaxOutputTokens is < 1 or > 32768
             || !float.IsFinite(snapshot.Temperature) || snapshot.Temperature is < 0 or > 2
@@ -734,4 +778,8 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         Message = "LLM request cancelled: operationId={OperationId} traceId={TraceId} provider={Provider} model={Model} cancellationCategory={CancellationCategory} callDurationMs={CallDurationMs}.")]
     private static partial void LogLlmRequestCancelled(ILogger logger, string operationId, string? traceId, string provider,
         string model, string cancellationCategory, string callDurationMs);
+
+    [LoggerMessage(EventId = 15, Level = LogLevel.Warning,
+        Message = "News snapshot application failed: reasonCategory={ReasonCategory}.")]
+    internal static partial void LogSnapshotApplicationFailed(ILogger logger, string reasonCategory);
 }
