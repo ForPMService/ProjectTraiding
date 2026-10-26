@@ -18,6 +18,8 @@ using ProjectTraiding.Europe.News;
 using ProjectTraiding.Europe.Telegram;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
+using ProjectTraiding.Europe.Grpc;
+using Grpc.Net.ClientFactory;
 
 if (args.Length == 1 && args[0] == "--agent-aot-probe")
 {
@@ -29,10 +31,16 @@ WebApplicationBuilder builder = WebApplication.CreateSlimBuilder(new WebApplicat
 {
     // Аргументы диагностики — это данные, а не CLI-значения конфигурации.
     Args = args.Length > 0 && (args[0] == "--openai-chat" || args[0] == "--news-json-probe"
-        || args[0] == "--news-snapshot-example") ? [] : args,
+        || args[0] == "--news-snapshot-example" || args[0] == "--news-grpc-probe") ? [] : args,
     ContentRootPath = AppContext.BaseDirectory
 });
 ConfigureOpenTelemetry(builder);
+
+if (args.Length == 1 && args[0] == "--news-grpc-probe")
+{
+    Environment.ExitCode = await NewsGrpcProbe.RunAsync();
+    return;
+}
 
 if (args.Length > 0 && args[0] == "--openai-chat")
 {
@@ -128,8 +136,21 @@ ConfigureLoopbackUrls(builder);
 // Регистрирует один экземпляр приёмника для хоста и его подписчиков.
 TelegramOptions telegram = TelegramOptions.Load(builder.Configuration);
 NewsAgentOptions news = NewsAgentOptions.Load(builder.Configuration);
+NewsGrpcOptions newsGrpc = NewsGrpcOptions.Load(builder.Configuration);
 builder.Services.AddSingleton(telegram);
 builder.Services.AddSingleton(news);
+builder.Services.AddSingleton(newsGrpc);
+if (newsGrpc.Enabled)
+{
+    builder.Services.AddGrpcClient<NewsExchange.NewsExchangeClient>(options =>
+    {
+        options.Address = new Uri(newsGrpc.Address);
+    }).ConfigureChannel(options =>
+    {
+        options.MaxReceiveMessageSize = newsGrpc.MaxReceiveMessageSize;
+    });
+    builder.Services.AddHostedService<NewsSnapshotGrpcSubscriber>();
+}
 // Хост и будущие подписчики публикаций используют один экземпляр приёмника.
 builder.Services.AddSingleton<EuropeTelegramRuntime>();
 // Состояние управления LLM доступно даже без промпта и при выключенном контуре News.
