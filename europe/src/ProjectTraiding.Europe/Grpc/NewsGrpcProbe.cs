@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using System.Collections.Concurrent;
 using System.Threading.Channels;
 using Grpc.Core;
 using Grpc.Net.Client;
@@ -145,6 +146,7 @@ internal static class NewsGrpcProbe
         await WaitUntilAsync(() => exchange.ConnectionCount > connectionBeforeRecovery);
         await WaitUntilAsync(() => executor.GetSnapshotStatus().Revision == 3);
 
+        await RunResultChecksAsync(exchange, client, executor);
         int connectionsBeforeStop = exchange.ConnectionCount;
         await subscriber.StopAsync(CancellationToken.None);
         await Task.Delay(grpcOptions.ReconnectDelay + TimeSpan.FromMilliseconds(100));
@@ -154,6 +156,171 @@ internal static class NewsGrpcProbe
         await server.DisposeAsync();
         executor.Dispose();
         telegram.Dispose();
+    }
+
+    private static async Task RunResultChecksAsync(DiagnosticExchange exchange, NewsExchange.NewsExchangeClient client,
+        NewsAgentExecutor executor)
+    {
+        TestLogger<NewsResultGrpcSender> logger = new();
+        NewsGrpcOptions options = new()
+        {
+            Enabled = true,
+            Address = "http://127.0.0.1",
+            ReconnectDelay = TimeSpan.FromMilliseconds(50),
+            FirstSnapshotTimeout = TimeSpan.FromMilliseconds(100),
+            RequestTimeout = TimeSpan.FromMilliseconds(500),
+            ResultQueueCapacity = 1,
+            MaxSendAttempts = 2,
+            MaxReceiveMessageSize = 4096,
+            MaxSendMessageSize = 4096
+        };
+        NewsResultGrpcSender sender = new(options, client, executor, logger);
+        await sender.StartAsync(CancellationToken.None);
+
+        NewsAgentResult result = CreateResult("synthetic result", "configuration-v", "gpt-local", "agent-v");
+        exchange.EnqueuePlan(new SubmissionPlan(SubmissionOutcome.Accepted));
+        sender.AcceptResult(result);
+        ResultMessage accepted = await exchange.ReadSubmissionAsync();
+        NewsAgentResult transmitted = JsonSerializer.Deserialize(accepted.ResultJson.Span,
+            NewsAgentJsonContext.Default.NewsAgentResult)
+            ?? throw new InvalidOperationException("Result JSON was not deserialized.");
+        if (transmitted.Publication.Source != result.Publication.Source
+            || transmitted.Publication.RawText != result.Publication.RawText
+            || transmitted.Publication.PublishedAt != result.Publication.PublishedAt
+            || transmitted.Publication.ReceivedAt != result.Publication.ReceivedAt
+            || transmitted.Publication.SourceMetadata.GetRawText() != result.Publication.SourceMetadata.GetRawText()
+            || transmitted.Json != result.Json || transmitted.ConfigurationVersion != result.ConfigurationVersion
+            || transmitted.Model != result.Model || transmitted.AgentVersion != result.AgentVersion
+            || accepted.DeliveryId.Length == 0
+            || accepted.ResultJson.ToStringUtf8().Contains("revision", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Sender changed the result payload or added a revision.");
+        await WaitUntilAsync(() => logger.Contains("News result accepted by gRPC peer"));
+
+        exchange.EnqueuePlan(new SubmissionPlan(SubmissionOutcome.Rejected));
+        sender.AcceptResult(result with { Json = "rejected result" });
+        _ = await exchange.ReadSubmissionAsync();
+        await WaitUntilAsync(() => logger.Contains("News result rejected by gRPC peer"));
+        await Task.Delay(150);
+        if (exchange.TryReadSubmission(out _))
+            throw new InvalidOperationException("accepted=false result was retried.");
+
+        exchange.EnqueuePlan(new SubmissionPlan(SubmissionOutcome.InvalidAck));
+        exchange.EnqueuePlan(new SubmissionPlan(SubmissionOutcome.InvalidAck));
+        int beforeInvalidAck = exchange.SubmissionCount;
+        sender.AcceptResult(result with { Json = "invalid ack result" });
+        ResultMessage invalidFirst = await exchange.ReadSubmissionAsync();
+        ResultMessage invalidSecond = await exchange.ReadSubmissionAsync();
+        AssertSameDelivery(invalidFirst, invalidSecond);
+        if (exchange.SubmissionCount != beforeInvalidAck + options.MaxSendAttempts)
+            throw new InvalidOperationException("Invalid ACK retry count exceeded MaxSendAttempts.");
+        await WaitUntilAsync(() => logger.Contains("attempts_exhausted"));
+
+        exchange.EnqueuePlan(new SubmissionPlan(SubmissionOutcome.Unavailable));
+        exchange.EnqueuePlan(new SubmissionPlan(SubmissionOutcome.Unavailable));
+        int beforeUnavailable = exchange.SubmissionCount;
+        sender.AcceptResult(result with { Json = "unknown delivery result" });
+        ResultMessage unavailableFirst = await exchange.ReadSubmissionAsync();
+        NewsAgentPromptSnapshot latestSnapshot = JsonSerializer.Deserialize(NewsAgentContextChecks.CreateExampleJson(),
+            NewsAgentJsonContext.Default.NewsAgentPromptSnapshot)!
+            with
+        { Version = "news-v4", Revision = 4 };
+        exchange.Publish(ToMessage(latestSnapshot));
+        await WaitUntilAsync(() => executor.GetSnapshotStatus().Revision == 4);
+        ResultMessage unavailableSecond = await exchange.ReadSubmissionAsync();
+        AssertSameDelivery(unavailableFirst, unavailableSecond);
+        if (exchange.SubmissionCount != beforeUnavailable + options.MaxSendAttempts)
+            throw new InvalidOperationException("Unavailable retry count exceeded MaxSendAttempts.");
+        await WaitUntilAsync(() => logger.CountContaining("attempts_exhausted") >= 2);
+
+        exchange.EnqueuePlan(new SubmissionPlan(SubmissionOutcome.Hold));
+        exchange.EnqueuePlan(new SubmissionPlan(SubmissionOutcome.Accepted));
+        int beforeTimeout = exchange.SubmissionCount;
+        sender.AcceptResult(result with { Json = "timeout delivery result" });
+        ResultMessage timeoutFirst = await exchange.ReadSubmissionAsync();
+        ResultMessage timeoutSecond = await exchange.ReadSubmissionAsync();
+        AssertSameDelivery(timeoutFirst, timeoutSecond);
+        if (exchange.SubmissionCount != beforeTimeout + options.MaxSendAttempts)
+            throw new InvalidOperationException("Timeout retry count exceeded MaxSendAttempts.");
+        await WaitUntilAsync(() => logger.CountContaining("News result accepted by gRPC peer") >= 2);
+
+        TaskCompletionSource<ResultAcknowledgement> holdFirst = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        exchange.EnqueuePlan(new SubmissionPlan(SubmissionOutcome.Hold, holdFirst));
+        exchange.EnqueuePlan(new SubmissionPlan(SubmissionOutcome.Accepted));
+        sender.AcceptResult(result with { Json = "buffer first" });
+        ResultMessage active = await exchange.ReadSubmissionAsync();
+        int acknowledgedBeforeHold = logger.CountContaining("News result accepted by gRPC peer");
+        DateTimeOffset acceptedCallbackStart = DateTimeOffset.UtcNow;
+        sender.AcceptResult(result with { Json = "buffer second" });
+        if (DateTimeOffset.UtcNow - acceptedCallbackStart > TimeSpan.FromSeconds(1))
+            throw new InvalidOperationException("Result event handler waited on the active network call.");
+        DateTimeOffset enqueueStart = DateTimeOffset.UtcNow;
+        sender.AcceptResult(result with { Json = "dropped full" });
+        if (DateTimeOffset.UtcNow - enqueueStart > TimeSpan.FromSeconds(1) || !logger.Contains("queue_full"))
+            throw new InvalidOperationException("Full result queue blocked or did not report a loss.");
+        if (logger.CountContaining("News result accepted by gRPC peer") != acknowledgedBeforeHold)
+            throw new InvalidOperationException("Sender marked a result accepted before receiving its ACK.");
+        holdFirst.TrySetResult(new ResultAcknowledgement { DeliveryId = active.DeliveryId, Accepted = true });
+        ResultMessage drained = await exchange.ReadSubmissionAsync();
+        if (drained.ResultJson.ToStringUtf8().Contains("buffer second", StringComparison.Ordinal) is false)
+            throw new InvalidOperationException("Queued result was not drained in FIFO order.");
+        await WaitUntilAsync(() => logger.CountContaining("News result accepted by gRPC peer") >= 3);
+
+        int sendsBeforeOversized = exchange.SubmissionCount;
+        sender.AcceptResult(CreateResult(new string('x', 10_000), "configuration-v", "gpt-local", "agent-v"));
+        await WaitUntilAsync(() => logger.Contains("oversized_result"));
+        if (exchange.SubmissionCount != sendsBeforeOversized)
+            throw new InvalidOperationException("Oversized result reached the gRPC server.");
+
+        TaskCompletionSource<ResultAcknowledgement> drainHold = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        exchange.EnqueuePlan(new SubmissionPlan(SubmissionOutcome.Hold, drainHold));
+        exchange.EnqueuePlan(new SubmissionPlan(SubmissionOutcome.Accepted));
+        sender.AcceptResult(result with { Json = "shutdown active" });
+        ResultMessage shutdownActive = await exchange.ReadSubmissionAsync();
+        sender.AcceptResult(result with { Json = "shutdown queued" });
+        using CancellationTokenSource shutdownDeadline = new(TimeSpan.FromSeconds(2));
+        Task stop = sender.StopAsync(shutdownDeadline.Token);
+        drainHold.TrySetResult(new ResultAcknowledgement { DeliveryId = shutdownActive.DeliveryId, Accepted = true });
+        _ = await exchange.ReadSubmissionAsync();
+        await stop;
+        int submissionCountAfterStop = exchange.SubmissionCount;
+        sender.AcceptResult(result with { Json = "after shutdown" });
+        await Task.Delay(150);
+        if (exchange.SubmissionCount != submissionCountAfterStop || !logger.Contains("sender_stopped"))
+            throw new InvalidOperationException("Stopped sender remained subscribed or sent another result.");
+        sender.Dispose();
+
+        TestLogger<NewsResultGrpcSender> timeoutLogger = new();
+        NewsResultGrpcSender timeoutSender = new(options with { RequestTimeout = TimeSpan.FromSeconds(5) },
+            client, executor, timeoutLogger);
+        await timeoutSender.StartAsync(CancellationToken.None);
+        exchange.EnqueuePlan(new SubmissionPlan(SubmissionOutcome.Hold));
+        timeoutSender.AcceptResult(result with { Json = "shutdown timeout active" });
+        _ = await exchange.ReadSubmissionAsync();
+        timeoutSender.AcceptResult(result with { Json = "shutdown timeout queued" });
+        using CancellationTokenSource shortDeadline = new(TimeSpan.FromMilliseconds(150));
+        await timeoutSender.StopAsync(shortDeadline.Token);
+        if (!timeoutLogger.Contains("drain expired") || !timeoutLogger.Contains("activeSendUnknown=True"))
+            throw new InvalidOperationException("Shutdown deadline did not report active unknown delivery and queued loss.");
+        int countAtDeadline = exchange.SubmissionCount;
+        timeoutSender.AcceptResult(result with { Json = "after timeout shutdown" });
+        await Task.Delay(150);
+        if (exchange.SubmissionCount != countAtDeadline || !timeoutLogger.Contains("sender_stopped"))
+            throw new InvalidOperationException("Timeout-stopped sender kept accepting or sending results.");
+        timeoutSender.Dispose();
+    }
+
+    private static NewsAgentResult CreateResult(string resultJson, string configurationVersion, string model, string agentVersion)
+    {
+        using JsonDocument metadata = JsonDocument.Parse("{\"diagnostic\":true}");
+        NewsPublicationInput publication = new("Telegram", "synthetic publication", null,
+            DateTimeOffset.UtcNow, metadata.RootElement.Clone());
+        return new NewsAgentResult(publication, resultJson, configurationVersion, model, agentVersion);
+    }
+
+    private static void AssertSameDelivery(ResultMessage first, ResultMessage second)
+    {
+        if (first.DeliveryId != second.DeliveryId || !first.ResultJson.Equals(second.ResultJson))
+            throw new InvalidOperationException("Retry changed the delivery ID or payload.");
     }
 
     private static SnapshotMessage ToMessage(NewsAgentPromptSnapshot snapshot) => new()
@@ -177,9 +344,13 @@ internal static class NewsGrpcProbe
     {
         private readonly object _gate = new();
         private readonly List<Channel<SnapshotMessage>> _streams = [];
+        private readonly Channel<ResultMessage> _submissions = Channel.CreateUnbounded<ResultMessage>();
+        private readonly Channel<SubmissionPlan> _submissionPlans = Channel.CreateUnbounded<SubmissionPlan>();
         private SnapshotMessage? _current;
         private int _connectionCount;
+        private int _submissionCount;
         internal int ConnectionCount => Volatile.Read(ref _connectionCount);
+        internal int SubmissionCount => Volatile.Read(ref _submissionCount);
         internal bool SuppressInitialSnapshot { get; set; }
 
         internal void SetCurrent(SnapshotMessage snapshot)
@@ -221,7 +392,34 @@ internal static class NewsGrpcProbe
             lock (_gate) _streams.Remove(stream);
             stream.Writer.TryComplete();
         }
+
+        internal void EnqueuePlan(SubmissionPlan plan) => _submissionPlans.Writer.TryWrite(plan);
+
+        internal async Task<ResultMessage> ReadSubmissionAsync() => await _submissions.Reader.ReadAsync()
+            .AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+
+        internal bool TryReadSubmission(out ResultMessage message) => _submissions.Reader.TryRead(out message!);
+
+        internal async Task<ResultAcknowledgement> SubmitAsync(ResultMessage message, ServerCallContext context)
+        {
+            Interlocked.Increment(ref _submissionCount);
+            await _submissions.Writer.WriteAsync(new ResultMessage(message));
+            SubmissionPlan plan = await _submissionPlans.Reader.ReadAsync(context.CancellationToken);
+            if (plan.Outcome == SubmissionOutcome.Unavailable)
+                throw new RpcException(new Status(StatusCode.Unavailable, "diagnostic transport failure"));
+            if (plan.Outcome == SubmissionOutcome.Hold)
+                return await plan.Acknowledgement!.Task.WaitAsync(context.CancellationToken);
+            return new ResultAcknowledgement
+            {
+                DeliveryId = plan.Outcome == SubmissionOutcome.InvalidAck ? string.Empty : message.DeliveryId,
+                Accepted = plan.Outcome == SubmissionOutcome.Accepted
+            };
+        }
     }
+
+    private enum SubmissionOutcome { Accepted, Rejected, InvalidAck, Unavailable, Hold }
+    private sealed record SubmissionPlan(SubmissionOutcome Outcome,
+        TaskCompletionSource<ResultAcknowledgement>? Acknowledgement = null);
 
     private sealed class DiagnosticNewsExchange(DiagnosticExchange exchange) : NewsExchange.NewsExchangeBase
     {
@@ -242,5 +440,19 @@ internal static class NewsGrpcProbe
                 exchange.Remove(stream);
             }
         }
+
+        public override Task<ResultAcknowledgement> SubmitResult(ResultMessage request, ServerCallContext context) =>
+            exchange.SubmitAsync(request, context);
+    }
+
+    private sealed class TestLogger<T> : ILogger<T>
+    {
+        private readonly ConcurrentQueue<string> _messages = new();
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) => _messages.Enqueue(formatter(state, exception));
+        internal bool Contains(string value) => _messages.Any(message => message.Contains(value, StringComparison.Ordinal));
+        internal int CountContaining(string value) => _messages.Count(message => message.Contains(value, StringComparison.Ordinal));
     }
 }

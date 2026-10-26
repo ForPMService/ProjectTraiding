@@ -18,8 +18,8 @@ using ProjectTraiding.Europe.News;
 using ProjectTraiding.Europe.Telegram;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
-using ProjectTraiding.Europe.Grpc;
 using Grpc.Net.ClientFactory;
+using ProjectTraiding.Europe.Grpc;
 
 if (args.Length == 1 && args[0] == "--agent-aot-probe")
 {
@@ -136,7 +136,7 @@ ConfigureLoopbackUrls(builder);
 // Регистрирует один экземпляр приёмника для хоста и его подписчиков.
 TelegramOptions telegram = TelegramOptions.Load(builder.Configuration);
 NewsAgentOptions news = NewsAgentOptions.Load(builder.Configuration);
-NewsGrpcOptions newsGrpc = NewsGrpcOptions.Load(builder.Configuration);
+NewsGrpcOptions newsGrpc = NewsGrpcOptions.Load(builder.Configuration, validateSending: true);
 builder.Services.AddSingleton(telegram);
 builder.Services.AddSingleton(news);
 builder.Services.AddSingleton(newsGrpc);
@@ -148,7 +148,10 @@ if (newsGrpc.Enabled)
     }).ConfigureChannel(options =>
     {
         options.MaxReceiveMessageSize = newsGrpc.MaxReceiveMessageSize;
+        options.MaxSendMessageSize = newsGrpc.MaxSendMessageSize;
     });
+    // Sender starts before the analyzer and stops after all event producers.
+    builder.Services.AddHostedService<NewsResultGrpcSender>();
     builder.Services.AddHostedService<NewsSnapshotGrpcSubscriber>();
 }
 // Хост и будущие подписчики публикаций используют один экземпляр приёмника.

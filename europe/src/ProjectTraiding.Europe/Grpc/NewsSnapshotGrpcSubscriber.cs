@@ -101,7 +101,10 @@ public sealed partial class NewsSnapshotGrpcSubscriber : BackgroundService
         try
         {
             NewsSnapshotApplyStatus status = _executor.UpdatePromptSnapshot(snapshot);
-            LogSnapshotApplied(_logger, status.ToString(), snapshot.Revision ?? 0);
+            if (status == NewsSnapshotApplyStatus.Conflict)
+                LogSnapshotConflict(_logger, snapshot.Revision ?? 0);
+            else
+                LogSnapshotApplied(_logger, status.ToString(), snapshot.Revision ?? 0);
         }
         catch (ArgumentException)
         {
@@ -129,4 +132,6 @@ public sealed partial class NewsSnapshotGrpcSubscriber : BackgroundService
     private static partial void LogSnapshotRejected(ILogger logger, string category);
     [LoggerMessage(EventId = 4, Level = LogLevel.Information, Message = "News snapshot handled: status={Status} revision={Revision}.")]
     private static partial void LogSnapshotApplied(ILogger logger, string status, long revision);
+    [LoggerMessage(EventId = 5, Level = LogLevel.Warning, Message = "News snapshot revision conflict: revision={Revision}.")]
+    private static partial void LogSnapshotConflict(ILogger logger, long revision);
 }
