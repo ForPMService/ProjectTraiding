@@ -269,120 +269,149 @@ internal static class NewsAgentContextChecks
 
     private static async Task RunMetricsChecksAsync(IConfigurationRoot configuration)
     {
-        using MetricsCapture capture = new();
-        NewsAgentOptions options = new()
         {
-            Enabled = true,
-            QueueCapacity = 1,
-            Workers = 1,
-            RequestTimeout = TimeSpan.FromSeconds(30)
-        };
-        ControlledChatClient client = new("OpenAI");
-        using IHost host = BuildManagedHost(configuration, options, client);
-        await host.StartAsync();
-        NewsAgentExecutor executor = host.Services.GetRequiredService<NewsAgentExecutor>();
-        if (!executor.TryEnqueuePublication(CreateSyntheticPublication("Telegram", "metric queued"))
-            || executor.TryEnqueuePublication(CreateSyntheticPublication("Bigdata", "metric rejected")))
-            throw new InvalidOperationException("Метрики не должны менять ограниченную постановку в очередь.");
-        capture.Listener.RecordObservableInstruments();
-        capture.AssertLast("projecttraiding.europe.news.queue.depth", 1);
-        capture.AssertLast("projecttraiding.europe.news.queue.capacity", 1);
-        capture.AssertCount("projecttraiding.europe.news.queue.accepted", 1);
-        capture.AssertMeasurement("projecttraiding.europe.news.queue.accepted", "source=Telegram", 1);
-        capture.AssertMeasurement("projecttraiding.europe.news.queue.rejected", "reason=queue_unavailable", 1);
-        capture.AssertMeasurement("projecttraiding.europe.news.queue.rejected", "source=Bigdata", 1);
-
-        using (JsonDocument invalidMetadata = JsonDocument.Parse("[]"))
-        {
-            AssertInvalidInput(executor, new NewsPublicationInput("unknown-source", "invalid", null,
-                DateTimeOffset.UnixEpoch, invalidMetadata.RootElement));
-        }
-        capture.AssertMeasurement("projecttraiding.europe.news.queue.rejected", "reason=invalid", 1);
-        capture.AssertMeasurement("projecttraiding.europe.news.queue.rejected", "source=other", 1);
-
-        if (executor.UpdatePromptSnapshot(CreateSnapshot("metrics", "metrics", "Metrics prompt", ["M"], 1))
-            != NewsSnapshotApplyStatus.Applied)
-            throw new InvalidOperationException("Не удалось запустить управляемую попытку для проверки метрик.");
-        ControlledChatClient.CapturedCall call = await client.NextCallAsync();
-        capture.AssertMeasurement("projecttraiding.europe.news.processing.active", "source=Telegram", 1);
-        capture.Listener.RecordObservableInstruments();
-        capture.AssertLast("projecttraiding.europe.news.queue.depth", 0);
-        client.Release(call.Number);
-        await host.StopAsync(TimeSpan.FromSeconds(2));
-        capture.AssertMeasurement("projecttraiding.europe.news.processing.completed", "outcome=failed", 1);
-        capture.AssertHasMeasurement("projecttraiding.europe.news.processing.duration", "outcome=failed");
-        capture.AssertSum("projecttraiding.europe.news.processing.active", 0);
-
-        NewsAgentOptions disabledOptions = new();
-        ControlledChatClient disabledClient = new("OpenAI");
-        EuropeTelegramRuntime disabledTelegram = new(new TelegramOptions(),
-            NullLogger<EuropeTelegramRuntime>.Instance);
-        using (disabledTelegram)
-        using (NewsAgentExecutor disabledExecutor = new(disabledTelegram, disabledOptions,
-            NullLogger<NewsAgentExecutor>.Instance, null!, configuration, disabledClient))
-        {
-            if (disabledExecutor.TryEnqueuePublication(CreateSyntheticPublication("Bigdata", "disabled")))
-                throw new InvalidOperationException("Выключенный контур принял публикацию.");
-            capture.AssertMeasurement("projecttraiding.europe.news.queue.rejected", "reason=disabled", 1);
+            using MetricsCapture capture = new();
+            NewsAgentOptions options = new()
+            {
+                Enabled = true,
+                QueueCapacity = 1,
+                Workers = 1,
+                RequestTimeout = TimeSpan.FromSeconds(30)
+            };
+            ControlledChatClient client = new("OpenAI");
+            using IHost host = BuildManagedHost(configuration, options, client);
+            await host.StartAsync();
+            NewsAgentExecutor executor = host.Services.GetRequiredService<NewsAgentExecutor>();
+            if (!executor.TryEnqueuePublication(CreateSyntheticPublication("Telegram", "metric queued"))
+                || executor.TryEnqueuePublication(CreateSyntheticPublication("Bigdata", "metric rejected")))
+                throw new InvalidOperationException("Метрики не должны менять ограниченную постановку в очередь.");
             capture.Listener.RecordObservableInstruments();
-            capture.AssertLast("projecttraiding.europe.news.queue.capacity", 0);
+            capture.AssertGauge("projecttraiding.europe.news.queue.depth", 1);
+            capture.AssertGauge("projecttraiding.europe.news.queue.capacity", 1);
+            capture.AssertCounter("projecttraiding.europe.news.queue.accepted", null, null, 1);
+            capture.AssertCounter("projecttraiding.europe.news.queue.accepted", "source", "Telegram", 1);
+            capture.AssertCounter("projecttraiding.europe.news.queue.rejected", "reason", "queue_unavailable", 1);
+            capture.AssertCounter("projecttraiding.europe.news.queue.rejected", "source", "Bigdata", 1);
+
+            using (JsonDocument invalidMetadata = JsonDocument.Parse("[]"))
+            {
+                AssertInvalidInput(executor, new NewsPublicationInput("unknown-source", "invalid", null,
+                    DateTimeOffset.UnixEpoch, invalidMetadata.RootElement));
+            }
+            capture.AssertCounter("projecttraiding.europe.news.queue.rejected", "reason", "invalid", 1);
+            capture.AssertCounter("projecttraiding.europe.news.queue.rejected", "source", "other", 1);
+
+            if (executor.UpdatePromptSnapshot(CreateSnapshot("metrics", "metrics", "Metrics prompt", ["M"], 1))
+                != NewsSnapshotApplyStatus.Applied)
+                throw new InvalidOperationException("Не удалось запустить управляемую попытку для проверки метрик.");
+            ControlledChatClient.CapturedCall call = await client.NextCallAsync();
+            capture.Listener.RecordObservableInstruments();
+            capture.AssertGauge("projecttraiding.europe.news.queue.depth", 0);
+            capture.AssertActiveStarted(1);
+            client.Release(call.Number);
+            await host.StopAsync(TimeSpan.FromSeconds(2));
+            capture.AssertAttempt("Telegram", "failed");
+            capture.AssertActiveBalance(1);
         }
-        if (disabledClient.CallCount != 0)
-            throw new InvalidOperationException("Выключенный контур вызвал управляемого клиента.");
 
-        NewsAgentOptions parallelOptions = new()
         {
-            Enabled = true,
-            QueueCapacity = 2,
-            Workers = 2,
-            RequestTimeout = TimeSpan.FromSeconds(30)
-        };
-        ControlledChatClient parallelClient = new("OpenAI");
-        using IHost parallelHost = BuildManagedHost(configuration, parallelOptions, parallelClient);
-        await parallelHost.StartAsync();
-        NewsAgentExecutor parallelExecutor = parallelHost.Services.GetRequiredService<NewsAgentExecutor>();
-        if (!parallelExecutor.TryEnqueuePublication(CreateSyntheticPublication("Telegram", "parallel metrics telegram"))
-            || !parallelExecutor.TryEnqueuePublication(CreateSyntheticPublication("Bigdata", "parallel metrics bigdata")))
-            throw new InvalidOperationException("Параллельная очередь не приняла обе публикации.");
-        parallelExecutor.UpdatePromptSnapshot(CreateSnapshot("parallel-metrics", "parallel-metrics",
-            "Parallel metrics prompt", ["P"], 1));
-        ControlledChatClient.CapturedCall firstParallelCall = await parallelClient.NextCallAsync();
-        await parallelClient.NextCallAsync();
-        if (parallelClient.CallCount != 2)
-            throw new InvalidOperationException("Оба вызова не стартовали до освобождения любого из них.");
-        capture.AssertObserved("projecttraiding.europe.news.processing.active", "source=Telegram", 1, 2);
-        capture.AssertObserved("projecttraiding.europe.news.processing.active", "source=Bigdata", 1, 1);
-        parallelClient.Release(firstParallelCall.Number);
-        await Task.Delay(50);
-        await parallelHost.StopAsync(TimeSpan.FromSeconds(2));
-        capture.AssertSum("projecttraiding.europe.news.processing.active", 0);
-        capture.AssertHasMeasurement("projecttraiding.europe.news.processing.completed", "outcome=cancelled");
+            using MetricsCapture capture = new();
+            NewsAgentOptions disabledOptions = new();
+            ControlledChatClient disabledClient = new("OpenAI");
+            EuropeTelegramRuntime disabledTelegram = new(new TelegramOptions(),
+                NullLogger<EuropeTelegramRuntime>.Instance);
+            using (disabledTelegram)
+            using (NewsAgentExecutor disabledExecutor = new(disabledTelegram, disabledOptions,
+                NullLogger<NewsAgentExecutor>.Instance, null!, configuration, disabledClient))
+            {
+                if (disabledExecutor.TryEnqueuePublication(CreateSyntheticPublication("Bigdata", "disabled")))
+                    throw new InvalidOperationException("Выключенный контур принял публикацию.");
+                capture.AssertCounter("projecttraiding.europe.news.queue.rejected", "reason", "disabled", 1);
+                capture.Listener.RecordObservableInstruments();
+                capture.AssertGauge("projecttraiding.europe.news.queue.capacity", 0);
+                capture.AssertCounter("projecttraiding.europe.news.queue.accepted", null, null, 0);
+                capture.AssertCounter("projecttraiding.europe.news.processing.completed", null, null, 0);
+            }
+            if (disabledClient.CallCount != 0)
+                throw new InvalidOperationException("Выключенный контур вызвал управляемого клиента.");
+        }
 
-        NewsAgentOptions timeoutOptions = new()
         {
-            Enabled = true,
-            QueueCapacity = 1,
-            Workers = 1,
-            RequestTimeout = TimeSpan.FromMilliseconds(100)
-        };
-        ControlledChatClient timeoutClient = new("OpenAI");
-        using IHost timeoutHost = BuildManagedHost(configuration, timeoutOptions, timeoutClient);
-        await timeoutHost.StartAsync();
-        NewsAgentExecutor timeoutExecutor = timeoutHost.Services.GetRequiredService<NewsAgentExecutor>();
-        timeoutExecutor.UpdatePromptSnapshot(CreateSnapshot("timeout-metrics", "timeout-metrics",
-            "Timeout metrics prompt", ["T"], 1));
-        if (!timeoutExecutor.TryEnqueuePublication(CreateSyntheticPublication("other-source", "timeout")))
-            throw new InvalidOperationException("Очередь отклонила публикацию для проверки таймаута.");
-        await timeoutClient.NextCallAsync();
-        await capture.WaitForMeasurementAsync("projecttraiding.europe.news.processing.completed", "outcome=timeout");
-        await timeoutHost.StopAsync(TimeSpan.FromSeconds(2));
-        capture.AssertMeasurement("projecttraiding.europe.news.processing.completed", "outcome=timeout", 1);
-        capture.AssertHasMeasurement("projecttraiding.europe.news.processing.duration", "outcome=timeout");
-        capture.AssertSum("projecttraiding.europe.news.processing.active", 0);
+            using MetricsCapture capture = new();
+            NewsAgentOptions parallelOptions = new()
+            {
+                Enabled = true,
+                QueueCapacity = 2,
+                Workers = 2,
+                RequestTimeout = TimeSpan.FromSeconds(30)
+            };
+            ControlledChatClient parallelClient = new("OpenAI");
+            using IHost parallelHost = BuildManagedHost(configuration, parallelOptions, parallelClient);
+            await parallelHost.StartAsync();
+            NewsAgentExecutor parallelExecutor = parallelHost.Services.GetRequiredService<NewsAgentExecutor>();
+            if (!parallelExecutor.TryEnqueuePublication(CreateSyntheticPublication("Telegram", "parallel metrics telegram"))
+                || !parallelExecutor.TryEnqueuePublication(CreateSyntheticPublication("Bigdata", "parallel metrics bigdata")))
+                throw new InvalidOperationException("Параллельная очередь не приняла обе публикации.");
+            if (parallelExecutor.UpdatePromptSnapshot(CreateSnapshot("parallel-metrics", "parallel-metrics",
+                "Parallel metrics prompt", ["P"], 1)) != NewsSnapshotApplyStatus.Applied)
+                throw new InvalidOperationException("Не удалось применить параллельный снимок.");
+            ControlledChatClient.CapturedCall firstCall = await parallelClient.NextCallAsync();
+            ControlledChatClient.CapturedCall secondCall = await parallelClient.NextCallAsync();
+            if (parallelClient.CallCount != 2)
+                throw new InvalidOperationException("Оба вызова не стартовали до освобождения любого из них.");
+            string firstSource = GetPublicationSource(firstCall);
+            string secondSource = GetPublicationSource(secondCall);
+            if (firstSource == secondSource)
+                throw new InvalidOperationException("Параллельные вызовы не сохранили разные источники.");
+            capture.AssertActiveStarted(2);
+            parallelClient.Release(firstCall.Number);
+            await capture.WaitForMeasurementAsync("projecttraiding.europe.news.processing.completed", "source",
+                firstSource, "outcome", "failed");
+            await parallelHost.StopAsync(TimeSpan.FromSeconds(2));
+            capture.AssertAttempt(firstSource, "failed");
+            capture.AssertAttempt(secondSource, "cancelled");
+            capture.AssertActiveBalance(2);
+            capture.AssertCounter("projecttraiding.europe.news.queue.accepted", null, null, 2);
+            capture.AssertCounter("projecttraiding.europe.news.queue.rejected", null, null, 0);
+        }
+
+        {
+            using MetricsCapture capture = new();
+            NewsAgentOptions timeoutOptions = new()
+            {
+                Enabled = true,
+                QueueCapacity = 1,
+                Workers = 1,
+                RequestTimeout = TimeSpan.FromMilliseconds(100)
+            };
+            ControlledChatClient timeoutClient = new("OpenAI");
+            using IHost timeoutHost = BuildManagedHost(configuration, timeoutOptions, timeoutClient);
+            await timeoutHost.StartAsync();
+            NewsAgentExecutor timeoutExecutor = timeoutHost.Services.GetRequiredService<NewsAgentExecutor>();
+            if (timeoutExecutor.UpdatePromptSnapshot(CreateSnapshot("timeout-metrics", "timeout-metrics",
+                "Timeout metrics prompt", ["T"], 1)) != NewsSnapshotApplyStatus.Applied)
+                throw new InvalidOperationException("Не удалось применить снимок для проверки таймаута.");
+            if (!timeoutExecutor.TryEnqueuePublication(CreateSyntheticPublication("other-source", "timeout")))
+                throw new InvalidOperationException("Очередь отклонила публикацию для проверки таймаута.");
+            await timeoutClient.NextCallAsync();
+            await capture.WaitForMeasurementAsync("projecttraiding.europe.news.processing.completed", "source",
+                "other", "outcome", "timeout");
+            await timeoutHost.StopAsync(TimeSpan.FromSeconds(2));
+            capture.AssertAttempt("other", "timeout");
+            capture.AssertActiveBalance(1);
+        }
+    }
+
+    private static string GetPublicationSource(ControlledChatClient.CapturedCall call)
+    {
+        using JsonDocument input = JsonDocument.Parse(call.UserInput);
+        return input.RootElement.GetProperty("publication").GetProperty("source").GetString()
+            ?? throw new InvalidOperationException("В управляемом запросе отсутствует источник публикации.");
     }
 
     private sealed class MetricsCapture : IDisposable
     {
+        private const string MetricPrefix = "projecttraiding.europe.news.";
         private readonly ConcurrentQueue<RecordedMeasurement> _measurements = new();
         internal MeterListener Listener { get; } = new();
 
@@ -405,67 +434,73 @@ internal static class NewsAgentContextChecks
         private void Add<T>(Instrument instrument, T value, ReadOnlySpan<KeyValuePair<string, object?>> tags)
             where T : IFormattable
         {
-            string tagText = string.Join(",", tags.ToArray().Select(static tag =>
-                $"{tag.Key}={tag.Value}"));
+            KeyValuePair<string, string?>[] copiedTags = new KeyValuePair<string, string?>[tags.Length];
+            for (int index = 0; index < tags.Length; index++)
+                copiedTags[index] = new(tags[index].Key, tags[index].Value?.ToString());
             _measurements.Enqueue(new RecordedMeasurement(instrument.Name,
-                double.Parse(value.ToString(null, CultureInfo.InvariantCulture)!, CultureInfo.InvariantCulture), tagText));
+                double.Parse(value.ToString(null, CultureInfo.InvariantCulture)!, CultureInfo.InvariantCulture), copiedTags));
         }
 
-        internal void AssertCount(string name, double expected) => AssertMeasurement(name, "", expected);
-
-        internal void AssertLast(string name, double expected)
+        internal void AssertCounter(string name, string? tagName, string? tagValue, double expected)
         {
-            RecordedMeasurement? measurement = _measurements.LastOrDefault(item => item.Name == name);
-            if (measurement is null || measurement.Value != expected)
-                throw new InvalidOperationException($"Метрика {name} должна иметь значение {expected}.");
-        }
-
-        internal void AssertMeasurement(string name, string tagFragment, double expected)
-        {
-            RecordedMeasurement[] matches = _measurements.Where(item => item.Name == name
-                && item.Tags.Contains(tagFragment, StringComparison.Ordinal)).ToArray();
-            double actual = matches.Sum(static item => item.Value);
+            double actual = _measurements.Where(item => item.Name == name
+                    && (tagName is null || item.HasTag(tagName, tagValue)))
+                .Sum(static item => item.Value);
             if (actual != expected)
-                throw new InvalidOperationException($"Метрика {name} с метками {tagFragment} имеет {actual}, ожидалось {expected}.");
+                throw new InvalidOperationException($"Счётчик {name} равен {actual}, ожидалось {expected}.");
         }
 
-        internal void AssertHasMeasurement(string name, string tagFragment)
+        internal void AssertGauge(string name, double expected)
         {
-            if (!_measurements.Any(item => item.Name == name
-                && item.Tags.Contains(tagFragment, StringComparison.Ordinal)))
-                throw new InvalidOperationException($"Не записана метрика {name} с метками {tagFragment}.");
+            if (!_measurements.Any(item => item.Name == name && item.Value == expected))
+                throw new InvalidOperationException($"Gauge {name} не наблюдал значение {expected} для проверяемой очереди.");
         }
 
-        internal void AssertObserved(string name, string tagFragment, double value, int expectedCount)
+        internal void AssertAttempt(string source, string outcome)
         {
-            int actual = _measurements.Count(item => item.Name == name
-                && item.Tags.Contains(tagFragment, StringComparison.Ordinal) && item.Value == value);
-            if (actual != expectedCount)
-                throw new InvalidOperationException($"Для {name} с {tagFragment} найдено {actual} измерений со значением {value}, ожидалось {expectedCount}.");
+            RecordedMeasurement[] completed = _measurements.Where(item => item.Name == MetricPrefix + "processing.completed"
+                && item.HasTag("source", source) && item.HasTag("outcome", outcome)).ToArray();
+            RecordedMeasurement[] durations = _measurements.Where(item => item.Name == MetricPrefix + "processing.duration"
+                && item.HasTag("source", source) && item.HasTag("outcome", outcome)).ToArray();
+            if (completed.Length != 1 || completed[0].Value != 1 || durations.Length != 1 || durations[0].Value < 0)
+                throw new InvalidOperationException($"Попытка {source}/{outcome} должна дать ровно один completed и duration.");
         }
 
-        internal async Task WaitForMeasurementAsync(string name, string tagFragment)
+        internal void AssertActiveBalance(int attemptCount)
+        {
+            RecordedMeasurement[] active = _measurements.Where(item => item.Name == MetricPrefix + "processing.active").ToArray();
+            if (active.Length != attemptCount * 2 || active.Sum(static item => item.Value) != 0
+                || active.Count(static item => item.Value == 1) != attemptCount
+                || active.Count(static item => item.Value == -1) != attemptCount)
+                throw new InvalidOperationException("processing.active не сбалансирован по начатым попыткам.");
+        }
+
+        internal void AssertActiveStarted(int attemptCount)
+        {
+            RecordedMeasurement[] active = _measurements.Where(item => item.Name == MetricPrefix + "processing.active").ToArray();
+            if (active.Length != attemptCount || active.Any(static item => item.Value != 1))
+                throw new InvalidOperationException("processing.active не отражает число одновременно начатых попыток.");
+        }
+
+        internal async Task WaitForMeasurementAsync(string name, string firstTagName, string firstTagValue,
+            string secondTagName, string secondTagValue)
         {
             for (int attempt = 0; attempt < 100; attempt++)
             {
-                if (_measurements.Any(item => item.Name == name
-                    && item.Tags.Contains(tagFragment, StringComparison.Ordinal)))
+                if (_measurements.Any(item => item.Name == name && item.HasTag(firstTagName, firstTagValue)
+                    && item.HasTag(secondTagName, secondTagValue)))
                     return;
                 await Task.Delay(10);
             }
-            throw new InvalidOperationException($"Не дождались измерения {name} с метками {tagFragment}.");
-        }
-
-        internal void AssertSum(string name, double expected)
-        {
-            double actual = _measurements.Where(item => item.Name == name).Sum(static item => item.Value);
-            if (actual != expected)
-                throw new InvalidOperationException($"Сумма измерений {name} равна {actual}, ожидалось {expected}.");
+            throw new InvalidOperationException($"Не дождались измерения {name} с заданными метками.");
         }
 
         public void Dispose() => Listener.Dispose();
 
-        private sealed record RecordedMeasurement(string Name, double Value, string Tags);
+        private sealed record RecordedMeasurement(string Name, double Value, KeyValuePair<string, string?>[] Tags)
+        {
+            internal bool HasTag(string name, string? value) => Tags.Any(tag => tag.Key == name && tag.Value == value);
+        }
     }
 
     private static async Task RunWorkerGateChecksAsync()

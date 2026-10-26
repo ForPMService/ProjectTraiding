@@ -590,36 +590,37 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             string outcome = "failed";
             TagList sourceTags = new() { { "source", NormalizeSource(publication.Source) } };
             _processingActive.Add(1, sourceTags);
-            long startedTimestamp = Stopwatch.GetTimestamp();
-            bool validated = false;
+            long startedTimestamp = 0;
+            long finishedTimestamp = 0;
+            ChatResponse? response = null;
             try
             {
-                ChatResponse response = await GetValidatedResponseAsync(publication, snapshot, request.Token);
-                validated = true;
-                outcome = "passed";
-                cancellationToken.ThrowIfCancellationRequested();
+                startedTimestamp = Stopwatch.GetTimestamp();
                 try
                 {
-                    AnalysisCompleted?.Invoke(new(publication, response.Text, snapshot.Subject.Version,
-                        response.ModelId!, snapshot.AgentVersion));
+                    response = await GetValidatedResponseAsync(publication, snapshot, request.Token);
+                    outcome = "passed";
                 }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    outcome = "cancelled";
+                    throw;
+                }
+                catch (OperationCanceledException) { outcome = "timeout"; }
+                catch (ClientResultException) { outcome = "failed"; }
+                catch (HttpRequestException) { outcome = "failed"; }
+                catch (JsonException) { outcome = "failed"; }
+                catch (InvalidDataException) { outcome = "failed"; }
                 catch (Exception)
                 {
-                    LogWarning(_logger, "Подписчик результата LLM завершился ошибкой; доставка не подтверждена.");
+                    outcome = "failed";
+                    LogWarning(_logger, "Техническая ошибка операции LLM; результат отсутствует.");
+                }
+                finally
+                {
+                    finishedTimestamp = Stopwatch.GetTimestamp();
                 }
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                outcome = validated ? "passed" : "cancelled";
-                throw;
-            }
-            // GetValidatedResponseAsync records these request and validation outcomes with operation context.
-            catch (OperationCanceledException) { outcome = "timeout"; }
-            catch (ClientResultException) { outcome = "failed"; }
-            catch (HttpRequestException) { outcome = "failed"; }
-            catch (JsonException) { outcome = "failed"; }
-            catch (InvalidDataException) { outcome = "failed"; }
-            catch (Exception) { outcome = "failed"; LogWarning(_logger, "Техническая ошибка операции LLM; результат отсутствует."); }
             finally
             {
                 _processingActive.Add(-1, sourceTags);
@@ -629,7 +630,20 @@ public sealed partial class NewsAgentExecutor : BackgroundService
                     { "outcome", outcome }
                 };
                 _processingCompleted.Add(1, resultTags);
-                _processingDuration.Record(Stopwatch.GetElapsedTime(startedTimestamp).TotalSeconds, resultTags);
+                _processingDuration.Record(Stopwatch.GetElapsedTime(startedTimestamp, finishedTimestamp).TotalSeconds,
+                    resultTags);
+            }
+
+            if (outcome != "passed") continue;
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                AnalysisCompleted?.Invoke(new(publication, response!.Text, snapshot.Subject.Version,
+                    response.ModelId!, snapshot.AgentVersion));
+            }
+            catch (Exception)
+            {
+                LogWarning(_logger, "Подписчик результата LLM завершился ошибкой; доставка не подтверждена.");
             }
         }
     }
