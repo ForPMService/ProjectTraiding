@@ -389,6 +389,7 @@ static void ConfigureOpenTelemetry(WebApplicationBuilder builder)
         .WithMetrics(metrics =>
         {
             metrics.AddMeter(sourceName);
+            metrics.AddMeter(NewsAgentExecutor.MeterName);
             if (enableConsoleExporter) metrics.AddConsoleExporter();
         });
 }

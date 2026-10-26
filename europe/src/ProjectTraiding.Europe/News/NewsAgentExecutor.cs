@@ -2,6 +2,7 @@ using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -22,6 +23,7 @@ namespace ProjectTraiding.Europe.News;
 public sealed partial class NewsAgentExecutor : BackgroundService
 {
     public const string ActivitySourceName = "ProjectTraiding.Europe.News";
+    public const string MeterName = ActivitySourceName;
 
     private readonly EuropeTelegramRuntime _telegram;
     private readonly NewsAgentOptions _options;
@@ -30,6 +32,14 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     private readonly IHostEnvironment? _environment;
     private readonly IConfiguration _configuration;
     private readonly ActivitySource _activitySource;
+    private readonly Meter _meter;
+    private readonly ObservableGauge<int> _queueDepth;
+    private readonly ObservableGauge<int> _queueCapacity;
+    private readonly Counter<long> _queueAccepted;
+    private readonly Counter<long> _queueRejected;
+    private readonly UpDownCounter<long> _processingActive;
+    private readonly Counter<long> _processingCompleted;
+    private readonly Histogram<double> _processingDuration;
     private readonly Dictionary<string, IChatClient> _chatClients;
     private AIAgent? _agent;
     private readonly Channel<NewsPublicationInput> _publications;
@@ -57,6 +67,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         _environment = environment;
         _configuration = configuration;
         _activitySource = new ActivitySource(ActivitySourceName);
+        _meter = new Meter(MeterName);
         ImmutableArray<LlmProfileOptions> profiles = LlmProfileOptions.LoadCatalog(configuration);
         LlmProviderCredentials credentials = LlmProviderCredentials.Load(configuration);
         LlmProfileOptions activeProfile = LlmProfileOptions.LoadConfiguredActiveProfile(configuration, profiles);
@@ -83,6 +94,20 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             SingleReader = options.Workers == 1,
             SingleWriter = false
         });
+        if (!_publications.Reader.CanCount)
+        {
+            _meter.Dispose();
+            throw new InvalidOperationException("News publication channel must support an exact queue count.");
+        }
+        _queueDepth = _meter.CreateObservableGauge("projecttraiding.europe.news.queue.depth",
+            () => _publications.Reader.Count);
+        _queueCapacity = _meter.CreateObservableGauge("projecttraiding.europe.news.queue.capacity",
+            () => _options.Enabled ? _options.QueueCapacity : 0);
+        _queueAccepted = _meter.CreateCounter<long>("projecttraiding.europe.news.queue.accepted");
+        _queueRejected = _meter.CreateCounter<long>("projecttraiding.europe.news.queue.rejected");
+        _processingActive = _meter.CreateUpDownCounter<long>("projecttraiding.europe.news.processing.active");
+        _processingCompleted = _meter.CreateCounter<long>("projecttraiding.europe.news.processing.completed");
+        _processingDuration = _meter.CreateHistogram<double>("projecttraiding.europe.news.processing.duration", "s");
         _configurationReloadRegistration = ChangeToken.OnChange(configuration.GetReloadToken, OnConfigurationReload);
     }
 
@@ -430,35 +455,66 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     {
         if (!_options.Enabled)
         {
+            RecordQueueRejected(publication?.Source, "disabled");
             LogWarning(_logger, "Обработка News выключена; публикация пропущена.");
             return false;
         }
 
-        ArgumentNullException.ThrowIfNull(publication);
-        if (string.IsNullOrWhiteSpace(publication.Source))
-            throw new ArgumentException("Source must contain a source identifier.", nameof(publication));
-        if (string.IsNullOrWhiteSpace(publication.RawText))
-            throw new ArgumentException("RawText must contain publication text.", nameof(publication));
-        JsonElement ownedMetadata;
         try
         {
+            ArgumentNullException.ThrowIfNull(publication);
+            if (string.IsNullOrWhiteSpace(publication.Source))
+                throw new ArgumentException("Source must contain a source identifier.", nameof(publication));
+            if (string.IsNullOrWhiteSpace(publication.RawText))
+                throw new ArgumentException("RawText must contain publication text.", nameof(publication));
+            JsonElement ownedMetadata;
             if (publication.SourceMetadata.ValueKind != JsonValueKind.Object)
                 throw new ArgumentException("SourceMetadata must be a JSON object.", nameof(publication));
             ownedMetadata = publication.SourceMetadata.Clone();
+            if (publication.ReceivedAt.Offset != TimeSpan.Zero
+                || publication.PublishedAt is DateTimeOffset publishedAt && publishedAt.Offset != TimeSpan.Zero)
+                throw new ArgumentException("Publication timestamps must use UTC.", nameof(publication));
+
+            NewsPublicationInput ownedPublication = publication with { SourceMetadata = ownedMetadata };
+            if (_publications.Writer.TryWrite(ownedPublication))
+            {
+                RecordQueueAccepted(publication.Source);
+                return true;
+            }
         }
         catch (ObjectDisposedException)
         {
+            RecordQueueRejected(publication.Source, "invalid");
             throw new ArgumentException("SourceMetadata must be a live JSON object.", nameof(publication));
         }
-        if (publication.ReceivedAt.Offset != TimeSpan.Zero
-            || publication.PublishedAt is DateTimeOffset publishedAt && publishedAt.Offset != TimeSpan.Zero)
-            throw new ArgumentException("Publication timestamps must use UTC.", nameof(publication));
-
-        NewsPublicationInput ownedPublication = publication with { SourceMetadata = ownedMetadata };
-        if (_publications.Writer.TryWrite(ownedPublication)) return true;
+        catch (ArgumentException)
+        {
+            RecordQueueRejected(publication?.Source, "invalid");
+            throw;
+        }
+        RecordQueueRejected(publication.Source, "queue_unavailable");
         LogWarning(_logger, "Очередь LLM недоступна; публикация пропущена для анализа.");
         return false;
     }
+
+    private void RecordQueueAccepted(string? source)
+    {
+        TagList tags = new() { { "source", NormalizeSource(source) } };
+        _queueAccepted.Add(1, tags);
+    }
+
+    private void RecordQueueRejected(string? source, string reason)
+    {
+        TagList tags = new() { { "source", NormalizeSource(source) }, { "reason", reason } };
+        _queueRejected.Add(1, tags);
+    }
+
+    private static string NormalizeSource(string? source) => source switch
+    {
+        "Telegram" => "Telegram",
+        "Bigdata" => "Bigdata",
+        _ => "other"
+    };
 
     /// <summary>Преобразует Telegram-вход в независимый общий контракт и изолирует дефект адаптера.</summary>
     internal void EnqueueTelegramPublication(TelegramChannelPost post)
@@ -531,9 +587,16 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             }
             using CancellationTokenSource request = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             request.CancelAfter(_options.RequestTimeout);
+            string outcome = "failed";
+            TagList sourceTags = new() { { "source", NormalizeSource(publication.Source) } };
+            _processingActive.Add(1, sourceTags);
+            long startedTimestamp = Stopwatch.GetTimestamp();
+            bool validated = false;
             try
             {
                 ChatResponse response = await GetValidatedResponseAsync(publication, snapshot, request.Token);
+                validated = true;
+                outcome = "passed";
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
@@ -545,14 +608,29 @@ public sealed partial class NewsAgentExecutor : BackgroundService
                     LogWarning(_logger, "Подписчик результата LLM завершился ошибкой; доставка не подтверждена.");
                 }
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                outcome = validated ? "passed" : "cancelled";
+                throw;
+            }
             // GetValidatedResponseAsync records these request and validation outcomes with operation context.
-            catch (OperationCanceledException) { }
-            catch (ClientResultException) { }
-            catch (HttpRequestException) { }
-            catch (JsonException) { }
-            catch (InvalidDataException) { }
-            catch (Exception) { LogWarning(_logger, "Техническая ошибка операции LLM; результат отсутствует."); }
+            catch (OperationCanceledException) { outcome = "timeout"; }
+            catch (ClientResultException) { outcome = "failed"; }
+            catch (HttpRequestException) { outcome = "failed"; }
+            catch (JsonException) { outcome = "failed"; }
+            catch (InvalidDataException) { outcome = "failed"; }
+            catch (Exception) { outcome = "failed"; LogWarning(_logger, "Техническая ошибка операции LLM; результат отсутствует."); }
+            finally
+            {
+                _processingActive.Add(-1, sourceTags);
+                TagList resultTags = new()
+                {
+                    { "source", NormalizeSource(publication.Source) },
+                    { "outcome", outcome }
+                };
+                _processingCompleted.Add(1, resultTags);
+                _processingDuration.Record(Stopwatch.GetElapsedTime(startedTimestamp).TotalSeconds, resultTags);
+            }
         }
     }
 
@@ -766,6 +844,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         Interlocked.Exchange(ref _configurationReloadRegistration, null)?.Dispose();
         base.Dispose();
         _activitySource.Dispose();
+        _meter.Dispose();
         lock (_configurationGate)
         {
             HashSet<IChatClient> disposedClients = new(ReferenceEqualityComparer.Instance);
