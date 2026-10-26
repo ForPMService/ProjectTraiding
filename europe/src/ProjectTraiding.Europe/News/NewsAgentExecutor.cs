@@ -599,27 +599,27 @@ public sealed partial class NewsAgentExecutor : BackgroundService
                 try
                 {
                     response = await GetValidatedResponseAsync(publication, snapshot, request.Token);
-                    outcome = "passed";
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    outcome = "cancelled";
-                    throw;
-                }
-                catch (OperationCanceledException) { outcome = "timeout"; }
-                catch (ClientResultException) { outcome = "failed"; }
-                catch (HttpRequestException) { outcome = "failed"; }
-                catch (JsonException) { outcome = "failed"; }
-                catch (InvalidDataException) { outcome = "failed"; }
-                catch (Exception)
-                {
-                    outcome = "failed";
-                    LogWarning(_logger, "Техническая ошибка операции LLM; результат отсутствует.");
                 }
                 finally
                 {
                     finishedTimestamp = Stopwatch.GetTimestamp();
                 }
+                outcome = "passed";
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                outcome = "cancelled";
+                throw;
+            }
+            catch (OperationCanceledException) { outcome = "timeout"; }
+            catch (ClientResultException) { outcome = "failed"; }
+            catch (HttpRequestException) { outcome = "failed"; }
+            catch (JsonException) { outcome = "failed"; }
+            catch (InvalidDataException) { outcome = "failed"; }
+            catch (Exception)
+            {
+                outcome = "failed";
+                LogWarning(_logger, "Техническая ошибка операции LLM; результат отсутствует.");
             }
             finally
             {
