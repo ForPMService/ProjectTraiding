@@ -56,18 +56,22 @@ internal static class NewsGrpcProbe
         NewsAgentPromptSnapshot first = JsonSerializer.Deserialize(NewsAgentContextChecks.CreateExampleJson(),
             NewsAgentJsonContext.Default.NewsAgentPromptSnapshot)
             ?? throw new InvalidOperationException("Diagnostic snapshot missing.");
-        exchange.SetCurrent(ToMessage(first));
+        exchange.SetCurrent(ToMessage(first with { Temperature = 1.1f }));
 
         IConfigurationRoot configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["News:Enabled"] = "false",
+            ["News:Enabled"] = "true",
             ["News:QueueCapacity"] = "1",
             ["News:Workers"] = "1",
             ["News:RequestTimeout"] = "00:00:30",
             ["OpenAI:ApiKey"] = "diagnostic-only",
             ["OpenAI:ActiveProfile"] = "default",
             ["OpenAI:Profiles:default:Model"] = "gpt-6-luna",
-            ["LLM:ActiveProvider"] = "OpenAI"
+            ["LLM:ActiveProvider"] = "XAI",
+            ["XAI:ApiKey"] = "diagnostic-only",
+            ["XAI:Endpoint"] = "https://api.x.ai/v1",
+            ["XAI:ActiveProfile"] = "default",
+            ["XAI:Profiles:default:Model"] = "grok-local"
         }).Build();
         NewsAgentOptions newsOptions = NewsAgentOptions.Load(configuration);
         EuropeTelegramRuntime telegram = new(new TelegramOptions(), NullLogger<EuropeTelegramRuntime>.Instance);
@@ -90,8 +94,8 @@ internal static class NewsGrpcProbe
             MaxReceiveMessageSize = grpcOptions.MaxReceiveMessageSize
         });
         NewsExchange.NewsExchangeClient client = new(channel);
-        NewsSnapshotGrpcSubscriber subscriber = new(grpcOptions, client, executor,
-            NullLogger<NewsSnapshotGrpcSubscriber>.Instance);
+        TestLogger<NewsSnapshotGrpcSubscriber> snapshotLogger = new();
+        NewsSnapshotGrpcSubscriber subscriber = new(grpcOptions, client, executor, snapshotLogger);
 
         NewsGrpcOptions disabledOptions = grpcOptions with { Enabled = false };
         NewsSnapshotGrpcSubscriber disabledSubscriber = new(disabledOptions, client, executor,
@@ -113,19 +117,50 @@ internal static class NewsGrpcProbe
         }
 
         await subscriber.StartAsync(CancellationToken.None);
-        await WaitUntilAsync(() => executor.GetSnapshotStatus().Revision == 1 && exchange.ConnectionCount >= 1);
+        if (executor.GetSnapshotStatus() is not { HasSnapshot: false, WaitingForFirstSnapshot: true })
+            throw new InvalidOperationException("News worker state did not wait for its first gRPC snapshot.");
+        await WaitUntilAsync(() => snapshotLogger.Contains("category=unsupported_provider_configuration"));
+        if (executor.GetSnapshotStatus() is not { HasSnapshot: false, WaitingForFirstSnapshot: true })
+            throw new InvalidOperationException("Unsupported provider settings changed the active snapshot state.");
+        exchange.SetCurrent(ToMessage(first));
+        exchange.Publish(ToMessage(first));
+        await WaitUntilAsync(() => executor.GetSnapshotStatus().Revision == 1
+            && snapshotLogger.Contains("status=Applied") && exchange.ActiveConnectionCount == 1);
 
         NewsAgentPromptSnapshot revisionTwo = first with { Version = "news-v2", Revision = 2 };
         exchange.Publish(ToMessage(revisionTwo));
         await WaitUntilAsync(() => executor.GetSnapshotStatus().Revision == 2);
+        string revisionTwoPrompt = executor.CurrentExecutionSnapshot!.Subject.Prompt;
         exchange.Publish(ToMessage(revisionTwo));
+        await WaitUntilAsync(() => snapshotLogger.Contains("status=AlreadyApplied revision=2"));
+        if (executor.GetSnapshotStatus().Revision != 2
+            || executor.CurrentExecutionSnapshot!.Subject.Prompt != revisionTwoPrompt)
+            throw new InvalidOperationException("AlreadyApplied changed the current snapshot.");
+
         exchange.Publish(ToMessage(first));
+        await WaitUntilAsync(() => snapshotLogger.Contains("status=Stale revision=1"));
+        if (executor.GetSnapshotStatus().Revision != 2
+            || executor.CurrentExecutionSnapshot!.Subject.Prompt != revisionTwoPrompt)
+            throw new InvalidOperationException("Stale snapshot replaced the current snapshot.");
+
         exchange.Publish(ToMessage(revisionTwo with { Prompt = "conflicting same revision" }));
+        await WaitUntilAsync(() => snapshotLogger.Contains("status=Conflict revision=2"));
+        if (executor.GetSnapshotStatus().Revision != 2
+            || executor.CurrentExecutionSnapshot!.Subject.Prompt != revisionTwoPrompt)
+            throw new InvalidOperationException("Conflict replaced the current snapshot.");
+
         exchange.Publish(new SnapshotMessage { SnapshotJson = Google.Protobuf.ByteString.CopyFromUtf8("{") });
-        exchange.Publish(ToMessage(revisionTwo with { Revision = 3, Version = "news-v3" }));
+        await WaitUntilAsync(() => snapshotLogger.Contains("category=invalid_json"));
+        if (executor.GetSnapshotStatus().Revision != 2
+            || executor.CurrentExecutionSnapshot!.Subject.Prompt != revisionTwoPrompt
+            || exchange.ActiveConnectionCount != 1)
+            throw new InvalidOperationException("Invalid JSON changed the snapshot or terminated its stream.");
+
+        NewsAgentPromptSnapshot revisionThree = revisionTwo with { Revision = 3, Version = "news-v3" };
+        exchange.Publish(ToMessage(revisionThree));
         await WaitUntilAsync(() => executor.GetSnapshotStatus().Revision == 3);
         if (exchange.ConnectionCount != 1)
-            throw new InvalidOperationException("Invalid or stale snapshot unexpectedly broke the live stream.");
+            throw new InvalidOperationException("Invalid snapshot unexpectedly broke the live stream.");
 
         exchange.Publish(new SnapshotMessage { SnapshotJson = Google.Protobuf.ByteString.CopyFrom(new byte[8192]) });
         await WaitUntilAsync(() => exchange.ConnectionCount >= 2);
@@ -133,24 +168,39 @@ internal static class NewsGrpcProbe
             throw new InvalidOperationException("Oversized message replaced the active snapshot.");
 
         exchange.SuppressInitialSnapshot = true;
+        int previousConnections = exchange.ConnectionCount;
         exchange.EndStreams();
-        await WaitUntilAsync(() => exchange.ConnectionCount >= 3);
-        await Task.Delay(grpcOptions.FirstSnapshotTimeout + TimeSpan.FromMilliseconds(100));
-        if (executor.GetSnapshotStatus().Revision != 3)
-            throw new InvalidOperationException("First-message timeout changed the active snapshot.");
+        await WaitUntilAsync(() => exchange.ConnectionCount > previousConnections
+            && exchange.ActiveConnectionCount == 1);
+        int timedOutStreamConnectionCount = exchange.ConnectionCount;
+        int previousTimeoutLogs = snapshotLogger.CountContaining("category=initial_snapshot_timeout");
+        await WaitUntilAsync(() => snapshotLogger.CountContaining("category=initial_snapshot_timeout") > previousTimeoutLogs);
+        await WaitUntilAsync(() => exchange.ActiveConnectionCount == 0);
+        if (executor.GetSnapshotStatus().Revision != 3
+            || executor.CurrentExecutionSnapshot!.Subject.Version != "news-v3")
+            throw new InvalidOperationException("The previous snapshot changed before a replacement was received.");
+        await WaitUntilAsync(() => exchange.ConnectionCount > timedOutStreamConnectionCount
+            && exchange.ActiveConnectionCount == 1);
+        NewsAgentPromptSnapshot revisionFour = revisionThree with
+        {
+            Revision = 4,
+            Version = "news-v4",
+            Prompt = "Newly delivered snapshot after the first-message timeout."
+        };
+        exchange.SetCurrent(ToMessage(revisionFour));
         exchange.SuppressInitialSnapshot = false;
-        NewsAgentPromptSnapshot revisionThree = revisionTwo with { Revision = 3, Version = "news-v3" };
-        exchange.SetCurrent(ToMessage(revisionThree));
-        int connectionBeforeRecovery = exchange.ConnectionCount;
-        exchange.EndStreams();
-        await WaitUntilAsync(() => exchange.ConnectionCount > connectionBeforeRecovery);
-        await WaitUntilAsync(() => executor.GetSnapshotStatus().Revision == 3);
+        exchange.Publish(ToMessage(revisionFour));
+        await WaitUntilAsync(() => executor.GetSnapshotStatus().Revision == 4
+            && snapshotLogger.Contains("status=Applied revision=4"));
+        if (executor.CurrentExecutionSnapshot!.Subject.Prompt != revisionFour.Prompt)
+            throw new InvalidOperationException("The post-timeout stream did not apply the new snapshot contents.");
 
         await RunResultChecksAsync(exchange, client, executor);
         int connectionsBeforeStop = exchange.ConnectionCount;
+        Task? subscriberExecution = subscriber.ExecuteTask;
         await subscriber.StopAsync(CancellationToken.None);
-        await Task.Delay(grpcOptions.ReconnectDelay + TimeSpan.FromMilliseconds(100));
-        if (exchange.ConnectionCount != connectionsBeforeStop)
+        if (subscriberExecution?.IsCompleted != true || exchange.ActiveConnectionCount != 0
+            || exchange.ConnectionCount != connectionsBeforeStop)
             throw new InvalidOperationException("Subscriber opened a stream after shutdown.");
         await server.StopAsync();
         await server.DisposeAsync();
@@ -231,6 +281,8 @@ internal static class NewsGrpcProbe
         if (exchange.SubmissionCount != beforeUnavailable + options.MaxSendAttempts)
             throw new InvalidOperationException("Unavailable retry count exceeded MaxSendAttempts.");
         await WaitUntilAsync(() => logger.CountContaining("attempts_exhausted") >= 2);
+        if (!logger.Contains("category=transport_unavailable"))
+            throw new InvalidOperationException("Transport failure was not classified separately from timeout.");
 
         exchange.EnqueuePlan(new SubmissionPlan(SubmissionOutcome.Hold));
         exchange.EnqueuePlan(new SubmissionPlan(SubmissionOutcome.Accepted));
@@ -242,6 +294,8 @@ internal static class NewsGrpcProbe
         if (exchange.SubmissionCount != beforeTimeout + options.MaxSendAttempts)
             throw new InvalidOperationException("Timeout retry count exceeded MaxSendAttempts.");
         await WaitUntilAsync(() => logger.CountContaining("News result accepted by gRPC peer") >= 2);
+        if (!logger.Contains("category=timeout"))
+            throw new InvalidOperationException("Held SubmitResult did not produce a timeout category.");
 
         TaskCompletionSource<ResultAcknowledgement> holdFirst = new(TaskCreationOptions.RunContinuationsAsynchronously);
         exchange.EnqueuePlan(new SubmissionPlan(SubmissionOutcome.Hold, holdFirst));
@@ -282,9 +336,10 @@ internal static class NewsGrpcProbe
         drainHold.TrySetResult(new ResultAcknowledgement { DeliveryId = shutdownActive.DeliveryId, Accepted = true });
         _ = await exchange.ReadSubmissionAsync();
         await stop;
+        if (sender.ExecuteTask?.IsCompleted != true)
+            throw new InvalidOperationException("Sender cycle did not finish after graceful drain.");
         int submissionCountAfterStop = exchange.SubmissionCount;
         sender.AcceptResult(result with { Json = "after shutdown" });
-        await Task.Delay(150);
         if (exchange.SubmissionCount != submissionCountAfterStop || !logger.Contains("sender_stopped"))
             throw new InvalidOperationException("Stopped sender remained subscribed or sent another result.");
         sender.Dispose();
@@ -298,14 +353,32 @@ internal static class NewsGrpcProbe
         _ = await exchange.ReadSubmissionAsync();
         timeoutSender.AcceptResult(result with { Json = "shutdown timeout queued" });
         using CancellationTokenSource shortDeadline = new(TimeSpan.FromMilliseconds(150));
+        DateTimeOffset stopStarted = DateTimeOffset.UtcNow;
         await timeoutSender.StopAsync(shortDeadline.Token);
-        if (!timeoutLogger.Contains("drain expired") || !timeoutLogger.Contains("activeSendUnknown=True"))
+        if (DateTimeOffset.UtcNow - stopStarted > TimeSpan.FromSeconds(1)
+            || !timeoutLogger.Contains("drain expired")
+            || !timeoutLogger.Contains("queued=1")
+            || !timeoutLogger.Contains("activeSendUnknown=True"))
             throw new InvalidOperationException("Shutdown deadline did not report active unknown delivery and queued loss.");
+        Task timeoutExecution = timeoutSender.ExecuteTask
+            ?? throw new InvalidOperationException("Stopped sender did not expose its worker task.");
+        try
+        {
+            await timeoutExecution.WaitAsync(TimeSpan.FromSeconds(2));
+        }
+        catch (OperationCanceledException) when (timeoutExecution.IsCanceled)
+        {
+        }
+        if (!timeoutExecution.IsCompleted)
+            throw new InvalidOperationException("Sender worker remained active after cooperative cancellation.");
+        await WaitUntilAsync(() => exchange.ActiveSubmissionCount == 0);
         int countAtDeadline = exchange.SubmissionCount;
         timeoutSender.AcceptResult(result with { Json = "after timeout shutdown" });
-        await Task.Delay(150);
+        await timeoutSender.StopAsync(CancellationToken.None);
         if (exchange.SubmissionCount != countAtDeadline || !timeoutLogger.Contains("sender_stopped"))
             throw new InvalidOperationException("Timeout-stopped sender kept accepting or sending results.");
+        if (!ReferenceEquals(timeoutExecution, timeoutSender.ExecuteTask) || !timeoutExecution.IsCompleted)
+            throw new InvalidOperationException("Repeated stop restarted the sender.");
         timeoutSender.Dispose();
     }
 
@@ -348,8 +421,12 @@ internal static class NewsGrpcProbe
         private readonly Channel<SubmissionPlan> _submissionPlans = Channel.CreateUnbounded<SubmissionPlan>();
         private SnapshotMessage? _current;
         private int _connectionCount;
+        private int _activeConnectionCount;
+        private int _activeSubmissionCount;
         private int _submissionCount;
         internal int ConnectionCount => Volatile.Read(ref _connectionCount);
+        internal int ActiveConnectionCount => Volatile.Read(ref _activeConnectionCount);
+        internal int ActiveSubmissionCount => Volatile.Read(ref _activeSubmissionCount);
         internal int SubmissionCount => Volatile.Read(ref _submissionCount);
         internal bool SuppressInitialSnapshot { get; set; }
 
@@ -365,6 +442,7 @@ internal static class NewsGrpcProbe
             {
                 _streams.Add(stream);
                 Interlocked.Increment(ref _connectionCount);
+                Interlocked.Increment(ref _activeConnectionCount);
                 if (!SuppressInitialSnapshot && _current is not null) stream.Writer.TryWrite(_current);
             }
             return stream.Reader;
@@ -383,13 +461,15 @@ internal static class NewsGrpcProbe
             lock (_gate)
             {
                 foreach (Channel<SnapshotMessage> stream in _streams) stream.Writer.TryComplete();
-                _streams.Clear();
             }
         }
 
         internal void Remove(Channel<SnapshotMessage> stream)
         {
-            lock (_gate) _streams.Remove(stream);
+            lock (_gate)
+            {
+                if (_streams.Remove(stream)) Interlocked.Decrement(ref _activeConnectionCount);
+            }
             stream.Writer.TryComplete();
         }
 
@@ -403,17 +483,30 @@ internal static class NewsGrpcProbe
         internal async Task<ResultAcknowledgement> SubmitAsync(ResultMessage message, ServerCallContext context)
         {
             Interlocked.Increment(ref _submissionCount);
-            await _submissions.Writer.WriteAsync(new ResultMessage(message));
-            SubmissionPlan plan = await _submissionPlans.Reader.ReadAsync(context.CancellationToken);
-            if (plan.Outcome == SubmissionOutcome.Unavailable)
-                throw new RpcException(new Status(StatusCode.Unavailable, "diagnostic transport failure"));
-            if (plan.Outcome == SubmissionOutcome.Hold)
-                return await plan.Acknowledgement!.Task.WaitAsync(context.CancellationToken);
-            return new ResultAcknowledgement
+            Interlocked.Increment(ref _activeSubmissionCount);
+            try
             {
-                DeliveryId = plan.Outcome == SubmissionOutcome.InvalidAck ? string.Empty : message.DeliveryId,
-                Accepted = plan.Outcome == SubmissionOutcome.Accepted
-            };
+                await _submissions.Writer.WriteAsync(new ResultMessage(message));
+                SubmissionPlan plan = await _submissionPlans.Reader.ReadAsync(context.CancellationToken);
+                if (plan.Outcome == SubmissionOutcome.Unavailable)
+                    throw new RpcException(new Status(StatusCode.Unavailable, "diagnostic transport failure"));
+                if (plan.Outcome == SubmissionOutcome.Hold)
+                {
+                    if (plan.Acknowledgement is null)
+                        await Task.Delay(Timeout.InfiniteTimeSpan, context.CancellationToken);
+                    else
+                        return await plan.Acknowledgement.Task.WaitAsync(context.CancellationToken);
+                }
+                return new ResultAcknowledgement
+                {
+                    DeliveryId = plan.Outcome == SubmissionOutcome.InvalidAck ? string.Empty : message.DeliveryId,
+                    Accepted = plan.Outcome == SubmissionOutcome.Accepted
+                };
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _activeSubmissionCount);
+            }
         }
     }
 

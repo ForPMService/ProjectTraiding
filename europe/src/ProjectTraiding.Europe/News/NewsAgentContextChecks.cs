@@ -309,6 +309,8 @@ internal static class NewsAgentContextChecks
             capture.AssertGauge("projecttraiding.europe.news.queue.depth", 0);
             capture.AssertActiveStarted(1);
             client.Release(call.Number);
+            await capture.WaitForMeasurementAsync("projecttraiding.europe.news.processing.completed", "source",
+                "Telegram", "outcome", "failed");
             await host.StopAsync(TimeSpan.FromSeconds(2));
             capture.AssertAttempt("Telegram", "failed");
             capture.AssertActiveBalance(1);

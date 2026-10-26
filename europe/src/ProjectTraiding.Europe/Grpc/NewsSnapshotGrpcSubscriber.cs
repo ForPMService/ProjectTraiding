@@ -68,6 +68,11 @@ public sealed partial class NewsSnapshotGrpcSubscriber : BackgroundService
             {
                 throw;
             }
+            catch (RpcException) when (!cancellationToken.IsCancellationRequested
+                && !receivedAny && firstMessageTimeout.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(firstMessageTimeout.Token);
+            }
             if (!hasMessage) return;
             receivedAny = true;
             ApplySnapshot(call.ResponseStream.Current);
@@ -110,11 +115,19 @@ public sealed partial class NewsSnapshotGrpcSubscriber : BackgroundService
         {
             LogSnapshotRejected(_logger, "invalid_snapshot");
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException error) when (IsExpectedConfigurationFailure(error))
         {
-            LogSnapshotRejected(_logger, "snapshot_unavailable");
+            string category = error.Message.StartsWith("Для XAI News Temperature", StringComparison.Ordinal)
+                ? "unsupported_provider_configuration"
+                : "active_provider_unavailable";
+            LogSnapshotRejected(_logger, category);
         }
     }
+
+    private static bool IsExpectedConfigurationFailure(InvalidOperationException error) =>
+        error.Message.StartsWith("Для XAI News Temperature", StringComparison.Ordinal)
+        || error.Message.StartsWith("Отсутствует ", StringComparison.Ordinal)
+            && error.Message.EndsWith(":ApiKey в конфигурации.", StringComparison.Ordinal);
 
     private static string GetRpcCategory(RpcException error) => error.StatusCode switch
     {
@@ -132,6 +145,6 @@ public sealed partial class NewsSnapshotGrpcSubscriber : BackgroundService
     private static partial void LogSnapshotRejected(ILogger logger, string category);
     [LoggerMessage(EventId = 4, Level = LogLevel.Information, Message = "News snapshot handled: status={Status} revision={Revision}.")]
     private static partial void LogSnapshotApplied(ILogger logger, string status, long revision);
-    [LoggerMessage(EventId = 5, Level = LogLevel.Warning, Message = "News snapshot revision conflict: revision={Revision}.")]
+    [LoggerMessage(EventId = 5, Level = LogLevel.Warning, Message = "News snapshot handled: status=Conflict revision={Revision}.")]
     private static partial void LogSnapshotConflict(ILogger logger, long revision);
 }

@@ -19,6 +19,7 @@ public sealed partial class NewsResultGrpcSender : BackgroundService
     private int _accepting;
     private int _activeSend;
     private int _subscribed;
+    private int _stopInitiated;
 
     /// <summary>Создаёт ограниченный однопотребительский буфер результата.</summary>
     public NewsResultGrpcSender(NewsGrpcOptions options, NewsExchange.NewsExchangeClient client,
@@ -189,9 +190,21 @@ public sealed partial class NewsResultGrpcSender : BackgroundService
             activeSendAtDeadline = Volatile.Read(ref _activeSend) != 0;
             queuedAtDeadline = _pendingResults.Reader.CanCount ? _pendingResults.Reader.Count : -1;
         }
+        catch (OperationCanceledException) when (Volatile.Read(ref _stopInitiated) != 0
+            && execution?.IsCanceled == true)
+        {
+        }
         finally
         {
-            await base.StopAsync(CancellationToken.None);
+            Interlocked.Exchange(ref _stopInitiated, 1);
+            try
+            {
+                await base.StopAsync(cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested
+                || ExecuteTask?.IsCanceled == true)
+            {
+            }
         }
 
         if (timedOut)
