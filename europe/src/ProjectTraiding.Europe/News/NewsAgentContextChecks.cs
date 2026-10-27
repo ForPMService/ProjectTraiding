@@ -26,6 +26,27 @@ internal static class NewsAgentContextChecks
             NewsAgentJsonContext.Default.NewsAgentPromptSnapshot)
             ?? throw new InvalidOperationException("CLI-пример News не прошёл десериализацию.");
         NewsAgentExecutor.ValidatePromptSnapshot(emittedExample);
+        string serializedExample = JsonSerializer.Serialize(emittedExample, NewsAgentJsonContext.Default.NewsAgentPromptSnapshot);
+        NewsAgentPromptSnapshot roundTrippedExample = JsonSerializer.Deserialize(serializedExample,
+            NewsAgentJsonContext.Default.NewsAgentPromptSnapshot)
+            ?? throw new InvalidOperationException("Снимок News не прошёл повторную десериализацию.");
+        Guid globalEventId = emittedExample.GlobalEvents[0].Id;
+        using JsonDocument serializedSnapshot = JsonDocument.Parse(serializedExample);
+        if (globalEventId == Guid.Empty || roundTrippedExample.GlobalEvents[0].Id != globalEventId
+            || serializedSnapshot.RootElement.GetProperty("global_events")[0]
+                .GetProperty("id").GetString() != globalEventId.ToString())
+            throw new InvalidOperationException("UUID глобального сюжета потерян при сериализации снимка.");
+        try
+        {
+            NewsAgentExecutor.ValidatePromptSnapshot(emittedExample with
+            {
+                GlobalEvents = [new NewsGlobalEventDTO(Guid.Empty, "Synthetic event")]
+            });
+            throw new InvalidOperationException("Guid.Empty принят для существующего глобального сюжета.");
+        }
+        catch (ArgumentException)
+        {
+        }
 
         IConfigurationRoot configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -678,7 +699,8 @@ internal static class NewsAgentContextChecks
         ImmutableArray<NewsInstrumentContextDTO> instruments = secids
             .Select(secid => new NewsInstrumentContextDTO(secid, $"Synthetic {secid}", "equity", null))
             .ToImmutableArray();
-        return new NewsAgentPromptSnapshot(version, promptVersion, prompt, "Realtime", ["other"], [], instruments,
+        return new NewsAgentPromptSnapshot(version, promptVersion, prompt, "Realtime", ["other"],
+            [new NewsGlobalEventDTO(Guid.Parse("e582a772-6e14-4a91-9d5c-39871330d83a"), "Synthetic event")], instruments,
             schema.RootElement.Clone(), 256, 0.2f, false, revision);
     }
 

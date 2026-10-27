@@ -792,7 +792,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         foreach (string code in snapshot.EventTypes)
             if (string.IsNullOrWhiteSpace(code)) throw new ArgumentException("Некорректный справочник event_type.");
         foreach (NewsGlobalEventDTO item in snapshot.GlobalEvents)
-            if (item is null || item.Id <= 0 || string.IsNullOrWhiteSpace(item.Name))
+            if (item is null || item.Id == Guid.Empty || string.IsNullOrWhiteSpace(item.Name))
                 throw new ArgumentException("Некорректный справочник global_event.");
         foreach (NewsInstrumentContextDTO item in snapshot.Instruments)
             if (item is null || string.IsNullOrWhiteSpace(item.Secid) || string.IsNullOrWhiteSpace(item.Name)
@@ -825,7 +825,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         {
             if (fact is null || string.IsNullOrWhiteSpace(fact.EventType) || string.IsNullOrWhiteSpace(fact.Summary)
                 || fact.Instruments.IsDefault
-                || fact.GlobalEventId is <= 0 || fact.GlobalEventId is not null && fact.NewGlobalEventName is not null
+                || fact.GlobalEventId == Guid.Empty || fact.GlobalEventId is not null && fact.NewGlobalEventName is not null
                 || fact.NewGlobalEventName is not null && string.IsNullOrWhiteSpace(fact.NewGlobalEventName))
                 throw new InvalidDataException("Некорректные поля факта v3.");
             foreach (NewsInstrumentAssessmentDTO instrument in fact.Instruments)

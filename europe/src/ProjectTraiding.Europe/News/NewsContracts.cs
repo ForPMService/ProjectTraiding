@@ -54,7 +54,7 @@ internal sealed record NewsAgentVersionMaterial(string Provider, string Model,
     ReasoningEffort? ReasoningEffort, NewsAgentPromptSnapshot Subject);
 
 /// <summary>Существующий глобальный сюжет из справочника российского контура.</summary>
-public sealed record NewsGlobalEventDTO(long Id, string Name);
+public sealed record NewsGlobalEventDTO(Guid Id, string Name);
 
 /// <summary>Минимальный контекст инструмента по разделу 11 контракта v3; базовый актив может отсутствовать.</summary>
 public sealed record NewsInstrumentContextDTO(string Secid, string Name, string InstrumentType, string? BaseAsset);
@@ -78,7 +78,7 @@ public sealed record NewsFactDTO(
     [property: JsonRequired] string EventType,
     [property: JsonRequired] string Summary,
     [property: JsonRequired] DateTimeOffset? OccurredAt,
-    [property: JsonRequired] long? GlobalEventId,
+    [property: JsonRequired] Guid? GlobalEventId,
     [property: JsonRequired] string? NewGlobalEventName,
     [property: JsonRequired] ImmutableArray<NewsInstrumentAssessmentDTO> Instruments);
 
@@ -121,7 +121,7 @@ internal sealed partial class NewsAgentJsonContext : JsonSerializerContext
               "properties":{
                 "event_type":{"type":"string"},"summary":{"type":"string"},
                 "occurred_at":{"type":["string","null"],"format":"date-time"},
-                "global_event_id":{"type":["integer","null"],"minimum":1},
+                "global_event_id":{"type":["string","null"]},
                 "new_global_event_name":{"type":["string","null"]},
                 "instruments":{"type":"array","items":{
                   "type":"object","additionalProperties":false,
