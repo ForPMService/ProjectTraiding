@@ -250,7 +250,7 @@ await app.RunAsync();
 static async Task<IResult> HandleNewsSnapshotAsync(HttpContext context, NewsAgentExecutor executor)
 {
     if (!context.Request.HasJsonContentType())
-        return TypedResults.BadRequest(new NewsSnapshotApplyDTO("InvalidRequest", executor.GetSnapshotStatus().Revision));
+        return TypedResults.BadRequest(new NewsSnapshotApplyDTO("InvalidRequest"));
 
     NewsAgentPromptSnapshot? request;
     try
@@ -260,38 +260,34 @@ static async Task<IResult> HandleNewsSnapshotAsync(HttpContext context, NewsAgen
     }
     catch (JsonException)
     {
-        return TypedResults.BadRequest(new NewsSnapshotApplyDTO("InvalidRequest", executor.GetSnapshotStatus().Revision));
+        return TypedResults.BadRequest(new NewsSnapshotApplyDTO("InvalidRequest"));
     }
 
     if (request is null)
-        return TypedResults.BadRequest(new NewsSnapshotApplyDTO("InvalidRequest", executor.GetSnapshotStatus().Revision));
+        return TypedResults.BadRequest(new NewsSnapshotApplyDTO("InvalidRequest"));
 
-    NewsSnapshotApplyStatus result;
     try
     {
-        result = executor.UpdatePromptSnapshot(request);
+        executor.UpdatePromptSnapshot(request);
     }
     catch (ArgumentException)
     {
-        return TypedResults.BadRequest(new NewsSnapshotApplyDTO("InvalidRequest", executor.GetSnapshotStatus().Revision));
+        return TypedResults.BadRequest(new NewsSnapshotApplyDTO("InvalidRequest"));
     }
     catch (InvalidOperationException error) when (error.Message.StartsWith("Для XAI News Temperature", StringComparison.Ordinal))
     {
-        return TypedResults.BadRequest(new NewsSnapshotApplyDTO("InvalidRequest", executor.GetSnapshotStatus().Revision));
+        return TypedResults.BadRequest(new NewsSnapshotApplyDTO("InvalidRequest"));
     }
     catch (InvalidOperationException error) when (error.Message.EndsWith(":ApiKey в конфигурации.", StringComparison.Ordinal))
     {
         NewsAgentExecutor.LogSnapshotApplicationFailed(context.RequestServices.GetRequiredService<ILogger<NewsAgentExecutor>>(),
             "active_provider_unavailable");
-        return TypedResults.Json(new NewsSnapshotApplyDTO("Unavailable", executor.GetSnapshotStatus().Revision),
+        return TypedResults.Json(new NewsSnapshotApplyDTO("Unavailable"),
             NewsAgentJsonContext.Default.NewsSnapshotApplyDTO, statusCode: StatusCodes.Status503ServiceUnavailable);
     }
 
-    NewsSnapshotStatusDTO status = executor.GetSnapshotStatus();
-    NewsSnapshotApplyDTO response = new(result.ToString(), status.Revision);
-    int httpStatus = result is NewsSnapshotApplyStatus.Conflict or NewsSnapshotApplyStatus.Stale
-        ? StatusCodes.Status409Conflict : StatusCodes.Status200OK;
-    return TypedResults.Json(response, NewsAgentJsonContext.Default.NewsSnapshotApplyDTO, statusCode: httpStatus);
+    return TypedResults.Json(new NewsSnapshotApplyDTO("Applied"),
+        NewsAgentJsonContext.Default.NewsSnapshotApplyDTO, statusCode: StatusCodes.Status200OK);
 }
 
 static async Task RunNewsJsonProbeAsync(WebApplicationBuilder builder, string publicationPath, string snapshotPath)

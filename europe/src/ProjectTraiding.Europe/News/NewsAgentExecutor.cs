@@ -160,8 +160,8 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     /// <summary>Единственный внутренний выход; подписчик должен быть коротким, потокобезопасным и не выполнять I/O.</summary>
     public event Action<NewsAgentResult>? AnalysisCompleted;
 
-    /// <summary>Проверяет редакцию до атомарной замены; текущие операции сохраняют прежнюю версию.</summary>
-    public NewsSnapshotApplyStatus UpdatePromptSnapshot(NewsAgentPromptSnapshot snapshot)
+    /// <summary>Атомарно применяет полный контекст; уже начатые операции сохраняют захваченный снимок.</summary>
+    public void UpdatePromptSnapshot(NewsAgentPromptSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ValidatePromptSnapshot(snapshot);
@@ -171,15 +171,6 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         lock (_configurationGate)
         {
             LlmManagementRuntimeSnapshot current = Volatile.Read(ref _runtimeSnapshot);
-            NewsAgentPromptSnapshot? previous = current.Execution?.Subject;
-            if (previous is not null)
-            {
-                if (snapshot.Revision < previous.Revision) return NewsSnapshotApplyStatus.Stale;
-                if (snapshot.Revision == previous.Revision)
-                    return SubjectsEqual(previous, snapshot)
-                        ? NewsSnapshotApplyStatus.AlreadyApplied
-                        : NewsSnapshotApplyStatus.Conflict;
-            }
             IChatClient chatClient = current.ActiveChatClient
                 ?? GetOrCreateChatClient(current.ActiveProfile, current.Credentials);
             NewsAgentExecutionSnapshot execution = CreateExecutionSnapshot(current.ActiveProfile, snapshot, chatClient);
@@ -190,7 +181,6 @@ public sealed partial class NewsAgentExecutor : BackgroundService
                 Execution = execution
             });
             _firstSnapshotReady.TrySetResult();
-            return NewsSnapshotApplyStatus.Applied;
         }
     }
 
@@ -199,20 +189,8 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         LlmManagementRuntimeSnapshot snapshot = Volatile.Read(ref _runtimeSnapshot);
         NewsAgentExecutionSnapshot? execution = snapshot.Execution;
         return new NewsSnapshotStatusDTO(execution is not null,
-            _options.Enabled && execution is null, execution?.Subject.Revision, execution?.Subject.Version,
+            _options.Enabled && execution is null, execution?.Subject.Version,
             execution?.Subject.PromptVersion, execution?.AgentVersion);
-    }
-
-    private static bool SubjectsEqual(NewsAgentPromptSnapshot first, NewsAgentPromptSnapshot second)
-    {
-        NewsAgentPromptSnapshot left = first with { Revision = null };
-        NewsAgentPromptSnapshot right = second with { Revision = null };
-        return left.Version == right.Version && left.PromptVersion == right.PromptVersion && left.Prompt == right.Prompt
-            && left.Mode == right.Mode && left.EventTypes.SequenceEqual(right.EventTypes)
-            && left.GlobalEvents.SequenceEqual(right.GlobalEvents) && left.Instruments.SequenceEqual(right.Instruments)
-            && JsonElement.DeepEquals(left.JsonSchema, right.JsonSchema)
-            && left.MaxOutputTokens == right.MaxOutputTokens && left.Temperature == right.Temperature
-            && left.WebSearchEnabled == right.WebSearchEnabled;
     }
 
     internal NewsAgentExecutionSnapshot? CurrentExecutionSnapshot => Volatile.Read(ref _runtimeSnapshot).Execution;
@@ -336,7 +314,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             throw new InvalidOperationException("Для XAI News Temperature не должна превышать 1.");
 
         NewsAgentVersionMaterial material = new(profile.Provider, profile.Model, profile.Endpoint,
-            profile.ReasoningEffort, subject with { Revision = null });
+            profile.ReasoningEffort, subject);
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(material,
             NewsAgentJsonContext.Default.NewsAgentVersionMaterial);
         string agentVersion = "news-v3:" + Convert.ToHexString(SHA256.HashData(bytes));
@@ -783,7 +761,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     /// <summary>Допускает только полный Realtime-снимок и модель с документированной поддержкой schema и web search.</summary>
     internal static void ValidatePromptSnapshot(NewsAgentPromptSnapshot snapshot)
     {
-        if (snapshot.Revision is null or <= 0 || string.IsNullOrWhiteSpace(snapshot.Version) || string.IsNullOrWhiteSpace(snapshot.PromptVersion)
+        if (string.IsNullOrWhiteSpace(snapshot.Version) || string.IsNullOrWhiteSpace(snapshot.PromptVersion)
             || string.IsNullOrWhiteSpace(snapshot.Prompt) || snapshot.Mode != "Realtime"
             || snapshot.MaxOutputTokens is < 1 or > 32768
             || !float.IsFinite(snapshot.Temperature) || snapshot.Temperature is < 0 or > 2

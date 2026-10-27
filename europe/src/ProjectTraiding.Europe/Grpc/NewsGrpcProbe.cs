@@ -124,47 +124,40 @@ internal static class NewsGrpcProbe
             throw new InvalidOperationException("Unsupported provider settings changed the active snapshot state.");
         exchange.SetCurrent(ToMessage(first));
         exchange.Publish(ToMessage(first));
-        await WaitUntilAsync(() => executor.GetSnapshotStatus().Revision == 1
-            && snapshotLogger.Contains("status=Applied") && exchange.ActiveConnectionCount == 1);
+        await WaitUntilAsync(() => executor.GetSnapshotStatus().Version == first.Version
+            && snapshotLogger.Contains($"version={first.Version}") && exchange.ActiveConnectionCount == 1);
 
-        NewsAgentPromptSnapshot revisionTwo = first with { Version = "news-v2", Revision = 2 };
-        exchange.Publish(ToMessage(revisionTwo));
-        await WaitUntilAsync(() => executor.GetSnapshotStatus().Revision == 2);
-        string revisionTwoPrompt = executor.CurrentExecutionSnapshot!.Subject.Prompt;
-        exchange.Publish(ToMessage(revisionTwo));
-        await WaitUntilAsync(() => snapshotLogger.Contains("status=AlreadyApplied revision=2"));
-        if (executor.GetSnapshotStatus().Revision != 2
-            || executor.CurrentExecutionSnapshot!.Subject.Prompt != revisionTwoPrompt)
-            throw new InvalidOperationException("AlreadyApplied changed the current snapshot.");
+        NewsAgentPromptSnapshot snapshotTwo = first with { Version = "news-v2", Prompt = "Snapshot two prompt." };
+        exchange.Publish(ToMessage(snapshotTwo));
+        await WaitUntilAsync(() => executor.GetSnapshotStatus().Version == snapshotTwo.Version);
 
+        int firstVersionApplications = snapshotLogger.CountContaining($"version={first.Version}");
         exchange.Publish(ToMessage(first));
-        await WaitUntilAsync(() => snapshotLogger.Contains("status=Stale revision=1"));
-        if (executor.GetSnapshotStatus().Revision != 2
-            || executor.CurrentExecutionSnapshot!.Subject.Prompt != revisionTwoPrompt)
-            throw new InvalidOperationException("Stale snapshot replaced the current snapshot.");
+        await WaitUntilAsync(() => snapshotLogger.CountContaining($"version={first.Version}")
+            > firstVersionApplications);
+        if (executor.CurrentExecutionSnapshot!.Subject.Prompt != first.Prompt)
+            throw new InvalidOperationException("A valid snapshot without an ordering token was not applied.");
 
-        exchange.Publish(ToMessage(revisionTwo with { Prompt = "conflicting same revision" }));
-        await WaitUntilAsync(() => snapshotLogger.Contains("status=Conflict revision=2"));
-        if (executor.GetSnapshotStatus().Revision != 2
-            || executor.CurrentExecutionSnapshot!.Subject.Prompt != revisionTwoPrompt)
-            throw new InvalidOperationException("Conflict replaced the current snapshot.");
+        NewsAgentPromptSnapshot replacement = snapshotTwo with { Prompt = "Replacement with same version." };
+        exchange.Publish(ToMessage(replacement));
+        await WaitUntilAsync(() => executor.CurrentExecutionSnapshot!.Subject.Prompt == replacement.Prompt);
 
         exchange.Publish(new SnapshotMessage { SnapshotJson = Google.Protobuf.ByteString.CopyFromUtf8("{") });
         await WaitUntilAsync(() => snapshotLogger.Contains("category=invalid_json"));
-        if (executor.GetSnapshotStatus().Revision != 2
-            || executor.CurrentExecutionSnapshot!.Subject.Prompt != revisionTwoPrompt
+        if (executor.CurrentExecutionSnapshot!.Subject.Prompt != replacement.Prompt
             || exchange.ActiveConnectionCount != 1)
             throw new InvalidOperationException("Invalid JSON changed the snapshot or terminated its stream.");
 
-        NewsAgentPromptSnapshot revisionThree = revisionTwo with { Revision = 3, Version = "news-v3" };
-        exchange.Publish(ToMessage(revisionThree));
-        await WaitUntilAsync(() => executor.GetSnapshotStatus().Revision == 3);
+        NewsAgentPromptSnapshot snapshotThree = replacement with { Version = "news-v3", Prompt = "Snapshot three prompt." };
+        exchange.SetCurrent(ToMessage(snapshotThree));
+        exchange.Publish(ToMessage(snapshotThree));
+        await WaitUntilAsync(() => executor.GetSnapshotStatus().Version == snapshotThree.Version);
         if (exchange.ConnectionCount != 1)
             throw new InvalidOperationException("Invalid snapshot unexpectedly broke the live stream.");
 
         exchange.Publish(new SnapshotMessage { SnapshotJson = Google.Protobuf.ByteString.CopyFrom(new byte[8192]) });
         await WaitUntilAsync(() => exchange.ConnectionCount >= 2);
-        if (executor.GetSnapshotStatus().Revision != 3)
+        if (executor.GetSnapshotStatus().Version != snapshotThree.Version)
             throw new InvalidOperationException("Oversized message replaced the active snapshot.");
 
         exchange.SuppressInitialSnapshot = true;
@@ -176,23 +169,21 @@ internal static class NewsGrpcProbe
         int previousTimeoutLogs = snapshotLogger.CountContaining("category=initial_snapshot_timeout");
         await WaitUntilAsync(() => snapshotLogger.CountContaining("category=initial_snapshot_timeout") > previousTimeoutLogs);
         await WaitUntilAsync(() => exchange.ActiveConnectionCount == 0);
-        if (executor.GetSnapshotStatus().Revision != 3
-            || executor.CurrentExecutionSnapshot!.Subject.Version != "news-v3")
+        if (executor.GetSnapshotStatus().Version != snapshotThree.Version)
             throw new InvalidOperationException("The previous snapshot changed before a replacement was received.");
         await WaitUntilAsync(() => exchange.ConnectionCount > timedOutStreamConnectionCount
             && exchange.ActiveConnectionCount == 1);
-        NewsAgentPromptSnapshot revisionFour = revisionThree with
+        NewsAgentPromptSnapshot snapshotFour = snapshotThree with
         {
-            Revision = 4,
             Version = "news-v4",
             Prompt = "Newly delivered snapshot after the first-message timeout."
         };
-        exchange.SetCurrent(ToMessage(revisionFour));
+        exchange.SetCurrent(ToMessage(snapshotFour));
         exchange.SuppressInitialSnapshot = false;
-        exchange.Publish(ToMessage(revisionFour));
-        await WaitUntilAsync(() => executor.GetSnapshotStatus().Revision == 4
-            && snapshotLogger.Contains("status=Applied revision=4"));
-        if (executor.CurrentExecutionSnapshot!.Subject.Prompt != revisionFour.Prompt)
+        exchange.Publish(ToMessage(snapshotFour));
+        await WaitUntilAsync(() => executor.GetSnapshotStatus().Version == snapshotFour.Version
+            && snapshotLogger.Contains($"version={snapshotFour.Version}"));
+        if (executor.CurrentExecutionSnapshot!.Subject.Prompt != snapshotFour.Prompt)
             throw new InvalidOperationException("The post-timeout stream did not apply the new snapshot contents.");
 
         await RunResultChecksAsync(exchange, client, executor);
@@ -273,9 +264,9 @@ internal static class NewsGrpcProbe
         NewsAgentPromptSnapshot latestSnapshot = JsonSerializer.Deserialize(NewsAgentContextChecks.CreateExampleJson(),
             NewsAgentJsonContext.Default.NewsAgentPromptSnapshot)!
             with
-        { Version = "news-v4", Revision = 4 };
+        { Version = "news-v5" };
         exchange.Publish(ToMessage(latestSnapshot));
-        await WaitUntilAsync(() => executor.GetSnapshotStatus().Revision == 4);
+        await WaitUntilAsync(() => executor.GetSnapshotStatus().Version == latestSnapshot.Version);
         ResultMessage unavailableSecond = await exchange.ReadSubmissionAsync();
         AssertSameDelivery(unavailableFirst, unavailableSecond);
         if (exchange.SubmissionCount != beforeUnavailable + options.MaxSendAttempts)
