@@ -17,7 +17,7 @@ namespace ProjectTraiding.Europe.News;
 internal static class NewsAgentContextChecks
 {
     internal static string CreateExampleJson() => JsonSerializer.Serialize(
-        CreateSnapshot("news-v1", "prompt-v1", "Analyze the publication using the supplied context.", ["SYNTH"]),
+        CreateSnapshot("Analyze the publication using the supplied context.", ["SYNTH"]),
         NewsAgentJsonContext.Default.NewsAgentPromptSnapshot);
 
     internal static async Task RunAsync()
@@ -84,22 +84,26 @@ internal static class NewsAgentContextChecks
             if (configuration["XAI:ApiKey"] is not null)
                 throw new InvalidOperationException("Активный OpenAI не должен требовать ключ XAI.");
 
-            NewsAgentPromptSnapshot oldSubject = CreateSnapshot("snapshot-a", "prompt-a", "Synthetic prompt A",
+            NewsAgentPromptSnapshot oldSubject = CreateSnapshot("Synthetic prompt A",
                 ["A", "B", "C"]);
             if (executor.GetSnapshotStatus() is not { HasSnapshot: false, WaitingForFirstSnapshot: true })
                 throw new InvalidOperationException("Статус до первого снимка задан неверно.");
             executor.UpdatePromptSnapshot(oldSubject);
             NewsAgentExecutionSnapshot firstExecution = executor.CurrentExecutionSnapshot!;
-            string oldVersion = firstExecution.AgentVersion;
+            string originalAgentVersion = firstExecution.AgentVersion;
             executor.UpdatePromptSnapshot(oldSubject);
             if (ReferenceEquals(firstExecution, executor.CurrentExecutionSnapshot))
                 throw new InvalidOperationException("Повторный корректный снимок не был применён заново.");
+            if (executor.CurrentExecutionSnapshot!.AgentVersion != originalAgentVersion)
+                throw new InvalidOperationException("Идентичная конфигурация получила другой agent_version.");
             NewsAgentPromptSnapshot replacement = oldSubject with { Prompt = "Replacement prompt" };
             executor.UpdatePromptSnapshot(replacement);
-            if (executor.CurrentExecutionSnapshot!.Subject.Prompt != replacement.Prompt)
+            if (executor.CurrentExecutionSnapshot!.Subject.Prompt != replacement.Prompt
+                || executor.CurrentExecutionSnapshot.AgentVersion == originalAgentVersion)
                 throw new InvalidOperationException("Новый снимок не заменил текущий контекст.");
             executor.UpdatePromptSnapshot(oldSubject);
-            if (executor.CurrentExecutionSnapshot!.Subject.Prompt != oldSubject.Prompt)
+            if (executor.CurrentExecutionSnapshot!.Subject.Prompt != oldSubject.Prompt
+                || executor.CurrentExecutionSnapshot.AgentVersion != originalAgentVersion)
                 throw new InvalidOperationException("Корректный более ранний снимок был отклонён.");
             using JsonDocument reorderedSchema = CreateReorderedSchema();
             executor.UpdatePromptSnapshot(oldSubject with { JsonSchema = reorderedSchema.RootElement });
@@ -116,7 +120,7 @@ internal static class NewsAgentContextChecks
                 || telegramInput.SourceMetadata.GetProperty("message_id").GetInt32() != 23
                 || telegramInput.SourceMetadata.TryGetProperty("text", out _))
                 throw new InvalidOperationException("Telegram не преобразован в общий контракт без потерь и дублирования.");
-            NewsAgentResult result = new(telegramInput, "{}", "snapshot", "model", "agent");
+            NewsAgentResult result = new(telegramInput, "{}", "model", "agent");
             string serializedResult = JsonSerializer.Serialize(result, NewsAgentJsonContext.Default.NewsAgentResult);
             using JsonDocument resultJson = JsonDocument.Parse(serializedResult);
             if (resultJson.RootElement.GetProperty("publication").GetProperty("source_metadata")
@@ -129,7 +133,7 @@ internal static class NewsAgentContextChecks
                 ReasoningEffort.None);
             AssertPublication(oldOpenAiCall, telegramInput);
 
-            NewsAgentPromptSnapshot newSubject = CreateSnapshot("snapshot-b", "prompt-b", "Synthetic prompt B",
+            NewsAgentPromptSnapshot newSubject = CreateSnapshot("Synthetic prompt B",
                 ["A", "C", "D"]);
             executor.UpdatePromptSnapshot(newSubject);
             configuration["OpenAI:ActiveProfile"] = "gpt41";
@@ -137,7 +141,7 @@ internal static class NewsAgentContextChecks
 
             NewsAgentExecutionSnapshot newExecution = executor.CurrentExecutionSnapshot
                 ?? throw new InvalidOperationException("После обновления отсутствует рабочая конфигурация News.");
-            if (newExecution.AgentVersion == oldVersion || newExecution.Profile.Model != "gpt-4.1-2025-04-14")
+            if (newExecution.AgentVersion == originalAgentVersion || newExecution.Profile.Model != "gpt-4.1-2025-04-14")
                 throw new InvalidOperationException("agent_version не отражает активный профиль и снимок.");
 
             Task newOpenAiRequest = executor.AnalyzeForDiagnosticsAsync(telegramInput, CancellationToken.None);
@@ -164,7 +168,7 @@ internal static class NewsAgentContextChecks
             AssertCall(oldXaiCall, "XAI", "grok-4.7", "Synthetic prompt B", ["A", "C", "D"],
                 ReasoningEffort.High);
 
-            NewsAgentPromptSnapshot newestSubject = CreateSnapshot("snapshot-c", "prompt-c", "Synthetic prompt C",
+            NewsAgentPromptSnapshot newestSubject = CreateSnapshot("Synthetic prompt C",
                 ["A", "D", "E"]);
             executor.UpdatePromptSnapshot(newestSubject);
             configuration["XAI:ActiveProfile"] = "grok46";
@@ -305,7 +309,7 @@ internal static class NewsAgentContextChecks
             capture.AssertCounter("projecttraiding.europe.news.queue.rejected", "reason", "invalid", 1);
             capture.AssertCounter("projecttraiding.europe.news.queue.rejected", "source", "other", 1);
 
-            executor.UpdatePromptSnapshot(CreateSnapshot("metrics", "metrics", "Metrics prompt", ["M"]));
+            executor.UpdatePromptSnapshot(CreateSnapshot("Metrics prompt", ["M"]));
             ControlledChatClient.CapturedCall call = await client.NextCallAsync();
             capture.Listener.RecordObservableInstruments();
             capture.AssertGauge("projecttraiding.europe.news.queue.depth", 0);
@@ -356,8 +360,7 @@ internal static class NewsAgentContextChecks
             if (!parallelExecutor.TryEnqueuePublication(CreateSyntheticPublication("Telegram", "parallel metrics telegram"))
                 || !parallelExecutor.TryEnqueuePublication(CreateSyntheticPublication("Bigdata", "parallel metrics bigdata")))
                 throw new InvalidOperationException("Параллельная очередь не приняла обе публикации.");
-            parallelExecutor.UpdatePromptSnapshot(CreateSnapshot("parallel-metrics", "parallel-metrics",
-                "Parallel metrics prompt", ["P"]));
+            parallelExecutor.UpdatePromptSnapshot(CreateSnapshot("Parallel metrics prompt", ["P"]));
             ControlledChatClient.CapturedCall firstCall = await parallelClient.NextCallAsync();
             ControlledChatClient.CapturedCall secondCall = await parallelClient.NextCallAsync();
             if (parallelClient.CallCount != 2)
@@ -391,8 +394,7 @@ internal static class NewsAgentContextChecks
             using IHost timeoutHost = BuildManagedHost(configuration, timeoutOptions, timeoutClient);
             await timeoutHost.StartAsync();
             NewsAgentExecutor timeoutExecutor = timeoutHost.Services.GetRequiredService<NewsAgentExecutor>();
-            timeoutExecutor.UpdatePromptSnapshot(CreateSnapshot("timeout-metrics", "timeout-metrics",
-                "Timeout metrics prompt", ["T"]));
+            timeoutExecutor.UpdatePromptSnapshot(CreateSnapshot("Timeout metrics prompt", ["T"]));
             if (!timeoutExecutor.TryEnqueuePublication(CreateSyntheticPublication("other-source", "timeout")))
                 throw new InvalidOperationException("Очередь отклонила публикацию для проверки таймаута.");
             await timeoutClient.NextCallAsync();
@@ -553,7 +555,7 @@ internal static class NewsAgentContextChecks
         await Task.Delay(50);
         if (client.CallCount != 0)
             throw new InvalidOperationException("Очередь вызвала клиента до первого снимка.");
-        executor.UpdatePromptSnapshot(CreateSnapshot("worker", "worker", "Worker prompt", ["W"]));
+        executor.UpdatePromptSnapshot(CreateSnapshot("Worker prompt", ["W"]));
         ControlledChatClient.CapturedCall call = await client.NextCallAsync();
         AssertCall(call, "OpenAI", "gpt-6-luna", "Worker prompt", ["W"], null);
         using (JsonDocument captured = JsonDocument.Parse(call.UserInput))
@@ -565,7 +567,7 @@ internal static class NewsAgentContextChecks
         }
         string firstAgentVersion = executor.CurrentExecutionSnapshot!.AgentVersion;
         LlmModelSelectionResult selection = executor.ActivateModel("OpenAI", "gpt-4.1-2025-04-14");
-        executor.UpdatePromptSnapshot(CreateSnapshot("worker-2", "worker-2", "Updated worker prompt", ["W", "X"]));
+        executor.UpdatePromptSnapshot(CreateSnapshot("Updated worker prompt", ["W", "X"]));
         if (selection.Failure != LlmModelSelectionFailure.None
             || executor.CurrentExecutionSnapshot!.AgentVersion == firstAgentVersion)
             throw new InvalidOperationException("Смена модели и снимка не обновила атомарную конфигурацию.");
@@ -611,7 +613,7 @@ internal static class NewsAgentContextChecks
         NewsPublicationInput bigdata = CreateSyntheticPublication("Bigdata", "parallel bigdata");
         if (!executor.TryEnqueuePublication(telegram) || !executor.TryEnqueuePublication(bigdata))
             throw new InvalidOperationException("Общая очередь не приняла две параллельные публикации.");
-        executor.UpdatePromptSnapshot(CreateSnapshot("parallel", "parallel", "Parallel prompt", ["P"]));
+        executor.UpdatePromptSnapshot(CreateSnapshot("Parallel prompt", ["P"]));
         ControlledChatClient.CapturedCall first = await client.NextCallAsync();
         ControlledChatClient.CapturedCall second = await client.NextCallAsync();
         if (client.CallCount != 2)
@@ -641,7 +643,7 @@ internal static class NewsAgentContextChecks
         using IHost host = BuildManagedHost(configuration, options, client);
         await host.StartAsync();
         NewsAgentExecutor executor = host.Services.GetRequiredService<NewsAgentExecutor>();
-        executor.UpdatePromptSnapshot(CreateSnapshot("busy", "busy", "Busy prompt", ["B"]));
+        executor.UpdatePromptSnapshot(CreateSnapshot("Busy prompt", ["B"]));
         if (!executor.TryEnqueuePublication(CreateSyntheticPublication("Bigdata", "busy")))
             throw new InvalidOperationException("Очередь не приняла публикацию для проверки остановки.");
         await client.NextCallAsync();
@@ -668,14 +670,14 @@ internal static class NewsAgentContextChecks
         }).Build();
     }
 
-    private static NewsAgentPromptSnapshot CreateSnapshot(string version, string promptVersion, string prompt,
+    private static NewsAgentPromptSnapshot CreateSnapshot(string prompt,
         ImmutableArray<string> secids)
     {
         using JsonDocument schema = JsonDocument.Parse(NewsAgentJsonContext.ContractSchema);
         ImmutableArray<NewsInstrumentContextDTO> instruments = secids
             .Select(secid => new NewsInstrumentContextDTO(secid, $"Synthetic {secid}", "equity", null))
             .ToImmutableArray();
-        return new NewsAgentPromptSnapshot(version, promptVersion, prompt, "Realtime", ["other"],
+        return new NewsAgentPromptSnapshot(prompt, "Realtime", ["other"],
             [new NewsGlobalEventDTO(Guid.Parse("e582a772-6e14-4a91-9d5c-39871330d83a"), "Synthetic event")], instruments,
             schema.RootElement.Clone(), 256, 0.2f, false);
     }

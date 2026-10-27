@@ -8,7 +8,7 @@ using ProjectTraiding.Europe;
 namespace ProjectTraiding.Europe.News;
 
 /// <summary>Полный предметный снимок; активный профиль модели захватывается вместе с ним перед разбором.</summary>
-public sealed record NewsAgentPromptSnapshot(string Version, string PromptVersion, string Prompt,
+public sealed record NewsAgentPromptSnapshot(string Prompt,
     string Mode, ImmutableArray<string> EventTypes, ImmutableArray<NewsGlobalEventDTO> GlobalEvents,
     ImmutableArray<NewsInstrumentContextDTO> Instruments, JsonElement JsonSchema,
     int MaxOutputTokens, float Temperature, bool WebSearchEnabled);
@@ -16,7 +16,7 @@ public sealed record NewsAgentPromptSnapshot(string Version, string PromptVersio
 public sealed record NewsSnapshotApplyDTO(string Status);
 
 public sealed record NewsSnapshotStatusDTO(bool HasSnapshot, bool WaitingForFirstSnapshot,
-    string? Version, string? PromptVersion, string? AgentVersion);
+    string? AgentVersion);
 
 /// <summary>Один неизменяемый набор модели и предметного контекста, захваченный публикацией.</summary>
 internal sealed record NewsAgentExecutionSnapshot(NewsAgentPromptSnapshot Subject,
@@ -88,7 +88,7 @@ public sealed record NewsInstrumentAssessmentDTO(
 
 /// <summary>Внутренний выход следующему этапу без утверждения доставки или времени записи в российской базе.</summary>
 public sealed record NewsAgentResult(NewsPublicationInput Publication, string Json,
-    string ConfigurationVersion, string Model, string AgentVersion);
+    string Model, string AgentVersion);
 
 /// <summary>Сериализация прикладных данных без рефлексии; все поля ответа обязательны, включая nullable.</summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower,

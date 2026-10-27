@@ -189,8 +189,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         LlmManagementRuntimeSnapshot snapshot = Volatile.Read(ref _runtimeSnapshot);
         NewsAgentExecutionSnapshot? execution = snapshot.Execution;
         return new NewsSnapshotStatusDTO(execution is not null,
-            _options.Enabled && execution is null, execution?.Subject.Version,
-            execution?.Subject.PromptVersion, execution?.AgentVersion);
+            _options.Enabled && execution is null, execution?.AgentVersion);
     }
 
     internal NewsAgentExecutionSnapshot? CurrentExecutionSnapshot => Volatile.Read(ref _runtimeSnapshot).Execution;
@@ -616,7 +615,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                AnalysisCompleted?.Invoke(new(publication, response!.Text, snapshot.Subject.Version,
+                AnalysisCompleted?.Invoke(new(publication, response!.Text,
                     response.ModelId!, snapshot.AgentVersion));
             }
             catch (Exception)
@@ -761,8 +760,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     /// <summary>Допускает только полный Realtime-снимок и модель с документированной поддержкой schema и web search.</summary>
     internal static void ValidatePromptSnapshot(NewsAgentPromptSnapshot snapshot)
     {
-        if (string.IsNullOrWhiteSpace(snapshot.Version) || string.IsNullOrWhiteSpace(snapshot.PromptVersion)
-            || string.IsNullOrWhiteSpace(snapshot.Prompt) || snapshot.Mode != "Realtime"
+        if (string.IsNullOrWhiteSpace(snapshot.Prompt) || snapshot.Mode != "Realtime"
             || snapshot.MaxOutputTokens is < 1 or > 32768
             || !float.IsFinite(snapshot.Temperature) || snapshot.Temperature is < 0 or > 2
             || snapshot.EventTypes.IsDefaultOrEmpty || snapshot.GlobalEvents.IsDefault || snapshot.Instruments.IsDefault)

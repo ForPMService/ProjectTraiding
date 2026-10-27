@@ -106,7 +106,7 @@ public sealed partial class NewsSnapshotGrpcSubscriber : BackgroundService
         try
         {
             _executor.UpdatePromptSnapshot(snapshot);
-            LogSnapshotApplied(_logger, snapshot.Version);
+            LogSnapshotApplied(_logger);
         }
         catch (ArgumentException)
         {
@@ -140,6 +140,6 @@ public sealed partial class NewsSnapshotGrpcSubscriber : BackgroundService
     private static partial void LogTransportFailure(ILogger logger, string category);
     [LoggerMessage(EventId = 3, Level = LogLevel.Warning, Message = "News snapshot rejected: category={Category}.")]
     private static partial void LogSnapshotRejected(ILogger logger, string category);
-    [LoggerMessage(EventId = 4, Level = LogLevel.Information, Message = "News snapshot applied: version={Version}.")]
-    private static partial void LogSnapshotApplied(ILogger logger, string version);
+    [LoggerMessage(EventId = 4, Level = LogLevel.Information, Message = "News snapshot applied.")]
+    private static partial void LogSnapshotApplied(ILogger logger);
 }
