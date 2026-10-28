@@ -5,17 +5,17 @@ namespace ProjectTraiding.Europe.Telegram;
 /// <summary>Настройки единственной пользовательской сессии, исходных каналов и бота-получателя.</summary>
 public sealed class TelegramOptions
 {
-    public bool Enabled { get; init; }
-    public int ApiId { get; init; }
-    public string ApiHash { get; init; } = string.Empty;
-    public string PhoneNumber { get; init; } = string.Empty;
-    public string SessionPath { get; init; } = string.Empty;
-    public string UpdateStatePath { get; init; } = string.Empty;
-    public string[] Channels { get; init; } = [];
-    public string ForwardBotUsername { get; init; } = string.Empty;
-    public int ForwardQueueCapacity { get; init; }
-    public TimeSpan OperationTimeout { get; init; } = TimeSpan.FromSeconds(30);
-    public TimeSpan ShutdownTimeout { get; init; } = TimeSpan.FromSeconds(30);
+    public bool Enabled { get; set; }
+    public int ApiId { get; set; }
+    public string ApiHash { get; set; } = string.Empty;
+    public string PhoneNumber { get; set; } = string.Empty;
+    public string SessionPath { get; set; } = string.Empty;
+    public string UpdateStatePath { get; set; } = string.Empty;
+    public string[] Channels { get; set; } = [];
+    public string ForwardBotUsername { get; set; } = string.Empty;
+    public int ForwardQueueCapacity { get; set; }
+    public TimeSpan OperationTimeout { get; set; } = TimeSpan.FromSeconds(30);
+    public TimeSpan ShutdownTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>Читает настройки и проверяет обязательные параметры до запуска Telegram-сессии.</summary>
     internal static TelegramOptions Load(IConfiguration configuration)
