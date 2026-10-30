@@ -313,7 +313,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             throw new InvalidOperationException("Для XAI News Temperature не должна превышать 1.");
 
         NewsAgentVersionMaterial material = new(profile.Provider, profile.Model, profile.Endpoint,
-            profile.ReasoningEffort, profile.WebSearchContextSize, subject);
+            profile.ReasoningEffort, profile.WebSearchContextSize, profile.MaxToolCallCount, subject);
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(material,
             NewsAgentJsonContext.Default.NewsAgentVersionMaterial);
         string agentVersion = "news-v3:" + Convert.ToHexString(SHA256.HashData(bytes));
@@ -401,7 +401,8 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     private static bool ProfileEquals(LlmProfileOptions first, LlmProfileOptions second) =>
         first.Provider == second.Provider && first.Name == second.Name && first.Model == second.Model
         && first.Endpoint == second.Endpoint && first.ReasoningEffort == second.ReasoningEffort
-        && first.WebSearchContextSize == second.WebSearchContextSize;
+        && first.WebSearchContextSize == second.WebSearchContextSize
+        && first.MaxToolCallCount == second.MaxToolCallCount;
 
     /// <summary>Изолированная проверка использует ту же сборку запроса и валидатор, что и очередь.</summary>
     internal async Task<string> AnalyzeForDiagnosticsAsync(NewsPublicationInput publication,
@@ -642,7 +643,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             AdditionalProperties = new() { ["strict"] = true },
             Tools = snapshot.WebSearchEnabled ? [CreateWebSearchTool(execution.Profile)] : null,
             ToolMode = ChatToolMode.Auto,
-            RawRepresentationFactory = CreateRequestOptions
+            RawRepresentationFactory = client => CreateRequestOptions(client, execution.Profile)
         };
         ChatMessage[] messages =
         [
@@ -789,7 +790,13 @@ public sealed partial class NewsAgentExecutor : BackgroundService
 
     /// <summary>Штатная точка расширения адаптера отключает серверное сохранение без дополнительного HTTP-слоя.</summary>
 #pragma warning disable OPENAI001
-    private static object CreateRequestOptions(IChatClient client) => new CreateResponseOptions { StoredOutputEnabled = false };
+    private static object CreateRequestOptions(IChatClient client, LlmProfileOptions profile)
+    {
+        CreateResponseOptions options = new() { StoredOutputEnabled = false };
+        if (profile.Provider == "OpenAI" && profile.MaxToolCallCount is int maxToolCallCount)
+            options.MaxToolCallCount = maxToolCallCount;
+        return options;
+    }
 #pragma warning restore OPENAI001
 
     /// <summary>Допускает только полный Realtime-снимок и модель с документированной поддержкой schema и web search.</summary>

@@ -50,6 +50,7 @@ internal sealed record NewsAgentVersionMaterial(string Provider, string Model,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Endpoint,
     ReasoningEffort? ReasoningEffort,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? WebSearchContextSize,
+    int? MaxToolCallCount,
     NewsAgentPromptSnapshot Subject);
 
 /// <summary>Существующий глобальный сюжет из справочника российского контура.</summary>
