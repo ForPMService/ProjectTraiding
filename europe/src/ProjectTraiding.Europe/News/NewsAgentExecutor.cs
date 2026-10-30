@@ -711,11 +711,19 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             receivedAtUtc.ToString("O", CultureInfo.InvariantCulture),
             elapsed.TotalMilliseconds.ToString("F2", CultureInfo.InvariantCulture),
             inputTokenCount, outputTokenCount, averageTokensPerSecond);
-        if (_environment?.IsDevelopment() == true)
-            LogLlmDevelopmentResponse(_logger, operationId, traceId, response.Text);
 
 #pragma warning disable OPENAI001
-        bool responseStatusCompleted = response.RawRepresentation is ResponseResult { Status: ResponseStatus.Completed };
+        ResponseResult? rawResponse = response.RawRepresentation as ResponseResult;
+        bool responseStatusCompleted = rawResponse is { Status: ResponseStatus.Completed };
+        int? webSearchCalls = null;
+        if (rawResponse is not null)
+        {
+            webSearchCalls = 0;
+            foreach (ResponseItem outputItem in rawResponse.OutputItems)
+                if (outputItem is WebSearchCallResponseItem) webSearchCalls++;
+        }
+        long? cachedInputTokenCount = rawResponse?.Usage?.InputTokenDetails?.CachedTokenCount;
+        long? reasoningTokenCount = rawResponse?.Usage?.OutputTokenDetails?.ReasoningTokenCount;
 #pragma warning restore OPENAI001
         bool reportedModelMatchesRequest = response.ModelId == execution.Profile.Model;
         LogLlmResponseStatus(_logger, operationId, traceId, responseStatusCompleted, reportedModelMatchesRequest);
@@ -748,6 +756,12 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             throw;
         }
         LogLlmValidationResult(_logger, operationId, traceId, "json_v3", "passed", "none");
+        NewsLlmResponse result = JsonSerializer.Deserialize(response.Text, NewsAgentJsonContext.Default.NewsLlmResponse)
+            ?? throw new InvalidDataException("Отсутствует ответ v3.");
+        LogLlmResponseDiagnostics(_logger, operationId, execution.AgentVersion, execution.Profile.Provider,
+            response.ModelId ?? execution.Profile.Model, webSearchCalls, inputTokenCount, outputTokenCount,
+            cachedInputTokenCount, reasoningTokenCount, elapsed.TotalMilliseconds.ToString("F2", CultureInfo.InvariantCulture),
+            result.Accepted ? "accepted" : "not_accepted");
         cancellationToken.ThrowIfCancellationRequested();
         return response;
     }
@@ -881,10 +895,6 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         string receivedAtUtc, string callDurationMs, long? inputTokenCount, long? outputTokenCount,
         string? averageTokensPerSecond);
 
-    [LoggerMessage(EventId = 10, Level = LogLevel.Information,
-        Message = "LLM response text (Development only): operationId={OperationId} traceId={TraceId} responseText={ResponseText}")]
-    private static partial void LogLlmDevelopmentResponse(ILogger logger, string operationId, string? traceId, string responseText);
-
     [LoggerMessage(EventId = 11, Level = LogLevel.Information,
         Message = "LLM technical completion check: operationId={OperationId} traceId={TraceId} responseStatusCompleted={ResponseStatusCompleted} reportedModelMatchesRequest={ReportedModelMatchesRequest}.")]
     private static partial void LogLlmResponseStatus(ILogger logger, string operationId, string? traceId,
@@ -908,4 +918,10 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     [LoggerMessage(EventId = 15, Level = LogLevel.Warning,
         Message = "News snapshot application failed: reasonCategory={ReasonCategory}.")]
     internal static partial void LogSnapshotApplicationFailed(ILogger logger, string reasonCategory);
+
+    [LoggerMessage(EventId = 16, Level = LogLevel.Information,
+        Message = "LLM response diagnostics: operationId={OperationId} agentVersion={AgentVersion} provider={Provider} model={Model} webSearchCalls={WebSearchCalls} inputTokens={InputTokens} outputTokens={OutputTokens} cachedInputTokens={CachedInputTokens} reasoningTokens={ReasoningTokens} callDurationMs={CallDurationMs} result={Result}.")]
+    private static partial void LogLlmResponseDiagnostics(ILogger logger, string operationId, string agentVersion,
+        string provider, string model, int? webSearchCalls, long? inputTokens, long? outputTokens,
+        long? cachedInputTokens, long? reasoningTokens, string callDurationMs, string result);
 }
