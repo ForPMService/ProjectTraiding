@@ -720,40 +720,53 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         ResponseResult? rawResponse = response.RawRepresentation as ResponseResult;
         bool responseStatusCompleted = rawResponse is { Status: ResponseStatus.Completed };
         int? webSearchCalls = null;
-        int? webSearchSourceCount = execution.Profile.Provider == "OpenAI"
-            && execution.Profile.IncludeWebSearchSources ? 0 : null;
-        bool webSearchSourcesKnown = true;
-        if (rawResponse is not null)
+        int? webSearchSourceCount = null;
+        try
         {
-            webSearchCalls = 0;
-            foreach (ResponseItem outputItem in rawResponse.OutputItems)
-                if (outputItem is WebSearchCallResponseItem webSearchCall)
+            if (rawResponse?.OutputItems is { } outputItems)
+            {
+                webSearchCalls = 0;
+                bool sourcesRequested = execution.Profile.Provider == "OpenAI"
+                    && execution.Profile.IncludeWebSearchSources;
+                if (sourcesRequested) webSearchSourceCount = 0;
+                List<string>? sourceUris = sourcesRequested ? [] : null;
+                bool sourceCountKnown = true;
+                foreach (ResponseItem outputItem in outputItems)
                 {
+                    if (outputItem is not WebSearchCallResponseItem webSearchCall) continue;
                     webSearchCalls++;
-                    if (webSearchSourceCount is not null)
+                    if (webSearchSourceCount is null) continue;
+                    if (webSearchCall.Action is WebSearchSearchAction searchAction
+                        && searchAction.Sources is { } sources)
                     {
-#pragma warning disable SCME0001
-                        ReadOnlyMemory<byte> sourcesJson = webSearchCall.Action.Patch.GetJson("sources"u8);
-#pragma warning restore SCME0001
-                        if (sourcesJson.IsEmpty)
+                        webSearchSourceCount += sources.Count;
+                        foreach (WebSearchActionSource source in sources)
                         {
-                            webSearchSourcesKnown = false;
-                        }
-                        else
-                        {
-                            using JsonDocument sources = JsonDocument.Parse(sourcesJson);
-                            if (sources.RootElement.ValueKind == JsonValueKind.Array)
-                                webSearchSourceCount += sources.RootElement.GetArrayLength();
-                            else
-                                webSearchSourcesKnown = false;
+                            if (source is WebSearchActionUriSource uriSource)
+                                sourceUris?.Add(uriSource.Uri.AbsoluteUri);
                         }
                     }
+                    else
+                        sourceCountKnown = false;
                 }
-            if (!webSearchSourcesKnown) webSearchSourceCount = null;
+                if (!sourceCountKnown) webSearchSourceCount = null;
+                if (sourceUris is not null)
+                    foreach (string sourceUri in sourceUris)
+                        LogLlmWebSearchSource(_logger, operationId, sourceUri);
+            }
+        }
+        catch (Exception)
+        {
+            webSearchCalls = null;
+            webSearchSourceCount = null;
         }
         long? cachedInputTokenCount = rawResponse?.Usage?.InputTokenDetails?.CachedTokenCount;
         long? reasoningTokenCount = rawResponse?.Usage?.OutputTokenDetails?.ReasoningTokenCount;
 #pragma warning restore OPENAI001
+        LogLlmResponseDiagnostics(_logger, operationId, execution.AgentVersion, execution.Profile.Provider,
+            response.ModelId ?? execution.Profile.Model, webSearchCalls, inputTokenCount, outputTokenCount,
+            cachedInputTokenCount, reasoningTokenCount, webSearchSourceCount,
+            elapsed.TotalMilliseconds.ToString("F2", CultureInfo.InvariantCulture));
         bool reportedModelMatchesRequest = response.ModelId == execution.Profile.Model;
         LogLlmResponseStatus(_logger, operationId, traceId, responseStatusCompleted, reportedModelMatchesRequest);
         if (!responseStatusCompleted || !reportedModelMatchesRequest)
@@ -772,7 +785,9 @@ public sealed partial class NewsAgentExecutor : BackgroundService
                 }
         try
         {
-            ValidateLlmResponse(response.Text);
+            bool accepted = ValidateLlmResponse(response.Text);
+            LogLlmValidationResult(_logger, operationId, traceId, "news_v3_acceptance",
+                accepted ? "accepted" : "not_accepted", "none");
         }
         catch (JsonException)
         {
@@ -785,13 +800,6 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             throw;
         }
         LogLlmValidationResult(_logger, operationId, traceId, "json_v3", "passed", "none");
-        NewsLlmResponse result = JsonSerializer.Deserialize(response.Text, NewsAgentJsonContext.Default.NewsLlmResponse)
-            ?? throw new InvalidDataException("Отсутствует ответ v3.");
-        LogLlmResponseDiagnostics(_logger, operationId, execution.AgentVersion, execution.Profile.Provider,
-            response.ModelId ?? execution.Profile.Model, webSearchCalls, inputTokenCount, outputTokenCount,
-            cachedInputTokenCount, reasoningTokenCount, webSearchSourceCount,
-            elapsed.TotalMilliseconds.ToString("F2", CultureInfo.InvariantCulture),
-            result.Accepted ? "accepted" : "not_accepted");
         cancellationToken.ThrowIfCancellationRequested();
         return response;
     }
@@ -855,7 +863,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     }
 
     /// <summary>Проверяет структуру и технические ограничения v3; существование справочников остаётся Writer.</summary>
-    internal static void ValidateLlmResponse(string json)
+    internal static bool ValidateLlmResponse(string json)
     {
         using JsonDocument document = JsonDocument.Parse(json);
         if (document.RootElement.ValueKind != JsonValueKind.Object)
@@ -887,6 +895,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
                         && (!double.IsFinite(significance) || significance is < 0 or > 1))
                     throw new InvalidDataException("Некорректная оценка инструмента v3.");
         }
+        return analysis.Accepted;
     }
 
     /// <summary>Закрывает допуск без дренирования: потеря незавершённых публикаций разрешена на этом этапе.</summary>
@@ -981,8 +990,12 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     internal static partial void LogSnapshotApplicationFailed(ILogger logger, string reasonCategory);
 
     [LoggerMessage(EventId = 16, Level = LogLevel.Information,
-        Message = "LLM response diagnostics: operationId={OperationId} agentVersion={AgentVersion} provider={Provider} model={Model} webSearchCalls={WebSearchCalls} inputTokens={InputTokens} outputTokens={OutputTokens} cachedInputTokens={CachedInputTokens} reasoningTokens={ReasoningTokens} webSearchSourceCount={WebSearchSourceCount} callDurationMs={CallDurationMs} result={Result}.")]
+        Message = "LLM response diagnostics: operationId={OperationId} agentVersion={AgentVersion} provider={Provider} model={Model} webSearchCalls={WebSearchCalls} inputTokens={InputTokens} outputTokens={OutputTokens} cachedInputTokens={CachedInputTokens} reasoningTokens={ReasoningTokens} webSearchSourceCount={WebSearchSourceCount} callDurationMs={CallDurationMs}.")]
     private static partial void LogLlmResponseDiagnostics(ILogger logger, string operationId, string agentVersion,
         string provider, string model, int? webSearchCalls, long? inputTokens, long? outputTokens,
-        long? cachedInputTokens, long? reasoningTokens, int? webSearchSourceCount, string callDurationMs, string result);
+        long? cachedInputTokens, long? reasoningTokens, int? webSearchSourceCount, string callDurationMs);
+
+    [LoggerMessage(EventId = 17, Level = LogLevel.Debug,
+        Message = "LLM web search source: operationId={OperationId} uri={Uri}.")]
+    private static partial void LogLlmWebSearchSource(ILogger logger, string operationId, string uri);
 }
