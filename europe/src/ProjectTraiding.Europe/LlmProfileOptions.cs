@@ -6,7 +6,8 @@ namespace ProjectTraiding.Europe;
 
 /// <summary>Загружает профиль только выбранного провайдера; ключ не входит в снимок.</summary>
 public sealed record LlmProfileOptions(string Name, string Provider, string Model, string? Endpoint,
-    ReasoningEffort? ReasoningEffort, string? WebSearchContextSize = null, int? MaxToolCallCount = null)
+    ReasoningEffort? ReasoningEffort, string? WebSearchContextSize = null, int? MaxToolCallCount = null,
+    bool IncludeWebSearchSources = false)
 {
     private const string DefaultXaiEndpoint = "https://api.x.ai/v1";
 
@@ -98,8 +99,11 @@ public sealed record LlmProfileOptions(string Name, string Provider, string Mode
                 maxToolCallCount = parsedMaxToolCallCount;
             }
 
+            bool includeWebSearchSources = provider == "OpenAI"
+                && profileSection.GetValue("IncludeWebSearchSources", false);
+
             profiles.Add(new LlmProfileOptions(profileSection.Key, provider, model, endpoint, reasoningEffort,
-                webSearchContextSize, maxToolCallCount));
+                webSearchContextSize, maxToolCallCount, includeWebSearchSources));
         }
     }
 

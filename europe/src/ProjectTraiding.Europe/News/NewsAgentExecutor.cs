@@ -313,7 +313,8 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             throw new InvalidOperationException("Для XAI News Temperature не должна превышать 1.");
 
         NewsAgentVersionMaterial material = new(profile.Provider, profile.Model, profile.Endpoint,
-            profile.ReasoningEffort, profile.WebSearchContextSize, profile.MaxToolCallCount, subject);
+            profile.ReasoningEffort, profile.WebSearchContextSize, profile.MaxToolCallCount,
+            profile.IncludeWebSearchSources, subject);
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(material,
             NewsAgentJsonContext.Default.NewsAgentVersionMaterial);
         string agentVersion = "news-v3:" + Convert.ToHexString(SHA256.HashData(bytes));
@@ -402,7 +403,8 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         first.Provider == second.Provider && first.Name == second.Name && first.Model == second.Model
         && first.Endpoint == second.Endpoint && first.ReasoningEffort == second.ReasoningEffort
         && first.WebSearchContextSize == second.WebSearchContextSize
-        && first.MaxToolCallCount == second.MaxToolCallCount;
+        && first.MaxToolCallCount == second.MaxToolCallCount
+        && first.IncludeWebSearchSources == second.IncludeWebSearchSources;
 
     /// <summary>Изолированная проверка использует ту же сборку запроса и валидатор, что и очередь.</summary>
     internal async Task<string> AnalyzeForDiagnosticsAsync(NewsPublicationInput publication,
@@ -718,11 +720,36 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         ResponseResult? rawResponse = response.RawRepresentation as ResponseResult;
         bool responseStatusCompleted = rawResponse is { Status: ResponseStatus.Completed };
         int? webSearchCalls = null;
+        int? webSearchSourceCount = execution.Profile.Provider == "OpenAI"
+            && execution.Profile.IncludeWebSearchSources ? 0 : null;
+        bool webSearchSourcesKnown = true;
         if (rawResponse is not null)
         {
             webSearchCalls = 0;
             foreach (ResponseItem outputItem in rawResponse.OutputItems)
-                if (outputItem is WebSearchCallResponseItem) webSearchCalls++;
+                if (outputItem is WebSearchCallResponseItem webSearchCall)
+                {
+                    webSearchCalls++;
+                    if (webSearchSourceCount is not null)
+                    {
+#pragma warning disable SCME0001
+                        ReadOnlyMemory<byte> sourcesJson = webSearchCall.Action.Patch.GetJson("sources"u8);
+#pragma warning restore SCME0001
+                        if (sourcesJson.IsEmpty)
+                        {
+                            webSearchSourcesKnown = false;
+                        }
+                        else
+                        {
+                            using JsonDocument sources = JsonDocument.Parse(sourcesJson);
+                            if (sources.RootElement.ValueKind == JsonValueKind.Array)
+                                webSearchSourceCount += sources.RootElement.GetArrayLength();
+                            else
+                                webSearchSourcesKnown = false;
+                        }
+                    }
+                }
+            if (!webSearchSourcesKnown) webSearchSourceCount = null;
         }
         long? cachedInputTokenCount = rawResponse?.Usage?.InputTokenDetails?.CachedTokenCount;
         long? reasoningTokenCount = rawResponse?.Usage?.OutputTokenDetails?.ReasoningTokenCount;
@@ -762,7 +789,8 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             ?? throw new InvalidDataException("Отсутствует ответ v3.");
         LogLlmResponseDiagnostics(_logger, operationId, execution.AgentVersion, execution.Profile.Provider,
             response.ModelId ?? execution.Profile.Model, webSearchCalls, inputTokenCount, outputTokenCount,
-            cachedInputTokenCount, reasoningTokenCount, elapsed.TotalMilliseconds.ToString("F2", CultureInfo.InvariantCulture),
+            cachedInputTokenCount, reasoningTokenCount, webSearchSourceCount,
+            elapsed.TotalMilliseconds.ToString("F2", CultureInfo.InvariantCulture),
             result.Accepted ? "accepted" : "not_accepted");
         cancellationToken.ThrowIfCancellationRequested();
         return response;
@@ -793,8 +821,13 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     private static object CreateRequestOptions(IChatClient client, LlmProfileOptions profile)
     {
         CreateResponseOptions options = new() { StoredOutputEnabled = false };
-        if (profile.Provider == "OpenAI" && profile.MaxToolCallCount is int maxToolCallCount)
-            options.MaxToolCallCount = maxToolCallCount;
+        if (profile.Provider == "OpenAI")
+        {
+            if (profile.MaxToolCallCount is int maxToolCallCount)
+                options.MaxToolCallCount = maxToolCallCount;
+            if (profile.IncludeWebSearchSources)
+                options.IncludedProperties.Add(IncludedResponseProperty.WebSearchCallActionSources);
+        }
         return options;
     }
 #pragma warning restore OPENAI001
@@ -948,8 +981,8 @@ public sealed partial class NewsAgentExecutor : BackgroundService
     internal static partial void LogSnapshotApplicationFailed(ILogger logger, string reasonCategory);
 
     [LoggerMessage(EventId = 16, Level = LogLevel.Information,
-        Message = "LLM response diagnostics: operationId={OperationId} agentVersion={AgentVersion} provider={Provider} model={Model} webSearchCalls={WebSearchCalls} inputTokens={InputTokens} outputTokens={OutputTokens} cachedInputTokens={CachedInputTokens} reasoningTokens={ReasoningTokens} callDurationMs={CallDurationMs} result={Result}.")]
+        Message = "LLM response diagnostics: operationId={OperationId} agentVersion={AgentVersion} provider={Provider} model={Model} webSearchCalls={WebSearchCalls} inputTokens={InputTokens} outputTokens={OutputTokens} cachedInputTokens={CachedInputTokens} reasoningTokens={ReasoningTokens} webSearchSourceCount={WebSearchSourceCount} callDurationMs={CallDurationMs} result={Result}.")]
     private static partial void LogLlmResponseDiagnostics(ILogger logger, string operationId, string agentVersion,
         string provider, string model, int? webSearchCalls, long? inputTokens, long? outputTokens,
-        long? cachedInputTokens, long? reasoningTokens, string callDurationMs, string result);
+        long? cachedInputTokens, long? reasoningTokens, int? webSearchSourceCount, string callDurationMs, string result);
 }

@@ -9,6 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
+using OpenAI.Responses;
 using ProjectTraiding.Europe.Telegram;
 
 namespace ProjectTraiding.Europe.News;
@@ -60,7 +61,13 @@ internal static class NewsAgentContextChecks
                 ["OpenAI:ActiveProfile"] = "default",
                 ["OpenAI:Profiles:default:Model"] = "gpt-6-luna",
                 ["OpenAI:Profiles:default:ReasoningEffort"] = "None",
+                ["OpenAI:Profiles:default:WebSearchContextSize"] = "low",
+                ["OpenAI:Profiles:default:MaxToolCallCount"] = "2",
+                ["OpenAI:Profiles:default:IncludeWebSearchSources"] = "true",
                 ["OpenAI:Profiles:gpt41:Model"] = "gpt-4.1-2025-04-14",
+                ["OpenAI:Profiles:gpt41:WebSearchContextSize"] = "high",
+                ["OpenAI:Profiles:gpt41:MaxToolCallCount"] = "3",
+                ["OpenAI:Profiles:legacy:Model"] = "gpt-4.1",
                 ["XAI:Endpoint"] = "https://api.x.ai/v1",
                 ["XAI:ActiveProfile"] = "default",
                 ["XAI:Profiles:default:Model"] = "grok-4.7",
@@ -69,6 +76,32 @@ internal static class NewsAgentContextChecks
                 ["XAI:Profiles:grok46:ReasoningEffort"] = "High"
             })
             .Build();
+
+        LlmProfileOptions legacyOpenAiProfile = LlmProfileOptions.LoadCatalog(configuration)
+            .First(profile => profile.Name == "legacy" && profile.Provider == "OpenAI");
+        if (legacyOpenAiProfile.WebSearchContextSize is not null || legacyOpenAiProfile.MaxToolCallCount is not null
+            || legacyOpenAiProfile.IncludeWebSearchSources)
+            throw new InvalidOperationException("Профиль без настроек изменил поведение SDK по умолчанию.");
+        configuration["OpenAI:Profiles:default:WebSearchContextSize"] = "invalid";
+        try
+        {
+            _ = LlmProfileOptions.LoadCatalog(configuration);
+            throw new InvalidOperationException("Недопустимый размер поискового контекста принят.");
+        }
+        catch (InvalidOperationException error) when (error.Message.Contains("WebSearchContextSize", StringComparison.Ordinal))
+        {
+        }
+        configuration["OpenAI:Profiles:default:WebSearchContextSize"] = "low";
+        configuration["OpenAI:Profiles:default:MaxToolCallCount"] = "0";
+        try
+        {
+            _ = LlmProfileOptions.LoadCatalog(configuration);
+            throw new InvalidOperationException("Неположительный предел вызовов инструмента принят.");
+        }
+        catch (InvalidOperationException error) when (error.Message.Contains("MaxToolCallCount", StringComparison.Ordinal))
+        {
+        }
+        configuration["OpenAI:Profiles:default:MaxToolCallCount"] = "2";
 
         await RunMetricsChecksAsync(configuration);
 
@@ -85,7 +118,7 @@ internal static class NewsAgentContextChecks
                 throw new InvalidOperationException("Активный OpenAI не должен требовать ключ XAI.");
 
             NewsAgentPromptSnapshot oldSubject = CreateSnapshot("Synthetic prompt A",
-                ["A", "B", "C"]);
+                ["A", "B", "C"]) with { WebSearchEnabled = true };
             if (executor.GetSnapshotStatus() is not { HasSnapshot: false, WaitingForFirstSnapshot: true })
                 throw new InvalidOperationException("Статус до первого снимка задан неверно.");
             executor.UpdatePromptSnapshot(oldSubject);
@@ -131,10 +164,14 @@ internal static class NewsAgentContextChecks
             ControlledChatClient.CapturedCall oldOpenAiCall = await openAiClient.NextCallAsync();
             AssertCall(oldOpenAiCall, "OpenAI", "gpt-6-luna", "Synthetic prompt A", ["A", "B", "C"],
                 ReasoningEffort.None);
+#pragma warning disable OPENAI001
+            AssertOpenAiRequestOptions(oldOpenAiCall, openAiClient, 2, WebSearchToolContextSize.Low,
+                includeSources: true);
+#pragma warning restore OPENAI001
             AssertPublication(oldOpenAiCall, telegramInput);
 
             NewsAgentPromptSnapshot newSubject = CreateSnapshot("Synthetic prompt B",
-                ["A", "C", "D"]);
+                ["A", "C", "D"]) with { WebSearchEnabled = true };
             executor.UpdatePromptSnapshot(newSubject);
             configuration["OpenAI:ActiveProfile"] = "gpt41";
             configuration.Reload();
@@ -143,10 +180,22 @@ internal static class NewsAgentContextChecks
                 ?? throw new InvalidOperationException("После обновления отсутствует рабочая конфигурация News.");
             if (newExecution.AgentVersion == originalAgentVersion || newExecution.Profile.Model != "gpt-4.1-2025-04-14")
                 throw new InvalidOperationException("agent_version не отражает активный профиль и снимок.");
+            if (firstExecution.Profile.WebSearchContextSize != "low"
+                || firstExecution.Profile.MaxToolCallCount != 2
+                || firstExecution.AgentVersion == newExecution.AgentVersion)
+                throw new InvalidOperationException("Перезагрузка изменила уже захваченный снимок OpenAI.");
+#pragma warning disable OPENAI001
+            AssertOpenAiRequestOptions(oldOpenAiCall, openAiClient, 2, WebSearchToolContextSize.Low,
+                includeSources: true);
+#pragma warning restore OPENAI001
 
             Task newOpenAiRequest = executor.AnalyzeForDiagnosticsAsync(telegramInput, CancellationToken.None);
             ControlledChatClient.CapturedCall newOpenAiCall = await openAiClient.NextCallAsync();
             AssertCall(newOpenAiCall, "OpenAI", "gpt-4.1-2025-04-14", "Synthetic prompt B", ["A", "C", "D"], null);
+#pragma warning disable OPENAI001
+            AssertOpenAiRequestOptions(newOpenAiCall, openAiClient, 3, WebSearchToolContextSize.High,
+                includeSources: false);
+#pragma warning restore OPENAI001
 
             configuration["OpenAI:ApiKey"] = null;
             configuration["XAI:ApiKey"] = "local-xai-key";
@@ -758,6 +807,24 @@ internal static class NewsAgentContextChecks
             throw new InvalidOperationException("Вызов не захватил ожидаемый полный набор инструментов.");
     }
 
+#pragma warning disable OPENAI001
+    private static void AssertOpenAiRequestOptions(ControlledChatClient.CapturedCall call,
+        IChatClient client, int expectedMaxToolCalls, WebSearchToolContextSize expectedContextSize,
+        bool includeSources)
+    {
+        if (call.Options?.Tools is not [{ } tool] || tool is not HostedWebSearchTool webSearchTool
+            || webSearchTool.AdditionalProperties?[nameof(WebSearchTool.SearchContextSize)] is not WebSearchToolContextSize size
+            || size != expectedContextSize)
+            throw new InvalidOperationException("Профиль OpenAI не применил ожидаемый размер поискового контекста.");
+
+        if (call.Options.RawRepresentationFactory?.Invoke(client) is not CreateResponseOptions rawOptions
+            || rawOptions.StoredOutputEnabled != false
+            || rawOptions.MaxToolCallCount != expectedMaxToolCalls
+            || rawOptions.IncludedProperties.Contains(IncludedResponseProperty.WebSearchCallActionSources) != includeSources)
+            throw new InvalidOperationException("Параметры Responses API не соответствуют снимку OpenAI.");
+    }
+#pragma warning restore OPENAI001
+
     private static async Task ExpectControlledFailureAsync(Task request)
     {
         try
@@ -796,7 +863,7 @@ internal static class NewsAgentContextChecks
             if (capturedMessages.Length != 1 || capturedMessages[0].Role != ChatRole.User)
                 throw new InvalidOperationException("Промпт должен передаваться один раз через Instructions.");
             await _calls.Writer.WriteAsync(new CapturedCall(number, Provider, options?.ModelId, options?.Temperature,
-                options?.Reasoning?.Effort, options?.Instructions, capturedMessages[0].Text), cancellationToken);
+                options?.Reasoning?.Effort, options?.Instructions, capturedMessages[0].Text, options), cancellationToken);
             await release.Task.WaitAsync(cancellationToken);
             throw new InvalidOperationException(ReleasedMessage);
         }
@@ -827,6 +894,6 @@ internal static class NewsAgentContextChecks
         }
 
         internal sealed record CapturedCall(int Number, string Provider, string? ModelId, float? Temperature,
-            ReasoningEffort? ReasoningEffort, string? Instructions, string UserInput);
+            ReasoningEffort? ReasoningEffort, string? Instructions, string UserInput, ChatOptions? Options);
     }
 }
