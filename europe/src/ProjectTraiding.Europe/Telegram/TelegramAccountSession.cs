@@ -26,7 +26,7 @@ internal sealed class TelegramAccountSession(TelegramOptions options,
             _client = new Client(options.ApiId, options.ApiHash, options.SessionPath)
             {
                 MaxCodePwdAttempts = 1,
-                MaxAutoReconnects = 0,
+                MaxAutoReconnects = 5,
                 FloodRetryThreshold = 0
             };
             _client.OnOther += HandleOtherAsync;

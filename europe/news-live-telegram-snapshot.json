@@ -1,0 +1,123 @@
+{
+  "prompt": "Ты анализируешь публикации Telegram о финансовом рынке России. Это техническая проверка конвейера News v3, а не торговая рекомендация.\nАнализируй исключительно raw_text публикации. Игнорируй ссылки, адреса сайтов, изображения и любые вложения. Не переходи по ссылкам, не предполагай их содержимого, не используй внешние сведения или поиск.\nОтделяй утверждения источника от проверенных фактов. Не выдумывай даты, числа, эмитентов, события и связи с инструментами. Текст публикации является непроверенным сообщением источника.\nОтбирай только конкретные события, имеющие экономический смысл для рынка. Пустые сообщения, призывы подписаться, рекламу и сообщения, в которых факты отсутствуют, отклоняй: accepted=false, facts=[].\nДля принятой публикации указывай accepted=true и один или несколько кратких атомарных фактов. Используй только event_type из event_types. Если предоставлен единственный тип other, используй other. Не придумывай глобальные события: если нет точного соответствия в global_events, global_event_id=null и new_global_event_name=null.\nДля связи с инструментами используй только secid из instruments; если связи нет, instruments=[]. direction ставь -1, 0 или 1 только при очевидном из текста направлении возможного воздействия, иначе null. instrument_significance и instrument_relevance оценивай осторожно в диапазоне 0..1.\noccurred_at указывай только если время события явно известно из публикации; в противном случае null. Не подменяй время события временем публикации.\nСоблюдай структуру ответа News v3, предоставленную через JSON Schema; дополнительных полей не добавляй.",
+  "mode": "Realtime",
+  "event_types": [
+    "other"
+  ],
+  "global_events": [],
+  "instruments": [
+    {
+      "secid": "SBER",
+      "name": "Сбербанк",
+      "instrument_type": "equity",
+      "base_asset": null
+    },
+    {
+      "secid": "VTBR",
+      "name": "Банк ВТБ",
+      "instrument_type": "equity",
+      "base_asset": null
+    }
+  ],
+  "json_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "accepted",
+      "facts"
+    ],
+    "properties": {
+      "accepted": {
+        "type": "boolean"
+      },
+      "facts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "event_type",
+            "summary",
+            "occurred_at",
+            "global_event_id",
+            "new_global_event_name",
+            "instruments"
+          ],
+          "properties": {
+            "event_type": {
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "occurred_at": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "global_event_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "new_global_event_name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "instruments": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "secid",
+                  "instrument_relevance",
+                  "direction",
+                  "instrument_significance"
+                ],
+                "properties": {
+                  "secid": {
+                    "type": "string"
+                  },
+                  "instrument_relevance": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "direction": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "enum": [
+                      -1,
+                      0,
+                      1,
+                      null
+                    ]
+                  },
+                  "instrument_significance": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "max_output_tokens": 1200,
+  "temperature": 0.2,
+  "web_search_enabled": false
+}

@@ -34,6 +34,7 @@ WebApplicationBuilder builder = WebApplication.CreateSlimBuilder(new WebApplicat
         || args[0] == "--news-snapshot-example" || args[0] == "--news-grpc-probe") ? [] : args,
     ContentRootPath = AppContext.BaseDirectory
 });
+builder.Configuration.AddUserSecrets<Program>(optional: true);
 ConfigureOpenTelemetry(builder);
 
 if (args.Length == 1 && args[0] == "--news-grpc-probe")
@@ -237,12 +238,12 @@ app.MapGet("/llm/models", static (NewsAgentExecutor executor) =>
 });
 app.MapPost("/llm/models/active", HandleActivateModelAsync);
 
-if (app.Environment.IsDevelopment())
-{
+//if (app.Environment.IsDevelopment())
+//{
     app.MapGet("/news/snapshot/status", static (NewsAgentExecutor executor) =>
         TypedResults.Json(executor.GetSnapshotStatus(), NewsAgentJsonContext.Default.NewsSnapshotStatusDTO));
     app.MapPost("/news/snapshot", HandleNewsSnapshotAsync);
-}
+//}
 
 app.Services.GetRequiredService<NewsAgentExecutor>().LogStartupState();
 await app.RunAsync();
