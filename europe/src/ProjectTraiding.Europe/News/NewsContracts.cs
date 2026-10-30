@@ -48,7 +48,9 @@ internal sealed record LlmModelSelectionResult(LlmModelSelectionFailure Failure,
 /// <summary>Только значимые настройки, вошедшие в agent_version; секреты сюда не передаются.</summary>
 internal sealed record NewsAgentVersionMaterial(string Provider, string Model,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Endpoint,
-    ReasoningEffort? ReasoningEffort, NewsAgentPromptSnapshot Subject);
+    ReasoningEffort? ReasoningEffort,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? WebSearchContextSize,
+    NewsAgentPromptSnapshot Subject);
 
 /// <summary>Существующий глобальный сюжет из справочника российского контура.</summary>
 public sealed record NewsGlobalEventDTO(Guid Id, string Name);

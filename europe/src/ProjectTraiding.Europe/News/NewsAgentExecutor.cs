@@ -313,7 +313,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             throw new InvalidOperationException("Для XAI News Temperature не должна превышать 1.");
 
         NewsAgentVersionMaterial material = new(profile.Provider, profile.Model, profile.Endpoint,
-            profile.ReasoningEffort, subject);
+            profile.ReasoningEffort, profile.WebSearchContextSize, subject);
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(material,
             NewsAgentJsonContext.Default.NewsAgentVersionMaterial);
         string agentVersion = "news-v3:" + Convert.ToHexString(SHA256.HashData(bytes));
@@ -400,7 +400,8 @@ public sealed partial class NewsAgentExecutor : BackgroundService
 
     private static bool ProfileEquals(LlmProfileOptions first, LlmProfileOptions second) =>
         first.Provider == second.Provider && first.Name == second.Name && first.Model == second.Model
-        && first.Endpoint == second.Endpoint && first.ReasoningEffort == second.ReasoningEffort;
+        && first.Endpoint == second.Endpoint && first.ReasoningEffort == second.ReasoningEffort
+        && first.WebSearchContextSize == second.WebSearchContextSize;
 
     /// <summary>Изолированная проверка использует ту же сборку запроса и валидатор, что и очередь.</summary>
     internal async Task<string> AnalyzeForDiagnosticsAsync(NewsPublicationInput publication,
@@ -639,7 +640,7 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             Reasoning = execution.Profile.ReasoningEffort is { } effort ? new ReasoningOptions { Effort = effort } : null,
             ResponseFormat = ChatResponseFormat.ForJsonSchema(snapshot.JsonSchema, "news_v3"),
             AdditionalProperties = new() { ["strict"] = true },
-            Tools = snapshot.WebSearchEnabled ? [new HostedWebSearchTool()] : null,
+            Tools = snapshot.WebSearchEnabled ? [CreateWebSearchTool(execution.Profile)] : null,
             ToolMode = ChatToolMode.Auto,
             RawRepresentationFactory = CreateRequestOptions
         };
@@ -765,6 +766,26 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         cancellationToken.ThrowIfCancellationRequested();
         return response;
     }
+
+#pragma warning disable OPENAI001
+    private static HostedWebSearchTool CreateWebSearchTool(LlmProfileOptions profile)
+    {
+        if (profile.Provider != "OpenAI" || profile.WebSearchContextSize is not { } contextSize)
+            return new HostedWebSearchTool();
+
+        WebSearchToolContextSize size = contextSize switch
+        {
+            "low" => WebSearchToolContextSize.Low,
+            "medium" => WebSearchToolContextSize.Medium,
+            "high" => WebSearchToolContextSize.High,
+            _ => throw new InvalidOperationException("Некорректный размер контекста поиска.")
+        };
+        return new HostedWebSearchTool(new Dictionary<string, object?>
+        {
+            [nameof(WebSearchTool.SearchContextSize)] = size
+        });
+    }
+#pragma warning restore OPENAI001
 
     /// <summary>Штатная точка расширения адаптера отключает серверное сохранение без дополнительного HTTP-слоя.</summary>
 #pragma warning disable OPENAI001

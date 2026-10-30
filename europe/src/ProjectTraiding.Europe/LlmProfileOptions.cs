@@ -6,7 +6,7 @@ namespace ProjectTraiding.Europe;
 
 /// <summary>Загружает профиль только выбранного провайдера; ключ не входит в снимок.</summary>
 public sealed record LlmProfileOptions(string Name, string Provider, string Model, string? Endpoint,
-    ReasoningEffort? ReasoningEffort)
+    ReasoningEffort? ReasoningEffort, string? WebSearchContextSize = null)
 {
     private const string DefaultXaiEndpoint = "https://api.x.ai/v1";
 
@@ -77,7 +77,18 @@ public sealed record LlmProfileOptions(string Name, string Provider, string Mode
                 reasoningEffort = parsedReasoningEffort;
             }
 
-            profiles.Add(new LlmProfileOptions(profileSection.Key, provider, model, endpoint, reasoningEffort));
+            string? webSearchContextSize = null;
+            string? configuredSearchContextSize = profileSection["WebSearchContextSize"];
+            if (provider == "OpenAI" && configuredSearchContextSize is not null)
+            {
+                webSearchContextSize = configuredSearchContextSize.Trim().ToLowerInvariant();
+                if (webSearchContextSize is not ("low" or "medium" or "high"))
+                    throw new InvalidOperationException(
+                        $"Профиль {provider}:{profileSection.Key} содержит некорректный WebSearchContextSize.");
+            }
+
+            profiles.Add(new LlmProfileOptions(profileSection.Key, provider, model, endpoint, reasoningEffort,
+                webSearchContextSize));
         }
     }
 
