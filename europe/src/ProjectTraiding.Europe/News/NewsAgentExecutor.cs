@@ -670,16 +670,10 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         DateTimeOffset sentAtUtc = DateTimeOffset.UtcNow;
         LogLlmRequestStarted(_logger, operationId, traceId, execution.Profile.Provider,
             execution.Profile.Model, execution.AgentVersion, sentAtUtc.ToString("O", CultureInfo.InvariantCulture));
-        bool detailedDiagnostics = _configuration.GetValue<bool>("OpenAI:Diagnostics:Enabled");
-        if (detailedDiagnostics)
-        {
-            long? channelId = null;
-            int? messageId = null;
-            (channelId, messageId) = GetTelegramIds(publication);
-            LogLlmPublication(_logger, operationId, publication.Source, channelId,
-                messageId, publication.PublishedAt?.ToString("O", CultureInfo.InvariantCulture),
-                execution.AgentVersion, publication.RawText);
-        }
+        (long? channelId, int? messageId) = GetTelegramIds(publication);
+        LogLlmPublication(_logger, operationId, publication.Source, channelId,
+            messageId, publication.PublishedAt?.ToString("O", CultureInfo.InvariantCulture),
+            execution.AgentVersion, publication.RawText);
         long startedTimestamp = Stopwatch.GetTimestamp();
         AgentResponse agentResponse;
         ChatResponse response;
@@ -754,30 +748,24 @@ public sealed partial class NewsAgentExecutor : BackgroundService
                     if (webSearchCall.Action is WebSearchSearchAction searchAction)
                     {
                         actionType = "search";
-                        if (detailedDiagnostics)
-                        {
-                            IList<string>? actionQueries = searchAction.Queries;
-                            if (actionQueries is { Count: > 0 })
-                                queries = JsonSerializer.Serialize(actionQueries.ToList(), NewsAgentJsonContext.Default.ListString);
+                        IList<string>? actionQueries = searchAction.Queries;
+                        if (actionQueries is { Count: > 0 })
+                            queries = JsonSerializer.Serialize(actionQueries.ToList(), NewsAgentJsonContext.Default.ListString);
 #pragma warning disable CS0618 // SDK compatibility fallback required when Queries is empty.
-                            else if (!string.IsNullOrEmpty(searchAction.Query))
-                                queries = JsonSerializer.Serialize(new List<string> { searchAction.Query },
-                                    NewsAgentJsonContext.Default.ListString);
+                        else if (!string.IsNullOrEmpty(searchAction.Query))
+                            queries = JsonSerializer.Serialize(new List<string> { searchAction.Query },
+                                NewsAgentJsonContext.Default.ListString);
 #pragma warning restore CS0618
-                        }
                         if (sourcesRequested && searchAction.Sources is { Count: > 0 } actionSources)
                         {
                             if (webSearchSourceCount is not null) webSearchSourceCount += actionSources.Count;
-                            if (detailedDiagnostics)
-                            {
-                                List<string> sourceUris = [];
-                                foreach (WebSearchActionSource source in actionSources)
-                                    if (source is WebSearchActionUriSource uriSource)
-                                        sourceUris.Add(uriSource.Uri.AbsoluteUri);
-                                sources = sourceUris.Count > 0
-                                    ? JsonSerializer.Serialize(sourceUris, NewsAgentJsonContext.Default.ListString)
-                                    : null;
-                            }
+                            List<string> sourceUris = [];
+                            foreach (WebSearchActionSource source in actionSources)
+                                if (source is WebSearchActionUriSource uriSource)
+                                    sourceUris.Add(uriSource.Uri.AbsoluteUri);
+                            sources = sourceUris.Count > 0
+                                ? JsonSerializer.Serialize(sourceUris, NewsAgentJsonContext.Default.ListString)
+                                : null;
                         }
                         else sourceCountKnown = false;
                     }
@@ -785,22 +773,18 @@ public sealed partial class NewsAgentExecutor : BackgroundService
                     {
                         actionType = "open_page";
                         if (sourcesRequested) sourceCountKnown = false;
-                        if (detailedDiagnostics) url = openPageAction.Uri?.AbsoluteUri;
+                        url = openPageAction.Uri?.AbsoluteUri;
                     }
                     else if (webSearchCall.Action is WebSearchFindInPageAction findInPageAction)
                     {
                         actionType = "find_in_page";
                         if (sourcesRequested) sourceCountKnown = false;
-                        if (detailedDiagnostics)
-                        {
-                            url = findInPageAction.Uri?.AbsoluteUri;
-                            pattern = findInPageAction.Pattern;
-                        }
+                        url = findInPageAction.Uri?.AbsoluteUri;
+                        pattern = findInPageAction.Pattern;
                     }
                     else if (sourcesRequested) sourceCountKnown = false;
-                    if (detailedDiagnostics)
-                        LogLlmWebSearchAction(_logger, operationId, currentStep, webSearchCall.Id, actionType,
-                            webSearchCall.Status?.ToString(), queries, url, pattern, sources);
+                    LogLlmWebSearchAction(_logger, operationId, currentStep, webSearchCall.Id, actionType,
+                        webSearchCall.Status?.ToString(), queries, url, pattern, sources);
                 }
                 if (!sourceCountKnown || webSearchCalls > 0 && !sourcesRequested) webSearchSourceCount = null;
             }
@@ -883,9 +867,8 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         }
         finally
         {
-            if (detailedDiagnostics)
-                LogLlmResponseJson(_logger, operationId, validationResult,
-                    acceptedResult, validationFailureCategory, response.Text);
+            LogLlmResponseJson(_logger, operationId, validationResult,
+                acceptedResult, validationFailureCategory, response.Text);
         }
     }
 
@@ -1093,17 +1076,17 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         string provider, string model, int? webSearchCalls, long? inputTokens, long? outputTokens,
         long? cachedInputTokens, long? reasoningTokens, int? webSearchSourceCount, string callDurationMs);
 
-    [LoggerMessage(EventId = 18, Level = LogLevel.Debug,
+    [LoggerMessage(EventId = 18, Level = LogLevel.Information,
         Message = "LLM publication: operationId={OperationId} source={Source} channelId={ChannelId} messageId={MessageId} publishedAt={PublishedAt} agentVersion={AgentVersion} rawText={RawText}.")]
     private static partial void LogLlmPublication(ILogger logger, string operationId, string source, long? channelId,
         int? messageId, string? publishedAt, string agentVersion, string rawText);
 
-    [LoggerMessage(EventId = 19, Level = LogLevel.Debug,
+    [LoggerMessage(EventId = 19, Level = LogLevel.Information,
         Message = "LLM web search action: operationId={OperationId} step={Step} actionId={ActionId} actionType={ActionType} status={Status} queries={Queries} url={Url} pattern={Pattern} sources={Sources}.")]
     private static partial void LogLlmWebSearchAction(ILogger logger, string operationId, int step, string actionId,
         string? actionType, string? status, string? queries, string? url, string? pattern, string? sources);
 
-    [LoggerMessage(EventId = 20, Level = LogLevel.Debug,
+    [LoggerMessage(EventId = 20, Level = LogLevel.Information,
         Message = "LLM News v3 JSON: operationId={OperationId} validationResult={ValidationResult} accepted={Accepted} failureCategory={FailureCategory} json={Json}.")]
     private static partial void LogLlmResponseJson(ILogger logger, string operationId, string validationResult,
         bool? accepted, string? failureCategory, string json);
