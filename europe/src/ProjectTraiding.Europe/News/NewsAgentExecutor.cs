@@ -668,8 +668,16 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             : null;
         string operationId = Guid.NewGuid().ToString("N");
         DateTimeOffset sentAtUtc = DateTimeOffset.UtcNow;
-        LogLlmRequestStarted(_logger, operationId, traceId, execution.Profile.Provider,
-            execution.Profile.Model, execution.AgentVersion, sentAtUtc.ToString("O", CultureInfo.InvariantCulture));
+        TryLogDiagnostics(() => LogLlmRequestStarted(_logger, operationId, traceId, execution.Profile.Provider,
+            execution.Profile.Model, execution.AgentVersion, sentAtUtc.ToString("O", CultureInfo.InvariantCulture)));
+        bool detailedDiagnostics = _configuration.GetValue<bool>("OpenAI:Diagnostics:Enabled");
+        if (detailedDiagnostics)
+        {
+            (long? channelId, int? messageId) = GetTelegramIds(publication);
+            TryLogDiagnostics(() => LogLlmPublication(_logger, operationId, publication.Source, channelId,
+                messageId, publication.PublishedAt?.ToString("O", CultureInfo.InvariantCulture),
+                execution.AgentVersion, publication.RawText));
+        }
         long startedTimestamp = Stopwatch.GetTimestamp();
         AgentResponse agentResponse;
         ChatResponse response;
@@ -683,22 +691,23 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         {
             TimeSpan failedDuration = Stopwatch.GetElapsedTime(startedTimestamp);
             string failedDurationText = failedDuration.TotalMilliseconds.ToString("F2", CultureInfo.InvariantCulture);
+            string failureCategory = error switch
+            {
+                OperationCanceledException when _lifetime.ApplicationStopping.IsCancellationRequested => "application_stopping",
+                OperationCanceledException => "timeout_or_cancelled",
+                ClientResultException => "provider_api_error",
+                HttpRequestException => "network_error",
+                _ => "unexpected_error"
+            };
             if (error is OperationCanceledException && _lifetime.ApplicationStopping.IsCancellationRequested)
             {
-                LogLlmRequestCancelled(_logger, operationId, traceId, execution.Profile.Provider, execution.Profile.Model,
-                    "application_stopping", failedDurationText);
+                TryLogDiagnostics(() => LogLlmRequestCancelled(_logger, operationId, traceId,
+                    execution.Profile.Provider, execution.Profile.Model, failureCategory, failedDurationText));
             }
             else
             {
-                string failureCategory = error switch
-                {
-                    OperationCanceledException => "timeout_or_cancelled",
-                    ClientResultException => "provider_api_error",
-                    HttpRequestException => "network_error",
-                    _ => "unexpected_error"
-                };
-                LogLlmRequestFailed(_logger, operationId, traceId, execution.Profile.Provider, execution.Profile.Model,
-                    failureCategory, failedDurationText);
+                TryLogDiagnostics(() => LogLlmRequestFailed(_logger, operationId, traceId,
+                    execution.Profile.Provider, execution.Profile.Model, failureCategory, failedDurationText));
             }
             throw;
         }
@@ -726,53 +735,91 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             if (rawResponse?.OutputItems is { } outputItems)
             {
                 webSearchCalls = 0;
-                bool sourcesRequested = execution.Profile.Provider == "OpenAI"
+                bool sourcesRequested = detailedDiagnostics && execution.Profile.Provider == "OpenAI"
                     && execution.Profile.IncludeWebSearchSources;
                 if (sourcesRequested) webSearchSourceCount = 0;
-                List<string>? sourceUris = sourcesRequested ? [] : null;
                 bool sourceCountKnown = true;
                 foreach (ResponseItem outputItem in outputItems)
                 {
                     if (outputItem is not WebSearchCallResponseItem webSearchCall) continue;
                     webSearchCalls++;
-                    if (webSearchSourceCount is null) continue;
-                    if (webSearchCall.Action is WebSearchSearchAction searchAction
-                        && searchAction.Sources is { } sources)
+                    int currentStep = webSearchCalls.Value;
+                    string? actionType = null;
+                    string? queries = null;
+                    string? url = null;
+                    string? pattern = null;
+                    string? sources = null;
+                    if (webSearchCall.Action is WebSearchSearchAction searchAction)
                     {
-                        webSearchSourceCount += sources.Count;
-                        foreach (WebSearchActionSource source in sources)
+                        actionType = "search";
+                        queries = detailedDiagnostics && searchAction.Queries is { Count: > 0 }
+                            ? JsonSerializer.Serialize(searchAction.Queries.ToList(), NewsAgentJsonContext.Default.ListString)
+                            : null;
+                        if (searchAction.Sources is { } actionSources)
                         {
-                            if (source is WebSearchActionUriSource uriSource)
-                                sourceUris?.Add(uriSource.Uri.AbsoluteUri);
+                            if (webSearchSourceCount is not null) webSearchSourceCount += actionSources.Count;
+                            if (detailedDiagnostics && sourcesRequested)
+                            {
+                                List<string> sourceUris = [];
+                                foreach (WebSearchActionSource source in actionSources)
+                                    if (source is WebSearchActionUriSource uriSource)
+                                        sourceUris.Add(uriSource.Uri.AbsoluteUri);
+                                sources = sourceUris.Count > 0
+                                    ? JsonSerializer.Serialize(sourceUris, NewsAgentJsonContext.Default.ListString)
+                                    : null;
+                            }
+                        }
+                        else if (sourcesRequested) sourceCountKnown = false;
+                    }
+                    else if (webSearchCall.Action is WebSearchOpenPageAction openPageAction)
+                    {
+                        actionType = "open_page";
+                        if (detailedDiagnostics) url = openPageAction.Uri?.AbsoluteUri;
+                    }
+                    else if (webSearchCall.Action is WebSearchFindInPageAction findInPageAction)
+                    {
+                        actionType = "find_in_page";
+                        if (detailedDiagnostics)
+                        {
+                            url = findInPageAction.Uri?.AbsoluteUri;
+                            pattern = findInPageAction.Pattern;
                         }
                     }
+                    if (detailedDiagnostics)
+                        TryLogDiagnostics(() => LogLlmWebSearchAction(_logger, operationId, currentStep,
+                            webSearchCall.Id, actionType,
+                            webSearchCall.Status?.ToString(), queries, url, pattern, sources));
                     else
-                        sourceCountKnown = false;
+                    {
+                        if (webSearchSourceCount is not null) sourceCountKnown = false;
+                    }
                 }
                 if (!sourceCountKnown) webSearchSourceCount = null;
-                if (sourceUris is not null)
-                    foreach (string sourceUri in sourceUris)
-                        LogLlmWebSearchSource(_logger, operationId, sourceUri);
             }
         }
         catch (Exception)
         {
+            // Диагностический разбор не должен влиять на обработку ответа.
             webSearchCalls = null;
             webSearchSourceCount = null;
         }
         long? cachedInputTokenCount = rawResponse?.Usage?.InputTokenDetails?.CachedTokenCount;
         long? reasoningTokenCount = rawResponse?.Usage?.OutputTokenDetails?.ReasoningTokenCount;
 #pragma warning restore OPENAI001
-        LogLlmResponseDiagnostics(_logger, operationId, execution.AgentVersion, execution.Profile.Provider,
+        TryLogDiagnostics(() => LogLlmResponseDiagnostics(_logger, operationId, execution.AgentVersion, execution.Profile.Provider,
             response.ModelId ?? execution.Profile.Model, webSearchCalls, inputTokenCount, outputTokenCount,
             cachedInputTokenCount, reasoningTokenCount, webSearchSourceCount,
-            elapsed.TotalMilliseconds.ToString("F2", CultureInfo.InvariantCulture));
+            elapsed.TotalMilliseconds.ToString("F2", CultureInfo.InvariantCulture)));
+        if (detailedDiagnostics)
+            TryLogDiagnostics(() => LogLlmResponseJson(_logger, operationId, null, response.Text));
         bool reportedModelMatchesRequest = response.ModelId == execution.Profile.Model;
-        LogLlmResponseStatus(_logger, operationId, traceId, responseStatusCompleted, reportedModelMatchesRequest);
+        TryLogDiagnostics(() => LogLlmResponseStatus(_logger, operationId, traceId,
+            responseStatusCompleted, reportedModelMatchesRequest));
         if (!responseStatusCompleted || !reportedModelMatchesRequest)
         {
             string failureCategory = !responseStatusCompleted ? "response_not_completed" : "reported_model_mismatch";
-            LogLlmValidationResult(_logger, operationId, traceId, "response_status", "rejected", failureCategory);
+            TryLogDiagnostics(() => LogLlmValidationResult(_logger, operationId, traceId,
+                "response_status", "rejected", failureCategory));
             throw new InvalidDataException("Незавершённый ответ LLM.");
         }
 
@@ -780,26 +827,29 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             foreach (AIContent content in message.Contents)
                 if (content is ErrorContent)
                 {
-                    LogLlmValidationResult(_logger, operationId, traceId, "response_content", "rejected", "model_refusal");
+                    TryLogDiagnostics(() => LogLlmValidationResult(_logger, operationId, traceId,
+                        "response_content", "rejected", "model_refusal"));
                     throw new InvalidDataException("Отказ LLM.");
                 }
         try
         {
             bool accepted = ValidateLlmResponse(response.Text);
-            LogLlmValidationResult(_logger, operationId, traceId, "news_v3_acceptance",
-                accepted ? "accepted" : "not_accepted", "none");
+            TryLogDiagnostics(() => LogLlmValidationResult(_logger, operationId, traceId, "news_v3_acceptance",
+                accepted ? "accepted" : "not_accepted", "none"));
+            if (detailedDiagnostics)
+                TryLogDiagnostics(() => LogLlmResponseJson(_logger, operationId, accepted, response.Text));
         }
         catch (JsonException)
         {
-            LogLlmValidationResult(_logger, operationId, traceId, "json_v3", "rejected", "invalid_json");
+            TryLogDiagnostics(() => LogLlmValidationResult(_logger, operationId, traceId, "json_v3", "rejected", "invalid_json"));
             throw;
         }
         catch (InvalidDataException)
         {
-            LogLlmValidationResult(_logger, operationId, traceId, "json_v3", "rejected", "contract_violation");
+            TryLogDiagnostics(() => LogLlmValidationResult(_logger, operationId, traceId, "json_v3", "rejected", "contract_violation"));
             throw;
         }
-        LogLlmValidationResult(_logger, operationId, traceId, "json_v3", "passed", "none");
+        TryLogDiagnostics(() => LogLlmValidationResult(_logger, operationId, traceId, "json_v3", "passed", "none"));
         cancellationToken.ThrowIfCancellationRequested();
         return response;
     }
@@ -839,6 +889,23 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         return options;
     }
 #pragma warning restore OPENAI001
+
+    private static (long? ChannelId, int? MessageId) GetTelegramIds(NewsPublicationInput publication)
+    {
+        if (publication.Source != "Telegram" || publication.SourceMetadata.ValueKind != JsonValueKind.Object)
+            return (null, null);
+        long? channelId = publication.SourceMetadata.TryGetProperty("channel_id", out JsonElement channel)
+            && channel.TryGetInt64(out long parsedChannelId) ? parsedChannelId : null;
+        int? messageId = publication.SourceMetadata.TryGetProperty("message_id", out JsonElement message)
+            && message.TryGetInt32(out int parsedMessageId) ? parsedMessageId : null;
+        return (channelId, messageId);
+    }
+
+    private static void TryLogDiagnostics(Action write)
+    {
+        try { write(); }
+        catch (Exception) { }
+    }
 
     /// <summary>Допускает только полный Realtime-снимок и модель с документированной поддержкой schema и web search.</summary>
     internal static void ValidatePromptSnapshot(NewsAgentPromptSnapshot snapshot)
@@ -995,7 +1062,17 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         string provider, string model, int? webSearchCalls, long? inputTokens, long? outputTokens,
         long? cachedInputTokens, long? reasoningTokens, int? webSearchSourceCount, string callDurationMs);
 
-    [LoggerMessage(EventId = 17, Level = LogLevel.Debug,
-        Message = "LLM web search source: operationId={OperationId} uri={Uri}.")]
-    private static partial void LogLlmWebSearchSource(ILogger logger, string operationId, string uri);
+    [LoggerMessage(EventId = 18, Level = LogLevel.Debug,
+        Message = "LLM publication: operationId={OperationId} source={Source} channelId={ChannelId} messageId={MessageId} publishedAt={PublishedAt} agentVersion={AgentVersion} rawText={RawText}.")]
+    private static partial void LogLlmPublication(ILogger logger, string operationId, string source, long? channelId,
+        int? messageId, string? publishedAt, string agentVersion, string rawText);
+
+    [LoggerMessage(EventId = 19, Level = LogLevel.Debug,
+        Message = "LLM web search action: operationId={OperationId} step={Step} actionId={ActionId} actionType={ActionType} status={Status} queries={Queries} url={Url} pattern={Pattern} sources={Sources}.")]
+    private static partial void LogLlmWebSearchAction(ILogger logger, string operationId, int step, string actionId,
+        string? actionType, string? status, string? queries, string? url, string? pattern, string? sources);
+
+    [LoggerMessage(EventId = 20, Level = LogLevel.Debug,
+        Message = "LLM News v3 JSON: operationId={OperationId} accepted={Accepted} json={Json}.")]
+    private static partial void LogLlmResponseJson(ILogger logger, string operationId, bool? accepted, string json);
 }

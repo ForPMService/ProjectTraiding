@@ -105,6 +105,7 @@ public sealed record NewsAgentResult(NewsPublicationInput Publication, string Js
 [JsonSerializable(typeof(TelegramChannelPost))]
 [JsonSerializable(typeof(NewsPublicationInput))]
 [JsonSerializable(typeof(NewsTelegramMetadataDTO))]
+[JsonSerializable(typeof(List<string>))]
 [JsonSerializable(typeof(NewsLlmRequest))]
 [JsonSerializable(typeof(NewsLlmResponse))]
 [JsonSerializable(typeof(NewsAgentResult))]
