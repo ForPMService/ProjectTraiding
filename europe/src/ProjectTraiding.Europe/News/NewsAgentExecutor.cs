@@ -668,18 +668,17 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             : null;
         string operationId = Guid.NewGuid().ToString("N");
         DateTimeOffset sentAtUtc = DateTimeOffset.UtcNow;
-        TryLogDiagnostics(() => LogLlmRequestStarted(_logger, operationId, traceId, execution.Profile.Provider,
-            execution.Profile.Model, execution.AgentVersion, sentAtUtc.ToString("O", CultureInfo.InvariantCulture)));
+        LogLlmRequestStarted(_logger, operationId, traceId, execution.Profile.Provider,
+            execution.Profile.Model, execution.AgentVersion, sentAtUtc.ToString("O", CultureInfo.InvariantCulture));
         bool detailedDiagnostics = _configuration.GetValue<bool>("OpenAI:Diagnostics:Enabled");
         if (detailedDiagnostics)
         {
             long? channelId = null;
             int? messageId = null;
-            try { (channelId, messageId) = GetTelegramIds(publication); }
-            catch (Exception) { }
-            TryLogDiagnostics(() => LogLlmPublication(_logger, operationId, publication.Source, channelId,
+            (channelId, messageId) = GetTelegramIds(publication);
+            LogLlmPublication(_logger, operationId, publication.Source, channelId,
                 messageId, publication.PublishedAt?.ToString("O", CultureInfo.InvariantCulture),
-                execution.AgentVersion, publication.RawText));
+                execution.AgentVersion, publication.RawText);
         }
         long startedTimestamp = Stopwatch.GetTimestamp();
         AgentResponse agentResponse;
@@ -704,13 +703,13 @@ public sealed partial class NewsAgentExecutor : BackgroundService
             };
             if (error is OperationCanceledException && _lifetime.ApplicationStopping.IsCancellationRequested)
             {
-                TryLogDiagnostics(() => LogLlmRequestCancelled(_logger, operationId, traceId,
-                    execution.Profile.Provider, execution.Profile.Model, failureCategory, failedDurationText));
+                LogLlmRequestCancelled(_logger, operationId, traceId,
+                    execution.Profile.Provider, execution.Profile.Model, failureCategory, failedDurationText);
             }
             else
             {
-                TryLogDiagnostics(() => LogLlmRequestFailed(_logger, operationId, traceId,
-                    execution.Profile.Provider, execution.Profile.Model, failureCategory, failedDurationText));
+                LogLlmRequestFailed(_logger, operationId, traceId,
+                    execution.Profile.Provider, execution.Profile.Model, failureCategory, failedDurationText);
             }
             throw;
         }
@@ -800,9 +799,8 @@ public sealed partial class NewsAgentExecutor : BackgroundService
                     }
                     else if (sourcesRequested) sourceCountKnown = false;
                     if (detailedDiagnostics)
-                        TryLogDiagnostics(() => LogLlmWebSearchAction(_logger, operationId, currentStep,
-                            webSearchCall.Id, actionType,
-                            webSearchCall.Status?.ToString(), queries, url, pattern, sources));
+                        LogLlmWebSearchAction(_logger, operationId, currentStep, webSearchCall.Id, actionType,
+                            webSearchCall.Status?.ToString(), queries, url, pattern, sources);
                 }
                 if (!sourceCountKnown || webSearchCalls > 0 && !sourcesRequested) webSearchSourceCount = null;
             }
@@ -816,24 +814,24 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         long? cachedInputTokenCount = rawResponse?.Usage?.InputTokenDetails?.CachedTokenCount;
         long? reasoningTokenCount = rawResponse?.Usage?.OutputTokenDetails?.ReasoningTokenCount;
 #pragma warning restore OPENAI001
-        TryLogDiagnostics(() => LogLlmResponseDiagnostics(_logger, operationId, execution.AgentVersion, execution.Profile.Provider,
+        LogLlmResponseDiagnostics(_logger, operationId, execution.AgentVersion, execution.Profile.Provider,
             response.ModelId ?? execution.Profile.Model, webSearchCalls, inputTokenCount, outputTokenCount,
             cachedInputTokenCount, reasoningTokenCount, webSearchSourceCount,
-            elapsed.TotalMilliseconds.ToString("F2", CultureInfo.InvariantCulture)));
+            elapsed.TotalMilliseconds.ToString("F2", CultureInfo.InvariantCulture));
         string validationResult = "not_run";
         bool? acceptedResult = null;
         string? validationFailureCategory = null;
         try
         {
             bool reportedModelMatchesRequest = response.ModelId == execution.Profile.Model;
-            TryLogDiagnostics(() => LogLlmResponseStatus(_logger, operationId, traceId,
-                responseStatusCompleted, reportedModelMatchesRequest));
+            LogLlmResponseStatus(_logger, operationId, traceId,
+                responseStatusCompleted, reportedModelMatchesRequest);
             if (!responseStatusCompleted || !reportedModelMatchesRequest)
             {
                 validationResult = "rejected";
                 validationFailureCategory = !responseStatusCompleted ? "response_not_completed" : "reported_model_mismatch";
-                TryLogDiagnostics(() => LogLlmValidationResult(_logger, operationId, traceId,
-                    "response_status", validationResult, validationFailureCategory));
+                LogLlmValidationResult(_logger, operationId, traceId,
+                    "response_status", validationResult, validationFailureCategory);
                 throw new InvalidDataException("Незавершённый ответ LLM.");
             }
 
@@ -843,34 +841,34 @@ public sealed partial class NewsAgentExecutor : BackgroundService
                     {
                         validationResult = "rejected";
                         validationFailureCategory = "model_refusal";
-                        TryLogDiagnostics(() => LogLlmValidationResult(_logger, operationId, traceId,
-                            "response_content", validationResult, validationFailureCategory));
+                        LogLlmValidationResult(_logger, operationId, traceId,
+                            "response_content", validationResult, validationFailureCategory);
                         throw new InvalidDataException("Отказ LLM.");
                     }
             try
             {
                 acceptedResult = ValidateLlmResponse(response.Text);
                 validationResult = "passed";
-                TryLogDiagnostics(() => LogLlmValidationResult(_logger, operationId, traceId, "news_v3_acceptance",
-                    acceptedResult.Value ? "accepted" : "not_accepted", "none"));
+                LogLlmValidationResult(_logger, operationId, traceId, "news_v3_acceptance",
+                    acceptedResult.Value ? "accepted" : "not_accepted", "none");
             }
             catch (JsonException)
             {
                 validationResult = "rejected";
                 validationFailureCategory = "invalid_json";
-                TryLogDiagnostics(() => LogLlmValidationResult(_logger, operationId, traceId,
-                    "json_v3", validationResult, validationFailureCategory));
+                LogLlmValidationResult(_logger, operationId, traceId,
+                    "json_v3", validationResult, validationFailureCategory);
                 throw;
             }
             catch (InvalidDataException)
             {
                 validationResult = "rejected";
                 validationFailureCategory = "contract_violation";
-                TryLogDiagnostics(() => LogLlmValidationResult(_logger, operationId, traceId,
-                    "json_v3", validationResult, validationFailureCategory));
+                LogLlmValidationResult(_logger, operationId, traceId,
+                    "json_v3", validationResult, validationFailureCategory);
                 throw;
             }
-            TryLogDiagnostics(() => LogLlmValidationResult(_logger, operationId, traceId, "json_v3", "passed", "none"));
+            LogLlmValidationResult(_logger, operationId, traceId, "json_v3", "passed", "none");
             cancellationToken.ThrowIfCancellationRequested();
             return response;
         }
@@ -886,8 +884,8 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         finally
         {
             if (detailedDiagnostics)
-                TryLogDiagnostics(() => LogLlmResponseJson(_logger, operationId, validationResult,
-                    acceptedResult, validationFailureCategory, response.Text));
+                LogLlmResponseJson(_logger, operationId, validationResult,
+                    acceptedResult, validationFailureCategory, response.Text);
         }
     }
 
@@ -932,16 +930,12 @@ public sealed partial class NewsAgentExecutor : BackgroundService
         if (publication.Source != "Telegram" || publication.SourceMetadata.ValueKind != JsonValueKind.Object)
             return (null, null);
         long? channelId = publication.SourceMetadata.TryGetProperty("channel_id", out JsonElement channel)
+            && channel.ValueKind == JsonValueKind.Number
             && channel.TryGetInt64(out long parsedChannelId) ? parsedChannelId : null;
         int? messageId = publication.SourceMetadata.TryGetProperty("message_id", out JsonElement message)
+            && message.ValueKind == JsonValueKind.Number
             && message.TryGetInt32(out int parsedMessageId) ? parsedMessageId : null;
         return (channelId, messageId);
-    }
-
-    private static void TryLogDiagnostics(Action write)
-    {
-        try { write(); }
-        catch (Exception) { }
     }
 
     /// <summary>Допускает только полный Realtime-снимок и модель с документированной поддержкой schema и web search.</summary>
