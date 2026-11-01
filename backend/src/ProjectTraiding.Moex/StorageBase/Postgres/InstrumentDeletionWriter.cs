@@ -30,16 +30,24 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             MoexWriterLogMessages.WriteStarted(_logger, Table, 1);
 
             await using NpgsqlConnection connection = await _dataSource.OpenConnectionAsync(ct);
+            // Сериализуем постановку удаления с короткой транзакцией захвата загрузки.
+            await using NpgsqlTransaction transaction = await connection.BeginTransactionAsync(ct);
+            await using (NpgsqlCommand lockCmd = new NpgsqlCommand(
+                "SELECT pg_advisory_xact_lock(8771001)", connection, transaction))
+            {
+                await lockCmd.ExecuteNonQueryAsync(ct);
+            }
             await using NpgsqlCommand cmd = new NpgsqlCommand("""
                 INSERT INTO moex_instrument_data_deletions (secid)
                 VALUES (@secid)
                 ON CONFLICT (secid) WHERE status = 'started'
                 DO NOTHING
                 RETURNING id
-                """, connection);
+                """, connection, transaction);
             cmd.Parameters.Add("@secid", NpgsqlDbType.Text).Value = secid;
 
             object? idObj = await cmd.ExecuteScalarAsync(ct);
+            await transaction.CommitAsync(ct);
             return idObj is Guid id ? id : null;
         }
 

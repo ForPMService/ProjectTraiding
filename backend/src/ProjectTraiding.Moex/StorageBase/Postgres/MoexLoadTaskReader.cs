@@ -92,10 +92,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                         SELECT 1 FROM moex_load_tasks r
                         WHERE r.status = 'running'
                           AND r.secid = t.secid
-                          AND r.market = t.market
-                          AND r.boardid = t.boardid
-                          AND r.data_kind = t.data_kind
-                          AND r.candle_interval IS NOT DISTINCT FROM t.candle_interval
                     )
                     ORDER BY t.created_at
                     FOR UPDATE SKIP LOCKED
