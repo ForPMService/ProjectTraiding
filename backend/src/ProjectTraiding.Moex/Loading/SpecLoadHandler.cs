@@ -1,9 +1,11 @@
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
+using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Series;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using System.Runtime.CompilerServices;
+using Microsoft.Extensions.Options;
 
 namespace ProjectTraiding.Moex.Loading;
 
@@ -36,15 +38,18 @@ public sealed class SpecLoadHandler
     private readonly MoexHistoryPageReader _reader;
     private readonly MoexHistoryWriter _writer;
     private readonly SeriesRangeDeleter _rangeDeleter;
+    private readonly MoexOptions _options;
 
     public SpecLoadHandler(
         MoexHistoryPageReader reader,
         MoexHistoryWriter writer,
-        SeriesRangeDeleter rangeDeleter)
+        SeriesRangeDeleter rangeDeleter,
+        IOptions<MoexOptions> options)
     {
         _reader = reader;
         _writer = writer;
         _rangeDeleter = rangeDeleter;
+        _options = options.Value;
     }
 
     public async Task<RowWriteSummary> LoadAsync(
@@ -95,6 +100,7 @@ public sealed class SpecLoadHandler
         MoexOperationTags operationTags,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        long skippedRows = 0;
         int days = task.DataKind == "orderstats" && task.Market == "stock" ? 7 : 364;
         DateOnly from = task.DateFrom;
         while (true)
@@ -106,27 +112,23 @@ public sealed class SpecLoadHandler
                 .GetAsyncEnumerator(cancellationToken);
             while (true)
             {
-                bool hasPage;
-                try
-                {
-                    hasPage = await enumerator.MoveNextAsync();
-                }
-                catch
-                {
-                    // Читатель может разобрать страницу и выбросить ошибку до её выдачи.
-                    LastParsedPageDate = null;
-                    throw;
-                }
+                bool hasPage = await enumerator.MoveNextAsync();
                 if (!hasPage)
-                {
-                    // DaySplit не выдаёт пустые страницы; последняя могла быть пустой.
-                    if (spec.Pagination == PaginationKind.DaySplit)
-                        LastParsedPageDate = null;
                     break;
-                }
                 SeriesParsedPage page = enumerator.Current;
-                // Читатель может отбросить хвост разобранной страницы для сохранения группы.
-                LastParsedPageDate = spec.PreserveCursorTimeGroup ? null : GetLastSourceDate(page);
+                if (page.SourceRowsCount > 0)
+                    LastParsedPageDate = GetLastSourceDate(page);
+
+                skippedRows += page.SkippedRows;
+                if (_options.MaxSkippedRowsPerLoad >= 0
+                    && skippedRows > _options.MaxSkippedRowsPerLoad)
+                {
+                    throw new InvalidOperationException(
+                        $"Разбор отверг {skippedRows} строк за историческое задание, " +
+                        $"предел {_options.MaxSkippedRowsPerLoad}: источник вернул данные, " +
+                        "не отвечающие декларации.");
+                }
+
                 yield return page;
             }
             if (till == task.DateTill)
