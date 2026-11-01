@@ -58,7 +58,8 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             EventName = "LoadTaskCompleted",
             Message = "Load task completed: id={TaskId}, dataKind={DataKind}, market={Market}, " +
                       "outcome={Outcome}, rows={Rows}, duration={Duration}, " +
-                      "stopReason={StopReason}, errorType={ErrorType}.")]
+                      "stopReason={StopReason}, errorType={ErrorType}, secid={Secid}, interval={CandleInterval}, " +
+                      "dateFrom={DateFrom}, dateTill={DateTill}, lastParsedPageDate={LastParsedPageDate}, errorReason={ErrorReason}.")]
         public static partial void TaskCompleted(
             ILogger logger,
             LogLevel level,
@@ -69,7 +70,9 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             long rows,
             TimeSpan duration,
             string? stopReason,
-            string? errorType);
+            string? errorType,
+            string secid, int? candleInterval, DateOnly dateFrom, DateOnly dateTill,
+            DateOnly? lastParsedPageDate, string? errorReason);
 
         [LoggerMessage(EventId = 221, EventName = "MoexLoadTaskCancelWatchPollFailed",
            Level = LogLevel.Warning,

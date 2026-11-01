@@ -31,6 +31,8 @@ public sealed class SpecLoadHandler
         MoexSeriesRegistry.CandlesFutures1d,
     ];
 
+    public DateOnly? LastParsedPageDate { get; private set; }
+
     private readonly MoexHistoryPageReader _reader;
     private readonly MoexHistoryWriter _writer;
     private readonly SeriesRangeDeleter _rangeDeleter;
@@ -49,6 +51,7 @@ public sealed class SpecLoadHandler
         MoexLoadTask task,
         CancellationToken cancellationToken)
     {
+        LastParsedPageDate = null;
         MoexSeriesSpec spec = FindSpec(task)
             ?? throw new InvalidOperationException(
                 $"Нет обработчика для задачи {task.Id} (data_kind={task.DataKind}, market={task.Market}, interval={task.CandleInterval}).");
@@ -100,13 +103,55 @@ public sealed class SpecLoadHandler
         {
             int remainingDays = task.DateTill.DayNumber - from.DayNumber;
             DateOnly till = remainingDays < days ? task.DateTill : from.AddDays(days - 1);
-            await foreach (SeriesParsedPage page in _reader.ReadPages(
-                spec, task.Secid, task.Boardid, from, till, operationTags, cancellationToken))
+            await using IAsyncEnumerator<SeriesParsedPage> enumerator = _reader.ReadPages(
+                spec, task.Secid, task.Boardid, from, till, operationTags, cancellationToken)
+                .GetAsyncEnumerator(cancellationToken);
+            while (true)
+            {
+                bool hasPage;
+                try
+                {
+                    hasPage = await enumerator.MoveNextAsync();
+                }
+                catch
+                {
+                    // Читатель может разобрать страницу и выбросить ошибку до её выдачи.
+                    LastParsedPageDate = null;
+                    throw;
+                }
+                if (!hasPage)
+                {
+                    // DaySplit не выдаёт пустые страницы; последняя могла быть пустой.
+                    if (spec.Pagination == PaginationKind.DaySplit)
+                        LastParsedPageDate = null;
+                    break;
+                }
+                SeriesParsedPage page = enumerator.Current;
+                // Читатель может отбросить хвост разобранной страницы для сохранения группы.
+                LastParsedPageDate = spec.PreserveCursorTimeGroup ? null : GetLastSourceDate(page);
                 yield return page;
+            }
             if (till == task.DateTill)
                 break;
             from = till.AddDays(1);
         }
+    }
+
+    private static DateOnly? GetLastSourceDate(SeriesParsedPage page)
+    {
+        if (page.SourceRowsCount == 0)
+            return null;
+
+        DateTime? time;
+        List<SkippedSourceRow>? skipped = page.SkippedSourceRows;
+        if (skipped is { Count: > 0 } && skipped[^1].SourceIndex == page.SourceRowsCount - 1)
+            time = skipped[^1].Time;
+        else
+            time = page.Rows.Count > 0 ? page.Rows[^1].Time : null;
+
+        return time.HasValue && time.Value != default
+            ? DateOnly.FromDateTime(time.Value)
+            : null;
     }
 
     private static MoexSeriesSpec? FindSpec(MoexLoadTask task)

@@ -74,6 +74,7 @@ namespace ProjectTraiding.Moex.Loading
             long rowsForTelemetry = 0;
             string? stopReasonForTelemetry = null;
             string? errorTypeForTelemetry = null;
+            string? errorReason = null;
 
             try
             {
@@ -182,6 +183,11 @@ namespace ProjectTraiding.Moex.Loading
                 }
 
                 bool operatorCancelled = finalStatus == "cancelled";
+                if (!operatorCancelled)
+                {
+                    outcome = MoexOutcomes.Error;
+                    errorReason = "Historical load interrupted by application shutdown";
+                }
 
                 // Причина видна не только в базе, но и в трассировке: иначе операторская отмена
                 // и внешняя отмена выполнения слились бы в один исход наблюдаемости.
@@ -200,6 +206,7 @@ namespace ProjectTraiding.Moex.Loading
                 outcome = MoexOutcomes.Error;
                 stopReasonForTelemetry = null;
                 errorTypeForTelemetry = MoexMetrics.ClassifyError(ex);
+                errorReason = ex.Message;
 
                 await _taskWriter.MarkErrorAsync(taskId, ex.Message, CancellationToken.None);
 
@@ -210,7 +217,7 @@ namespace ProjectTraiding.Moex.Loading
                 if (metadataResolved)
                 {
                     CompleteTask(
-                        taskId,
+                        task,
                         dataKind,
                         market,
                         outcome,
@@ -218,6 +225,7 @@ namespace ProjectTraiding.Moex.Loading
                         taskStart,
                         stopReasonForTelemetry,
                         errorTypeForTelemetry,
+                        errorReason,
                         taskActivity);
                 }
 
@@ -297,7 +305,7 @@ namespace ProjectTraiding.Moex.Loading
         /// записи наблюдения, что заведомо хуже.
         /// </summary>
         private void CompleteTask(
-            Guid taskId,
+            MoexLoadTask task,
             string dataKind,
             string market,
             string outcome,
@@ -305,6 +313,7 @@ namespace ProjectTraiding.Moex.Loading
             long startTimestamp,
             string? stopReason,
             string? errorType,
+            string? errorReason,
             Activity? taskActivity)
         {
             TimeSpan duration = Stopwatch.GetElapsedTime(startTimestamp);
@@ -352,14 +361,16 @@ namespace ProjectTraiding.Moex.Loading
                 MoexLoadTaskLogMessages.TaskCompleted(
                     _logger,
                     outcome == MoexOutcomes.Error ? LogLevel.Error : LogLevel.Information,
-                    taskId,
+                    task.Id,
                     dataKind,
                     market,
                     outcome,
                     rows,
                     duration,
                     stopReason,
-                    errorType);
+                    errorType,
+                    task.Secid, task.CandleInterval, task.DateFrom, task.DateTill,
+                    outcome == MoexOutcomes.Error ? _loader.LastParsedPageDate : null, errorReason);
             }
             catch
             {
