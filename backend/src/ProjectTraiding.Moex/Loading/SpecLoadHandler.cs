@@ -5,7 +5,6 @@ using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using System.Globalization;
 using System.Runtime.CompilerServices;
-using System.Runtime.ExceptionServices;
 
 namespace ProjectTraiding.Moex.Loading;
 
@@ -141,8 +140,7 @@ public sealed class SpecLoadHandler
                         "window",
                         MoexMetrics.ClassifyError(ex),
                         ex.Message);
-                    ExceptionDispatchInfo.Capture(ex).Throw();
-                    hasPage = false;
+                    throw;
                 }
                 if (readFailure is not null)
                 {

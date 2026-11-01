@@ -392,8 +392,16 @@ public sealed class MoexHistoryPageReader
         if (exception is OperationCanceledException)
             return false;
 
-        if (exception is HttpRequestException or MoexTimeoutException)
+        if (exception is MoexTimeoutException)
             return true;
+
+        if (exception is HttpRequestException requestException)
+        {
+            return requestException.HttpRequestError is
+                HttpRequestError.ConnectionError
+                or HttpRequestError.NameResolutionError
+                or HttpRequestError.ResponseEnded;
+        }
 
         return exception is MoexHttpStatusException statusException
             && statusException.ErrorCategory is MoexErrorTypes.ServerError or MoexErrorTypes.RateLimit;
