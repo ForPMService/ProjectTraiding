@@ -37,15 +37,52 @@ public sealed class MoexHistoryWriter
         long rowsRead = 0;
         long rowsSkipped = 0;
         long rowsInsertedReported = 0;
+        string? errorReason = null;
+        DateOnly? errorDateFrom = null;
+        DateOnly? errorDateTill = null;
 
         await foreach (SeriesParsedPage page
                        in pages.WithCancellation(cancellationToken))
         {
+            if (page.Failure is SeriesReadFailure failure)
+            {
+                if (batch.Count > 0)
+                {
+                    long reported = await _executor.InsertAsync(
+                        spec.Table, spec.Columns, spec.ColumnTypes, batch, insertContext,
+                        cancellationToken);
+                    rowsInsertedReported += reported;
+                    batch.Clear();
+                }
+
+                errorReason ??= failure.Reason;
+                if (errorDateFrom is null || failure.DateFrom < errorDateFrom)
+                    errorDateFrom = failure.DateFrom;
+                if (errorDateTill is null || failure.DateTill > errorDateTill)
+                    errorDateTill = failure.DateTill;
+                continue;
+            }
+
             // Покрытый объём считается по строкам источника, а не по принятым: отвергнутая
             // строка прочитана и входит в диапазон, просто не записана. Иначе rows_total
             // изменил бы смысл — сегодня в нём число прочитанных строк.
             rowsRead += page.SourceRowsCount;
             rowsSkipped += page.SkippedRows;
+            if (page.SkippedSourceRows is not null)
+            {
+                for (int i = 0; i < page.SkippedSourceRows.Count; i++)
+                {
+                    DateTime? skippedTime = page.SkippedSourceRows[i].Time;
+                    if (skippedTime is null)
+                        continue;
+
+                    DateOnly skippedDate = DateOnly.FromDateTime(skippedTime.Value);
+                    if (errorDateFrom is null || skippedDate < errorDateFrom)
+                        errorDateFrom = skippedDate;
+                    if (errorDateTill is null || skippedDate > errorDateTill)
+                        errorDateTill = skippedDate;
+                }
+            }
 
             foreach ((object?[] row, _) in page.Rows)
             {
@@ -79,7 +116,11 @@ public sealed class MoexHistoryWriter
 
         ClickHouseWriterLogMessages.RangeWritten(
             _logger, secid, rowsRead, rowsInsertedReported);
-        return new RowWriteSummary(rowsRead, rowsSkipped);
+        if (rowsSkipped > 0 && errorReason is null)
+            errorReason = $"Историческая загрузка пропустила {rowsSkipped} строк источника.";
+        return new RowWriteSummary(
+            rowsRead, rowsSkipped, errorReason is not null,
+            errorReason, errorDateFrom, errorDateTill);
     }
 
     private static void EnsureRangeValid(MoexSeriesSpec spec, string secid)

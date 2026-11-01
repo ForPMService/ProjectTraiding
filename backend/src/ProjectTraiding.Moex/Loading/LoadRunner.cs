@@ -145,6 +145,17 @@ namespace ProjectTraiding.Moex.Loading
 
                 rowsForTelemetry = summary.RowsRead;
 
+                if (summary.HasReadErrors || summary.RowsSkipped > 0)
+                {
+                    string reason = summary.ErrorReason
+                        ?? $"Историческая загрузка пропустила {summary.RowsSkipped} строк источника.";
+                    DateOnly errorFrom = summary.ErrorDateFrom ?? task.DateFrom;
+                    DateOnly errorTill = summary.ErrorDateTill ?? task.DateTill;
+                    reason = $"{reason} (диапазон {errorFrom:yyyy-MM-dd}—{errorTill:yyyy-MM-dd}).";
+
+                    throw new InvalidOperationException(reason);
+                }
+
                 if (!await _taskWriter.MarkDoneAsync(taskId, summary.RowsRead, CancellationToken.None))
                 {
                     if (await _taskReader.IsCancelRequestedAsync(taskId, CancellationToken.None))

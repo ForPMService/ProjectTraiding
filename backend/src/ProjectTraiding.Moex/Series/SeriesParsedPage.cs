@@ -17,10 +17,14 @@ namespace ProjectTraiding.Moex.Series;
 public readonly record struct SeriesParsedPage(
     List<(object?[] Row, DateTime Time)> Rows,
     int SourceRowsCount,
-    List<SkippedSourceRow>? SkippedSourceRows)
+    List<SkippedSourceRow>? SkippedSourceRows,
+    SeriesReadFailure? Failure = null)
 {
     public int SkippedRows => SkippedSourceRows?.Count ?? 0;
 }
+
+/// <summary>Изолированный отказ чтения диапазона, после которого известна следующая граница.</summary>
+public readonly record struct SeriesReadFailure(DateOnly DateFrom, DateOnly DateTill, string Reason);
 
 /// <summary>
 /// Отвергнутая строка: её позиция в ответе источника и момент, если его удалось

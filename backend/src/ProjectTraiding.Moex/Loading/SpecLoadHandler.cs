@@ -106,7 +106,27 @@ public sealed class SpecLoadHandler
                 .GetAsyncEnumerator(cancellationToken);
             while (true)
             {
-                bool hasPage = await enumerator.MoveNextAsync();
+                bool hasPage;
+                Exception? readFailure = null;
+                try
+                {
+                    hasPage = await enumerator.MoveNextAsync();
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    readFailure = ex;
+                    hasPage = false;
+                }
+                if (readFailure is not null)
+                {
+                    yield return new SeriesParsedPage(
+                        [], 0, null, new SeriesReadFailure(from, till, readFailure.Message));
+                    break;
+                }
                 if (!hasPage)
                     break;
                 SeriesParsedPage page = enumerator.Current;

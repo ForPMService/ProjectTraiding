@@ -281,8 +281,31 @@ public sealed class MoexHistoryPageReader
 
             query["from"] = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             query["till"] = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-            PageFetchResult fetched = await FetchPageAsync(
-                spec, method, query, secId, operationTags, cancellationToken);
+            PageFetchResult fetched;
+            Exception? fetchFailure = null;
+            try
+            {
+                fetched = await FetchPageAsync(
+                    spec, method, query, secId, operationTags, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                fetchFailure = ex;
+                fetched = default;
+            }
+
+            if (fetchFailure is not null)
+            {
+                yield return new SeriesParsedPage(
+                    [], 0, null, new SeriesReadFailure(
+                        DateOnly.FromDateTime(date), DateOnly.FromDateTime(date), fetchFailure.Message));
+                dayIndex++;
+                continue;
+            }
             SeriesParsedPage parsed = fetched.Rows;
 
             if (parsed.SourceRowsCount > 0)
