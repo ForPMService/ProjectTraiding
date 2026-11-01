@@ -326,7 +326,9 @@ public sealed class AlgopackCurrentDayService : BackgroundService
                         today,
                         operationTags,
                         fetchCts.Token);
-                    fetchedPages = await ReadPagesAsync(pages, fetchCts.Token);
+                    fetchedPages = new List<SeriesParsedPage>();
+                    await foreach (SeriesParsedPage page in pages.WithCancellation(fetchCts.Token))
+                        fetchedPages.Add(page);
                 }
                 catch (OperationCanceledException)
                     when (!ct.IsCancellationRequested && fetchCts.IsCancellationRequested)
@@ -377,17 +379,6 @@ public sealed class AlgopackCurrentDayService : BackgroundService
             MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
             throw;
         }
-    }
-
-    private static async Task<List<SeriesParsedPage>> ReadPagesAsync(
-        IAsyncEnumerable<SeriesParsedPage> pages,
-        CancellationToken ct)
-    {
-        List<SeriesParsedPage> fetchedPages = new();
-        await foreach (SeriesParsedPage page in pages.WithCancellation(ct))
-            fetchedPages.Add(page);
-
-        return fetchedPages;
     }
 
     private static async IAsyncEnumerable<SeriesParsedPage> FilterPages(
