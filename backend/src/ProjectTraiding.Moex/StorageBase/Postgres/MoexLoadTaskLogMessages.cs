@@ -17,13 +17,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             Message = "Load task status set to error: id={TaskId}, sqlTime={Elapsed}.")]
         public static partial void TaskError(ILogger logger, Guid taskId, TimeSpan elapsed);
 
-        // Событие дублирует итоговую сводку задания LoadTaskCompleted (EventId 200)
-        // тем же числом строк. Каноническая сводка — там, здесь остаётся отладочный след.
-        [LoggerMessage(
-            EventId = 194, EventName = "LoadedRangeRecorded", Level = LogLevel.Debug,
-            Message = "Loaded range recorded: secid={Secid}, kind={DataKind}, rows={RowsTotal}, time={Elapsed}.")]
-        public static partial void RangeRecorded(ILogger logger, string secid, string dataKind, long rowsTotal, TimeSpan elapsed);
-
         [LoggerMessage(
         EventId = 195, EventName = "LoadBackgroundStarted", Level = LogLevel.Information,
         Message = "Load background service started: pollInterval={PollInterval}.")]

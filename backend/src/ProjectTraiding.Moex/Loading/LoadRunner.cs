@@ -24,20 +24,17 @@ namespace ProjectTraiding.Moex.Loading
 
         private readonly MoexLoadTaskReader _taskReader;
         private readonly MoexLoadTaskWriter _taskWriter;
-        private readonly MoexLoadedRangeWriter _rangeWriter;
         private readonly SpecLoadHandler _loader;
         private readonly ILogger<LoadRunner> _logger;
 
         public LoadRunner(
             MoexLoadTaskReader taskReader,
             MoexLoadTaskWriter taskWriter,
-            MoexLoadedRangeWriter rangeWriter,
             SpecLoadHandler loader,
             ILogger<LoadRunner> logger)
         {
             _taskReader = taskReader;
             _taskWriter = taskWriter;
-            _rangeWriter = rangeWriter;
             _loader = loader;
             _logger = logger;
         }
@@ -120,11 +117,6 @@ namespace ProjectTraiding.Moex.Loading
                     throw new InvalidOperationException(
                         $"Задача {taskId} захватывает незакрытый день (date_till={task.DateTill:yyyy-MM-dd}).");
 
-                // PostgreSQL раньше ClickHouse: покрытие снимается до удаления данных.
-                // Обратный порядок оставляет строку 'ok' на пустом диапазоне, если
-                // источник откажет после удаления.
-                await _rangeWriter.RewriteOverlappingHistoryAsync(task, ct);
-
                 using CancellationTokenSource operatorCts = new CancellationTokenSource();
                 using CancellationTokenSource linkedCts =
                     CancellationTokenSource.CreateLinkedTokenSource(ct, operatorCts.Token);
@@ -145,7 +137,7 @@ namespace ProjectTraiding.Moex.Loading
 
                 // Последняя проверка перед финализацией. Локального токена мало: спутник мог спать
                 // свои три секунды, пока обработчик заканчивал, и уже записанный запрос остался бы
-                // незамеченным — задание получило бы done и полное покрытие вопреки команде.
+                // незамеченным до финализации задания.
                 if (await _taskReader.IsCancelRequestedAsync(taskId, CancellationToken.None))
                     operatorCts.Cancel();
 
@@ -153,9 +145,6 @@ namespace ProjectTraiding.Moex.Loading
 
                 rowsForTelemetry = summary.RowsRead;
 
-                // Штатное полное покрытие: журнал результата и закрытие успехом.
-                await _rangeWriter.InsertAsync(
-                    task, summary.RowsRead, summary.RowsSkipped, CancellationToken.None);
                 if (!await _taskWriter.MarkDoneAsync(taskId, summary.RowsRead, CancellationToken.None))
                 {
                     if (await _taskReader.IsCancelRequestedAsync(taskId, CancellationToken.None))

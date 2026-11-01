@@ -56,12 +56,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             ILogger logger, string secid, int tablesCleared, TimeSpan elapsed);
 
         [LoggerMessage(
-            EventId = 253, EventName = "MoexHistoryCoverageRewritten", Level = LogLevel.Warning,
-            Message = "Moex history coverage rewritten: secid={Secid}, dataKind={DataKind}, rows={Affected}.")]
-        public static partial void HistoryCoverageRewritten(
-            ILogger logger, string secid, string dataKind, int affected);
-
-        [LoggerMessage(
             EventId = 254, EventName = "MoexSeriesRangeDeleted", Level = LogLevel.Warning,
             Message = "Moex series range deleted: secid={Secid}, table={Table}, from={From}, till={Till}, time={Elapsed}.")]
         public static partial void SeriesRangeDeleted(

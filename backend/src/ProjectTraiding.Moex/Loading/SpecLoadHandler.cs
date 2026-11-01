@@ -56,9 +56,7 @@ public sealed class SpecLoadHandler
             ?? throw new InvalidOperationException(
                 $"Нет обработчика для задачи {task.Id} (data_kind={task.DataKind}, market={task.Market}, interval={task.CandleInterval}).");
 
-        // Между удалением и успешным окончанием загрузки диапазон пуст. Покрытие
-        // перезаписано координатором до этой строки, поэтому массовая постановка
-        // предложит диапазон снова.
+        // Повторная загрузка сначала удаляет полный диапазон, затем записывает его заново.
         await _rangeDeleter.DeleteAsync(
             spec, task.Secid, task.DateFrom, task.DateTill, cancellationToken);
 

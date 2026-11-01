@@ -55,7 +55,6 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
             services.AddSingleton<MoexLoadTaskReader>();
             services.AddTransient<MoexLoadTaskWriter>();
             services.AddTransient<LoadTaskCommandWriter>();
-            services.AddTransient<MoexLoadedRangeWriter>();
             services.AddScoped<LoadRunner>();
 
             // Фоновый исполнитель: интервал опроса и число дорожек — из настроек.
