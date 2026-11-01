@@ -152,13 +152,16 @@ namespace ProjectTraiding.Moex.Loading
 
                 rowsForTelemetry = summary.RowsRead;
 
-                outcome = MoexOutcomes.Success;
-
                 // Штатное полное покрытие: журнал результата и закрытие успехом.
                 await _rangeWriter.InsertAsync(
                     task, summary.RowsRead, summary.RowsSkipped, CancellationToken.None);
-                await _taskWriter.MarkDoneAsync(taskId, summary.RowsRead, CancellationToken.None);
-
+                if (!await _taskWriter.MarkDoneAsync(taskId, summary.RowsRead, CancellationToken.None))
+                {
+                    if (await _taskReader.IsCancelRequestedAsync(taskId, CancellationToken.None))
+                        throw new OperationCanceledException();
+                    throw new InvalidOperationException($"Задача {taskId} не в статусе running.");
+                }
+                outcome = MoexOutcomes.Success;
                 return;
             }
             catch (OperationCanceledException)

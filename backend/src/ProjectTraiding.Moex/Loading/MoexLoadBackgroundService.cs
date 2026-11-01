@@ -110,7 +110,7 @@ namespace ProjectTraiding.Moex.Loading
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                // Остановка посреди загрузки. RunAsync уже вернул задачу в очередь (pending).
+                // Остановка посреди загрузки. RunAsync уже завершил задачу ошибкой или операторской отменой.
                 // Пробрасываем, чтобы внешний цикл штатно завершился.
                 throw;
             }

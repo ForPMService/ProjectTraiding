@@ -38,8 +38,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         }
 
         /// <summary>
-        /// Возвращает после аварийной остановки незавершённые задачи в очередь, а задачи с
-        /// запросом отмены закрывает тем же правилом, что штатная отмена исполнителя.
+        /// Завершает прерванные задачи ошибкой либо подтверждает операторскую отмену.
         /// </summary>
         public async Task RecoverInterruptedTasksAsync(CancellationToken ct)
         {
@@ -48,11 +47,11 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 UPDATE moex_load_tasks
                 SET status = CASE
                         WHEN cancel_requested_at IS NOT NULL THEN 'cancelled'
-                        ELSE 'pending' END,
-                    finished_at = CASE
-                        WHEN cancel_requested_at IS NOT NULL THEN now()
-                        ELSE null END,
-                    error_message = null
+                        ELSE 'error' END,
+                    finished_at = now(),
+                    error_message = CASE
+                        WHEN cancel_requested_at IS NOT NULL THEN null
+                        ELSE 'Historical load interrupted by application shutdown or restart' END
                 WHERE status = 'running'
                 """, connection);
             await cmd.ExecuteNonQueryAsync(ct);

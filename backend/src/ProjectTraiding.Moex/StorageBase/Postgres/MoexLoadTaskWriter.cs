@@ -10,7 +10,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
     /// <summary>
     /// Писатель завершает выполнение задачи загрузки (moex_load_tasks): running → done,
     /// running → error, а прерванное выполнение финализирует в running → cancelled при
-    /// наличии запроса отмены либо в running → pending без него. Создание заданий и
+    /// наличии запроса отмены либо в running → error без него. Создание заданий и
     /// операторская отмена перешли к LoadTaskCommandWriter в этом же контуре; захват
     /// задания остаётся за MoexLoadTaskReader. Два писателя одной таблицы допустимы.
     /// </summary>
@@ -29,7 +29,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         /// Закрывает задачу успехом: running → done. finished_at = now().
         /// Если строка не в running — аномалия, ошибка.
         /// </summary>
-        public async Task MarkDoneAsync(
+        public async Task<bool> MarkDoneAsync(
             Guid taskId,
             long rowsLoaded,
             CancellationToken ct)
@@ -40,17 +40,17 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
             await using NpgsqlCommand cmd = new NpgsqlCommand("""
                 UPDATE moex_load_tasks
                 SET status = 'done', finished_at = now()
-                WHERE id = @id AND status = 'running'
+                WHERE id = @id AND status = 'running' AND cancel_requested_at IS NULL
                 """, connection);
             cmd.Parameters.Add("@id", NpgsqlDbType.Uuid).Value = taskId;
 
             int affected = await cmd.ExecuteNonQueryAsync(ct);
             if (affected != 1)
-                throw new InvalidOperationException(
-                    $"Задача {taskId} не в статусе running — закрыть успехом нельзя (affected={affected}).");
+                return false;
 
             TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
             MoexLoadTaskLogMessages.TaskDone(_logger, taskId, rowsLoaded, elapsed);
+            return true;
         }
 
         /// <summary>
@@ -84,12 +84,7 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
         }
 
         /// <summary>
-        /// Закрывает выполняющееся задание после отмены, выбирая финал по актуальному запросу
-        /// оператора: есть запрос — cancelled, нет — возврат в очередь. Возвращает новый статус
-        /// либо null, если строки в running уже нет.
-        /// Пустой результат — не отказ, а безопасная гонка с естественным завершением: успевшее
-        /// закрыться успехом задание остаётся успешным. При возврате в очередь текст ошибки
-        /// очищается; захват чистит то же поле при следующем запуске.
+        /// Закрывает прерванное задание: операторская отмена или ошибка остановки.
         /// </summary>
         public async Task<string?> FinalizeCancellationAsync(Guid taskId, CancellationToken ct)
         {
@@ -99,11 +94,11 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
                 UPDATE moex_load_tasks
                 SET status = CASE
                         WHEN cancel_requested_at IS NOT NULL THEN 'cancelled'
-                        ELSE 'pending' END,
-                    finished_at = CASE
-                        WHEN cancel_requested_at IS NOT NULL THEN now()
-                        ELSE null END,
-                    error_message = null
+                        ELSE 'error' END,
+                    finished_at = now(),
+                    error_message = CASE
+                        WHEN cancel_requested_at IS NOT NULL THEN null
+                        ELSE 'Historical load interrupted by application shutdown' END
                 WHERE id = @id AND status = 'running'
                 RETURNING status
                 """, connection);
