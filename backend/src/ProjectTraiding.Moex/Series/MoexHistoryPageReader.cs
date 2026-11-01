@@ -91,7 +91,6 @@ public sealed class MoexHistoryPageReader
 
         int pagesElapsed = 0;
         int totalRows = 0;
-        int skippedTotal = 0;
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -132,7 +131,7 @@ public sealed class MoexHistoryPageReader
 
             if (nextCursor >= cursorTotal)
             {
-                skippedTotal = AccountSkippedRows(parsed, method, operationTags, skippedTotal);
+                AccountSkippedRows(parsed, method, operationTags);
 
                 yield return parsed;
 
@@ -172,7 +171,7 @@ public sealed class MoexHistoryPageReader
                 parsed = TrimToSourceIndex(parsed, acceptedTailStart, sourceTailStart);
             }
 
-            skippedTotal = AccountSkippedRows(parsed, method, operationTags, skippedTotal);
+            AccountSkippedRows(parsed, method, operationTags);
 
             yield return parsed;
 
@@ -217,7 +216,6 @@ public sealed class MoexHistoryPageReader
         int queryStart = 0;
         int pagesElapsed = 0;
         int totalRows = 0;
-        int skippedTotal = 0;
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -225,7 +223,7 @@ public sealed class MoexHistoryPageReader
                 spec, method, query, secId, operationTags, cancellationToken);
             SeriesParsedPage parsed = page.Rows;
 
-            skippedTotal = AccountSkippedRows(parsed, method, operationTags, skippedTotal);
+            AccountSkippedRows(parsed, method, operationTags);
 
             pagesElapsed++;
             totalRows += parsed.Rows.Count;
@@ -275,7 +273,6 @@ public sealed class MoexHistoryPageReader
 
         int dayIndex = 0;
         int totalRows = 0;
-        int skippedTotal = 0;
         DateTime fromDate = from.ToDateTime(TimeOnly.MinValue);
         DateTime tillDate = till.ToDateTime(TimeOnly.MinValue);
         for (DateTime date = fromDate; date <= tillDate; date = date.AddDays(1))
@@ -290,7 +287,7 @@ public sealed class MoexHistoryPageReader
 
             if (parsed.SourceRowsCount > 0)
             {
-                skippedTotal = AccountSkippedRows(parsed, method, operationTags, skippedTotal);
+                AccountSkippedRows(parsed, method, operationTags);
             }
 
             dayIndex++;
@@ -314,29 +311,15 @@ public sealed class MoexHistoryPageReader
     }
 
     /// <summary>
-    /// Учёт отвергнутых строк страницы: предел, событие журнала, счётчик с метками.
-    /// Возвращает накопленное число отвергнутых строк.
+    /// Учёт отвергнутых строк страницы: события журнала и счётчик с метками.
     /// </summary>
-    private int AccountSkippedRows(
+    private void AccountSkippedRows(
         SeriesParsedPage parsed,
         string method,
-        MoexOperationTags operationTags,
-        int skippedTotal)
+        MoexOperationTags operationTags)
     {
-        skippedTotal += parsed.SkippedRows;
-        if (_options.MaxSkippedRowsPerLoad >= 0
-            && skippedTotal > _options.MaxSkippedRowsPerLoad)
-        {
-            // Испорченная строка — редкость, испорченная страница — признак сломанного
-            // контракта. Порог отделяет одно от другого: до него загрузка продолжается,
-            // после — задание отменяется целиком.
-            throw new InvalidOperationException(
-                $"Разбор отверг {skippedTotal} строк, предел {_options.MaxSkippedRowsPerLoad}: " +
-                "источник вернул данные, не отвечающие декларации.");
-        }
-
         if (parsed.SkippedRows == 0)
-            return skippedTotal;
+            return;
 
         MoexLogMessages.RowsSkipped(_logger, method, parsed.SkippedRows);
         for (int i = 0; i < parsed.SkippedSourceRows!.Count; i++)
@@ -353,8 +336,6 @@ public sealed class MoexHistoryPageReader
                 MoexTelemetryAttributes.DataKind, operationTags.DataKind),
             new KeyValuePair<string, object?>(
                 MoexTelemetryAttributes.Market, operationTags.Market));
-
-        return skippedTotal;
     }
 
     /// <summary>

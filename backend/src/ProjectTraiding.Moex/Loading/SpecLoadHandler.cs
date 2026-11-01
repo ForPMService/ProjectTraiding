@@ -1,11 +1,9 @@
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
-using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Series;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using System.Runtime.CompilerServices;
-using Microsoft.Extensions.Options;
 
 namespace ProjectTraiding.Moex.Loading;
 
@@ -38,18 +36,15 @@ public sealed class SpecLoadHandler
     private readonly MoexHistoryPageReader _reader;
     private readonly MoexHistoryWriter _writer;
     private readonly SeriesRangeDeleter _rangeDeleter;
-    private readonly MoexOptions _options;
 
     public SpecLoadHandler(
         MoexHistoryPageReader reader,
         MoexHistoryWriter writer,
-        SeriesRangeDeleter rangeDeleter,
-        IOptions<MoexOptions> options)
+        SeriesRangeDeleter rangeDeleter)
     {
         _reader = reader;
         _writer = writer;
         _rangeDeleter = rangeDeleter;
-        _options = options.Value;
     }
 
     public async Task<RowWriteSummary> LoadAsync(
@@ -100,7 +95,6 @@ public sealed class SpecLoadHandler
         MoexOperationTags operationTags,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        long skippedRows = 0;
         int days = task.DataKind == "orderstats" && task.Market == "stock" ? 7 : 364;
         DateOnly from = task.DateFrom;
         while (true)
@@ -118,16 +112,6 @@ public sealed class SpecLoadHandler
                 SeriesParsedPage page = enumerator.Current;
                 if (page.SourceRowsCount > 0)
                     LastParsedPageDate = GetLastSourceDate(page);
-
-                skippedRows += page.SkippedRows;
-                if (_options.MaxSkippedRowsPerLoad >= 0
-                    && skippedRows > _options.MaxSkippedRowsPerLoad)
-                {
-                    throw new InvalidOperationException(
-                        $"Разбор отверг {skippedRows} строк за историческое задание, " +
-                        $"предел {_options.MaxSkippedRowsPerLoad}: источник вернул данные, " +
-                        "не отвечающие декларации.");
-                }
 
                 yield return page;
             }

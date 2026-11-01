@@ -121,6 +121,7 @@ public sealed class MoexSeriesParser
             }
 
             sourceTimeParts.Reset();
+            string? rowError = null;
 
             for (int position = 0; position < spec.SourceColumns.Length; position++)
             {
@@ -142,9 +143,24 @@ public sealed class MoexSeriesParser
                 sourceValues[position] = null;
                 if (reader.TokenType != JsonTokenType.Null)
                 {
-                    sourceValues[position] = ReadValue(
-                        ref reader, spec.SourceColumns[position], spec.SourceColumnUsed[position],
-                        ref sourceTimeParts, sourceRowIndex, spec.RootKey);
+                    try
+                    {
+                        sourceValues[position] = ReadValue(
+                            ref reader, spec.SourceColumns[position], spec.SourceColumnUsed[position],
+                            ref sourceTimeParts, sourceRowIndex, spec.RootKey);
+                    }
+                    catch (Exception ex) when (
+                        ex is InvalidOperationException or FormatException)
+                    {
+                        if (reader.TokenType == JsonTokenType.EndArray)
+                        {
+                            ParseHelpersUtf8.SchemaMismatch(
+                                $"[{spec.RootKey}] Строка {sourceRowIndex} завершилась на колонке {position}.");
+                        }
+
+                        rowError ??= ex.Message;
+                        reader.Skip();
+                    }
                 }
             }
 
@@ -161,6 +177,8 @@ public sealed class MoexSeriesParser
             // и тихо пропускать из-за неё данные нельзя.
             try
             {
+                if (rowError is not null)
+                    throw new InvalidOperationException(rowError);
                 rows.Add(BuildTargetRow(sourceValues, in sourceTimeParts, spec, taskSecId));
             }
             catch (Exception ex) when (
@@ -168,7 +186,7 @@ public sealed class MoexSeriesParser
             {
                 skippedSourceRows ??= new List<SkippedSourceRow>();
                 skippedSourceRows.Add(new SkippedSourceRow(
-                    sourceRowIndex, TryReadSourceTime(in sourceTimeParts), ex.Message));
+                    sourceRowIndex, TryReadSourceTime(in sourceTimeParts), rowError ?? ex.Message));
             }
 
             sourceRowIndex++;
@@ -183,28 +201,20 @@ public sealed class MoexSeriesParser
         int rowIndex,
         string rootKey)
     {
-        try
+        if (used)
+            return ReadUsedValue(ref reader, column, ref sourceTimeParts, rowIndex, rootKey);
+
+        // На эту колонку не ссылается ни одна целевая колонка. Сверка вида токена
+        // остаётся, строка не создаётся. У истории такая колонка одна — код инструмента,
+        // и он берётся из задачи, а не из ответа.
+        if (column.Kind == ColumnKind.String)
         {
-            if (used)
-                return ReadUsedValue(ref reader, column, ref sourceTimeParts, rowIndex, rootKey);
-
-            // На эту колонку не ссылается ни одна целевая колонка. Сверка вида токена
-            // остаётся, строка не создаётся. У истории такая колонка одна — код инструмента,
-            // и он берётся из задачи, а не из ответа.
-            if (column.Kind == ColumnKind.String)
-            {
-                ParseHelpersUtf8.ExpectString(ref reader, rowIndex, column.Position, rootKey);
-                return null;
-            }
-
-            _ = ReadUsedValue(ref reader, column, ref sourceTimeParts, rowIndex, rootKey);
+            ParseHelpersUtf8.ExpectString(ref reader, rowIndex, column.Position, rootKey);
             return null;
         }
-        catch (InvalidOperationException ex)
-        {
-            ParseHelpersUtf8.SchemaMismatch(ex.Message);
-            throw;
-        }
+
+        _ = ReadUsedValue(ref reader, column, ref sourceTimeParts, rowIndex, rootKey);
+        return null;
     }
 
     private static object? ReadUsedValue(
