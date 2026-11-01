@@ -147,13 +147,32 @@ namespace ProjectTraiding.Moex.Loading
 
                 if (summary.HasReadErrors || summary.RowsSkipped > 0)
                 {
-                    string reason = summary.ErrorReason
-                        ?? $"Историческая загрузка пропустила {summary.RowsSkipped} строк источника.";
-                    DateOnly errorFrom = summary.ErrorDateFrom ?? task.DateFrom;
-                    DateOnly errorTill = summary.ErrorDateTill ?? task.DateTill;
-                    reason = $"{reason} (диапазон {errorFrom:yyyy-MM-dd}—{errorTill:yyyy-MM-dd}).";
+                    StringBuilder reasonBuilder = new();
+                    if (summary.ReadErrorCount > 0)
+                    {
+                        reasonBuilder.Append($"Ошибок чтения: {summary.ReadErrorCount}.");
+                        if (summary.FirstReadErrorDateFrom is DateOnly errorFrom
+                            && summary.FirstReadErrorDateTill is DateOnly errorTill)
+                        {
+                            reasonBuilder.Append(
+                                $" Первый отказ в диапазоне {errorFrom:yyyy-MM-dd}—{errorTill:yyyy-MM-dd}.");
+                        }
 
-                    throw new InvalidOperationException(reason);
+                        if (!string.IsNullOrWhiteSpace(summary.FirstReadErrorReason))
+                            reasonBuilder.Append(" Причина первого отказа: ")
+                                .Append(summary.FirstReadErrorReason);
+                    }
+
+                    if (summary.RowsSkipped > 0)
+                    {
+                        if (reasonBuilder.Length > 0)
+                            reasonBuilder.Append(' ');
+                        reasonBuilder.Append($"Пропущено строк источника: {summary.RowsSkipped}.");
+                        if (summary.FirstSkippedDate is DateOnly skippedDate)
+                            reasonBuilder.Append($" Дата первой пропущенной строки: {skippedDate:yyyy-MM-dd}.");
+                    }
+
+                    throw new InvalidOperationException(reasonBuilder.ToString());
                 }
 
                 if (!await _taskWriter.MarkDoneAsync(taskId, summary.RowsRead, CancellationToken.None))

@@ -3,7 +3,9 @@ using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Series;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
+using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 
 namespace ProjectTraiding.Moex.Loading;
 
@@ -36,15 +38,18 @@ public sealed class SpecLoadHandler
     private readonly MoexHistoryPageReader _reader;
     private readonly MoexHistoryWriter _writer;
     private readonly SeriesRangeDeleter _rangeDeleter;
+    private readonly ILogger<SpecLoadHandler> _logger;
 
     public SpecLoadHandler(
         MoexHistoryPageReader reader,
         MoexHistoryWriter writer,
-        SeriesRangeDeleter rangeDeleter)
+        SeriesRangeDeleter rangeDeleter,
+        ILogger<SpecLoadHandler> logger)
     {
         _reader = reader;
         _writer = writer;
         _rangeDeleter = rangeDeleter;
+        _logger = logger;
     }
 
     public async Task<RowWriteSummary> LoadAsync(
@@ -116,9 +121,27 @@ public sealed class SpecLoadHandler
                 {
                     throw;
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (MoexHistoryPageReader.IsRecoverableReadFailure(ex))
                 {
                     readFailure = ex;
+                    hasPage = false;
+                }
+                catch (Exception ex)
+                {
+                    string endpoint = GetEndpoint(spec, task);
+                    MoexLogMessages.HistoryOperationFailed(
+                        _logger,
+                        ex,
+                        task.Secid,
+                        operationTags.DataKind,
+                        operationTags.Operation,
+                        endpoint,
+                        from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                        till.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                        "window",
+                        MoexMetrics.ClassifyError(ex),
+                        ex.Message);
+                    ExceptionDispatchInfo.Capture(ex).Throw();
                     hasPage = false;
                 }
                 if (readFailure is not null)
@@ -139,6 +162,15 @@ public sealed class SpecLoadHandler
                 break;
             from = till.AddDays(1);
         }
+    }
+
+    private static string GetEndpoint(MoexSeriesSpec spec, MoexLoadTask task)
+    {
+        string board = spec.Market == "stock"
+            ? task.Boardid.ToLowerInvariant()
+            : task.Boardid.ToUpperInvariant();
+        return string.Format(
+            CultureInfo.InvariantCulture, spec.MethodTemplate, task.Secid, board);
     }
 
     private static DateOnly? GetLastSourceDate(SeriesParsedPage page)

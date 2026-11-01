@@ -12,8 +12,12 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
     public readonly record struct RowWriteSummary(
         long RowsRead,
         long RowsSkipped,
-        bool HasReadErrors = false,
-        string? ErrorReason = null,
-        DateOnly? ErrorDateFrom = null,
-        DateOnly? ErrorDateTill = null);
+        int ReadErrorCount = 0,
+        string? FirstReadErrorReason = null,
+        DateOnly? FirstReadErrorDateFrom = null,
+        DateOnly? FirstReadErrorDateTill = null,
+        DateOnly? FirstSkippedDate = null)
+    {
+        public bool HasReadErrors => ReadErrorCount > 0;
+    }
 }

@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Options;
 using ProjectTraiding.Moex.Clients;
+using ProjectTraiding.Moex.Clients.Errors;
 using ProjectTraiding.Moex.Contracts.Dto;
 using ProjectTraiding.Moex.Infrastructure.Buffers;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
@@ -131,7 +132,7 @@ public sealed class MoexHistoryPageReader
 
             if (nextCursor >= cursorTotal)
             {
-                AccountSkippedRows(parsed, method, operationTags);
+                AccountSkippedRows(parsed, method, secId, operationTags, query);
 
                 yield return parsed;
 
@@ -171,7 +172,7 @@ public sealed class MoexHistoryPageReader
                 parsed = TrimToSourceIndex(parsed, acceptedTailStart, sourceTailStart);
             }
 
-            AccountSkippedRows(parsed, method, operationTags);
+            AccountSkippedRows(parsed, method, secId, operationTags, query);
 
             yield return parsed;
 
@@ -223,7 +224,7 @@ public sealed class MoexHistoryPageReader
                 spec, method, query, secId, operationTags, cancellationToken);
             SeriesParsedPage parsed = page.Rows;
 
-            AccountSkippedRows(parsed, method, operationTags);
+            AccountSkippedRows(parsed, method, secId, operationTags, query);
 
             pagesElapsed++;
             totalRows += parsed.Rows.Count;
@@ -292,7 +293,7 @@ public sealed class MoexHistoryPageReader
             {
                 throw;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (IsRecoverableReadFailure(ex))
             {
                 fetchFailure = ex;
                 fetched = default;
@@ -310,7 +311,7 @@ public sealed class MoexHistoryPageReader
 
             if (parsed.SourceRowsCount > 0)
             {
-                AccountSkippedRows(parsed, method, operationTags);
+                AccountSkippedRows(parsed, method, secId, operationTags, query);
             }
 
             dayIndex++;
@@ -339,7 +340,9 @@ public sealed class MoexHistoryPageReader
     private void AccountSkippedRows(
         SeriesParsedPage parsed,
         string method,
-        MoexOperationTags operationTags)
+        string secId,
+        MoexOperationTags operationTags,
+        Dictionary<string, string> query)
     {
         if (parsed.SkippedRows == 0)
             return;
@@ -349,7 +352,17 @@ public sealed class MoexHistoryPageReader
         {
             SkippedSourceRow skipped = parsed.SkippedSourceRows[i];
             MoexLogMessages.HistoryRowSkipped(
-                _logger, method, skipped.SourceIndex, skipped.Time, skipped.Reason);
+                _logger,
+                secId,
+                operationTags.DataKind,
+                operationTags.Operation,
+                method,
+                query.GetValueOrDefault("from"),
+                query.GetValueOrDefault("till"),
+                GetPagePosition(query),
+                skipped.SourceIndex,
+                skipped.Time,
+                skipped.Reason);
         }
         MoexMetrics.RowsSkipped.Add(
             parsed.SkippedRows,
@@ -359,6 +372,31 @@ public sealed class MoexHistoryPageReader
                 MoexTelemetryAttributes.DataKind, operationTags.DataKind),
             new KeyValuePair<string, object?>(
                 MoexTelemetryAttributes.Market, operationTags.Market));
+    }
+
+    private static string GetPagePosition(Dictionary<string, string> query)
+    {
+        if (query.TryGetValue("start", out string? start))
+            return "start=" + start;
+
+        string? from = query.GetValueOrDefault("from");
+        string? till = query.GetValueOrDefault("till");
+        if (from is not null && from == till)
+            return "date=" + from;
+
+        return "start=0";
+    }
+
+    internal static bool IsRecoverableReadFailure(Exception exception)
+    {
+        if (exception is OperationCanceledException)
+            return false;
+
+        if (exception is HttpRequestException or MoexTimeoutException)
+            return true;
+
+        return exception is MoexHttpStatusException statusException
+            && statusException.ErrorCategory is MoexErrorTypes.ServerError or MoexErrorTypes.RateLimit;
     }
 
     /// <summary>

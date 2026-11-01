@@ -37,9 +37,11 @@ public sealed class MoexHistoryWriter
         long rowsRead = 0;
         long rowsSkipped = 0;
         long rowsInsertedReported = 0;
-        string? errorReason = null;
-        DateOnly? errorDateFrom = null;
-        DateOnly? errorDateTill = null;
+        int readErrorCount = 0;
+        string? firstReadErrorReason = null;
+        DateOnly? firstReadErrorDateFrom = null;
+        DateOnly? firstReadErrorDateTill = null;
+        DateOnly? firstSkippedDate = null;
 
         await foreach (SeriesParsedPage page
                        in pages.WithCancellation(cancellationToken))
@@ -55,11 +57,13 @@ public sealed class MoexHistoryWriter
                     batch.Clear();
                 }
 
-                errorReason ??= failure.Reason;
-                if (errorDateFrom is null || failure.DateFrom < errorDateFrom)
-                    errorDateFrom = failure.DateFrom;
-                if (errorDateTill is null || failure.DateTill > errorDateTill)
-                    errorDateTill = failure.DateTill;
+                readErrorCount++;
+                if (firstReadErrorReason is null)
+                {
+                    firstReadErrorReason = failure.Reason;
+                    firstReadErrorDateFrom = failure.DateFrom;
+                    firstReadErrorDateTill = failure.DateTill;
+                }
                 continue;
             }
 
@@ -73,14 +77,11 @@ public sealed class MoexHistoryWriter
                 for (int i = 0; i < page.SkippedSourceRows.Count; i++)
                 {
                     DateTime? skippedTime = page.SkippedSourceRows[i].Time;
-                    if (skippedTime is null)
+                    if (skippedTime is null || skippedTime.Value == default)
                         continue;
 
                     DateOnly skippedDate = DateOnly.FromDateTime(skippedTime.Value);
-                    if (errorDateFrom is null || skippedDate < errorDateFrom)
-                        errorDateFrom = skippedDate;
-                    if (errorDateTill is null || skippedDate > errorDateTill)
-                        errorDateTill = skippedDate;
+                    firstSkippedDate ??= skippedDate;
                 }
             }
 
@@ -116,11 +117,14 @@ public sealed class MoexHistoryWriter
 
         ClickHouseWriterLogMessages.RangeWritten(
             _logger, secid, rowsRead, rowsInsertedReported);
-        if (rowsSkipped > 0 && errorReason is null)
-            errorReason = $"Историческая загрузка пропустила {rowsSkipped} строк источника.";
         return new RowWriteSummary(
-            rowsRead, rowsSkipped, errorReason is not null,
-            errorReason, errorDateFrom, errorDateTill);
+            rowsRead,
+            rowsSkipped,
+            readErrorCount,
+            firstReadErrorReason,
+            firstReadErrorDateFrom,
+            firstReadErrorDateTill,
+            firstSkippedDate);
     }
 
     private static void EnsureRangeValid(MoexSeriesSpec spec, string secid)
