@@ -52,8 +52,8 @@ public sealed class MoexHistoryWriter
                 batch.Add(row);
                 if (batch.Count >= _batchSize)
                 {
-                    long reported = await FlushAsync(
-                        spec,
+                    long reported = await _executor.InsertAsync(
+                        spec.Table,
                         spec.Columns,
                         spec.ColumnTypes,
                         batch,
@@ -67,8 +67,8 @@ public sealed class MoexHistoryWriter
 
         if (batch.Count > 0)
         {
-            long reported = await FlushAsync(
-                spec,
+            long reported = await _executor.InsertAsync(
+                spec.Table,
                 spec.Columns,
                 spec.ColumnTypes,
                 batch,
@@ -97,22 +97,5 @@ public sealed class MoexHistoryWriter
                     ?? "Загрузка исторического ряда отвергнута: secid пустой.");
             }
         }
-    }
-
-    private async Task<long> FlushAsync(
-        MoexSeriesSpec spec,
-        IReadOnlyList<string> columns,
-        IReadOnlyDictionary<string, string> columnTypes,
-        IReadOnlyList<object?[]> batch,
-        StorageInsertContext insertContext,
-        CancellationToken cancellationToken)
-    {
-        return await _executor.InsertAsync(
-            spec.Table,
-            columns,
-            columnTypes,
-            batch,
-            insertContext,
-            cancellationToken);
     }
 }
