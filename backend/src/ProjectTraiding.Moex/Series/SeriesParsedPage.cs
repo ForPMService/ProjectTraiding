@@ -28,4 +28,4 @@ public readonly record struct SeriesParsedPage(
 /// строк одного времени: без него отвергнутая строка не отличима от строки соседней
 /// группы, и границу пришлось бы искать вслепую.
 /// </summary>
-public readonly record struct SkippedSourceRow(int SourceIndex, DateTime? Time);
+public readonly record struct SkippedSourceRow(int SourceIndex, DateTime? Time, string Reason);

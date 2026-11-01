@@ -65,6 +65,18 @@ namespace ProjectTraiding.Moex.Clients
             Message = "MOEX rows skipped by parser: endpoint={Endpoint}, skipped={SkippedRows}.")]
         public static partial void RowsSkipped(ILogger logger, string endpoint, int skippedRows);
 
+        [LoggerMessage(EventId = 133, EventName = "MoexHistoryRequestOperationFailed", Level = LogLevel.Error,
+            Message = "MOEX history operation failed: secid={Secid}, dataKind={DataKind}, operation={Operation}, endpoint={Endpoint}, from={DateFrom}, till={DateTill}, pagePosition={PagePosition}, error={ErrorType}, reason={Reason}.")]
+        public static partial void HistoryOperationFailed(
+            ILogger logger, Exception exception, string secid, string dataKind, string operation,
+            string endpoint, string? dateFrom, string? dateTill, string pagePosition,
+            string errorType, string reason);
+
+        [LoggerMessage(EventId = 134, EventName = "MoexHistoryRowSkipped", Level = LogLevel.Warning,
+            Message = "MOEX history row skipped: endpoint={Endpoint}, sourcePosition={SourcePosition}, time={SourceTime}, reason={Reason}.")]
+        public static partial void HistoryRowSkipped(
+            ILogger logger, string endpoint, int sourcePosition, DateTime? sourceTime, string reason);
+
         // ── Rate Limiter ────────────────────────────────────────
 
         /// <summary>

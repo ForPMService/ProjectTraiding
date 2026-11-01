@@ -168,7 +168,7 @@ public sealed class MoexSeriesParser
             {
                 skippedSourceRows ??= new List<SkippedSourceRow>();
                 skippedSourceRows.Add(new SkippedSourceRow(
-                    sourceRowIndex, TryReadSourceTime(in sourceTimeParts)));
+                    sourceRowIndex, TryReadSourceTime(in sourceTimeParts), ex.Message));
             }
 
             sourceRowIndex++;

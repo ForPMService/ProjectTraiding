@@ -339,6 +339,12 @@ public sealed class MoexHistoryPageReader
             return skippedTotal;
 
         MoexLogMessages.RowsSkipped(_logger, method, parsed.SkippedRows);
+        for (int i = 0; i < parsed.SkippedSourceRows!.Count; i++)
+        {
+            SkippedSourceRow skipped = parsed.SkippedSourceRows[i];
+            MoexLogMessages.HistoryRowSkipped(
+                _logger, method, skipped.SourceIndex, skipped.Time, skipped.Reason);
+        }
         MoexMetrics.RowsSkipped.Add(
             parsed.SkippedRows,
             new KeyValuePair<string, object?>(
@@ -482,6 +488,23 @@ public sealed class MoexHistoryPageReader
             }
             catch (Exception ex)
             {
+                string pagePosition = query.TryGetValue("start", out string? start)
+                    ? "start=" + start
+                    : query.TryGetValue("from", out string? date)
+                        ? "date=" + date
+                        : "initial";
+                MoexLogMessages.HistoryOperationFailed(
+                    _logger,
+                    ex,
+                    secId,
+                    operationTags.DataKind,
+                    operationTags.Operation,
+                    method,
+                    query.GetValueOrDefault("from"),
+                    query.GetValueOrDefault("till"),
+                    pagePosition,
+                    MoexMetrics.ClassifyError(ex),
+                    ex.Message);
                 pageActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 MoexMetrics.RecordOperationError(
                     in operationTags,
