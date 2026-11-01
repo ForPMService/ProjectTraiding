@@ -36,6 +36,11 @@ namespace ProjectTraiding.Management.Endpoints
             int skippedDuplicateCount);
 
         [LoggerMessage(
+            EventId = 214, EventName = "MgmtSliceWeeksIgnored", Level = LogLevel.Warning,
+            Message = "SliceWeeks={SliceWeeks} is ignored; splitting load tasks is no longer supported.")]
+        public static partial void SliceWeeksIgnored(ILogger logger, int sliceWeeks);
+
+        [LoggerMessage(
             EventId = 215, EventName = "MgmtInstrumentDataDeleteRejected", Level = LogLevel.Warning,
             Message = "Management instrument data delete rejected: route={Route}, secid={Secid}, reason={Reason}.")]
         public static partial void InstrumentDataDeleteRejected(

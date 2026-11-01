@@ -3,6 +3,7 @@ using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Series;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
+using System.Runtime.CompilerServices;
 
 namespace ProjectTraiding.Moex.Loading;
 
@@ -71,14 +72,8 @@ public sealed class SpecLoadHandler
             spec.Market,
             MoexFlows.History);
 
-        IAsyncEnumerable<SeriesParsedPage> pages = _reader.ReadPages(
-            spec,
-            task.Secid,
-            task.Boardid,
-            task.DateFrom,
-            task.DateTill,
-            operationTags,
-            cancellationToken);
+        IAsyncEnumerable<SeriesParsedPage> pages = ReadRequestWindows(
+            spec, task, operationTags, cancellationToken);
 
         StorageInsertContext insertContext = new(
             operationTags.DataKind,
@@ -91,6 +86,27 @@ public sealed class SpecLoadHandler
             pages,
             insertContext,
             cancellationToken);
+    }
+
+    private async IAsyncEnumerable<SeriesParsedPage> ReadRequestWindows(
+        MoexSeriesSpec spec,
+        MoexLoadTask task,
+        MoexOperationTags operationTags,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        int days = task.DataKind == "orderstats" && task.Market == "stock" ? 7 : 364;
+        DateOnly from = task.DateFrom;
+        while (true)
+        {
+            int remainingDays = task.DateTill.DayNumber - from.DayNumber;
+            DateOnly till = remainingDays < days ? task.DateTill : from.AddDays(days - 1);
+            await foreach (SeriesParsedPage page in _reader.ReadPages(
+                spec, task.Secid, task.Boardid, from, till, operationTags, cancellationToken))
+                yield return page;
+            if (till == task.DateTill)
+                break;
+            from = till.AddDays(1);
+        }
     }
 
     private static MoexSeriesSpec? FindSpec(MoexLoadTask task)

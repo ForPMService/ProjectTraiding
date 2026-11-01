@@ -9,8 +9,6 @@ using ProjectTraiding.Moex.StorageBase.Postgres;
 namespace ProjectTraiding.Management.Endpoints
 {
     internal sealed class LoadTaskEndpointsLog;
-    internal readonly record struct LoadTaskBulkValidationKey(
-        string Secid, string Market, string Boardid, string DataKind, int? CandleInterval);
 
     public static class LoadTaskEndpoints
     {
@@ -70,6 +68,8 @@ namespace ProjectTraiding.Management.Endpoints
             {
                 const string route = "POST /management/load-tasks/bulk";
                 ManagementEndpointLogMessages.OperationStarted(logger, route);
+                if (request.SliceWeeks.HasValue)
+                    ManagementEndpointLogMessages.SliceWeeksIgnored(logger, request.SliceWeeks.Value);
                 ValidationResult shapeValidation = ValidateBulkRequestShape(request);
                 if (!shapeValidation.IsValid)
                     return ValidationFailure(logger, route, shapeValidation);
@@ -218,13 +218,15 @@ namespace ProjectTraiding.Management.Endpoints
         private static ValidationResult ValidateBulkExpandedTasks(IReadOnlyList<MoexLoadWindow> tasks)
         {
             ValidationResult result = new();
-            HashSet<LoadTaskBulkValidationKey> seen = new();
+            HashSet<MoexLoadWindow> seen = new();
             for (int index = 0; index < tasks.Count; index++)
             {
                 MoexLoadWindow task = tasks[index];
-                if (!seen.Add(new LoadTaskBulkValidationKey(
-                        task.Secid, task.Market, task.Boardid, task.DataKind, task.CandleInterval)))
+                if (!seen.Add(task))
+                {
+                    result.Errors.Add($"повторная единица загрузки: secid={task.Secid}, data_kind={task.DataKind}, candle_interval={task.CandleInterval}, date_from={task.DateFrom:yyyy-MM-dd}, date_till={task.DateTill:yyyy-MM-dd}");
                     continue;
+                }
                 ValidationResult validation = LoadTaskValidator.Validate(task);
                 for (int errorIndex = 0; errorIndex < validation.Errors.Count; errorIndex++)
                 {

@@ -32,7 +32,7 @@ namespace ProjectTraiding.Moex.Loading.Planning
 
     /// <summary>
     /// Планирует загрузку по правилам MOEX: зрелая дата, субъекты открытого интереса
-    /// и нарезка окон принадлежат владельцу данных, а не маршруту управления.
+    /// принадлежат владельцу данных, а не маршруту управления.
     /// </summary>
     public sealed class MoexLoadPlanner
     {
@@ -63,9 +63,6 @@ namespace ProjectTraiding.Moex.Loading.Planning
                 : new Dictionary<string, string>(StringComparer.Ordinal);
 
             List<MoexLoadWindow> windows = new();
-            int? effectiveSliceWeeks = request.SliceWeeks.HasValue
-                ? (request.SliceWeeks.Value < 1 ? 1 : request.SliceWeeks.Value)
-                : null;
 
             for (int instrumentIndex = 0; instrumentIndex < request.Instruments.Count; instrumentIndex++)
             {
@@ -79,7 +76,7 @@ namespace ProjectTraiding.Moex.Loading.Planning
                 {
                     AddWindows(
                         windows, instrument, "candles", request.CandleIntervals[intervalIndex],
-                        request.SliceWeeks, instrument.DateFrom, effectiveTill);
+                        instrument.DateFrom, effectiveTill);
                 }
 
                 for (int dataKindIndex = 0; dataKindIndex < dataKinds.Length; dataKindIndex++)
@@ -95,11 +92,11 @@ namespace ProjectTraiding.Moex.Loading.Planning
 
                     AddWindows(
                         windows, subjectInstrument, dataKind, null,
-                        request.SliceWeeks, instrument.DateFrom, effectiveTill);
+                        instrument.DateFrom, effectiveTill);
                 }
             }
 
-            return new MoexLoadPlanResult(windows, effectiveSliceWeeks);
+            return new MoexLoadPlanResult(windows, null);
         }
 
         private static void AddWindows(
@@ -107,18 +104,15 @@ namespace ProjectTraiding.Moex.Loading.Planning
             MoexLoadPlanInstrument instrument,
             string dataKind,
             int? candleInterval,
-            int? requestedSliceWeeks,
             DateOnly effectiveFrom,
             DateOnly effectiveTill)
         {
             if (effectiveFrom > effectiveTill)
                 return;
 
-            int sliceWeeks = LoadTaskBulkExpander.ResolveSliceWeeks(
-                requestedSliceWeeks, dataKind, instrument.Market);
-            LoadTaskBulkExpander.AddWindows(
-                windows, instrument, dataKind, candleInterval, sliceWeeks,
-                effectiveFrom, effectiveTill);
+            windows.Add(new MoexLoadWindow(
+                instrument.Secid, instrument.Market, instrument.Boardid, dataKind,
+                candleInterval, effectiveFrom, effectiveTill));
         }
 
         private static bool Contains(string[] values, string value)
