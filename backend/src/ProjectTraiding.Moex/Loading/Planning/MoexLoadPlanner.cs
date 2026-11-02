@@ -31,7 +31,7 @@ namespace ProjectTraiding.Moex.Loading.Planning
         int? EffectiveSliceWeeks);
 
     /// <summary>
-    /// Планирует загрузку по правилам MOEX: зрелая дата, субъекты открытого интереса
+    /// Планирует загрузку по правилам MOEX: последняя допустимая дата, субъекты открытого интереса
     /// принадлежат владельцу данных, а не маршруту управления.
     /// </summary>
     public sealed class MoexLoadPlanner
@@ -56,7 +56,7 @@ namespace ProjectTraiding.Moex.Loading.Planning
 
         public async Task<MoexLoadPlanResult> PlanBulkAsync(MoexLoadPlanRequest request, CancellationToken ct)
         {
-            DateOnly lastMatureDate = MoexTime.Today.AddDays(-1);
+            DateOnly lastAllowedDate = MoexTime.Today;
             bool needsFutoi = Contains(request.FuturesDataKinds, "futoi");
             Dictionary<string, string> subjects = needsFutoi
                 ? await _subjectReader.ResolveAsync(GetFuturesSecids(request.Instruments), ct)
@@ -69,8 +69,8 @@ namespace ProjectTraiding.Moex.Loading.Planning
                 MoexLoadPlanInstrument instrument = request.Instruments[instrumentIndex];
                 string[] dataKinds = instrument.Market == "stock"
                     ? request.StockDataKinds : request.FuturesDataKinds;
-                DateOnly effectiveTill = instrument.DateTill < lastMatureDate
-                    ? instrument.DateTill : lastMatureDate;
+                DateOnly effectiveTill = instrument.DateTill < lastAllowedDate
+                    ? instrument.DateTill : lastAllowedDate;
 
                 for (int intervalIndex = 0; intervalIndex < request.CandleIntervals.Length; intervalIndex++)
                 {

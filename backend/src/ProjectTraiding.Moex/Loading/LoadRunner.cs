@@ -1,4 +1,4 @@
-﻿using ProjectTraiding.Moex.Clients;
+using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Infrastructure;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
@@ -113,9 +113,9 @@ namespace ProjectTraiding.Moex.Loading
                     // Признак остаётся ложным: уменьшать то, что не увеличилось, нельзя.
                 }
 
-                if (task.DateTill >= MoexTime.Today)
+                if (task.DateTill > MoexTime.Today)
                     throw new InvalidOperationException(
-                        $"Задача {taskId} захватывает незакрытый день (date_till={task.DateTill:yyyy-MM-dd}).");
+                        $"Задача {taskId} захватывает будущий день (date_till={task.DateTill:yyyy-MM-dd}).");
 
                 using CancellationTokenSource operatorCts = new CancellationTokenSource();
                 using CancellationTokenSource linkedCts =

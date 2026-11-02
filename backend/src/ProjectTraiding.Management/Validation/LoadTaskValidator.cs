@@ -81,8 +81,8 @@ namespace ProjectTraiding.Management.Validation
             if (dateFrom > dateTill)
                 result.Errors.Add("date_from не может быть позже date_till");
 
-            if (dateTill >= MoexTime.Today)
-                result.Errors.Add("date_till должен быть раньше сегодняшнего дня");
+            if (dateTill > MoexTime.Today)
+                result.Errors.Add("date_till не может быть позже сегодняшнего дня");
 
             return result;
         }
