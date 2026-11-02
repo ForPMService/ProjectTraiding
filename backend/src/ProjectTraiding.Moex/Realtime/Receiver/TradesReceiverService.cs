@@ -149,8 +149,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             if (initialAfterTradeNo is null)
             {
                 (long TradeNo, DateTime SourceTime)? tail =
-                    await TrySeedTailAsync(instrument, client,
-                        services.GetRequiredService<RealtimeSpecRowWriter>(), ct);
+                    await TrySeedTailAsync(instrument, client, ct);
                 if (tail is not null)
                 {
                     await UpdateCursorAsync(
@@ -377,7 +376,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         private async Task<(long TradeNo, DateTime SourceTime)?> TrySeedTailAsync(
             ReceiverInstrument instrument,
             MoexRealtimeRestClient client,
-            RealtimeSpecRowWriter writer,
             CancellationToken ct)
         {
             Dictionary<string, string> reversedParams =
@@ -417,10 +415,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 foreach (RealtimeRowFailure failure in page.RowFailures)
                     _logger.LogWarning("MOEX row skipped: secid={Secid}, dataKind={DataKind}, position={Position}, reason={Reason}",
                         instrument.Secid, DataKind, failure.Position, failure.Reason);
-                if (page.Rows.Count > 0)
-                    await writer.WriteAsync(MoexRealtimeRegistry.TradesFor(instrument.Market),
-                        instrument.Secid, page.Rows,
-                        new StorageInsertContext(operationTags.DataKind, operationTags.Market, MoexFlows.Realtime), ct);
                 if (page.RowFailures.Count > 0)
                     throw new InvalidOperationException("Хвост сделок обработан частично.");
                 (long TradeNo, DateTime SourceTime)? tail = PickTail(page);

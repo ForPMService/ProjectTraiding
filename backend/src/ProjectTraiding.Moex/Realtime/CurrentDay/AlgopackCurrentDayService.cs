@@ -396,8 +396,25 @@ public sealed class AlgopackCurrentDayService : BackgroundService
     {
         await foreach (SeriesParsedPage page in pages.WithCancellation(ct))
         {
-            if (page.SkippedRows > 0 || page.Failure is not null)
+            List<SkippedSourceRow>? relevantSkippedRows = null;
+            if (page.SkippedSourceRows is not null)
+            {
+                for (int i = 0; i < page.SkippedSourceRows.Count; i++)
+                {
+                    SkippedSourceRow skipped = page.SkippedSourceRows[i];
+                    bool knownBeforeCursor = lastSourceTime is DateTime cursorTime
+                        && skipped.Time is DateTime skippedTime
+                        && skippedTime < cursorTime;
+                    if (knownBeforeCursor)
+                        continue;
+
+                    state.Incomplete = true;
+                    (relevantSkippedRows ??= []).Add(skipped);
+                }
+            }
+            if (page.Failure is not null)
                 state.Incomplete = true;
+
             List<(object?[] Row, DateTime Time)> filteredRows = new(page.Rows.Count);
             for (int i = 0; i < page.Rows.Count; i++)
             {
@@ -410,12 +427,12 @@ public sealed class AlgopackCurrentDayService : BackgroundService
                     state.MaxSourceTime = time;
             }
 
-            if (filteredRows.Count > 0 || page.SkippedRows > 0 || page.Failure is not null)
+            if (filteredRows.Count > 0 || relevantSkippedRows is not null || page.Failure is not null)
             {
                 yield return new SeriesParsedPage(
                     filteredRows,
-                    filteredRows.Count + page.SkippedRows,
-                    page.SkippedSourceRows,
+                    filteredRows.Count + (relevantSkippedRows?.Count ?? 0),
+                    relevantSkippedRows,
                     page.Failure);
             }
         }

@@ -611,7 +611,7 @@ public static class MoexRealtimeParser
                             nameof(column), column.FillRule, "Неизвестное правило заполнения."),
                     };
                 }
-                catch (Exception ex) when (ex is InvalidOperationException or FormatException or ArgumentOutOfRangeException)
+                catch (Exception ex) when (ex is InvalidOperationException or FormatException)
                 {
                     rowFailure ??= ex;
                 }
@@ -669,7 +669,7 @@ public static class MoexRealtimeParser
                         ref reader, spec.SourceColumns[position], spec.SourceColumnUsed[position],
                         ref sourceTimeParts, rowIndex, spec.RootKey);
                 }
-                catch (Exception ex) when (ex is InvalidOperationException or FormatException or OverflowException or ArgumentOutOfRangeException)
+                catch (Exception ex) when (ex is InvalidOperationException or FormatException or OverflowException)
                 {
                     failure ??= ex;
                 }
