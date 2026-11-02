@@ -18,9 +18,9 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         public static partial void TradesSubscriptionsEmpty(ILogger logger);
 
         [LoggerMessage(EventId = 453, EventName = "MoexTradesReceiverInstrumentPrepared", Level = LogLevel.Information,
-            Message = "Trades receiver instrument prepared: secid={Secid}, market={Market}, sessionId={SessionId}.")]
+            Message = "Trades receiver instrument prepared: secid={Secid}, market={Market}.")]
         public static partial void TradesInstrumentPrepared(
-            ILogger logger, string secid, string market, long sessionId);
+            ILogger logger, string secid, string market);
 
         [LoggerMessage(EventId = 454, EventName = "MoexTradesReceiverInstrumentPreparationFailed", Level = LogLevel.Warning,
             Message = "Trades receiver instrument preparation failed: secid={Secid}.")]
@@ -35,15 +35,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         [LoggerMessage(EventId = 456, EventName = "MoexTradesReceiverTurnFailed", Level = LogLevel.Error,
             Message = "Trades receiver turn failed unexpectedly.")]
         public static partial void TradesTurnFailed(ILogger logger, Exception exception);
-
-        [LoggerMessage(EventId = 457, EventName = "MoexTradesReceiverSessionCloseFailed", Level = LogLevel.Warning,
-            Message = "Trades receiver session close failed: secid={Secid}, sessionId={SessionId}.")]
-        public static partial void TradesSessionCloseFailed(
-            ILogger logger, Exception exception, string secid, long sessionId);
-
-        [LoggerMessage(EventId = 458, EventName = "MoexTradesReceiverShutdownFailed", Level = LogLevel.Error,
-            Message = "Trades receiver shutdown cleanup failed unexpectedly.")]
-        public static partial void TradesShutdownFailed(ILogger logger, Exception exception);
 
         [LoggerMessage(EventId = 459, EventName = "MoexTradesReceiverInstrumentSeeded", Level = LogLevel.Information,
             Message = "Trades receiver instrument seeded to tail: secid={Secid}, market={Market}, tradeNo={TradeNo}.")]
@@ -68,9 +59,9 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         public static partial void OrderbookSubscriptionsEmpty(ILogger logger);
 
         [LoggerMessage(EventId = 463, EventName = "MoexOrderbookReceiverInstrumentPrepared", Level = LogLevel.Information,
-            Message = "Orderbook receiver instrument prepared: secid={Secid}, market={Market}, sessionId={SessionId}.")]
+            Message = "Orderbook receiver instrument prepared: secid={Secid}, market={Market}.")]
         public static partial void OrderbookInstrumentPrepared(
-            ILogger logger, string secid, string market, long sessionId);
+            ILogger logger, string secid, string market);
 
         [LoggerMessage(EventId = 464, EventName = "MoexOrderbookReceiverInstrumentPreparationFailed", Level = LogLevel.Warning,
             Message = "Orderbook receiver instrument preparation failed: secid={Secid}.")]
@@ -85,15 +76,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         [LoggerMessage(EventId = 466, EventName = "MoexOrderbookReceiverTurnFailed", Level = LogLevel.Error,
             Message = "Orderbook receiver turn failed unexpectedly.")]
         public static partial void OrderbookTurnFailed(ILogger logger, Exception exception);
-
-        [LoggerMessage(EventId = 467, EventName = "MoexOrderbookReceiverSessionCloseFailed", Level = LogLevel.Warning,
-            Message = "Orderbook receiver session close failed: secid={Secid}, sessionId={SessionId}.")]
-        public static partial void OrderbookSessionCloseFailed(
-            ILogger logger, Exception exception, string secid, long sessionId);
-
-        [LoggerMessage(EventId = 468, EventName = "MoexOrderbookReceiverShutdownFailed", Level = LogLevel.Error,
-            Message = "Orderbook receiver shutdown cleanup failed unexpectedly.")]
-        public static partial void OrderbookShutdownFailed(ILogger logger, Exception exception);
 
         [LoggerMessage(EventId = 469, EventName = "MoexOrderbookReceiverInstrumentFetchTimedOut", Level = LogLevel.Warning,
             Message = "Orderbook receiver instrument fetch timed out: secid={Secid}, market={Market}, budget={Budget}.")]
@@ -113,9 +95,9 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         public static partial void CandlesSubscriptionsEmpty(ILogger logger);
 
         [LoggerMessage(EventId = 474, EventName = "MoexCandlesReceiverInstrumentPrepared", Level = LogLevel.Information,
-            Message = "Candles receiver instrument prepared: secid={Secid}, market={Market}, sessionId={SessionId}.")]
+            Message = "Candles receiver instrument prepared: secid={Secid}, market={Market}.")]
         public static partial void CandlesInstrumentPrepared(
-            ILogger logger, string secid, string market, long sessionId);
+            ILogger logger, string secid, string market);
 
         [LoggerMessage(EventId = 475, EventName = "MoexCandlesReceiverInstrumentPreparationFailed", Level = LogLevel.Warning,
             Message = "Candles receiver instrument preparation failed: secid={Secid}.")]
@@ -131,48 +113,24 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             Message = "Candles receiver turn failed unexpectedly.")]
         public static partial void CandlesTurnFailed(ILogger logger, Exception exception);
 
-        [LoggerMessage(EventId = 478, EventName = "MoexCandlesReceiverSessionCloseFailed", Level = LogLevel.Warning,
-            Message = "Candles receiver session close failed: secid={Secid}, sessionId={SessionId}.")]
-        public static partial void CandlesSessionCloseFailed(
-            ILogger logger, Exception exception, string secid, long sessionId);
-
-        [LoggerMessage(EventId = 479, EventName = "MoexCandlesReceiverShutdownFailed", Level = LogLevel.Error,
-            Message = "Candles receiver shutdown cleanup failed unexpectedly.")]
-        public static partial void CandlesShutdownFailed(ILogger logger, Exception exception);
-
         [LoggerMessage(EventId = 480, EventName = "MoexCandlesReceiverInstrumentFetchTimedOut", Level = LogLevel.Warning,
             Message = "Candles receiver instrument fetch timed out: secid={Secid}, market={Market}, budget={Budget}.")]
         public static partial void CandlesInstrumentFetchTimedOut(
             ILogger logger, string secid, string market, TimeSpan budget);
 
-        [LoggerMessage(EventId = 481, EventName = "MoexTradesReceiverInstrumentStopping", Level = LogLevel.Information,
-            Message = "Trades receiver instrument stopping: secid={Secid}, sessionId={SessionId}.")]
-        public static partial void TradesInstrumentStopping(
-            ILogger logger, string secid, long sessionId);
-
         [LoggerMessage(EventId = 482, EventName = "MoexTradesReceiverInstrumentStopped", Level = LogLevel.Information,
-            Message = "Trades receiver instrument stopped: secid={Secid}, sessionId={SessionId}, rows={RowsTotal}.")]
+            Message = "Trades receiver instrument stopped: secid={Secid}, rows={RowsTotal}.")]
         public static partial void TradesInstrumentStopped(
-            ILogger logger, string secid, long sessionId, long rowsTotal);
-
-        [LoggerMessage(EventId = 483, EventName = "MoexOrderbookReceiverInstrumentStopping", Level = LogLevel.Information,
-            Message = "Orderbook receiver instrument stopping: secid={Secid}, sessionId={SessionId}.")]
-        public static partial void OrderbookInstrumentStopping(
-            ILogger logger, string secid, long sessionId);
+            ILogger logger, string secid, long rowsTotal);
 
         [LoggerMessage(EventId = 484, EventName = "MoexOrderbookReceiverInstrumentStopped", Level = LogLevel.Information,
-            Message = "Orderbook receiver instrument stopped: secid={Secid}, sessionId={SessionId}, rows={RowsTotal}.")]
+            Message = "Orderbook receiver instrument stopped: secid={Secid}, rows={RowsTotal}.")]
         public static partial void OrderbookInstrumentStopped(
-            ILogger logger, string secid, long sessionId, long rowsTotal);
-
-        [LoggerMessage(EventId = 485, EventName = "MoexCandlesReceiverInstrumentStopping", Level = LogLevel.Information,
-            Message = "Candles receiver instrument stopping: secid={Secid}, sessionId={SessionId}.")]
-        public static partial void CandlesInstrumentStopping(
-            ILogger logger, string secid, long sessionId);
+            ILogger logger, string secid, long rowsTotal);
 
         [LoggerMessage(EventId = 486, EventName = "MoexCandlesReceiverInstrumentStopped", Level = LogLevel.Information,
-            Message = "Candles receiver instrument stopped: secid={Secid}, sessionId={SessionId}, rows={RowsTotal}.")]
+            Message = "Candles receiver instrument stopped: secid={Secid}, rows={RowsTotal}.")]
         public static partial void CandlesInstrumentStopped(
-            ILogger logger, string secid, long sessionId, long rowsTotal);
+            ILogger logger, string secid, long rowsTotal);
     }
 }

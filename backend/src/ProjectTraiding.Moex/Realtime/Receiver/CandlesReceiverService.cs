@@ -20,7 +20,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
     /// меняется. Курсора у свечей в базе нет; повтор записи
     /// закрытых минут в пределах запуска отсекает граница LastClosedBegin в состоянии.
     /// Желаемый список подписок сверяется на каждом обороте: снятые инструменты исключаются
-    /// из опроса немедленно, а их сеансы покрытия закрываются штатно без перезапуска процесса —
+    /// из опроса немедленно, без перезапуска процесса —
     /// так же, как у сделок и стакана.
     /// </summary>
     public sealed class CandlesReceiverService : RealtimeReceiverServiceBase<CandleInstrumentState>
@@ -28,8 +28,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         protected override string DataKind => "candles";
 
         protected override TimeSpan StalePollThreshold => _stalePollThreshold;
-
-        protected override int? StorageCandleInterval => CandleInterval;
 
         // Реальное время пока только минутная свеча. Контракт подписок держит это CHECK-ом.
         private const int CandleInterval = 1;
@@ -42,7 +40,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<CandlesReceiverService> _logger;
         private readonly TimeSpan _instrumentFetchTimeout;
-        private readonly TimeSpan _heartbeatMinInterval;
         private readonly TimeSpan _stalePollThreshold;
         private readonly List<object?[]> _closed = new();
         private bool _initialized;
@@ -52,14 +49,12 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             ILogger<CandlesReceiverService> logger,
             TimeSpan pollInterval,
             TimeSpan instrumentFetchTimeout,
-            TimeSpan heartbeatMinInterval,
             TimeSpan stalePollThreshold)
             : base(pollInterval)
         {
             _scopeFactory = scopeFactory;
             _logger = logger;
             _instrumentFetchTimeout = instrumentFetchTimeout;
-            _heartbeatMinInterval = heartbeatMinInterval;
             _stalePollThreshold = stalePollThreshold;
         }
 
@@ -80,8 +75,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
                 MoexReceiverInstrumentReader reader =
                     scope.ServiceProvider.GetRequiredService<MoexReceiverInstrumentReader>();
-                StreamCoverageWriter coverageWriter =
-                    scope.ServiceProvider.GetRequiredService<StreamCoverageWriter>();
 
                 IReadOnlyList<ReceiverInstrument> instruments =
                     await reader.GetEnabledForDataKindAsync(DataKind, ct);
@@ -92,13 +85,13 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         MoexRealtimeReceiverLogMessages.CandlesSubscriptionsEmpty(_logger);
 
                     await PrepareInitialInstrumentsAsync(
-                        scope.ServiceProvider, instruments, coverageWriter, ct);
+                        scope.ServiceProvider, instruments, ct);
                     _initialized = true;
                 }
                 else
                 {
                     await ReconcileStatesAsync(
-                        scope.ServiceProvider, instruments, coverageWriter, ct);
+                        scope.ServiceProvider, instruments, ct);
                 }
 
                 MoexRealtimeRestClient client =
@@ -107,13 +100,10 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     scope.ServiceProvider.GetRequiredService<RealtimeSpecRowWriter>();
                 foreach (KeyValuePair<string, CandleInstrumentState> pair in States)
                 {
-                    if (pair.Value.IsStopping)
-                        continue;
-
                     try
                     {
                         await PollInstrumentAsync(
-                            pair.Key, pair.Value, client, writer, coverageWriter, ct);
+                            pair.Key, pair.Value, client, writer, ct);
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested)
                     {
@@ -143,23 +133,19 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             }
         }
 
-        protected override async Task OpenStateAsync(
+        protected override Task OpenStateAsync(
             IServiceProvider services,
             ReceiverInstrument instrument,
             string boardId,
             CancellationToken ct)
         {
-            StreamCoverageWriter coverageWriter =
-                services.GetRequiredService<StreamCoverageWriter>();
-            long sessionId = await coverageWriter.OpenSessionAsync(
-                instrument.Secid, instrument.Market, boardId, DataKind, CandleInterval, ct);
-            long heartbeatTimestamp = Stopwatch.GetTimestamp();
             States.Add(
                 instrument.Secid,
                 new CandleInstrumentState(
-                    sessionId, instrument.Market, boardId, heartbeatTimestamp));
+                    instrument.Market, boardId));
             MoexRealtimeReceiverLogMessages.CandlesInstrumentPrepared(
-                _logger, instrument.Secid, instrument.Market, sessionId);
+                _logger, instrument.Secid, instrument.Market);
+            return Task.CompletedTask;
         }
 
         private async Task PollInstrumentAsync(
@@ -167,7 +153,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             CandleInstrumentState state,
             MoexRealtimeRestClient client,
             RealtimeSpecRowWriter writer,
-            StreamCoverageWriter coverageWriter,
             CancellationToken commitCt)
         {
             MoexRealtimeSpec spec = MoexRealtimeRegistry.CandlesFor(CandleInterval);
@@ -344,37 +329,23 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             }
             }
 
-            await ReceiverSessionHeartbeat.WriteIfDueAsync(
-                state, _heartbeatMinInterval, coverageWriter, commitCt);
         }
-
-        protected override IServiceScopeFactory ScopeFactory => _scopeFactory;
-
-        protected override void LogSessionCloseFailed(Exception exception, string secid, long sessionId)
-            => MoexRealtimeReceiverLogMessages.CandlesSessionCloseFailed(
-                _logger, exception, secid, sessionId);
-
-        protected override void LogShutdownFailed(Exception exception)
-            => MoexRealtimeReceiverLogMessages.CandlesShutdownFailed(_logger, exception);
 
         protected override void LogInstrumentPreparationFailed(Exception exception, string secid)
             => MoexRealtimeReceiverLogMessages.CandlesInstrumentPreparationFailed(
                 _logger, exception, secid);
 
-        protected override void LogInstrumentStopping(string secid, long sessionId)
-            => MoexRealtimeReceiverLogMessages.CandlesInstrumentStopping(_logger, secid, sessionId);
-
-        protected override void LogInstrumentStopped(string secid, long sessionId, long rowsTotal)
+        protected override void LogInstrumentStopped(string secid, long rowsTotal)
             => MoexRealtimeReceiverLogMessages.CandlesInstrumentStopped(
-                _logger, secid, sessionId, rowsTotal);
+                _logger, secid, rowsTotal);
 
     }
 
-    public sealed class CandleInstrumentState : ReceiverInstrumentSessionState
+    public sealed class CandleInstrumentState : ReceiverInstrumentState
     {
         public CandleInstrumentState(
-            long sessionId, string market, string boardId, long lastHeartbeatTimestamp)
-            : base(sessionId, market, boardId, lastHeartbeatTimestamp)
+            string market, string boardId)
+            : base(market, boardId)
         {
         }
 

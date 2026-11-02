@@ -21,12 +21,9 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
         protected override TimeSpan StalePollThreshold => _stalePollThreshold;
 
-        protected override int? StorageCandleInterval => null;
-
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<TradesReceiverService> _logger;
         private readonly TimeSpan _instrumentFetchTimeout;
-        private readonly TimeSpan _heartbeatMinInterval;
         private readonly TimeSpan _stalePollThreshold;
         private bool _initialized;
 
@@ -35,14 +32,12 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             ILogger<TradesReceiverService> logger,
             TimeSpan pollInterval,
             TimeSpan instrumentFetchTimeout,
-            TimeSpan heartbeatMinInterval,
             TimeSpan stalePollThreshold)
             : base(pollInterval)
         {
             _scopeFactory = scopeFactory;
             _logger = logger;
             _instrumentFetchTimeout = instrumentFetchTimeout;
-            _heartbeatMinInterval = heartbeatMinInterval;
             _stalePollThreshold = stalePollThreshold;
         }
 
@@ -65,8 +60,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     scope.ServiceProvider.GetRequiredService<MoexReceiverInstrumentReader>();
                 StreamCursorWriter cursorWriter =
                     scope.ServiceProvider.GetRequiredService<StreamCursorWriter>();
-                StreamCoverageWriter coverageWriter =
-                    scope.ServiceProvider.GetRequiredService<StreamCoverageWriter>();
 
                 MoexRealtimeRestClient client =
                     scope.ServiceProvider.GetRequiredService<MoexRealtimeRestClient>();
@@ -79,22 +72,19 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         MoexRealtimeReceiverLogMessages.TradesSubscriptionsEmpty(_logger);
 
                     await PrepareInitialInstrumentsAsync(
-                        scope.ServiceProvider, instruments, coverageWriter, ct);
+                        scope.ServiceProvider, instruments, ct);
                     _initialized = true;
                 }
                 else
                 {
                     await ReconcileStatesAsync(
-                        scope.ServiceProvider, instruments, coverageWriter, ct);
+                        scope.ServiceProvider, instruments, ct);
                 }
 
                 RealtimeSpecRowWriter writer =
                     scope.ServiceProvider.GetRequiredService<RealtimeSpecRowWriter>();
                 foreach (KeyValuePair<string, TradesInstrumentState> pair in States)
                 {
-                    if (pair.Value.IsStopping)
-                        continue;
-
                     try
                     {
                         await PollAsync(
@@ -103,7 +93,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                             client,
                             writer,
                             cursorWriter,
-                            coverageWriter,
                             ct);
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -142,8 +131,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         {
             StreamCursorWriter cursorWriter =
                 services.GetRequiredService<StreamCursorWriter>();
-            StreamCoverageWriter coverageWriter =
-                services.GetRequiredService<StreamCoverageWriter>();
             MoexRealtimeRestClient client =
                 services.GetRequiredService<MoexRealtimeRestClient>();
             StreamCursorState? cursor = await cursorWriter.TryGetAsync(
@@ -182,20 +169,15 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 }
             }
 
-            long sessionId = await coverageWriter.OpenSessionAsync(
-                instrument.Secid, instrument.Market, boardId, DataKind, null, ct);
-            long heartbeatTimestamp = Stopwatch.GetTimestamp();
 
             States.Add(
                 instrument.Secid,
                 new TradesInstrumentState(
                     initialAfterTradeNo,
-                    sessionId,
                     instrument.Market,
-                    boardId,
-                    heartbeatTimestamp));
+                    boardId));
             MoexRealtimeReceiverLogMessages.TradesInstrumentPrepared(
-                _logger, instrument.Secid, instrument.Market, sessionId);
+                _logger, instrument.Secid, instrument.Market);
         }
 
         private async Task PollAsync(
@@ -204,7 +186,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             MoexRealtimeRestClient client,
             RealtimeSpecRowWriter writer,
             StreamCursorWriter cursorWriter,
-            StreamCoverageWriter coverageWriter,
             CancellationToken commitCt)
         {
             MoexRealtimeSpec spec = MoexRealtimeRegistry.TradesFor(state.Market);
@@ -349,8 +330,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             }
             }
 
-            await ReceiverSessionHeartbeat.WriteIfDueAsync(
-                state, _heartbeatMinInterval, coverageWriter, commitCt);
         }
 
         private static async Task UpdateCursorAsync(
@@ -490,37 +469,23 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             return (page.MaxTradeNo.Value, page.MaxTradeNoTime.Value);
         }
 
-        protected override IServiceScopeFactory ScopeFactory => _scopeFactory;
-
-        protected override void LogSessionCloseFailed(Exception exception, string secid, long sessionId)
-            => MoexRealtimeReceiverLogMessages.TradesSessionCloseFailed(
-                _logger, exception, secid, sessionId);
-
-        protected override void LogShutdownFailed(Exception exception)
-            => MoexRealtimeReceiverLogMessages.TradesShutdownFailed(_logger, exception);
-
         protected override void LogInstrumentPreparationFailed(Exception exception, string secid)
             => MoexRealtimeReceiverLogMessages.TradesInstrumentPreparationFailed(
                 _logger, exception, secid);
 
-        protected override void LogInstrumentStopping(string secid, long sessionId)
-            => MoexRealtimeReceiverLogMessages.TradesInstrumentStopping(_logger, secid, sessionId);
-
-        protected override void LogInstrumentStopped(string secid, long sessionId, long rowsTotal)
+        protected override void LogInstrumentStopped(string secid, long rowsTotal)
             => MoexRealtimeReceiverLogMessages.TradesInstrumentStopped(
-                _logger, secid, sessionId, rowsTotal);
+                _logger, secid, rowsTotal);
 
     }
 
-    public sealed class TradesInstrumentState : ReceiverInstrumentSessionState
+    public sealed class TradesInstrumentState : ReceiverInstrumentState
     {
         public TradesInstrumentState(
             long? afterTradeNo,
-            long sessionId,
             string market,
-            string boardId,
-            long lastHeartbeatTimestamp)
-            : base(sessionId, market, boardId, lastHeartbeatTimestamp)
+            string boardId)
+            : base(market, boardId)
         {
             AfterTradeNo = afterTradeNo;
         }

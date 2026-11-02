@@ -9,7 +9,7 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
 {
     /// <summary>
     /// Регистрация включаемого контура реального времени: читатель инструментов,
-    /// писатели курсора, покрытия и ClickHouse, а также независимые фоновые службы
+    /// писатели курсора и ClickHouse, а также независимые фоновые службы
     /// сделок, стакана и свечей.
     /// </summary>
     public static class MoexRealtimeReceiverServiceCollectionExtensions
@@ -33,7 +33,6 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
 
             services.AddSingleton<MoexReceiverInstrumentReader>();
             services.AddSingleton<StreamCursorWriter>();
-            services.AddSingleton<StreamCoverageWriter>();
             // Писатель строк приёма состояния не хранит: у него только исполнитель вставки.
             services.AddSingleton<RealtimeSpecRowWriter>();
 
@@ -45,7 +44,6 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
                     sp.GetRequiredService<ILogger<TradesReceiverService>>(),
                     TimeSpan.FromSeconds(opt.TradesPollSeconds),
                     opt.RealtimeInstrumentFetchTimeout,
-                    TimeSpan.FromSeconds(opt.HeartbeatMinIntervalSeconds),
                     TimeSpan.FromSeconds(
                         opt.TradesPollSeconds * (double)opt.RealtimeStalePollIntervals));
             });
@@ -58,7 +56,6 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
                     sp.GetRequiredService<ILogger<OrderbookReceiverService>>(),
                     TimeSpan.FromSeconds(opt.OrderbookPollSeconds),
                     opt.RealtimeInstrumentFetchTimeout,
-                    TimeSpan.FromSeconds(opt.HeartbeatMinIntervalSeconds),
                     TimeSpan.FromSeconds(
                         opt.OrderbookPollSeconds * (double)opt.RealtimeStalePollIntervals));
             });
@@ -71,7 +68,6 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
                     sp.GetRequiredService<ILogger<CandlesReceiverService>>(),
                     TimeSpan.FromSeconds(opt.CandlesPollSeconds),
                     opt.RealtimeInstrumentFetchTimeout,
-                    TimeSpan.FromSeconds(opt.HeartbeatMinIntervalSeconds),
                     TimeSpan.FromSeconds(
                         opt.CandlesPollSeconds * (double)opt.RealtimeStalePollIntervals));
             });

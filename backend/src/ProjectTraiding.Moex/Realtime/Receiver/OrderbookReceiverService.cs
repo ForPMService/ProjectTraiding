@@ -15,18 +15,15 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
     /// Периодический приём полных снимков стакана по всем инструментам. Стакан ведёт только
     /// покрытие: курсора у полного снимка нет и в moex_stream_cursors он не записывается.
     /// </summary>
-    public sealed class OrderbookReceiverService : RealtimeReceiverServiceBase<ReceiverInstrumentSessionState>
+    public sealed class OrderbookReceiverService : RealtimeReceiverServiceBase<ReceiverInstrumentState>
     {
         protected override string DataKind => "orderbook";
 
         protected override TimeSpan StalePollThreshold => _stalePollThreshold;
 
-        protected override int? StorageCandleInterval => null;
-
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<OrderbookReceiverService> _logger;
         private readonly TimeSpan _instrumentFetchTimeout;
-        private readonly TimeSpan _heartbeatMinInterval;
         private readonly TimeSpan _stalePollThreshold;
         private bool _initialized;
 
@@ -35,14 +32,12 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             ILogger<OrderbookReceiverService> logger,
             TimeSpan pollInterval,
             TimeSpan instrumentFetchTimeout,
-            TimeSpan heartbeatMinInterval,
             TimeSpan stalePollThreshold)
             : base(pollInterval)
         {
             _scopeFactory = scopeFactory;
             _logger = logger;
             _instrumentFetchTimeout = instrumentFetchTimeout;
-            _heartbeatMinInterval = heartbeatMinInterval;
             _stalePollThreshold = stalePollThreshold;
         }
 
@@ -63,8 +58,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
                 MoexReceiverInstrumentReader instrumentReader =
                     scope.ServiceProvider.GetRequiredService<MoexReceiverInstrumentReader>();
-                StreamCoverageWriter coverageWriter =
-                    scope.ServiceProvider.GetRequiredService<StreamCoverageWriter>();
 
                 IReadOnlyList<ReceiverInstrument> instruments =
                     await instrumentReader.GetEnabledForDataKindAsync(DataKind, ct);
@@ -74,24 +67,21 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         MoexRealtimeReceiverLogMessages.OrderbookSubscriptionsEmpty(_logger);
 
                     await PrepareInitialInstrumentsAsync(
-                        scope.ServiceProvider, instruments, coverageWriter, ct);
+                        scope.ServiceProvider, instruments, ct);
                     _initialized = true;
                 }
                 else
                 {
                     await ReconcileStatesAsync(
-                        scope.ServiceProvider, instruments, coverageWriter, ct);
+                        scope.ServiceProvider, instruments, ct);
                 }
 
                 MoexRealtimeRestClient client =
                     scope.ServiceProvider.GetRequiredService<MoexRealtimeRestClient>();
                 RealtimeSpecRowWriter writer =
                     scope.ServiceProvider.GetRequiredService<RealtimeSpecRowWriter>();
-                foreach (KeyValuePair<string, ReceiverInstrumentSessionState> pair in States)
+                foreach (KeyValuePair<string, ReceiverInstrumentState> pair in States)
                 {
-                    if (pair.Value.IsStopping)
-                        continue;
-
                     try
                     {
                         await PollInstrumentAsync(
@@ -99,7 +89,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                             pair.Value,
                             client,
                             writer,
-                            coverageWriter,
                             ct);
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -130,31 +119,26 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             }
         }
 
-        protected override async Task OpenStateAsync(
+        protected override Task OpenStateAsync(
             IServiceProvider services,
             ReceiverInstrument instrument,
             string boardId,
             CancellationToken ct)
         {
-            StreamCoverageWriter coverageWriter =
-                services.GetRequiredService<StreamCoverageWriter>();
-            long sessionId = await coverageWriter.OpenSessionAsync(
-                instrument.Secid, instrument.Market, boardId, DataKind, null, ct);
-            long heartbeatTimestamp = Stopwatch.GetTimestamp();
             States.Add(
                 instrument.Secid,
-                new ReceiverInstrumentSessionState(
-                    sessionId, instrument.Market, boardId, heartbeatTimestamp));
+                new ReceiverInstrumentState(
+                    instrument.Market, boardId));
             MoexRealtimeReceiverLogMessages.OrderbookInstrumentPrepared(
-                _logger, instrument.Secid, instrument.Market, sessionId);
+                _logger, instrument.Secid, instrument.Market);
+            return Task.CompletedTask;
         }
 
         private async Task PollInstrumentAsync(
             string secid,
-            ReceiverInstrumentSessionState state,
+            ReceiverInstrumentState state,
             MoexRealtimeRestClient client,
             RealtimeSpecRowWriter writer,
-            StreamCoverageWriter coverageWriter,
             CancellationToken commitCt)
         {
             MoexRealtimeSpec spec = MoexRealtimeRegistry.Orderbook;
@@ -290,30 +274,15 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             }
             }
 
-            await ReceiverSessionHeartbeat.WriteIfDueAsync(
-                state, _heartbeatMinInterval, coverageWriter, commitCt);
         }
-
-        protected override IServiceScopeFactory ScopeFactory => _scopeFactory;
-
-        protected override void LogSessionCloseFailed(Exception exception, string secid, long sessionId)
-            => MoexRealtimeReceiverLogMessages.OrderbookSessionCloseFailed(
-                _logger, exception, secid, sessionId);
-
-        protected override void LogShutdownFailed(Exception exception)
-            => MoexRealtimeReceiverLogMessages.OrderbookShutdownFailed(_logger, exception);
 
         protected override void LogInstrumentPreparationFailed(Exception exception, string secid)
             => MoexRealtimeReceiverLogMessages.OrderbookInstrumentPreparationFailed(
                 _logger, exception, secid);
 
-        protected override void LogInstrumentStopping(string secid, long sessionId)
-            => MoexRealtimeReceiverLogMessages.OrderbookInstrumentStopping(
-                _logger, secid, sessionId);
-
-        protected override void LogInstrumentStopped(string secid, long sessionId, long rowsTotal)
+        protected override void LogInstrumentStopped(string secid, long rowsTotal)
             => MoexRealtimeReceiverLogMessages.OrderbookInstrumentStopped(
-                _logger, secid, sessionId, rowsTotal);
+                _logger, secid, rowsTotal);
 
     }
 
