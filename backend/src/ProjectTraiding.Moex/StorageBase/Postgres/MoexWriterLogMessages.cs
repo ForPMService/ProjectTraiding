@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -34,11 +34,10 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
 
         [LoggerMessage(
             EventId = 250, EventName = "MoexInstrumentPostgresDataDeleted", Level = LogLevel.Warning,
-            Message = "Moex instrument postgres data deleted: secid={Secid}, ranges={RangesDeleted}, cursors={CursorsDeleted}, tasks={TasksDeleted}, time={Elapsed}.")]
+            Message = "Moex instrument postgres data deleted: secid={Secid}, cursors={CursorsDeleted}, tasks={TasksDeleted}, time={Elapsed}.")]
         public static partial void InstrumentPostgresDataDeleted(
             ILogger logger,
             string secid,
-            int rangesDeleted,
             int cursorsDeleted,
             int tasksDeleted,
             TimeSpan elapsed);

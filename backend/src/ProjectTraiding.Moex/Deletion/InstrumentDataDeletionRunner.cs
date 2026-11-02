@@ -14,7 +14,6 @@ namespace ProjectTraiding.Moex.Deletion
 
     public readonly record struct DeletionOutcome(
         DeletionStatus Status,
-        int LoadedRangesDeleted,
         int StreamCursorsDeleted,
         int LoadTasksDeleted,
         int ClickHouseTablesCleared,
@@ -64,7 +63,6 @@ namespace ProjectTraiding.Moex.Deletion
 
             return new DeletionOutcome(
                 Status: DeletionStatus.Done,
-                LoadedRangesDeleted: postgres.LoadedRangesDeleted,
                 StreamCursorsDeleted: postgres.StreamCursorsDeleted,
                 LoadTasksDeleted: postgres.LoadTasksDeleted,
                 ClickHouseTablesCleared: tablesCleared,
@@ -74,7 +72,6 @@ namespace ProjectTraiding.Moex.Deletion
         private static DeletionOutcome Rejected(DeletionStatus status, long startTs) =>
             new DeletionOutcome(
                 Status: status,
-                LoadedRangesDeleted: 0,
                 StreamCursorsDeleted: 0,
                 LoadTasksDeleted: 0,
                 ClickHouseTablesCleared: 0,

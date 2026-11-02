@@ -5,28 +5,22 @@ using System.Diagnostics;
 namespace ProjectTraiding.Moex.StorageBase.Postgres
 {
     public readonly record struct PostgresDeleteCounts(
-        int LoadedRangesDeleted,
         int StreamCursorsDeleted,
         int LoadTasksDeleted);
 
     /// <summary>
-    /// Удаление рабочих данных инструмента из PostgreSQL: покрытие, отметки приёма,
+    /// Удаление рабочих данных инструмента из PostgreSQL: отметки приёма,
     /// журнал заданий загрузки.
     ///
     /// Не удаляются: карточка инструмента, справочные детали акции и фьючерса,
     /// связи, тарифы, календарь, список наблюдения приёмника. Инструмент как
     /// сущность после удаления остаётся полностью работоспособным.
     ///
-    /// Порядок удаления задан внешним ключом moex_loaded_ranges.last_task_id →
-    /// moex_load_tasks (id): каскада у него нет, поэтому покрытие уходит раньше
-    /// заданий. Обратный порядок даёт ошибку 23503.
-    ///
-    /// Все три удаления в одной транзакции: между ними база не должна оказаться
-    /// в состоянии «задания есть, покрытия нет».
+    /// Курсоры и задания удаляются в одной транзакции.
     /// </summary>
     public sealed class InstrumentPostgresDataDeleter
     {
-        private const string Table = "moex_loaded_ranges";
+        private const string Tables = "moex_stream_cursors, moex_load_tasks";
         private readonly NpgsqlDataSource _dataSource;
         private readonly ILogger<InstrumentPostgresDataDeleter> _logger;
 
@@ -46,11 +40,6 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
 
             try
             {
-                int rangesDeleted = await DeleteFromAsync(
-                    connection, transaction,
-                    "DELETE FROM moex_loaded_ranges WHERE secid = @secid",
-                    secid, ct);
-
                 int cursorsDeleted = await DeleteFromAsync(
                     connection, transaction,
                     "DELETE FROM moex_stream_cursors WHERE secid = @secid",
@@ -65,15 +54,15 @@ namespace ProjectTraiding.Moex.StorageBase.Postgres
 
                 TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
                 MoexWriterLogMessages.InstrumentPostgresDataDeleted(
-                    _logger, secid, rangesDeleted, cursorsDeleted, tasksDeleted, elapsed);
+                    _logger, secid, cursorsDeleted, tasksDeleted, elapsed);
 
                 return new PostgresDeleteCounts(
-                    rangesDeleted, cursorsDeleted, tasksDeleted);
+                    cursorsDeleted, tasksDeleted);
             }
             catch (Exception ex)
             {
                 MoexWriterLogMessages.WriteRolledBack(
-                    _logger, ex, Table, secid, 0, ex.GetType().Name);
+                    _logger, ex, Tables, secid, 0, ex.GetType().Name);
                 await transaction.RollbackAsync(CancellationToken.None);
                 throw;
             }
