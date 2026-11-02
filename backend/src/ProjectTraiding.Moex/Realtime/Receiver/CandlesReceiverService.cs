@@ -191,7 +191,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 operationTags.Market,
                 MoexFlows.Realtime);
 
-            List<(object?[] Row, DateTime? Begin)> candles;
+            RealtimeCandlesPage candles;
             using (Activity? pollActivity =
                    MoexTelemetry.ActivitySource.StartActivity("moex.realtime.instrument.poll"))
             {
@@ -228,7 +228,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         { MoexTelemetryAttributes.Market, operationTags.Market },
                         { MoexTelemetryAttributes.Flow, operationTags.Flow },
                     };
-                    MoexMetrics.RowsReceived.Add(candles.Count, rowsTags);
+                    MoexMetrics.RowsReceived.Add(candles.SourceRowsCount, rowsTags);
 
                     MoexMetrics.RecordOperationSuccess(
                         in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
@@ -277,9 +277,12 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
             try
             {
-                for (int i = 0; i < candles.Count; i++)
+                foreach (RealtimeRowFailure failure in candles.RowFailures)
+                    _logger.LogWarning("MOEX row skipped: secid={Secid}, dataKind={DataKind}, position={Position}, reason={Reason}",
+                        secid, DataKind, failure.Position, failure.Reason);
+                for (int i = 0; i < candles.Rows.Count; i++)
                 {
-                    DateTime? begin = candles[i].Begin;
+                    DateTime? begin = candles.Rows[i].Begin;
 
                     // Свеча без начала пропускается и страницу не отвергает: приём этим
                     // отличается от исторической загрузки намеренно.
@@ -294,7 +297,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         beginValue <= state.LastClosedBegin.Value)
                         continue;
 
-                    closed.Add(candles[i].Row);
+                    closed.Add(candles.Rows[i].Row);
 
                     if (beginValue > maxClosedBegin)
                         maxClosedBegin = beginValue;
@@ -315,9 +318,13 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         insertContext,
                         commitCt);
                     state.RowsTotal += closed.Count;
-                    state.LastClosedBegin = maxClosedBegin;
+                    if (candles.RowFailures.Count == 0)
+                        state.LastClosedBegin = maxClosedBegin;
                     state.LastConfirmedMarketTime = MoexTime.ToDateTimeOffset(maxClosedBegin);
                 }
+
+                if (candles.RowFailures.Count > 0)
+                    throw new InvalidOperationException("Окно свечей обработано частично.");
 
                 MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Success);
                 state.LastSuccessfulPollTime = DateTimeOffset.UtcNow;

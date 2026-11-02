@@ -311,7 +311,8 @@ public sealed class AlgopackCurrentDayService : BackgroundService
 
         try
         {
-            List<SeriesParsedPage> fetchedPages;
+            List<SeriesParsedPage> fetchedPages = [];
+            Exception? fetchFailure = null;
             using (CancellationTokenSource fetchCts =
                    CancellationTokenSource.CreateLinkedTokenSource(ct))
             {
@@ -326,18 +327,19 @@ public sealed class AlgopackCurrentDayService : BackgroundService
                         today,
                         operationTags,
                         fetchCts.Token);
-                    fetchedPages = new List<SeriesParsedPage>();
                     await foreach (SeriesParsedPage page in pages.WithCancellation(fetchCts.Token))
                         fetchedPages.Add(page);
                 }
                 catch (OperationCanceledException)
                     when (!ct.IsCancellationRequested && fetchCts.IsCancellationRequested)
                 {
-                    pollActivity?.SetStatus(ActivityStatusCode.Error);
                     AlgopackCurrentDayLogMessages.InstrumentFetchTimedOut(
                         _logger, secid, market, spec.DataKind, _instrumentFetchTimeout);
-                    MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
-                    return;
+                    fetchFailure = new TimeoutException("Не все страницы ALGOPACK получены до истечения времени.");
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+                {
+                    fetchFailure = ex;
                 }
             }
 
@@ -351,7 +353,7 @@ public sealed class AlgopackCurrentDayService : BackgroundService
                 insertContext,
                 ct);
 
-            if (filterState.MaxSourceTime is DateTime maxSourceTime)
+            if (fetchFailure is null && !filterState.Incomplete && filterState.MaxSourceTime is DateTime maxSourceTime)
             {
                 await _cursorWriter.UpsertAsync(
                     secid,
@@ -363,6 +365,11 @@ public sealed class AlgopackCurrentDayService : BackgroundService
                     lastTradeNo: null,
                     ct);
             }
+
+            if (fetchFailure is not null)
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(fetchFailure).Throw();
+            if (filterState.Incomplete)
+                throw new InvalidOperationException("Данные ALGOPACK обработаны частично.");
 
             MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Success);
             pollActivity?.SetStatus(ActivityStatusCode.Ok);
@@ -389,6 +396,8 @@ public sealed class AlgopackCurrentDayService : BackgroundService
     {
         await foreach (SeriesParsedPage page in pages.WithCancellation(ct))
         {
+            if (page.SkippedRows > 0 || page.Failure is not null)
+                state.Incomplete = true;
             List<(object?[] Row, DateTime Time)> filteredRows = new(page.Rows.Count);
             for (int i = 0; i < page.Rows.Count; i++)
             {
@@ -401,12 +410,13 @@ public sealed class AlgopackCurrentDayService : BackgroundService
                     state.MaxSourceTime = time;
             }
 
-            if (filteredRows.Count > 0)
+            if (filteredRows.Count > 0 || page.SkippedRows > 0 || page.Failure is not null)
             {
                 yield return new SeriesParsedPage(
                     filteredRows,
-                    filteredRows.Count,
-                    SkippedSourceRows: null);
+                    filteredRows.Count + page.SkippedRows,
+                    page.SkippedSourceRows,
+                    page.Failure);
             }
         }
     }
@@ -465,6 +475,7 @@ public sealed class AlgopackCurrentDayService : BackgroundService
     private sealed class TailFilterState
     {
         public DateTime? MaxSourceTime { get; set; }
+        public bool Incomplete { get; set; }
     }
 }
 

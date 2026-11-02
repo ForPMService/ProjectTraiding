@@ -188,7 +188,7 @@ namespace ProjectTraiding.Moex.Clients
         /// Свечи торгового дня в московском окне [from, till]. Все страницы окна
         /// догружаются здесь, потому что у свечей нет курсора следующей записи.
         /// </summary>
-        public async Task<List<(object?[] Row, DateTime? Begin)>> GetCandlesTodayAsync(
+        public async Task<RealtimeCandlesPage> GetCandlesTodayAsync(
             string market,
             string ticker,
             DateTime from,
@@ -208,6 +208,7 @@ namespace ProjectTraiding.Moex.Clients
 
             List<(object?[] Row, DateTime? Begin)> rows = [];
             int start = 0;
+            List<RealtimeRowFailure> failures = [];
 
             // Окно и перечень колонок на весь вызов одни: собирать словарь и форматировать
             // границы окна на каждой странице незачем. Порядок ключей сохранён — от него
@@ -235,7 +236,7 @@ namespace ProjectTraiding.Moex.Clients
                 using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
                     response, _options.BodyReadTimeout, endpoint, cancellationToken);
 
-                List<(object?[] Row, DateTime? Begin)> page;
+                RealtimeCandlesPage page;
                 try
                 {
                     page = MoexRealtimeParser.ParseCandles(rentedArr.Span, spec, ticker);
@@ -247,10 +248,12 @@ namespace ProjectTraiding.Moex.Clients
                     throw;
                 }
 
-                rows.AddRange(page);
+                rows.AddRange(page.Rows);
+                foreach (RealtimeRowFailure failure in page.RowFailures)
+                    failures.Add(failure with { Position = start + failure.Position });
 
-                if (page.Count != CandlesPageLimit)
-                    return rows;
+                if (page.SourceRowsCount != CandlesPageLimit)
+                    return new RealtimeCandlesPage(rows, start + page.SourceRowsCount, failures);
 
                 if (pageNumber == _options.MaxPagesPerLoad)
                 {

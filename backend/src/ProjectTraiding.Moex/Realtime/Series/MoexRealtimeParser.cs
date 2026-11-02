@@ -22,6 +22,7 @@ public static class MoexRealtimeParser
         Exception? sessionDateFailure = null;
 
         List<object?[]> rows = [];
+        List<RealtimeRowFailure> failures = [];
         DateTime firstTime = default;
         DateTime lastTime = default;
         long? lastTradeNo = null;
@@ -125,6 +126,7 @@ public static class MoexRealtimeParser
                         ref reader,
                         rows,
                         sourceValues,
+                        failures,
                         spec,
                         secid,
                         ref firstTime,
@@ -172,7 +174,12 @@ public static class MoexRealtimeParser
         // на месте своей колонки в каждой строке, поэтому побеждал всё, что стоит после неё,
         // и уступал тому, что стоит до неё в первой строке. Это правило и восстанавливается.
         if (sessionDateFailure is not null && rows.Count > 0 && spec.SessionDateIndex >= 0)
+        {
             guardFailure = firstRowFailureBeforeSessionDate ?? sessionDateFailure;
+            // Общая дата сессии нужна каждой строке: ни одну из них нельзя подтвердить.
+            failures.Add(new RealtimeRowFailure(-1, sessionDateFailure.Message));
+            rows.Clear();
+        }
 
         return new RealtimeParsedPage(
             rows,
@@ -182,13 +189,16 @@ public static class MoexRealtimeParser
             maxTradeNo,
             maxTradeNoTime,
             maxTradeNoTimeFailure,
-            guardFailure);
+            guardFailure,
+            failures);
     }
 
-    public static List<(object?[] Row, DateTime? Begin)> ParseCandles(
+    public static RealtimeCandlesPage ParseCandles(
         ReadOnlySpan<byte> body, MoexRealtimeSpec spec, string secid)
     {
         List<(object?[] Row, DateTime? Begin)> rows = [];
+        List<RealtimeRowFailure> failures = [];
+        int sourceRowsCount = 0;
         object?[] sourceValues = new object?[spec.SourceColumns.Length];
         Utf8JsonReader reader = new(body);
 
@@ -220,7 +230,7 @@ public static class MoexRealtimeParser
                 }
 
                 foundData = true;
-                ReadCandleRows(ref reader, rows, sourceValues, spec, secid);
+                ReadCandleRows(ref reader, rows, sourceValues, failures, ref sourceRowsCount, spec, secid);
             }
             else
             {
@@ -229,7 +239,7 @@ public static class MoexRealtimeParser
         }
 
         ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, spec.RootKey);
-        return rows;
+        return new RealtimeCandlesPage(rows, sourceRowsCount, failures);
     }
 
     /// <summary>
@@ -383,6 +393,7 @@ public static class MoexRealtimeParser
         ref Utf8JsonReader reader,
         List<object?[]> rows,
         object?[] sourceValues,
+        List<RealtimeRowFailure> failures,
         MoexRealtimeSpec spec,
         string secid,
         ref DateTime firstTime,
@@ -411,7 +422,7 @@ public static class MoexRealtimeParser
                     $"получено {reader.TokenType}.");
             }
 
-            ReadSourceValues(ref reader, sourceValues, spec, ref sourceTimeParts, rowIndex);
+            Exception? rowFailure = ReadSourceValues(ref reader, sourceValues, spec, ref sourceTimeParts, rowIndex);
 
             object?[] row = new object?[spec.TargetColumns.Length];
             DateTime? rowKeyTime = null;
@@ -503,7 +514,7 @@ public static class MoexRealtimeParser
                         ?? $"Строка отвергнута: обязательная колонка {column.Name} пуста.");
                 }
 
-                guardFailure ??= valueFailure;
+                rowFailure ??= valueFailure;
                 row[i] = value;
 
                 // Отказы первой строки до колонки даты сессии запоминаются отдельно:
@@ -525,6 +536,14 @@ public static class MoexRealtimeParser
 
                 if (i == spec.TradeNoIndex)
                     rowTradeNo = value is long tradeNo ? tradeNo : null;
+            }
+
+            if (rowFailure is not null)
+            {
+                guardFailure ??= rowFailure;
+                failures.Add(new RealtimeRowFailure(rowIndex, rowFailure.Message));
+                rowIndex++;
+                continue;
             }
 
             DateTime keyTime = rowKeyTime ?? default;
@@ -550,6 +569,8 @@ public static class MoexRealtimeParser
         ref Utf8JsonReader reader,
         List<(object?[] Row, DateTime? Begin)> rows,
         object?[] sourceValues,
+        List<RealtimeRowFailure> failures,
+        ref int sourceRowsCount,
         MoexRealtimeSpec spec,
         string secid)
     {
@@ -567,38 +588,51 @@ public static class MoexRealtimeParser
                     $"получено {reader.TokenType}.");
             }
 
-            ReadSourceValues(ref reader, sourceValues, spec, ref sourceTimeParts, rowIndex);
+            Exception? rowFailure = ReadSourceValues(ref reader, sourceValues, spec, ref sourceTimeParts, rowIndex);
 
             object?[] row = new object?[spec.TargetColumns.Length];
             for (int i = 0; i < spec.TargetColumns.Length; i++)
             {
                 TargetColumn column = spec.TargetColumns[i];
-                object? value = column.FillRule switch
+                object? value = null;
+                try
                 {
-                    FillRule.TaskSecId => secid,
-                    FillRule.Direct => sourceValues[column.SourceIndex],
-                    FillRule.WallClock =>
-                        spec.SourceColumns[column.SourceIndex].Kind == ColumnKind.String
-                            ? MoexClickHouseTime.ParseWallClock(
-                                sourceValues[column.SourceIndex] as string)
-                            : sourceValues[column.SourceIndex],
-                    FillRule.Constant => column.Constant,
-                    _ => throw new ArgumentOutOfRangeException(
-                        nameof(column), column.FillRule, "Неизвестное правило заполнения."),
-                };
-
+                    value = column.FillRule switch
+                    {
+                        FillRule.TaskSecId => secid,
+                        FillRule.Direct => sourceValues[column.SourceIndex],
+                        FillRule.WallClock =>
+                            spec.SourceColumns[column.SourceIndex].Kind == ColumnKind.String
+                                ? MoexClickHouseTime.ParseWallClock(
+                                    sourceValues[column.SourceIndex] as string)
+                                : sourceValues[column.SourceIndex],
+                        FillRule.Constant => column.Constant,
+                        _ => throw new ArgumentOutOfRangeException(
+                            nameof(column), column.FillRule, "Неизвестное правило заполнения."),
+                    };
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or FormatException or ArgumentOutOfRangeException)
+                {
+                    rowFailure ??= ex;
+                }
                 row[i] = value;
             }
 
             DateTime? begin = row[spec.KeyTimeIndex] is DateTime beginValue
                 ? beginValue
                 : null;
-            rows.Add((row, begin));
+            if (begin is null)
+                rowFailure ??= new InvalidOperationException("Свеча отвергнута: начало пусто или неверно.");
+            if (rowFailure is null)
+                rows.Add((row, begin));
+            else
+                failures.Add(new RealtimeRowFailure(sourceRowsCount, rowFailure.Message));
+            sourceRowsCount++;
             rowIndex++;
         }
     }
 
-    private static void ReadSourceValues(
+    private static Exception? ReadSourceValues(
         ref Utf8JsonReader reader,
         object?[] sourceValues,
         MoexRealtimeSpec spec,
@@ -606,6 +640,7 @@ public static class MoexRealtimeParser
         int rowIndex)
     {
         sourceTimeParts.Reset();
+        Exception? failure = null;
         for (int position = 0; position < spec.SourceColumns.Length; position++)
         {
             if (!reader.Read())
@@ -623,12 +658,21 @@ public static class MoexRealtimeParser
                     $"(строка {rowIndex}).");
             }
 
+            if (reader.TokenType is JsonTokenType.StartArray or JsonTokenType.StartObject or JsonTokenType.EndObject)
+                ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Недопустимая структура значения в строке {rowIndex}, колонка {position}.");
             sourceValues[position] = null;
             if (reader.TokenType != JsonTokenType.Null)
             {
-                sourceValues[position] = ReadValue(
-                    ref reader, spec.SourceColumns[position], spec.SourceColumnUsed[position],
-                    ref sourceTimeParts, rowIndex, spec.RootKey);
+                try
+                {
+                    sourceValues[position] = ReadValue(
+                        ref reader, spec.SourceColumns[position], spec.SourceColumnUsed[position],
+                        ref sourceTimeParts, rowIndex, spec.RootKey);
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or FormatException or OverflowException or ArgumentOutOfRangeException)
+                {
+                    failure ??= ex;
+                }
             }
         }
 
@@ -638,6 +682,7 @@ public static class MoexRealtimeParser
                 $"[{spec.RootKey}] Ожидался EndArray после " +
                 $"{spec.SourceColumns.Length} колонок (строка {rowIndex}).");
         }
+        return failure;
     }
 
     private static object? ReadValue(

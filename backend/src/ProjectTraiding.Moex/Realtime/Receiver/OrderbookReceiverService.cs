@@ -247,9 +247,17 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
             try
             {
+                foreach (RealtimeRowFailure failure in page.RowFailures)
+                    _logger.LogWarning("MOEX row skipped: secid={Secid}, dataKind={DataKind}, position={Position}, reason={Reason}",
+                        secid, DataKind, failure.Position, failure.Reason);
+                // Стакан представляет единый снимок, его частичная запись недопустима.
+                if (page.RowFailures.Count > 0)
+                    throw new InvalidOperationException("Снимок стакана обработан частично.");
                 if (page.Rows.Count > 0)
                 {
-                    if (page.GuardFailure is not null) throw page.GuardFailure;
+                    foreach (object?[] row in page.Rows)
+                        if (row[spec.KeyTimeIndex] is not DateTime time || time != page.FirstTime)
+                            throw new InvalidOperationException("Строки стакана относятся к разным снимкам.");
 
                     // Фиксация — под хостовым commitCt. У стакана курсора нет, durable-запись — только
                     // ClickHouse; за ней сразу двигается накопленный счётчик состояния.

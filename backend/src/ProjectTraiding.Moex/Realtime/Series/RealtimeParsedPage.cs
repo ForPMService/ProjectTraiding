@@ -18,7 +18,8 @@ public sealed class RealtimeParsedPage
         long? maxTradeNo,
         DateTime? maxTradeNoTime,
         Exception? maxTradeNoTimeFailure,
-        Exception? guardFailure)
+        Exception? guardFailure,
+        List<RealtimeRowFailure> rowFailures)
     {
         Rows = rows;
         FirstTime = firstTime;
@@ -28,6 +29,7 @@ public sealed class RealtimeParsedPage
         MaxTradeNoTime = maxTradeNoTime;
         MaxTradeNoTimeFailure = maxTradeNoTimeFailure;
         GuardFailure = guardFailure;
+        RowFailures = rowFailures;
     }
 
     /// <summary>Строки вставки в той форме, которую принимает исполнитель вставки.</summary>
@@ -72,4 +74,13 @@ public sealed class RealtimeParsedPage
     /// принимает служба, уже в фазе фиксации.
     /// </summary>
     public Exception? GuardFailure { get; }
+
+    public List<RealtimeRowFailure> RowFailures { get; }
 }
+
+public readonly record struct RealtimeRowFailure(int Position, string Reason);
+
+public sealed record RealtimeCandlesPage(
+    List<(object?[] Row, DateTime? Begin)> Rows,
+    int SourceRowsCount,
+    List<RealtimeRowFailure> RowFailures);

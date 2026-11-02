@@ -162,7 +162,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             if (initialAfterTradeNo is null)
             {
                 (long TradeNo, DateTime SourceTime)? tail =
-                    await TrySeedTailAsync(instrument, client, ct);
+                    await TrySeedTailAsync(instrument, client,
+                        services.GetRequiredService<RealtimeSpecRowWriter>(), ct);
                 if (tail is not null)
                 {
                     await UpdateCursorAsync(
@@ -297,45 +298,38 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
             try
             {
+                foreach (RealtimeRowFailure failure in page.RowFailures)
+                    _logger.LogWarning("MOEX row skipped: secid={Secid}, dataKind={DataKind}, position={Position}, reason={Reason}",
+                        secid, DataKind, failure.Position, failure.Reason);
+
                 if (page.Rows.Count > 0)
                 {
-                    // Отказ построчного стража поднимается здесь, а не в разборе: к этому
-                    // моменту успех получения и число полученных строк уже учтены, и
-                    // наблюдаемая картина остаётся прежней — успешное получение,
-                    // засчитанные строки, неуспешный оборот.
-                    //
-                    // Проверка стоит внутри ветви непустой пачки намеренно: сегодня стражи
-                    // живут в карте столбцов, а карта на пустой странице не вызывается вовсе,
-                    // и такой оборот заканчивается успешно.
-                    // Бросается сохранённое исключение, а не новое поверх его текста:
-                    // тип отказа виден в записи журнала и подменяться не должен.
-                    if (page.GuardFailure is not null) throw page.GuardFailure;
+                    // Последовательность проверяем до записи и до продвижения курсора.
+                    long? previous = state.AfterTradeNo;
+                    foreach (object?[] row in page.Rows)
+                    {
+                        long tradeNo = (long)row[spec.TradeNoIndex]!;
+                        if (previous is not null && tradeNo <= previous.Value)
+                            throw new InvalidOperationException("Нарушен порядок номеров сделок.");
+                        previous = tradeNo;
+                    }
 
-                    await writer.WriteAsync(
-                        spec,
-                        secid,
-                        page.Rows,
-                        insertContext,
-                        commitCt);
-
-                    long lastTradeNo = page.LastTradeNo!.Value;
-                    await UpdateCursorAsync(
-                        cursorWriter,
-                        secid,
-                        state.Market,
-                        state.BoardId,
-                        DataKind,
-                        null,
-                        page.LastTime,
-                        lastTradeNo,
-                        commitCt);
-
-                    // In-memory состояние двигается сразу за durable-курсором — чтобы не разойтись с ним,
-                    // если сердцебиение упадёт.
+                    await writer.WriteAsync(spec, secid, page.Rows, insertContext, commitCt);
                     state.RowsTotal += page.Rows.Count;
-                    state.AfterTradeNo = lastTradeNo;
                     state.LastConfirmedMarketTime = MoexTime.ToDateTimeOffset(page.LastTime);
+
+                    // Пропуск в странице не позволяет доказать полноту участка.
+                    if (page.RowFailures.Count == 0)
+                    {
+                        long lastTradeNo = page.LastTradeNo!.Value;
+                        await UpdateCursorAsync(cursorWriter, secid, state.Market, state.BoardId,
+                            DataKind, null, page.LastTime, lastTradeNo, commitCt);
+                        state.AfterTradeNo = lastTradeNo;
+                    }
                 }
+
+                if (page.RowFailures.Count > 0)
+                    throw new InvalidOperationException("Страница сделок обработана частично.");
 
                 MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Success);
                 state.LastSuccessfulPollTime = DateTimeOffset.UtcNow;
@@ -401,9 +395,10 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             }
         }
 
-        private static async Task<(long TradeNo, DateTime SourceTime)?> TrySeedTailAsync(
+        private async Task<(long TradeNo, DateTime SourceTime)?> TrySeedTailAsync(
             ReceiverInstrument instrument,
             MoexRealtimeRestClient client,
+            RealtimeSpecRowWriter writer,
             CancellationToken ct)
         {
             Dictionary<string, string> reversedParams =
@@ -440,6 +435,15 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
                 // Здесь и только здесь — на месте нынешнего отбора хвоста, между счётчиком
                 // строк и записью успеха операции. Иначе меняется наблюдаемая картина отказа.
+                foreach (RealtimeRowFailure failure in page.RowFailures)
+                    _logger.LogWarning("MOEX row skipped: secid={Secid}, dataKind={DataKind}, position={Position}, reason={Reason}",
+                        instrument.Secid, DataKind, failure.Position, failure.Reason);
+                if (page.Rows.Count > 0)
+                    await writer.WriteAsync(MoexRealtimeRegistry.TradesFor(instrument.Market),
+                        instrument.Secid, page.Rows,
+                        new StorageInsertContext(operationTags.DataKind, operationTags.Market, MoexFlows.Realtime), ct);
+                if (page.RowFailures.Count > 0)
+                    throw new InvalidOperationException("Хвост сделок обработан частично.");
                 (long TradeNo, DateTime SourceTime)? tail = PickTail(page);
 
                 MoexMetrics.RecordOperationSuccess(
