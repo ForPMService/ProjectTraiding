@@ -25,5 +25,9 @@
     <PackageReference Include="ClickHouse.Driver" Version="1.4.0" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.11" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
+    <PackageReference Include="WolverineFx" Version="6.61.0" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(Configuration)' == 'Debug'">
+    <PackageReference Include="WolverineFx.RuntimeCompilation" Version="6.61.0" />
   </ItemGroup>
 </Project>

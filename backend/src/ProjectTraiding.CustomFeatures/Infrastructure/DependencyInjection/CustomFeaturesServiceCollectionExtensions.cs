@@ -1,4 +1,5 @@
 using ProjectTraiding.CustomFeatures.StorageBase.Postgres;
+using ProjectTraiding.CustomFeatures.Messaging;
 using ProjectTraiding.CustomFeatures.Loading;
 
 namespace ProjectTraiding.CustomFeatures.Infrastructure.DependencyInjection
@@ -16,6 +17,7 @@ namespace ProjectTraiding.CustomFeatures.Infrastructure.DependencyInjection
             services.AddTransient<CbRateMeetingFactWriter>();
             services.AddTransient<CbRateCalendarWriter>();
             services.AddTransient<CalendarLoader>();
+            services.AddSingleton<CustomFeaturesWolverineSmokeAcknowledgement>();
             return services;
         }
     }
