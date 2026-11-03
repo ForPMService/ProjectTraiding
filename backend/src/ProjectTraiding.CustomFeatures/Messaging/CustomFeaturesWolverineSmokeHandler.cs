@@ -7,9 +7,7 @@ public sealed class CustomFeaturesWolverineSmokeHandler
         CustomFeaturesWolverineSmokeAcknowledgement acknowledgement,
         ILogger<CustomFeaturesWolverineSmokeHandler> logger)
     {
-        logger.LogInformation(
-            "Wolverine smoke message {MessageId} was processed by CustomFeatures.",
-            message.MessageId);
+        CustomFeaturesWolverineSmokeLogMessages.MessageProcessed(logger, message.MessageId);
         acknowledgement.Confirm(message.MessageId);
     }
 }

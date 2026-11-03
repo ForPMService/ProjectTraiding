@@ -23,6 +23,14 @@ using Wolverine;
 
 bool isCodeGenerationCommand = args.Length > 0
     && string.Equals(args[0], "codegen", StringComparison.OrdinalIgnoreCase);
+#if !DEBUG
+if (isCodeGenerationCommand)
+{
+    Console.Error.WriteLine("Wolverine code generation commands are available only in Debug configuration.");
+    return 1;
+}
+#endif
+
 bool isWolverineSmoke = string.Equals(
     Environment.GetEnvironmentVariable("PROJECTTRAIDING_WOLVERINE_SMOKE"),
     "1",
@@ -201,26 +209,25 @@ static async Task<int> RunWolverineSmokeAsync(WebApplication app)
                 "Wolverine smoke handler confirmed a different message identifier.");
         }
 
-        logger.LogInformation(
-            "Wolverine smoke message {MessageId} was confirmed after handler execution.",
-            messageId);
+        WolverineSmokeLogMessages.MessageConfirmed(logger, messageId);
     }
     catch (Exception exception)
     {
-        logger.LogError(exception, "Wolverine smoke execution failed.");
+        WolverineSmokeLogMessages.ExecutionFailed(logger, exception);
         exitCode = 1;
     }
     finally
     {
         if (hostStarted)
         {
+            using CancellationTokenSource stopTimeout = new(TimeSpan.FromSeconds(5));
             try
             {
-                await app.StopAsync(CancellationToken.None);
+                await app.StopAsync(stopTimeout.Token);
             }
             catch (Exception exception)
             {
-                logger.LogError(exception, "Wolverine smoke host shutdown failed.");
+                WolverineSmokeLogMessages.HostShutdownFailed(logger, exception);
                 exitCode = 1;
             }
         }
