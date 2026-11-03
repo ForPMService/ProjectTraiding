@@ -132,33 +132,45 @@ public static class MoexRealtimeRegistry
         keyTimeIndex: 1,
         tradeNoIndex: -1);
 
-    public static readonly MoexRealtimeSpec Candles1m = new(
+    private static readonly SourceColumn[] CandleSourceColumns =
+    [
+        new(0, "open"u8.ToArray(), ColumnKind.Double),
+        new(1, "close"u8.ToArray(), ColumnKind.Double),
+        new(2, "high"u8.ToArray(), ColumnKind.Double),
+        new(3, "low"u8.ToArray(), ColumnKind.Double),
+        new(4, "value"u8.ToArray(), ColumnKind.Double),
+        new(5, "volume"u8.ToArray(), ColumnKind.Double),
+        new(6, "begin"u8.ToArray(), ColumnKind.DateTime),
+        new(7, "end"u8.ToArray(), ColumnKind.DateTime),
+    ];
+
+    private static readonly TargetColumn[] CandleTargetColumns =
+    [
+        new("secid", "LowCardinality(String)", FillRule.TaskSecId),
+        new("open", "Nullable(Float64)", FillRule.Direct, 0),
+        new("close", "Nullable(Float64)", FillRule.Direct, 1),
+        new("high", "Nullable(Float64)", FillRule.Direct, 2),
+        new("low", "Nullable(Float64)", FillRule.Direct, 3),
+        new("value", "Nullable(Float64)", FillRule.Direct, 4),
+        new("volume", "Nullable(Float64)", FillRule.Direct, 5),
+        new("begin", "DateTime64(3, 'Europe/Moscow')", FillRule.WallClock, 6),
+        new("end", "Nullable(DateTime64(3, 'Europe/Moscow'))", FillRule.WallClock, 7),
+        new("ingest_priority", "UInt8", FillRule.Constant, Constant: (byte)0),
+    ];
+
+    public static readonly MoexRealtimeSpec Candles1m = CandleSpec("moex_candles_1m");
+
+    public static readonly MoexRealtimeSpec Candles10m = CandleSpec("moex_candles_10m");
+
+    public static readonly MoexRealtimeSpec Candles1h = CandleSpec("moex_candles_1h");
+
+    public static readonly MoexRealtimeSpec Candles1d = CandleSpec("moex_candles_1d");
+
+    private static MoexRealtimeSpec CandleSpec(string table) => new(
         rootKey: "candles",
-        sourceColumns:
-        [
-            new(0, "open"u8.ToArray(), ColumnKind.Double),
-            new(1, "close"u8.ToArray(), ColumnKind.Double),
-            new(2, "high"u8.ToArray(), ColumnKind.Double),
-            new(3, "low"u8.ToArray(), ColumnKind.Double),
-            new(4, "value"u8.ToArray(), ColumnKind.Double),
-            new(5, "volume"u8.ToArray(), ColumnKind.Double),
-            new(6, "begin"u8.ToArray(), ColumnKind.DateTime),
-            new(7, "end"u8.ToArray(), ColumnKind.DateTime),
-        ],
-        table: "moex_candles_1m",
-        targetColumns:
-        [
-            new("secid", "LowCardinality(String)", FillRule.TaskSecId),
-            new("open", "Nullable(Float64)", FillRule.Direct, 0),
-            new("close", "Nullable(Float64)", FillRule.Direct, 1),
-            new("high", "Nullable(Float64)", FillRule.Direct, 2),
-            new("low", "Nullable(Float64)", FillRule.Direct, 3),
-            new("value", "Nullable(Float64)", FillRule.Direct, 4),
-            new("volume", "Nullable(Float64)", FillRule.Direct, 5),
-            new("begin", "DateTime64(3, 'Europe/Moscow')", FillRule.WallClock, 6),
-            new("end", "Nullable(DateTime64(3, 'Europe/Moscow'))", FillRule.WallClock, 7),
-            new("ingest_priority", "UInt8", FillRule.Constant, Constant: (byte)0),
-        ],
+        sourceColumns: CandleSourceColumns,
+        table: table,
+        targetColumns: CandleTargetColumns,
         emptySecidMessage: "Загрузка свечей отвергнута: secid пустой.",
         keyTimeIndex: 7,
         tradeNoIndex: -1);
@@ -179,11 +191,17 @@ public static class MoexRealtimeRegistry
             $"Неизвестный рынок инструмента приёмника: '{market}'.");
     }
 
-    /// <summary>Декларация свечей по коду интервала. Приём пока ведёт только минутные.</summary>
+    /// <summary>Декларация свечей по коду интервала.</summary>
     public static MoexRealtimeSpec CandlesFor(int interval)
     {
         if (interval == 1)
             return Candles1m;
+        if (interval == 10)
+            return Candles10m;
+        if (interval == 60)
+            return Candles1h;
+        if (interval == 24)
+            return Candles1d;
 
         throw new InvalidOperationException(
             $"Приём свечей не объявлен для интервала {interval}.");

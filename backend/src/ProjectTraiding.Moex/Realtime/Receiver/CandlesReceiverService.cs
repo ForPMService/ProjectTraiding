@@ -14,11 +14,10 @@ using System.Diagnostics;
 namespace ProjectTraiding.Moex.Realtime.Receiver
 {
     /// <summary>
-    /// Периодический приём свечей текущего торгового дня по всем подписанным инструментам.
-    /// Закрытые минуты пишутся в moex_candles_1m с приоритетом приёма 0 (историческая загрузка
-    /// перекрывает при слиянии); текущая незакрытая минута в ClickHouse не пишется, она ещё
-    /// меняется. Курсора у свечей в базе нет; повтор записи
-    /// закрытых минут в пределах запуска отсекает граница LastClosedBegin в состоянии.
+    /// Периодический приём свечей четырёх интервалов по всем подписанным инструментам.
+    /// Свечи пишутся с приоритетом приёма 0 (историческая загрузка перекрывает их при слиянии);
+    /// незавершённые периоды в ClickHouse не попадают. Курсора у свечей в базе нет, поэтому
+    /// повторную запись в пределах запуска отсекает отдельная граница для каждого интервала.
     /// Желаемый список подписок сверяется на каждом обороте: снятые инструменты исключаются
     /// из опроса немедленно, без перезапуска процесса —
     /// так же, как у сделок и стакана.
@@ -29,13 +28,11 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
         protected override TimeSpan StalePollThreshold => _stalePollThreshold;
 
-        // Реальное время пока только минутная свеча. Контракт подписок держит это CHECK-ом.
-        private const int CandleInterval = 1;
+        private static readonly int[] CandleIntervals = [1, 10, 60, 24];
 
-        // Хвост окна опроса, минуты. Одна-две минуты укладываются в одну страницу клиента; запас
-        // в несколько минут страхует от пропущенного оборота и остаётся в пределах одной страницы.
-        // Историю торгового дня добирает исторический загрузчик, здесь только текущий хвост.
-        private const int WindowMinutes = 3;
+        // Формат строки приёма задан общей декларацией свечей:
+        // secid, open, close, high, low, value, volume, begin, end, ingest_priority.
+        private const int CandleEndColumnIndex = 8;
 
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<CandlesReceiverService> _logger;
@@ -155,11 +152,45 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             RealtimeSpecRowWriter writer,
             CancellationToken commitCt)
         {
-            MoexRealtimeSpec spec = MoexRealtimeRegistry.CandlesFor(CandleInterval);
+            foreach (int interval in CandleIntervals)
+            {
+                DateTimeOffset pollAttemptTime = DateTimeOffset.UtcNow;
+                if (!ShouldPollInterval(state, interval, pollAttemptTime))
+                    continue;
+
+                if (interval != 1)
+                    state.LastPollAttemptByInterval[interval] = pollAttemptTime;
+
+                try
+                {
+                    await PollIntervalAsync(
+                        secid, state, client, writer, interval, commitCt);
+                }
+                catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    MoexRealtimeReceiverLogMessages.CandlesIntervalPollFailed(
+                        _logger, ex, secid, state.Market, interval);
+                }
+            }
+        }
+
+        private async Task PollIntervalAsync(
+            string secid,
+            CandleInstrumentState state,
+            MoexRealtimeRestClient client,
+            RealtimeSpecRowWriter writer,
+            int interval,
+            CancellationToken commitCt)
+        {
+            MoexRealtimeSpec spec = MoexRealtimeRegistry.CandlesFor(interval);
 
             // Московское время фиксируем один раз: им задаётся и окно запроса, и граница «закрыта».
             DateTime now = MoexTime.Now;
-            DateTime from = now.AddMinutes(-WindowMinutes);
+            DateTime from = RequestWindowStart(interval, now);
 
             // Получение окна свечей — под собственным бюджетом, живущим строго вокруг вызова клиента
             // и уничтожаемым до фиксации. Причины те же, что в стакане: таймер бюджета не должен
@@ -183,6 +214,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             pollActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
             pollActivity?.SetTag(MoexTelemetryAttributes.Market, operationTags.Market);
             pollActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
+            pollActivity?.SetTag(MoexTelemetryAttributes.CandleInterval, interval);
 
             long fetchStart = Stopwatch.GetTimestamp();
 
@@ -196,6 +228,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 fetchActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
                 fetchActivity?.SetTag(MoexTelemetryAttributes.Market, operationTags.Market);
                 fetchActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
+                fetchActivity?.SetTag(MoexTelemetryAttributes.CandleInterval, interval);
                 try
                 {
                     candles = await client.GetCandlesTodayAsync(
@@ -203,7 +236,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         secid,
                         from,
                         now,
-                        CandleInterval,
+                        interval,
                         fetchCts.Token);
 
                     TagList rowsTags = new TagList
@@ -212,6 +245,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         { MoexTelemetryAttributes.DataKind, operationTags.DataKind },
                         { MoexTelemetryAttributes.Market, operationTags.Market },
                         { MoexTelemetryAttributes.Flow, operationTags.Flow },
+                        { MoexTelemetryAttributes.CandleInterval, interval },
                     };
                     MoexMetrics.RowsReceived.Add(candles.SourceRowsCount, rowsTags);
 
@@ -233,7 +267,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     fetchActivity?.SetStatus(ActivityStatusCode.Error);
                     pollActivity?.SetStatus(ActivityStatusCode.Error);
                     MoexRealtimeReceiverLogMessages.CandlesInstrumentFetchTimedOut(
-                        _logger, secid, state.Market, _instrumentFetchTimeout);
+                        _logger, secid, state.Market, interval, _instrumentFetchTimeout);
                     MoexMetrics.RecordOperationTimeout(
                         in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                     MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
@@ -250,21 +284,35 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 }
             }
 
-            // Минута с началом B закрыта, когда московское время достигло B + интервал.
-            // Границы отобранной пачки считаются этим же проходом: отдельный проход
-            // по отобранным строкам не нужен.
+            // Границы пачки и наиболее новое начало считаются одним проходом страницы.
+            // Для 10/60 минут окончание периода подтверждают его длительность или более
+            // новая свеча; для дня — свеча следующей торговой даты.
             // Тот же буфер на все опросы: очищается перед отбором. Предыдущая вставка к этому
             // моменту уже завершена — она выполняется с ожиданием внутри того же опроса.
-            // Принадлежит одному обороту одной службы, см. предупреждение о пункте 8 плана.
+            // Принадлежит одному обороту одной службы; опросы выполняются последовательно.
             _closed.Clear();
             List<object?[]> closed = _closed;
-            DateTime maxClosedBegin = state.LastClosedBegin ?? DateTime.MinValue;
+            bool hasLastClosedBegin = state.LastClosedBeginByInterval.TryGetValue(
+                interval, out DateTime lastClosedBegin);
+            DateTime maxClosedBegin = hasLastClosedBegin ? lastClosedBegin : DateTime.MinValue;
+            DateTime? newestBegin = null;
 
             try
             {
                 foreach (RealtimeRowFailure failure in candles.RowFailures)
-                    _logger.LogWarning("MOEX row skipped: secid={Secid}, dataKind={DataKind}, position={Position}, reason={Reason}",
-                        secid, DataKind, failure.Position, failure.Reason);
+                    MoexRealtimeReceiverLogMessages.CandleRowSkipped(
+                        _logger, secid, DataKind, interval, failure.Position, failure.Reason);
+
+                for (int i = 0; i < candles.Rows.Count; i++)
+                {
+                    DateTime? begin = candles.Rows[i].Begin;
+                    if (begin is not null &&
+                        (newestBegin is null || begin.Value > newestBegin.Value))
+                    {
+                        newestBegin = begin.Value;
+                    }
+                }
+
                 for (int i = 0; i < candles.Rows.Count; i++)
                 {
                     DateTime? begin = candles.Rows[i].Begin;
@@ -275,11 +323,13 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         continue;
 
                     DateTime beginValue = begin.Value;
-                    if (beginValue.AddMinutes(CandleInterval) > now)
+                    DateTime? endValue = candles.Rows[i].Row[CandleEndColumnIndex] is DateTime end
+                        ? end
+                        : null;
+                    if (!IsClosedCandle(interval, beginValue, endValue, newestBegin, now))
                         continue;
 
-                    if (state.LastClosedBegin is not null &&
-                        beginValue <= state.LastClosedBegin.Value)
+                    if (hasLastClosedBegin && beginValue <= lastClosedBegin)
                         continue;
 
                     closed.Add(candles.Rows[i].Row);
@@ -293,7 +343,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     // Фиксация — под хостовым commitCt. У свечей курсора в базе нет; durable-запись —
                     // только ClickHouse, за ней сразу двигаются граница и счётчик состояния. Запись
                     // предварительна (приоритет 0): источник истины — исторический загрузчик (приоритет 1),
-                    // он перекрывает минуту при слиянии. До планировщика догрузки текущего дня
+                    // он перекрывает свечу при слиянии. До планировщика догрузки текущего дня
                     // предварительная версия может дожить до ручного прогона; точные расчёты обязаны
                     // считать строки приёмника предварительными.
                     await writer.WriteAsync(
@@ -304,8 +354,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         commitCt);
                     state.RowsTotal += closed.Count;
                     if (candles.RowFailures.Count == 0)
-                        state.LastClosedBegin = maxClosedBegin;
-                    state.LastConfirmedMarketTime = MoexTime.ToDateTimeOffset(maxClosedBegin);
+                        state.LastClosedBeginByInterval[interval] = maxClosedBegin;
+
+                    DateTimeOffset confirmedTime = MoexTime.ToDateTimeOffset(maxClosedBegin);
+                    if (state.LastConfirmedMarketTime is null ||
+                        confirmedTime > state.LastConfirmedMarketTime.Value)
+                    {
+                        state.LastConfirmedMarketTime = confirmedTime;
+                    }
                 }
 
                 if (candles.RowFailures.Count > 0)
@@ -331,6 +387,86 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
         }
 
+        private bool ShouldPollInterval(
+            CandleInstrumentState state,
+            int interval,
+            DateTimeOffset now)
+        {
+            if (interval == 1)
+                return true;
+
+            TimeSpan pollCadence = interval switch
+            {
+                10 => TimeSpan.FromMinutes(1),
+                60 => TimeSpan.FromMinutes(5),
+                24 => TimeSpan.FromMinutes(30),
+                _ => throw new InvalidOperationException(
+                    $"Неизвестный интервал свечей приёма: {interval}."),
+            };
+
+            return !state.LastPollAttemptByInterval.TryGetValue(interval, out DateTimeOffset lastPoll)
+                || now - lastPoll >= pollCadence;
+        }
+
+        private static DateTime RequestWindowStart(int interval, DateTime now)
+        {
+            return interval switch
+            {
+                1 => now.AddMinutes(-3),
+                10 => now.AddMinutes(-30),
+                60 => now.AddHours(-3),
+                // Недельный перерыв и длинные выходные не должны скрыть последнюю
+                // торговую дату; исторический тракт остаётся источником полной истории.
+                24 => now.Date.AddDays(-14),
+                _ => throw new InvalidOperationException(
+                    $"Неизвестный интервал свечей приёма: {interval}."),
+            };
+        }
+
+        private static bool IsClosedCandle(
+            int interval,
+            DateTime begin,
+            DateTime? end,
+            DateTime? newestBegin,
+            DateTime now)
+        {
+            // Это прежнее правило минутного приёма, оставленное без изменений.
+            if (interval == 1)
+                return begin.AddMinutes(1) <= now;
+
+            if (end is not null && end.Value > now)
+                return false;
+
+            bool hasNewerCandle = newestBegin is not null
+                && newestBegin.Value > begin
+                && newestBegin.Value <= now;
+
+            if (interval == 24)
+            {
+                // В ответе нет отдельного признака завершения сессии. Новая торговая дата
+                // подтверждает завершение предыдущей без фиксированного времени закрытия
+                // и естественно учитывает выходные и праздники.
+                return begin.Date < now.Date
+                    && hasNewerCandle
+                    && newestBegin!.Value.Date > begin.Date;
+            }
+
+            TimeSpan duration = interval switch
+            {
+                10 => TimeSpan.FromMinutes(10),
+                60 => TimeSpan.FromHours(1),
+                _ => throw new InvalidOperationException(
+                    $"Неизвестный интервал свечей приёма: {interval}."),
+            };
+
+            // end может содержать время последней сделки внутри свечи, поэтому не служит
+            // доказательством закрытия периода.
+            TimeSpan sourceDelayGrace = interval == 10
+                ? TimeSpan.FromMinutes(1)
+                : TimeSpan.FromMinutes(2);
+            return begin + duration + sourceDelayGrace <= now || hasNewerCandle;
+        }
+
         protected override void LogInstrumentPreparationFailed(Exception exception, string secid)
             => MoexRealtimeReceiverLogMessages.CandlesInstrumentPreparationFailed(
                 _logger, exception, secid);
@@ -350,9 +486,12 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         }
 
         /// <summary>
-        /// Начало последней записанной закрытой минуты. Хранится только в пределах
-        /// текущего запуска и отсекает повторную запись уже обработанных минут.
+        /// Начало последней записанной закрытой свечи отдельно по каждому интервалу.
+        /// Границы не должны пересекаться между минутами, часами и торговыми днями.
         /// </summary>
-        public DateTime? LastClosedBegin { get; set; }
+        public Dictionary<int, DateTime> LastClosedBeginByInterval { get; } = new();
+
+        /// <summary>Время последней попытки старшего интервала для ограничения частоты опроса.</summary>
+        public Dictionary<int, DateTimeOffset> LastPollAttemptByInterval { get; } = new();
     }
 }

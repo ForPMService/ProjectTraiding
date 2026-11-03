@@ -114,9 +114,19 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         public static partial void CandlesTurnFailed(ILogger logger, Exception exception);
 
         [LoggerMessage(EventId = 480, EventName = "MoexCandlesReceiverInstrumentFetchTimedOut", Level = LogLevel.Warning,
-            Message = "Candles receiver instrument fetch timed out: secid={Secid}, market={Market}, budget={Budget}.")]
+            Message = "Candles receiver instrument fetch timed out: secid={Secid}, market={Market}, interval={CandleInterval}, budget={Budget}.")]
         public static partial void CandlesInstrumentFetchTimedOut(
-            ILogger logger, string secid, string market, TimeSpan budget);
+            ILogger logger, string secid, string market, int candleInterval, TimeSpan budget);
+
+        [LoggerMessage(EventId = 487, EventName = "MoexCandlesReceiverIntervalPollFailed", Level = LogLevel.Warning,
+            Message = "Candles receiver interval poll failed: secid={Secid}, market={Market}, interval={CandleInterval}.")]
+        public static partial void CandlesIntervalPollFailed(
+            ILogger logger, Exception exception, string secid, string market, int candleInterval);
+
+        [LoggerMessage(EventId = 488, EventName = "MoexCandlesReceiverRowSkipped", Level = LogLevel.Warning,
+            Message = "MOEX candle row skipped: secid={Secid}, dataKind={DataKind}, interval={CandleInterval}, position={Position}, reason={Reason}.")]
+        public static partial void CandleRowSkipped(
+            ILogger logger, string secid, string dataKind, int candleInterval, int position, string reason);
 
         [LoggerMessage(EventId = 482, EventName = "MoexTradesReceiverInstrumentStopped", Level = LogLevel.Information,
             Message = "Trades receiver instrument stopped: secid={Secid}, rows={RowsTotal}.")]

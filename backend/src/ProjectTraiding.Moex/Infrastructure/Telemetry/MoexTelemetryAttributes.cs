@@ -17,6 +17,9 @@ public static class MoexTelemetryAttributes
     /// Обязателен для рыночных данных. Для справочников и календаря допускается отсутствие.</summary>
     public const string DataKind = "data_kind";
 
+    /// <summary>Интервал свечей MOEX: 1, 10, 60 или 24.</summary>
+    public const string CandleInterval = "candle_interval";
+
     /// <summary>Инструмент: SBER, SiM6.</summary>
     public const string Secid = "secid";
 
