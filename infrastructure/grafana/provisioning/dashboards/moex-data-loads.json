@@ -224,7 +224,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "max by (data_kind, market) (moex_realtime_last_poll_age_seconds)",
+          "expr": "max by (data_kind, market) (moex_realtime_last_poll_age_seconds{candle_interval=\"\"})",
           "legendFormat": "{{ data_kind }} · {{ market }}",
           "refId": "A"
         }
@@ -240,7 +240,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "max by (data_kind, market) (moex_realtime_data_age_seconds)",
+          "expr": "max by (data_kind, market) (moex_realtime_data_age_seconds{candle_interval=\"\"})",
           "legendFormat": "{{ data_kind }} · {{ market }}",
           "refId": "A"
         }
@@ -301,14 +301,93 @@
     },
     {
       "type": "row",
-      "title": "Логи загрузок",
+      "title": "Свечи по интервалам",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 70 },
+      "collapsed": false
+    },
+    {
+      "id": 1001,
+      "type": "timeseries",
+      "title": "Свечи: успешные и ошибочные опросы / сек",
+      "description": "Разрез по рынку и интервалу. Ошибка одного интервала видна независимо от успехов остальных.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 71 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (market, candle_interval, outcome) (rate(moex_realtime_poll_completed_total{data_kind=\"candles\",outcome=~\"success|error\"}[$__rate_interval]))",
+          "legendFormat": "{{ market }} · {{ candle_interval }} · {{ outcome }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "cps", "min": 0 }, "overrides": [] },
+      "options": { "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 1002,
+      "type": "timeseries",
+      "title": "Свечи: строк получено и записано / сек",
+      "description": "Получено — строки ответа MOEX. Записано — число, подтверждённое ClickHouse.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 71 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (market, candle_interval) (rate(moex_rows_received_total{data_kind=\"candles\",flow=\"realtime\"}[$__rate_interval]))",
+          "legendFormat": "получено · {{ market }} · {{ candle_interval }}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (market, candle_interval) (rate(storage_insert_rows_total{data_kind=\"candles\",flow=\"realtime\",outcome=\"success\"}[$__rate_interval]))",
+          "legendFormat": "записано · {{ market }} · {{ candle_interval }}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "rowsps", "min": 0 }, "overrides": [] },
+      "options": { "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 1003,
+      "type": "stat",
+      "title": "Свечи: возраст последнего успешного опроса",
+      "description": "Пустой успешный ответ обновляет возраст. Ошибка получения или записи отметку не обновляет.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 79 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "max by (market, candle_interval) (moex_realtime_last_poll_age_seconds{data_kind=\"candles\",candle_interval!=\"\"})",
+          "legendFormat": "{{ market }} · {{ candle_interval }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "min": 0 }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 1004,
+      "type": "stat",
+      "title": "Свечи: возраст последней записанной свечи",
+      "description": "Показывает возраст последней подтверждённой записи. Для дневных свечей возраст растёт в выходные и сам по себе не означает сбой.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 79 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "max by (market, candle_interval) (moex_realtime_data_age_seconds{data_kind=\"candles\",candle_interval!=\"\"})",
+          "legendFormat": "{{ market }} · {{ candle_interval }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "min": 0 }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "row",
+      "title": "Логи загрузок",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 85 },
       "collapsed": false
     },
     {
       "type": "logs",
       "title": "Остановки пагинации и завершения загрузок",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 71 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 86 },
       "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {

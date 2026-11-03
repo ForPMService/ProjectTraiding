@@ -180,10 +180,22 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             DateTimeOffset now = DateTimeOffset.UtcNow;
             _snapshots.Clear();
 
-            AddTelemetrySnapshot(MoexMarkets.Stock, now, _snapshots);
-            AddTelemetrySnapshot(MoexMarkets.Futures, now, _snapshots);
+            AddTelemetrySnapshotsForMarket(MoexMarkets.Stock, now, _snapshots);
+            AddTelemetrySnapshotsForMarket(MoexMarkets.Futures, now, _snapshots);
 
             RealtimeTelemetryState.ReplaceForDataKind(DataKind, _snapshots);
+        }
+
+        /// <summary>
+        /// Добавляет снимок рынка. Свечам разрешено добавить bounded интервальные разрезы;
+        /// остальные приёмники сохраняют исходный разрез data_kind/market.
+        /// </summary>
+        protected virtual void AddTelemetrySnapshotsForMarket(
+            string market,
+            DateTimeOffset now,
+            List<KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot>> snapshots)
+        {
+            AddTelemetrySnapshot(market, now, snapshots);
         }
 
         private void AddTelemetrySnapshot(

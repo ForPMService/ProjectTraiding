@@ -205,7 +205,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             StorageInsertContext insertContext = new StorageInsertContext(
                 operationTags.DataKind,
                 operationTags.Market,
-                MoexFlows.Realtime);
+                MoexFlows.Realtime,
+                CandleInterval: interval);
 
             RealtimeCandlesPage candles;
             using (Activity? pollActivity =
@@ -259,7 +260,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     pollActivity?.SetStatus(ActivityStatusCode.Ok);
                     MoexMetrics.RecordOperationCancelled(
                         in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
-                    MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Cancelled);
+                    MoexMetrics.RecordRealtimePoll(
+                        in operationTags, MoexOutcomes.Cancelled, interval);
                     throw;
                 }
                 catch (OperationCanceledException) when (fetchCts.IsCancellationRequested)
@@ -270,7 +272,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         _logger, secid, state.Market, interval, _instrumentFetchTimeout);
                     MoexMetrics.RecordOperationTimeout(
                         in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
-                    MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
+                    MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error, interval);
                     return;
                 }
                 catch (Exception ex)
@@ -279,14 +281,15 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     pollActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                     MoexMetrics.RecordOperationError(
                         in operationTags, ex, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
-                    MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
+                    MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error, interval);
                     throw;
                 }
             }
 
             // Границы пачки и наиболее новое начало считаются одним проходом страницы.
             // Для 10/60 минут окончание периода подтверждают его длительность или более
-            // новая свеча; для дня — свеча следующей торговой даты.
+            // новая свеча; дневной интервал закрывается через 24 часа от begin,
+            // а свеча следующей торговой даты остаётся дополнительным подтверждением.
             // Тот же буфер на все опросы: очищается перед отбором. Предыдущая вставка к этому
             // моменту уже завершена — она выполняется с ожиданием внутри того же опроса.
             // Принадлежит одному обороту одной службы; опросы выполняются последовательно.
@@ -346,17 +349,25 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     // он перекрывает свечу при слиянии. До планировщика догрузки текущего дня
                     // предварительная версия может дожить до ручного прогона; точные расчёты обязаны
                     // считать строки приёмника предварительными.
-                    await writer.WriteAsync(
+                    long insertedRows = await writer.WriteAsync(
                         spec,
                         secid,
                         closed,
                         insertContext,
                         commitCt);
-                    state.RowsTotal += closed.Count;
+                    state.RowsTotal += insertedRows;
+                    if (insertedRows != closed.Count)
+                    {
+                        throw new InvalidOperationException(
+                            $"ClickHouse подтвердил запись {insertedRows} из {closed.Count} свечей " +
+                            $"интервала {interval} для {secid}.");
+                    }
+
                     if (candles.RowFailures.Count == 0)
                         state.LastClosedBeginByInterval[interval] = maxClosedBegin;
 
                     DateTimeOffset confirmedTime = MoexTime.ToDateTimeOffset(maxClosedBegin);
+                    state.LastConfirmedMarketTimeByInterval[interval] = confirmedTime;
                     if (state.LastConfirmedMarketTime is null ||
                         confirmedTime > state.LastConfirmedMarketTime.Value)
                     {
@@ -367,20 +378,23 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 if (candles.RowFailures.Count > 0)
                     throw new InvalidOperationException("Окно свечей обработано частично.");
 
-                MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Success);
-                state.LastSuccessfulPollTime = DateTimeOffset.UtcNow;
+                DateTimeOffset pollSucceededAt = DateTimeOffset.UtcNow;
+                MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Success, interval);
+                state.LastSuccessfulPollByInterval[interval] = pollSucceededAt;
+                state.LastSuccessfulPollTime = pollSucceededAt;
                 pollActivity?.SetStatus(ActivityStatusCode.Ok);
             }
             catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
             {
                 pollActivity?.SetStatus(ActivityStatusCode.Ok);
-                MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Cancelled);
+                MoexMetrics.RecordRealtimePoll(
+                    in operationTags, MoexOutcomes.Cancelled, interval);
                 throw;
             }
             catch (Exception)
             {
                 pollActivity?.SetStatus(ActivityStatusCode.Error);
-                MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
+                MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error, interval);
                 throw;
             }
             }
@@ -443,12 +457,15 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
             if (interval == 24)
             {
-                // В ответе нет отдельного признака завершения сессии. Новая торговая дата
-                // подтверждает завершение предыдущей без фиксированного времени закрытия
-                // и естественно учитывает выходные и праздники.
-                return begin.Date < now.Date
-                    && hasNewerCandle
-                    && newestBegin!.Value.Date > begin.Date;
+                // Код 24 задаёт однодневный интервал. Свеча закрывается только после его окончания,
+                // вычисленного от begin, или после появления свечи следующей торговой даты.
+                // Поле end — временная метка/граница ответа, но не отдельный признак закрытия:
+                // у текущей дневной строки оно может отражать последнее обновление внутри
+                // периода.
+                return begin.AddDays(1) <= now
+                    || (hasNewerCandle
+                        && newestBegin.HasValue
+                        && newestBegin.Value.Date > begin.Date);
             }
 
             TimeSpan duration = interval switch
@@ -475,6 +492,54 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             => MoexRealtimeReceiverLogMessages.CandlesInstrumentStopped(
                 _logger, secid, rowsTotal);
 
+        protected override void AddTelemetrySnapshotsForMarket(
+            string market,
+            DateTimeOffset now,
+            List<KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot>> snapshots)
+        {
+            base.AddTelemetrySnapshotsForMarket(market, now, snapshots);
+
+            long activeInstruments = 0;
+            foreach (KeyValuePair<string, CandleInstrumentState> pair in States)
+            {
+                if (pair.Value.Market == market)
+                    activeInstruments++;
+            }
+
+            if (activeInstruments == 0)
+                return;
+
+            foreach (int interval in CandleIntervals)
+            {
+                DateTimeOffset? lastPoll = null;
+                DateTimeOffset? lastConfirmed = null;
+                foreach (KeyValuePair<string, CandleInstrumentState> pair in States)
+                {
+                    CandleInstrumentState state = pair.Value;
+                    if (state.Market != market)
+                        continue;
+
+                    if (state.LastSuccessfulPollByInterval.TryGetValue(
+                            interval, out DateTimeOffset successfulPoll) &&
+                        (lastPoll is null || successfulPoll > lastPoll.Value))
+                    {
+                        lastPoll = successfulPoll;
+                    }
+
+                    if (state.LastConfirmedMarketTimeByInterval.TryGetValue(
+                            interval, out DateTimeOffset confirmedMarketTime) &&
+                        (lastConfirmed is null || confirmedMarketTime > lastConfirmed.Value))
+                    {
+                        lastConfirmed = confirmedMarketTime;
+                    }
+                }
+
+                snapshots.Add(new KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot>(
+                    new RealtimeTelemetryKey(DataKind, market, interval),
+                    new RealtimeTelemetrySnapshot(lastPoll, lastConfirmed, 0, 0)));
+            }
+        }
+
     }
 
     public sealed class CandleInstrumentState : ReceiverInstrumentState
@@ -493,5 +558,11 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
         /// <summary>Время последней попытки старшего интервала для ограничения частоты опроса.</summary>
         public Dictionary<int, DateTimeOffset> LastPollAttemptByInterval { get; } = new();
+
+        /// <summary>Последний успешный опрос каждого интервала; пустой ответ тоже обновляет отметку.</summary>
+        public Dictionary<int, DateTimeOffset> LastSuccessfulPollByInterval { get; } = new();
+
+        /// <summary>Время последней фактически записанной свечи отдельно для каждого интервала.</summary>
+        public Dictionary<int, DateTimeOffset> LastConfirmedMarketTimeByInterval { get; } = new();
     }
 }

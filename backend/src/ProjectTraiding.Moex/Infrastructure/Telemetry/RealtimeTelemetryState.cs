@@ -3,11 +3,14 @@ using System.Collections.Concurrent;
 namespace ProjectTraiding.Moex.Infrastructure.Telemetry;
 
 /// <summary>
-/// Ключ агрегата телеметрии текущего приёма. Ограничен видом данных и рынком:
-/// инструмент в ключ не входит, иначе число рядов метрики росло бы вместе
-/// с числом подписок.
+/// Ключ агрегата телеметрии текущего приёма. Ограничен видом данных и рынком;
+/// для свечей дополнительно содержит один из четырёх интервалов. Инструмент в ключ
+/// не входит, иначе число рядов метрики росло бы вместе с числом подписок.
 /// </summary>
-public readonly record struct RealtimeTelemetryKey(string DataKind, string Market);
+public readonly record struct RealtimeTelemetryKey(
+    string DataKind,
+    string Market,
+    int? CandleInterval = null);
 
 /// <summary>
 /// Готовые скаляры одного разреза текущего приёма, посчитанные приёмником
@@ -27,7 +30,7 @@ public readonly record struct RealtimeTelemetrySnapshot(
 ///
 /// Состояние статическое, потому что обработчики наблюдаемых метрик создаются
 /// один раз вместе с инструментами и до экземпляров приёмников не дотягиваются.
-/// Разрезов немного и они не растут: вид данных на рынок.
+/// Разрезы ограничены видом данных, рынком и четырьмя интервалами свечей.
 /// </summary>
 public static class RealtimeTelemetryState
 {

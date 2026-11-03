@@ -105,6 +105,9 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                 { MoexTelemetryAttributes.Outcome, outcome },
             };
 
+            if (context.CandleInterval is int candleInterval)
+                operationTags.Add(MoexTelemetryAttributes.CandleInterval, candleInterval);
+
             MoexMetrics.StorageInsertOperations.Add(1, operationTags);
 
             // Число строк записывается только при подтверждении драйвером, а подтверждает

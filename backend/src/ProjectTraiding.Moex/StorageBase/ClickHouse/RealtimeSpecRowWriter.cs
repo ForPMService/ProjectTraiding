@@ -23,10 +23,11 @@ public sealed class RealtimeSpecRowWriter
     }
 
     /// <summary>
-    /// Пишет готовый список строк одним обращением. Пустой список — ноль вставок, не отказ.
+    /// Пишет готовый список строк одним обращением и возвращает число, подтверждённое
+    /// ClickHouse. Пустой список — ноль вставок, не отказ.
     /// Порядок проверок повторяет прежний писатель: сначала пустая пачка, затем код инструмента.
     /// </summary>
-    public async Task WriteAsync(
+    public async Task<long> WriteAsync(
         MoexRealtimeSpec spec,
         string secid,
         List<object?[]> rows,
@@ -34,12 +35,12 @@ public sealed class RealtimeSpecRowWriter
         CancellationToken ct)
     {
         if (rows.Count == 0)
-            return;
+            return 0;
 
         if (string.IsNullOrWhiteSpace(secid))
             throw new InvalidOperationException(spec.EmptySecidMessage);
 
-        await _executor.InsertAsync(
+        return await _executor.InsertAsync(
             spec.Table, spec.Columns, spec.ColumnTypes, rows, insertContext, ct);
     }
 }

@@ -112,8 +112,22 @@ public static class MoexMetrics
     /// записывается: у приёма реального времени источник ровно один, и метка была бы
     /// постоянной величиной, добавляющей ряд без различающего смысла.
     /// </summary>
-    public static void RecordRealtimePoll(in MoexOperationTags tags, string outcome)
+    public static void RecordRealtimePoll(
+        in MoexOperationTags tags,
+        string outcome,
+        int? candleInterval = null)
     {
+        if (tags.DataKind == MoexDataKinds.Candles && candleInterval is int interval)
+        {
+            RealtimePollCompleted.Add(
+                1,
+                new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, tags.DataKind),
+                new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, tags.Market),
+                new KeyValuePair<string, object?>(MoexTelemetryAttributes.Outcome, outcome),
+                new KeyValuePair<string, object?>(MoexTelemetryAttributes.CandleInterval, interval));
+            return;
+        }
+
         RealtimePollCompleted.Add(
             1,
             new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, tags.DataKind),
@@ -202,10 +216,8 @@ public static class MoexMetrics
             if (last is null)
                 continue;
 
-            yield return new Measurement<double>(
-                (now - last.Value).TotalSeconds,
-                new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, pair.Key.DataKind),
-                new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, pair.Key.Market));
+            yield return RealtimeAgeMeasurement(
+                (now - last.Value).TotalSeconds, pair.Key);
         }
     }
 
@@ -220,10 +232,8 @@ public static class MoexMetrics
             if (last is null)
                 continue;
 
-            yield return new Measurement<double>(
-                (now - last.Value).TotalSeconds,
-                new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, pair.Key.DataKind),
-                new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, pair.Key.Market));
+            yield return RealtimeAgeMeasurement(
+                (now - last.Value).TotalSeconds, pair.Key);
         }
     }
 
@@ -232,6 +242,9 @@ public static class MoexMetrics
         foreach (KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot> pair
                  in RealtimeTelemetryState.Enumerate())
         {
+            if (pair.Key.CandleInterval is not null)
+                continue;
+
             yield return new Measurement<long>(
                 pair.Value.StaleInstruments,
                 new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, pair.Key.DataKind),
@@ -244,6 +257,9 @@ public static class MoexMetrics
         foreach (KeyValuePair<RealtimeTelemetryKey, RealtimeTelemetrySnapshot> pair
                  in RealtimeTelemetryState.Enumerate())
         {
+            if (pair.Key.CandleInterval is not null)
+                continue;
+
             yield return new Measurement<long>(
                 pair.Value.ActiveInstruments,
                 new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, pair.Key.DataKind),
@@ -254,6 +270,25 @@ public static class MoexMetrics
     private static long ObserveHeartbeatTime()
     {
         return DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    }
+
+    private static Measurement<double> RealtimeAgeMeasurement(
+        double ageSeconds,
+        RealtimeTelemetryKey key)
+    {
+        if (key.CandleInterval is int candleInterval)
+        {
+            return new Measurement<double>(
+                ageSeconds,
+                new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, key.DataKind),
+                new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, key.Market),
+                new KeyValuePair<string, object?>(MoexTelemetryAttributes.CandleInterval, candleInterval));
+        }
+
+        return new Measurement<double>(
+            ageSeconds,
+            new KeyValuePair<string, object?>(MoexTelemetryAttributes.DataKind, key.DataKind),
+            new KeyValuePair<string, object?>(MoexTelemetryAttributes.Market, key.Market));
     }
 
     // ══════════════════════════════════════════════
