@@ -72,7 +72,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "dotnet_thread_pool_thread_count_total",
+          "expr": "dotnet_thread_pool_thread_count",
           "refId": "A"
         }
       ],
@@ -86,7 +86,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "dotnet_thread_pool_queue_length_total",
+          "expr": "dotnet_thread_pool_queue_length",
           "refId": "A"
         }
       ],
