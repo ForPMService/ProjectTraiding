@@ -44,7 +44,8 @@ namespace ProjectTraiding.Moex.Clients
             CancellationToken cancellationToken = default)
         {
             using HttpResponseMessage response =
-                await _transport.SendWithoutStatusCheckAsync(method, queryParams, cancellationToken);
+                await _transport.SendWithoutStatusCheckAsync(
+                    method, queryParams, cancellationToken, MoexFlows.History);
 
             using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
                 response, _options.BodyReadTimeout, method, cancellationToken);
@@ -78,7 +79,9 @@ namespace ProjectTraiding.Moex.Clients
                     "/engines/stock/markets/shares/boards/tqbr/securities.json?iss.meta=off";
  
                 using var response = await _transport.SendAsync(
-                    endpoint, cancellationToken: cancellationToken);
+                    endpoint,
+                    cancellationToken: cancellationToken,
+                    flow: operationTags.Flow);
                 using var rentedArr = await RentedBuffer.RentFromResponseAsync(
                     response, _options.BodyReadTimeout, endpoint, cancellationToken);
                 List<StockInstrumentCardDTO> result = ParsingInstrumentCardUtf8.ParseStockCards(rentedArr.Span);

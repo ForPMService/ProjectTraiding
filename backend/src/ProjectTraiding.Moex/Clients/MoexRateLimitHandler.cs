@@ -2,7 +2,6 @@ using ProjectTraiding.Moex.Clients.Errors;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Options;
 using System.Diagnostics;
-using System.Threading.RateLimiting;
 
 namespace ProjectTraiding.Moex.Clients
 {
@@ -10,7 +9,7 @@ namespace ProjectTraiding.Moex.Clients
     /// DelegatingHandler, который запрашивает permit у rate limiter
     /// перед каждым HTTP-запросом к MOEX.
     ///
-    /// Один экземпляр RateLimiter делится между всеми клиентами
+    /// Один экземпляр MOEX-диспетчера жетонов делится между всеми клиентами
     /// (ISS, ALGOPACK, Calendar, Realtime REST),
     /// потому что лимит MOEX — на IP, а не на endpoint.
     ///
@@ -23,7 +22,7 @@ namespace ProjectTraiding.Moex.Clients
     /// </summary>
     public class MoexRateLimitHandler : DelegatingHandler
     {
-        private readonly RateLimiter _limiter;
+        private readonly MoexPriorityRateLimiter _limiter;
         private readonly MoexOptions _options;
         private readonly ILogger<MoexRateLimitHandler> _logger;
         private readonly string _source;
@@ -36,7 +35,7 @@ namespace ProjectTraiding.Moex.Clients
         private const double QueuedThresholdMs = 50;
 
         public MoexRateLimitHandler(
-            RateLimiter limiter,
+            MoexPriorityRateLimiter limiter,
             MoexOptions options,
             ILogger<MoexRateLimitHandler> logger,
             string source)
@@ -55,6 +54,11 @@ namespace ProjectTraiding.Moex.Clients
             // PathAndQuery — без scheme/host, без Bearer-токена.
             // Тот же паттерн, что в OnRetryHandler и MoexHttpLoggingHandler.
             string endpoint = request.RequestUri?.PathAndQuery ?? "unknown";
+            string flow = request.Options.TryGetValue(
+                    MoexHttpTransport.FlowOptionKey, out string? requestFlow)
+                && requestFlow == MoexFlows.Realtime
+                    ? MoexFlows.Realtime
+                    : MoexFlows.History;
 
             // ── 1. Запросить permit ─────────────────────────────
             long waitStart = Stopwatch.GetTimestamp();
@@ -63,38 +67,24 @@ namespace ProjectTraiding.Moex.Clients
             // - cancellationToken (вызывающий код отменил операцию)
             // - таймаут реализуем через CancellationTokenSource ниже
             //
-            // Если очередь полна — AcquireAsync возвращает lease с IsAcquired = false
-            // мгновенно, без ожидания.
-            // Быстрый путь: жетон доступен прямо сейчас. Синхронная попытка не создаёт ни
-            // связанного источника отмены, ни таймера и очередь не обгоняет — ограничитель
-            // выдаёт жетон синхронно только при пустой очереди. Неуспешная попытка
-            // освобождается и отказом не считается: ниже начинается прежнее ожидание.
+            // Быстрый и асинхронный пути входят в один диспетчер: он атомарно проверяет
+            // очередь realtime до выдачи history жетона.
             //
             // Уже отменённый вызов быстрый путь пропускает. Асинхронное получение проверяет
             // отмену до обращения к ограничителю и жетон не расходует; синхронная попытка
             // токена отмены не знает и израсходовала бы его, а обработчик записал бы
             // телеметрию успешного получения на запрос, который всё равно не уйдёт в сеть.
-            RateLimitLease? fastLease = cancellationToken.IsCancellationRequested
-                ? null
-                : _limiter.AttemptAcquire(permitCount: 1);
+            bool acquired = !cancellationToken.IsCancellationRequested
+                && _limiter.AttemptAcquire(flow);
 
-            RateLimitLease lease;
-            if (fastLease is { IsAcquired: true })
+            if (!acquired)
             {
-                lease = fastLease;
-            }
-            else
-            {
-                fastLease?.Dispose();
-
                 using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 timeoutCts.CancelAfter(_options.RateLimitAcquireTimeout);
 
                 try
                 {
-                    lease = await _limiter.AcquireAsync(
-                        permitCount: 1,
-                        cancellationToken: timeoutCts.Token);
+                    acquired = await _limiter.AcquireAsync(flow, timeoutCts.Token);
                 }
                 catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                 {
@@ -118,10 +108,9 @@ namespace ProjectTraiding.Moex.Clients
             double waitMs = Stopwatch.GetElapsedTime(waitStart).TotalMilliseconds;
 
             // ── 2. Проверить результат ──────────────────────────
-            if (!lease.IsAcquired)
+            if (!acquired)
             {
                 // Очередь переполнена — мгновенный отказ.
-                lease.Dispose();
                 MoexMetrics.RateLimitRejected.Add(
                     1,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, _source),
@@ -135,30 +124,27 @@ namespace ProjectTraiding.Moex.Clients
             }
 
             // ── 3. Permit получен — логируем, записываем метрики и пропускаем ───────
-            using (lease)
+            // Всегда пишем Debug-лог.
+            MoexLogMessages.RateLimitAcquired(_logger, endpoint, waitMs);
+
+            // Метрика: время ожидания permit.
+            MoexMetrics.RateLimitWaitDuration.Record(
+                waitMs,
+                new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, _source));
+
+            // Если ждали дольше порога — дополнительный Information-лог + метрика.
+            if (waitMs > QueuedThresholdMs)
             {
-                // Всегда пишем Debug-лог.
-                MoexLogMessages.RateLimitAcquired(_logger, endpoint, waitMs);
-
-                // Метрика: время ожидания permit.
-                MoexMetrics.RateLimitWaitDuration.Record(
-                    waitMs,
+                MoexLogMessages.RateLimitQueued(_logger, endpoint, waitMs);
+                MoexMetrics.RateLimitQueued.Add(
+                    1,
                     new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, _source));
-
-                // Если ждали дольше порога — дополнительный Information-лог + метрика.
-                if (waitMs > QueuedThresholdMs)
-                {
-                    MoexLogMessages.RateLimitQueued(_logger, endpoint, waitMs);
-                    MoexMetrics.RateLimitQueued.Add(
-                        1,
-                        new KeyValuePair<string, object?>(MoexTelemetryAttributes.Source, _source));
-                }
-
-                // Жетон получен — ниже по цепи остаются журналирование и транспорт.
-                // Слой устойчивости находится выше: повторы приходят сюда поодиночке, каждая
-                // попытка со своим жетоном.
-                return await base.SendAsync(request, cancellationToken);
             }
+
+            // Жетон получен — ниже по цепи остаются журналирование и транспорт.
+            // Слой устойчивости находится выше: повторы приходят сюда поодиночке, каждая
+            // попытка со своим жетоном.
+            return await base.SendAsync(request, cancellationToken);
         }
     }
 }

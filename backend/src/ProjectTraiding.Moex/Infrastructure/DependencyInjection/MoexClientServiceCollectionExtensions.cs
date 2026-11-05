@@ -48,20 +48,15 @@ public static class MoexClientServiceCollectionExtensions
             LoadCertificateSet(certificatesDirectory, "Roots", ExpectedRootHashes),
             LoadCertificateSet(certificatesDirectory, "Intermediates", ExpectedIntermediateHashes));
         // ══════════════════════════════════════════════
-        // Rate Limiter — один на все MOEX-клиенты.
-        // Лимит MOEX на IP, не на endpoint, поэтому один limiter на процесс.
+        // Приоритетный диспетчер — один на все MOEX-клиенты.
+        // Лимит MOEX на IP, не на endpoint, поэтому один общий бюджет на процесс.
         // ══════════════════════════════════════════════
-        services.AddSingleton<RateLimiter>(sp =>
+        services.AddSingleton<MoexPriorityRateLimiter>(sp =>
         {
-            var options = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
-            return new TokenBucketRateLimiter(new TokenBucketRateLimiterOptions
-            {
-                TokenLimit = options.MaxRequestsPerSecond,
-                TokensPerPeriod = options.MaxRequestsPerSecond,
-                ReplenishmentPeriod = TimeSpan.FromSeconds(1),
-                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                QueueLimit = options.RateLimitQueueLimit,
-            });
+            MoexOptions options = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
+            return new MoexPriorityRateLimiter(
+                options.MaxRequestsPerSecond,
+                options.RateLimitQueueLimit);
         });
 
         AddMoexHttpClient<MoexHttpIssClient>(services, moexOptions, MoexLogSources.Iss, nucTrust: null);
@@ -140,7 +135,7 @@ public static class MoexClientServiceCollectionExtensions
         });
 
         builder.AddHttpMessageHandler(sp => new MoexRateLimitHandler(
-            sp.GetRequiredService<RateLimiter>(),
+            sp.GetRequiredService<MoexPriorityRateLimiter>(),
             sp.GetRequiredService<IOptions<MoexOptions>>().Value,
             sp.GetRequiredService<ILogger<MoexRateLimitHandler>>(),
             logSource));
@@ -159,8 +154,8 @@ public static class MoexClientServiceCollectionExtensions
     {
         // Встроенный ограничитель стандартного конвейера ограничивает конкурентность, а не
         // частоту. Он свой у каждого клиента, стоит выше повторов и выдаёт разрешение один раз
-        // на логическую операцию. Частоту обращений к MOEX держит общий TokenBucketRateLimiter
-        // ниже слоя устойчивости: он выдаёт жетон на каждую фактическую попытку.
+        // на логическую операцию. Частоту обращений к MOEX держит общий
+        // MoexPriorityRateLimiter ниже слоя устойчивости: он выдаёт жетон на каждую попытку.
         // Значения совпадают с умолчаниями Microsoft.Extensions.Http.Resilience 10.8.0;
         // фиксируем их явно, не меняя прежнее поведение.
         options.RateLimiter.DefaultRateLimiterOptions =

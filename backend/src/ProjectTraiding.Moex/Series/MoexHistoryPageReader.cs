@@ -513,7 +513,7 @@ public sealed class MoexHistoryPageReader
             try
             {
                 using HttpResponseMessage response = await _client.SendRequestAsync(
-                    method, query, cancellationToken);
+                    method, query, cancellationToken, operationTags.Flow);
                 using RentedBuffer body = await RentedBuffer.RentFromResponseAsync(
                     response, _options.BodyReadTimeout, method, cancellationToken);
 

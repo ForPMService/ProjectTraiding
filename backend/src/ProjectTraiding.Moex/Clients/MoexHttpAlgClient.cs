@@ -45,7 +45,8 @@ namespace ProjectTraiding.Moex.Clients
             CancellationToken cancellationToken = default)
         {
             using HttpResponseMessage response =
-                await _transport.SendWithoutStatusCheckAsync(method, queryParams, cancellationToken);
+                await _transport.SendWithoutStatusCheckAsync(
+                    method, queryParams, cancellationToken, MoexFlows.History);
 
             using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
                 response, _options.BodyReadTimeout, method, cancellationToken);
@@ -78,7 +79,10 @@ namespace ProjectTraiding.Moex.Clients
                 const string endpoint =
                     "/engines/futures/markets/forts/boards/RFUD/securities.json?iss.meta=off";
  
-                using var response = await SendRequestAsync(endpoint, cancellationToken: cancellationToken);
+                using var response = await SendRequestAsync(
+                    endpoint,
+                    cancellationToken: cancellationToken,
+                    flow: operationTags.Flow);
                 using var rentedArr = await RentedBuffer.RentFromResponseAsync(
                     response, _options.BodyReadTimeout, endpoint, cancellationToken);
                 List<FuturesInstrumentCardDTO> result = ParsingInstrumentCardUtf8.ParseFuturesCards(rentedArr.Span);
@@ -111,9 +115,10 @@ namespace ProjectTraiding.Moex.Clients
         internal Task<HttpResponseMessage> SendRequestAsync(
             string method,
             Dictionary<string, string>? queryParams = null,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            string flow = MoexFlows.History)
         {
-            return _transport.SendAsync(method, queryParams, cancellationToken);
+            return _transport.SendAsync(method, queryParams, cancellationToken, flow);
         }
     }
 }

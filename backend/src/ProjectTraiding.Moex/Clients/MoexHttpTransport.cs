@@ -3,6 +3,7 @@ using Polly.Timeout;
 using ProjectTraiding.Moex.Clients.Errors;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Options;
+using System.Net.Http;
 using System.Net;
 
 namespace ProjectTraiding.Moex.Clients
@@ -21,6 +22,9 @@ namespace ProjectTraiding.Moex.Clients
     /// </summary>
     public sealed class MoexHttpTransport
     {
+        internal static readonly HttpRequestOptionsKey<string> FlowOptionKey =
+            new("Moex.Flow");
+
         private readonly HttpClient _httpClient;
         private readonly ILogger _logger;
         private readonly string _baseUrl;
@@ -65,10 +69,11 @@ namespace ProjectTraiding.Moex.Clients
         public async Task<HttpResponseMessage> SendAsync(
             string method,
             Dictionary<string, string>? queryParams = null,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            string flow = MoexFlows.History)
         {
             string requestUrl = BuildRequestUrl(method, queryParams);
-            using HttpRequestMessage request = CreateRequest(requestUrl);
+            using HttpRequestMessage request = CreateRequest(requestUrl, flow);
             try
             {
                 HttpResponseMessage response = await _httpClient.SendAsync(
@@ -113,10 +118,11 @@ namespace ProjectTraiding.Moex.Clients
         public async Task<HttpResponseMessage> SendWithoutStatusCheckAsync(
             string method,
             Dictionary<string, string>? queryParams = null,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            string flow = MoexFlows.History)
         {
             string requestUrl = BuildRequestUrl(method, queryParams);
-            using HttpRequestMessage request = CreateRequest(requestUrl);
+            using HttpRequestMessage request = CreateRequest(requestUrl, flow);
             return await _httpClient.SendAsync(
                 request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         }
@@ -133,8 +139,11 @@ namespace ProjectTraiding.Moex.Clients
             return _baseUrl + method + queryString.ToString();
         }
 
-        private HttpRequestMessage CreateRequest(string requestUrl)
+        private HttpRequestMessage CreateRequest(string requestUrl, string flow)
         {
+            if (flow != MoexFlows.History && flow != MoexFlows.Realtime)
+                throw new ArgumentOutOfRangeException(nameof(flow), flow, "Unknown MOEX request flow.");
+
             // Настроенность ключа определена в конструкторе: заголовок собран тогда и только
             // тогда, когда ключ требуется и задан. Повторное чтение настроек на каждый запрос
             // ничего не проверяет заново.
@@ -143,6 +152,7 @@ namespace ProjectTraiding.Moex.Clients
                     "MOEX ALGOPACK API key is not configured. Set MoexAlg:Key via user-secrets or environment variable.");
 
             HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
+            request.Options.Set(FlowOptionKey, flow);
             if (_authorizationHeader is not null)
                 request.Headers.Add("Authorization", _authorizationHeader);
 

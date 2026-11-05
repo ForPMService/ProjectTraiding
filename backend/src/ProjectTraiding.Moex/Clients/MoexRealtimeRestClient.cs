@@ -142,7 +142,8 @@ namespace ProjectTraiding.Moex.Clients
 
             string endpoint = BuildEndpoint(market, ticker, "/trades.json");
             using HttpResponseMessage response =
-                await _transport.SendAsync(endpoint, queryParams, cancellationToken);
+                await _transport.SendAsync(
+                    endpoint, queryParams, cancellationToken, MoexFlows.Realtime);
             using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
                 response, _options.BodyReadTimeout, endpoint, cancellationToken);
             try
@@ -167,7 +168,8 @@ namespace ProjectTraiding.Moex.Clients
             MoexRealtimeSpec spec = MoexRealtimeRegistry.Orderbook;
             string endpoint = BuildEndpoint(market, ticker, "/orderbook.json");
             using HttpResponseMessage response =
-                await _transport.SendAsync(endpoint, OrderbookQueryParams, cancellationToken);
+                await _transport.SendAsync(
+                    endpoint, OrderbookQueryParams, cancellationToken, MoexFlows.Realtime);
             using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
                 response, _options.BodyReadTimeout, endpoint, cancellationToken);
             try
@@ -232,7 +234,8 @@ namespace ProjectTraiding.Moex.Clients
                     queryParams["start"] = start.ToString(CultureInfo.InvariantCulture);
 
                 using HttpResponseMessage response =
-                    await _transport.SendAsync(endpoint, queryParams, cancellationToken);
+                    await _transport.SendAsync(
+                        endpoint, queryParams, cancellationToken, MoexFlows.Realtime);
                 using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
                     response, _options.BodyReadTimeout, endpoint, cancellationToken);
 
@@ -283,7 +286,7 @@ namespace ProjectTraiding.Moex.Clients
             CancellationToken cancellationToken = default)
         {
             using var response = await _transport.SendAsync(
-                method, queryParams, cancellationToken);
+                method, queryParams, cancellationToken, MoexFlows.History);
             using var rentedArr = await RentedBuffer.RentFromResponseAsync(
                 response, _options.BodyReadTimeout, method, cancellationToken);
             return Encoding.UTF8.GetString(rentedArr.Span);
