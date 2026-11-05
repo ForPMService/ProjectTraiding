@@ -1,17 +1,16 @@
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
-using System.Diagnostics;
+using System.Threading.RateLimiting;
 
 namespace ProjectTraiding.Moex.Clients;
 
 /// <summary>
-/// Один общий токеновый бюджет MOEX с FIFO-очередями, в которых realtime обслуживается
-/// раньше history. Выдача жетона и выбор очереди сериализованы одним lock, в том числе
-/// для синхронной быстрой попытки.
+/// Держит ограниченные FIFO-очереди MOEX и выбирает запрос после получения общего жетона.
+/// Асинхронный жетон ожидает только диспетчер; быстрый путь использует тот же limiter под _gate.
 /// </summary>
-public sealed class MoexPriorityRateLimiter : IDisposable
+public sealed class MoexPriorityRateLimiter : IAsyncDisposable
 {
     private readonly object _gate = new();
-    private readonly int _permitLimit;
+    private readonly RateLimiter _rateLimiter;
     private readonly int _queueLimit;
     private readonly LinkedList<PendingRequest> _realtimeQueue = new();
     private readonly LinkedList<PendingRequest> _historyQueue = new();
@@ -19,121 +18,87 @@ public sealed class MoexPriorityRateLimiter : IDisposable
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Task _dispatcherTask;
 
-    private int _availablePermits;
-    private long _nextReplenishmentTimestamp;
+    private CancellationTokenSource? _permitAcquireCancellation;
+    private Exception? _dispatcherFailure;
+    private TaskCompletionSource<bool>? _disposeCompletion;
     private bool _disposed;
 
-    public MoexPriorityRateLimiter(int permitsPerSecond, int queueLimit)
+    public MoexPriorityRateLimiter(RateLimiter rateLimiter, int queueLimit)
     {
-        if (permitsPerSecond <= 0)
-            throw new ArgumentOutOfRangeException(nameof(permitsPerSecond));
+        ArgumentNullException.ThrowIfNull(rateLimiter);
         if (queueLimit < 0)
             throw new ArgumentOutOfRangeException(nameof(queueLimit));
 
-        _permitLimit = permitsPerSecond;
-        _availablePermits = permitsPerSecond;
+        _rateLimiter = rateLimiter;
         _queueLimit = queueLimit;
-        _nextReplenishmentTimestamp = Stopwatch.GetTimestamp() + Stopwatch.Frequency;
         _dispatcherTask = RunDispatcherAsync(_shutdown.Token);
     }
 
-    /// <summary>Пробует взять жетон, не ожидая. Ожидающие запросы сохраняют приоритет.</summary>
+    /// <summary>
+    /// Быстрый путь работает только при пустой предметной очереди и без ожидающего
+    /// разрешения диспетчера. Это не даёт History обойти уже ожидающий Realtime.
+    /// </summary>
     public bool AttemptAcquire(string flow)
     {
-        List<PendingCompletion>? completions = null;
-        bool acquired;
-        bool hasPendingRequests;
-
         lock (_gate)
         {
-            ThrowIfDisposed();
-            ReplenishLocked(Stopwatch.GetTimestamp());
+            ThrowIfUnavailable();
+            if (HasPendingRequestsLocked() || _permitAcquireCancellation is not null)
+                return false;
 
-            if (flow == MoexFlows.Realtime)
-            {
-                DispatchQueueLocked(_realtimeQueue, ref completions);
-                acquired = TryConsumePermitLocked();
-                if (_availablePermits > 0)
-                    DispatchAllQueuesLocked(ref completions);
-            }
-            else
-            {
-                DispatchAllQueuesLocked(ref completions);
-                acquired = _realtimeQueue.Count == 0
-                    && _historyQueue.Count == 0
-                    && TryConsumePermitLocked();
-            }
-
-            hasPendingRequests = HasPendingRequestsLocked();
+            using RateLimitLease lease = _rateLimiter.AttemptAcquire(permitCount: 1);
+            return lease.IsAcquired;
         }
-
-        Complete(completions);
-        if (hasPendingRequests)
-            WakeDispatcher();
-        return acquired;
     }
 
     /// <summary>
-    /// Берёт жетон либо ждёт его в ограниченной очереди. Отмена снимает запрос с очереди.
+    /// Берёт жетон сразу либо ставит запрос во внешнюю приоритетную очередь.
+    /// При заполнении History вытесняется её последний ожидающий запрос для Realtime.
     /// </summary>
     public ValueTask<bool> AcquireAsync(string flow, CancellationToken cancellationToken)
     {
         if (cancellationToken.IsCancellationRequested)
             return ValueTask.FromCanceled<bool>(cancellationToken);
 
-        List<PendingCompletion>? completions = null;
+        bool isRealtime = flow == MoexFlows.Realtime;
         PendingRequest? pendingRequest = null;
-        bool acquired;
-        bool queueFull = false;
-        bool hasPendingRequests;
+        PendingRequest? displacedHistory = null;
 
         lock (_gate)
         {
-            ThrowIfDisposed();
-            ReplenishLocked(Stopwatch.GetTimestamp());
-
-            if (flow == MoexFlows.Realtime)
+            ThrowIfUnavailable();
+            if (!HasPendingRequestsLocked() && _permitAcquireCancellation is null)
             {
-                DispatchQueueLocked(_realtimeQueue, ref completions);
-                acquired = TryConsumePermitLocked();
-                if (!acquired)
-                    pendingRequest = QueueRequestLocked(_realtimeQueue, cancellationToken);
-                if (_availablePermits > 0)
-                    DispatchAllQueuesLocked(ref completions);
-            }
-            else
-            {
-                DispatchAllQueuesLocked(ref completions);
-                acquired = _realtimeQueue.Count == 0
-                    && _historyQueue.Count == 0
-                    && TryConsumePermitLocked();
-                if (!acquired)
-                    pendingRequest = QueueRequestLocked(_historyQueue, cancellationToken);
+                using RateLimitLease lease = _rateLimiter.AttemptAcquire(permitCount: 1);
+                if (lease.IsAcquired)
+                    return ValueTask.FromResult(true);
             }
 
-            queueFull = !acquired && pendingRequest is null;
-            hasPendingRequests = HasPendingRequestsLocked();
+            if (QueuedCountLocked() >= _queueLimit)
+            {
+                if (!isRealtime || _historyQueue.Last is null)
+                    return ValueTask.FromResult(false);
+
+                displacedHistory = RemoveLastLocked(_historyQueue);
+            }
+
+            LinkedList<PendingRequest> queue = isRealtime
+                ? _realtimeQueue
+                : _historyQueue;
+            pendingRequest = EnqueueLocked(queue, cancellationToken);
         }
 
-        Complete(completions);
-        if (hasPendingRequests)
-            WakeDispatcher();
+        if (displacedHistory is not null)
+            CompleteQueueFull(displacedHistory);
 
-        if (acquired)
-            return ValueTask.FromResult(true);
-        if (queueFull)
-            return ValueTask.FromResult(false);
-
-        return new ValueTask<bool>(pendingRequest!.Completion.Task);
+        WakeDispatcher();
+        return new ValueTask<bool>(pendingRequest.Completion.Task);
     }
 
-    private PendingRequest? QueueRequestLocked(
+    private PendingRequest EnqueueLocked(
         LinkedList<PendingRequest> queue,
         CancellationToken cancellationToken)
     {
-        if (_realtimeQueue.Count + _historyQueue.Count >= _queueLimit)
-            return null;
-
         PendingRequest pendingRequest = new(this, cancellationToken);
         pendingRequest.Node = queue.AddLast(pendingRequest);
         pendingRequest.CancellationRegistration = cancellationToken.Register(
@@ -143,12 +108,18 @@ public sealed class MoexPriorityRateLimiter : IDisposable
                 request.Owner.CancelPendingRequest(request);
             },
             pendingRequest);
+
+        if (pendingRequest.Node is null)
+            pendingRequest.CancellationRegistration.Unregister();
+
         return pendingRequest;
     }
 
     private void CancelPendingRequest(PendingRequest pendingRequest)
     {
         bool removed;
+        CancellationTokenSource? permitAcquireCancellation = null;
+
         lock (_gate)
         {
             removed = pendingRequest.Node is not null;
@@ -157,117 +128,166 @@ public sealed class MoexPriorityRateLimiter : IDisposable
                 pendingRequest.Node.List?.Remove(pendingRequest.Node);
                 pendingRequest.Node = null;
             }
+
+            if (removed && !HasPendingRequestsLocked())
+                permitAcquireCancellation = _permitAcquireCancellation;
         }
 
-        if (removed)
-        {
-            pendingRequest.Completion.TrySetCanceled(pendingRequest.CancellationToken);
-            WakeDispatcher();
-        }
+        if (!removed)
+            return;
+
+        pendingRequest.Completion.TrySetCanceled(pendingRequest.CancellationToken);
+        pendingRequest.CancellationRegistration.Unregister();
+        CancelSafely(permitAcquireCancellation);
+        WakeDispatcher();
     }
 
-    private async Task RunDispatcherAsync(CancellationToken cancellationToken)
+    private async Task RunDispatcherAsync(CancellationToken shutdownToken)
     {
         try
         {
             while (true)
             {
-                List<PendingCompletion>? completions = null;
-                TimeSpan nextWait;
-                lock (_gate)
-                {
-                    if (_disposed)
-                        return;
+                await _wakeDispatcher.WaitAsync(shutdownToken).ConfigureAwait(false);
 
-                    ReplenishLocked(Stopwatch.GetTimestamp());
-                    DispatchAllQueuesLocked(ref completions);
-                    nextWait = HasPendingRequestsLocked()
-                        ? GetTimeToReplenishmentLocked()
-                        : Timeout.InfiniteTimeSpan;
-                }
-
-                Complete(completions);
-
-                if (nextWait == Timeout.InfiniteTimeSpan)
+                while (true)
                 {
-                    await _wakeDispatcher.WaitAsync(cancellationToken);
-                }
-                else
-                {
-                    await _wakeDispatcher.WaitAsync(nextWait, cancellationToken);
+                    CancellationTokenSource permitAcquireCancellation;
+                    lock (_gate)
+                    {
+                        if (_disposed)
+                            return;
+                        if (!HasPendingRequestsLocked())
+                            break;
+
+                        permitAcquireCancellation =
+                            CancellationTokenSource.CreateLinkedTokenSource(shutdownToken);
+                        _permitAcquireCancellation = permitAcquireCancellation;
+                    }
+
+                    try
+                    {
+                        using RateLimitLease lease = await _rateLimiter.AcquireAsync(
+                            permitCount: 1,
+                            cancellationToken: permitAcquireCancellation.Token).ConfigureAwait(false);
+
+                        if (!lease.IsAcquired)
+                        {
+                            throw new InvalidOperationException(
+                                "MOEX rate limiter rejected its single dispatcher waiter.");
+                        }
+
+                        PendingRequest? selectedRequest = null;
+                        List<PendingRequest>? cancelledRequests = null;
+                        lock (_gate)
+                        {
+                            ClearPermitAcquireCancellationLocked(permitAcquireCancellation);
+                            if (!_disposed)
+                            {
+                                selectedRequest = TakeNextPendingLocked(ref cancelledRequests);
+                            }
+                        }
+
+                        CompleteCancelled(cancelledRequests);
+                        if (selectedRequest is not null)
+                        {
+                            selectedRequest.CancellationRegistration.Unregister();
+                            selectedRequest.Completion.TrySetResult(true);
+                        }
+                    }
+                    catch (OperationCanceledException) when (
+                        !shutdownToken.IsCancellationRequested
+                        && permitAcquireCancellation.IsCancellationRequested)
+                    {
+                        // Все внешние ожидания отменились; не держим лишний внутренний waiter.
+                    }
+                    finally
+                    {
+                        lock (_gate)
+                            ClearPermitAcquireCancellationLocked(permitAcquireCancellation);
+                        permitAcquireCancellation.Dispose();
+                    }
                 }
             }
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
         {
-            // Disposal stops the sole dispatcher after queued requests are completed.
+            // Штатное завершение: DisposeAsync отменяет внутреннее ожидание и ждёт этот цикл.
+        }
+        catch (Exception exception)
+        {
+            FailPendingRequests(exception);
+            throw;
         }
     }
 
-    private void DispatchAllQueuesLocked(ref List<PendingCompletion>? completions)
+    private PendingRequest? TakeNextPendingLocked(
+        ref List<PendingRequest>? cancelledRequests)
     {
-        DispatchQueueLocked(_realtimeQueue, ref completions);
-        DispatchQueueLocked(_historyQueue, ref completions);
-    }
-
-    private void DispatchQueueLocked(
-        LinkedList<PendingRequest> queue,
-        ref List<PendingCompletion>? completions)
-    {
-        while (_availablePermits > 0 && queue.First is not null)
+        while (_realtimeQueue.Count > 0 || _historyQueue.Count > 0)
         {
-            PendingRequest pendingRequest = queue.First.Value;
+            LinkedList<PendingRequest> queue = _realtimeQueue.Count > 0
+                ? _realtimeQueue
+                : _historyQueue;
+            PendingRequest pendingRequest = queue.First!.Value;
             queue.RemoveFirst();
             pendingRequest.Node = null;
 
             if (pendingRequest.CancellationToken.IsCancellationRequested)
             {
-                AddCompletion(
-                    ref completions,
-                    new PendingCompletion(pendingRequest, Acquired: false));
+                (cancelledRequests ??= new List<PendingRequest>()).Add(pendingRequest);
                 continue;
             }
 
-            _availablePermits--;
-            AddCompletion(
-                ref completions,
-                new PendingCompletion(pendingRequest, Acquired: true));
+            return pendingRequest;
+        }
+
+        return null;
+    }
+
+    private PendingRequest RemoveLastLocked(LinkedList<PendingRequest> queue)
+    {
+        PendingRequest pendingRequest = queue.Last!.Value;
+        queue.RemoveLast();
+        pendingRequest.Node = null;
+        return pendingRequest;
+    }
+
+    private void FailPendingRequests(Exception exception)
+    {
+        List<PendingRequest>? pendingRequests = null;
+        CancellationTokenSource? permitAcquireCancellation;
+
+        lock (_gate)
+        {
+            _dispatcherFailure = exception;
+            MoveQueuedRequestsLocked(_realtimeQueue, ref pendingRequests);
+            MoveQueuedRequestsLocked(_historyQueue, ref pendingRequests);
+            permitAcquireCancellation = _permitAcquireCancellation;
+        }
+
+        CancelSafely(permitAcquireCancellation);
+        if (pendingRequests is null)
+            return;
+
+        foreach (PendingRequest pendingRequest in pendingRequests)
+        {
+            pendingRequest.CancellationRegistration.Unregister();
+            pendingRequest.Completion.TrySetException(exception);
         }
     }
 
-    private void ReplenishLocked(long timestamp)
+    private void ThrowIfUnavailable()
     {
-        if (timestamp < _nextReplenishmentTimestamp)
-            return;
-
-        long elapsedPeriods =
-            (timestamp - _nextReplenishmentTimestamp) / Stopwatch.Frequency + 1;
-        long replenishedPermits = elapsedPeriods * _permitLimit;
-        _availablePermits = (int)Math.Min(
-            _permitLimit,
-            _availablePermits + replenishedPermits);
-        _nextReplenishmentTimestamp += elapsedPeriods * Stopwatch.Frequency;
+        if (_disposed)
+            throw new ObjectDisposedException(nameof(MoexPriorityRateLimiter));
+        if (_dispatcherFailure is not null)
+        {
+            throw new InvalidOperationException(
+                "MOEX priority dispatcher stopped after an unexpected failure.",
+                _dispatcherFailure);
+        }
     }
-
-    private TimeSpan GetTimeToReplenishmentLocked()
-    {
-        long remainingTicks = _nextReplenishmentTimestamp - Stopwatch.GetTimestamp();
-        return remainingTicks <= 0
-            ? TimeSpan.Zero
-            : TimeSpan.FromSeconds((double)remainingTicks / Stopwatch.Frequency);
-    }
-
-    private bool TryConsumePermitLocked()
-    {
-        if (_availablePermits == 0)
-            return false;
-
-        _availablePermits--;
-        return true;
-    }
-
-    private bool HasPendingRequestsLocked()
-        => _realtimeQueue.Count > 0 || _historyQueue.Count > 0;
 
     private void WakeDispatcher()
     {
@@ -277,75 +297,58 @@ public sealed class MoexPriorityRateLimiter : IDisposable
         }
         catch (SemaphoreFullException)
         {
-            // One pending signal is enough; the dispatcher reads all queue state under _gate.
+            // One signal is enough; the dispatcher checks both queues under _gate.
         }
         catch (ObjectDisposedException)
         {
-            // A cancellation callback can finish after service disposal begins.
+            // A cancellation callback can finish after asynchronous disposal begins.
         }
     }
 
-    private static void AddCompletion(
-        ref List<PendingCompletion>? completions,
-        PendingCompletion completion)
+    private static void CompleteQueueFull(PendingRequest pendingRequest)
     {
-        completions ??= new List<PendingCompletion>();
-        completions.Add(completion);
+        pendingRequest.CancellationRegistration.Unregister();
+        pendingRequest.Completion.TrySetResult(false);
     }
 
-    private static void Complete(List<PendingCompletion>? completions)
+    private static void CompleteCancelled(List<PendingRequest>? pendingRequests)
     {
-        if (completions is null)
+        if (pendingRequests is null)
             return;
 
-        foreach (PendingCompletion completion in completions)
+        foreach (PendingRequest pendingRequest in pendingRequests)
         {
-            PendingRequest pendingRequest = completion.Request;
             pendingRequest.CancellationRegistration.Unregister();
-            if (completion.Acquired)
-                pendingRequest.Completion.TrySetResult(true);
-            else
-                pendingRequest.Completion.TrySetCanceled(pendingRequest.CancellationToken);
+            pendingRequest.Completion.TrySetCanceled(pendingRequest.CancellationToken);
         }
     }
 
-    private void ThrowIfDisposed()
+    private static void CompleteDisposed(List<PendingRequest>? pendingRequests)
     {
-        if (_disposed)
-            throw new ObjectDisposedException(nameof(MoexPriorityRateLimiter));
+        if (pendingRequests is null)
+            return;
+
+        foreach (PendingRequest pendingRequest in pendingRequests)
+        {
+            pendingRequest.CancellationRegistration.Unregister();
+            pendingRequest.Completion.TrySetException(
+                new ObjectDisposedException(nameof(MoexPriorityRateLimiter)));
+        }
     }
 
-    public void Dispose()
+    private bool HasPendingRequestsLocked()
+        => _realtimeQueue.Count > 0 || _historyQueue.Count > 0;
+
+    private int QueuedCountLocked()
+        => _realtimeQueue.Count + _historyQueue.Count;
+
+    private void ClearPermitAcquireCancellationLocked(CancellationTokenSource cancellation)
     {
-        List<PendingRequest>? pendingRequests = null;
-        lock (_gate)
-        {
-            if (_disposed)
-                return;
-
-            _disposed = true;
-            MoveToDisposalListLocked(_realtimeQueue, ref pendingRequests);
-            MoveToDisposalListLocked(_historyQueue, ref pendingRequests);
-        }
-
-        _shutdown.Cancel();
-        WakeDispatcher();
-        if (pendingRequests is not null)
-        {
-            foreach (PendingRequest pendingRequest in pendingRequests)
-            {
-                pendingRequest.CancellationRegistration.Unregister();
-                pendingRequest.Completion.TrySetException(
-                    new ObjectDisposedException(nameof(MoexPriorityRateLimiter)));
-            }
-        }
-
-        _dispatcherTask.GetAwaiter().GetResult();
-        _wakeDispatcher.Dispose();
-        _shutdown.Dispose();
+        if (ReferenceEquals(_permitAcquireCancellation, cancellation))
+            _permitAcquireCancellation = null;
     }
 
-    private static void MoveToDisposalListLocked(
+    private static void MoveQueuedRequestsLocked(
         LinkedList<PendingRequest> queue,
         ref List<PendingRequest>? pendingRequests)
     {
@@ -356,6 +359,96 @@ public sealed class MoexPriorityRateLimiter : IDisposable
             pendingRequest.Node = null;
             (pendingRequests ??= new List<PendingRequest>()).Add(pendingRequest);
         }
+    }
+
+    private static Exception? CancelSafely(CancellationTokenSource? cancellation)
+    {
+        if (cancellation is null)
+            return null;
+
+        try
+        {
+            cancellation.Cancel();
+            return null;
+        }
+        catch (Exception exception)
+        {
+            return exception;
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        List<PendingRequest>? pendingRequests = null;
+        CancellationTokenSource? permitAcquireCancellation;
+        TaskCompletionSource<bool> completion;
+
+        lock (_gate)
+        {
+            if (_disposeCompletion is not null)
+                return new ValueTask(_disposeCompletion.Task);
+
+            completion = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            _disposeCompletion = completion;
+            _disposed = true;
+            MoveQueuedRequestsLocked(_realtimeQueue, ref pendingRequests);
+            MoveQueuedRequestsLocked(_historyQueue, ref pendingRequests);
+            permitAcquireCancellation = _permitAcquireCancellation;
+        }
+
+        Exception? cancellationFailure = CancelSafely(permitAcquireCancellation);
+        try
+        {
+            _shutdown.Cancel();
+        }
+        catch (Exception exception)
+        {
+            cancellationFailure ??= exception;
+        }
+
+        CompleteDisposed(pendingRequests);
+        WakeDispatcher();
+        _ = FinishDisposalAsync(completion, cancellationFailure);
+        return new ValueTask(completion.Task);
+    }
+
+    private async Task FinishDisposalAsync(
+        TaskCompletionSource<bool> completion,
+        Exception? initialFailure)
+    {
+        Exception? failure = initialFailure;
+        try
+        {
+            await _dispatcherTask.ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            failure ??= exception;
+        }
+
+        try
+        {
+            _wakeDispatcher.Dispose();
+        }
+        catch (Exception exception)
+        {
+            failure ??= exception;
+        }
+
+        try
+        {
+            _shutdown.Dispose();
+        }
+        catch (Exception exception)
+        {
+            failure ??= exception;
+        }
+
+        if (failure is null)
+            completion.TrySetResult(true);
+        else
+            completion.TrySetException(failure);
     }
 
     private sealed class PendingRequest
@@ -376,6 +469,4 @@ public sealed class MoexPriorityRateLimiter : IDisposable
         public LinkedListNode<PendingRequest>? Node { get; set; }
         public CancellationTokenRegistration CancellationRegistration { get; set; }
     }
-
-    private readonly record struct PendingCompletion(PendingRequest Request, bool Acquired);
 }

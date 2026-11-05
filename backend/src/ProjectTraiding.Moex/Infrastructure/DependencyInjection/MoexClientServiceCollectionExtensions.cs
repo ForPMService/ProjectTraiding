@@ -48,16 +48,26 @@ public static class MoexClientServiceCollectionExtensions
             LoadCertificateSet(certificatesDirectory, "Roots", ExpectedRootHashes),
             LoadCertificateSet(certificatesDirectory, "Intermediates", ExpectedIntermediateHashes));
         // ══════════════════════════════════════════════
-        // Приоритетный диспетчер — один на все MOEX-клиенты.
-        // Лимит MOEX на IP, не на endpoint, поэтому один общий бюджет на процесс.
+        // Один TokenBucketRateLimiter держит общий бюджет на процесс. Диспетчер допускает
+        // не более одного незавершённого AcquireAsync; быстрый AttemptAcquire проходит
+        // через тот же диспетчер. Внутренняя очередь ограничена одним запросом.
         // ══════════════════════════════════════════════
-        services.AddSingleton<MoexPriorityRateLimiter>(sp =>
+        services.AddSingleton<RateLimiter>(sp =>
         {
             MoexOptions options = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
-            return new MoexPriorityRateLimiter(
-                options.MaxRequestsPerSecond,
-                options.RateLimitQueueLimit);
+            return new TokenBucketRateLimiter(new TokenBucketRateLimiterOptions
+            {
+                TokenLimit = options.MaxRequestsPerSecond,
+                TokensPerPeriod = options.MaxRequestsPerSecond,
+                ReplenishmentPeriod = TimeSpan.FromSeconds(1),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 1,
+            });
         });
+        services.AddSingleton<MoexPriorityRateLimiter>(sp =>
+            new MoexPriorityRateLimiter(
+                sp.GetRequiredService<RateLimiter>(),
+                sp.GetRequiredService<IOptions<MoexOptions>>().Value.RateLimitQueueLimit));
 
         AddMoexHttpClient<MoexHttpIssClient>(services, moexOptions, MoexLogSources.Iss, nucTrust: null);
         AddMoexHttpClient<MoexHttpAlgClient>(services, moexOptions, MoexLogSources.Algopack, nucTrust);
