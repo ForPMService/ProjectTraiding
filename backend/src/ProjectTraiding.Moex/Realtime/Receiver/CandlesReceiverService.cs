@@ -332,7 +332,10 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     if (!IsClosedCandle(interval, beginValue, endValue, newestBegin, now))
                         continue;
 
-                    if (hasLastClosedBegin && beginValue <= lastClosedBegin)
+                    if (hasLastClosedBegin &&
+                        (interval == 24
+                            ? beginValue < lastClosedBegin
+                            : beginValue <= lastClosedBegin))
                         continue;
 
                     closed.Add(candles.Rows[i].Row);
@@ -413,7 +416,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             {
                 10 => TimeSpan.FromMinutes(1),
                 60 => TimeSpan.FromMinutes(5),
-                24 => TimeSpan.FromMinutes(30),
+                24 => TimeSpan.FromMinutes(10),
                 _ => throw new InvalidOperationException(
                     $"Неизвестный интервал свечей приёма: {interval}."),
             };
@@ -448,25 +451,15 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             if (interval == 1)
                 return begin.AddMinutes(1) <= now;
 
+            if (interval == 24)
+                return begin <= now;
+
             if (end is not null && end.Value > now)
                 return false;
 
             bool hasNewerCandle = newestBegin is not null
                 && newestBegin.Value > begin
                 && newestBegin.Value <= now;
-
-            if (interval == 24)
-            {
-                // Код 24 задаёт однодневный интервал. Свеча закрывается только после его окончания,
-                // вычисленного от begin, или после появления свечи следующей торговой даты.
-                // Поле end — временная метка/граница ответа, но не отдельный признак закрытия:
-                // у текущей дневной строки оно может отражать последнее обновление внутри
-                // периода.
-                return begin.AddDays(1) <= now
-                    || (hasNewerCandle
-                        && newestBegin.HasValue
-                        && newestBegin.Value.Date > begin.Date);
-            }
 
             TimeSpan duration = interval switch
             {
