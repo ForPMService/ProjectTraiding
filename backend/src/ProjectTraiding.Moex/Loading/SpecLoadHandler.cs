@@ -1,4 +1,5 @@
 using ProjectTraiding.Moex.Clients;
+using ProjectTraiding.Moex.Infrastructure;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Series;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
@@ -59,6 +60,19 @@ public sealed class SpecLoadHandler
         MoexSeriesSpec spec = FindSpec(task)
             ?? throw new InvalidOperationException(
                 $"Нет обработчика для задачи {task.Id} (data_kind={task.DataKind}, market={task.Market}, interval={task.CandleInterval}).");
+
+        if (spec.DataKind == "candles")
+        {
+            DateOnly today = MoexTime.Today;
+            if (task.DateFrom <= today && task.DateTill >= today)
+            {
+                throw new InvalidOperationException(
+                    $"Историческая загрузка свечей для диапазона " +
+                    $"{task.DateFrom:yyyy-MM-dd}—{task.DateTill:yyyy-MM-dd} запрещена: " +
+                    $"он включает текущую московскую дату {today:yyyy-MM-dd}, " +
+                    "которую обслуживает приёмник реального времени.");
+            }
+        }
 
         // Повторная загрузка сначала удаляет полный диапазон, затем записывает его заново.
         await _rangeDeleter.DeleteAsync(
