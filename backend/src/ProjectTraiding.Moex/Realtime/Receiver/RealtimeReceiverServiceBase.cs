@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.StorageBase.Postgres;
+using System.Diagnostics;
 
 namespace ProjectTraiding.Moex.Realtime.Receiver
 {
@@ -59,6 +60,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 // и в простое такие отрезки составляли весь поток трасс службы.
                 while (!stoppingToken.IsCancellationRequested)
                 {
+                    long turnStart = Stopwatch.GetTimestamp();
                     try
                     {
                         await RunTurnAsync(stoppingToken);
@@ -72,9 +74,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         LogTurnFailed(ex);
                     }
 
+                    TimeSpan turnElapsed = Stopwatch.GetElapsedTime(turnStart);
+                    TimeSpan delayAfterTurn = GetDelayAfterTurn(turnElapsed, _pollInterval);
+                    if (delayAfterTurn <= TimeSpan.Zero)
+                        continue;
+
                     try
                     {
-                        await Task.Delay(_pollInterval, stoppingToken);
+                        await Task.Delay(delayAfterTurn, stoppingToken);
                     }
                     catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                     {
@@ -92,6 +99,13 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
         /// <summary>Один оборот приёма. Вся предметная механика — здесь.</summary>
         protected abstract Task RunTurnAsync(CancellationToken ct);
+
+        /// <summary>
+        /// Пауза после оборота. По умолчанию сохраняет прежний интервал после завершения;
+        /// приёмник свечей может учитывать длительность оборота для планирования начала следующего.
+        /// </summary>
+        protected virtual TimeSpan GetDelayAfterTurn(TimeSpan turnElapsed, TimeSpan pollInterval)
+            => pollInterval;
 
         /// <summary>
         /// Вид данных приёма: "trades", "orderbook" или "candles". Одно значение служит

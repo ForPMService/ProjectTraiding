@@ -113,6 +113,11 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             Message = "Candles receiver turn failed unexpectedly.")]
         public static partial void CandlesTurnFailed(ILogger logger, Exception exception);
 
+        [LoggerMessage(EventId = 489, EventName = "MoexCandlesReceiverTurnOverrun", Level = LogLevel.Warning,
+            Message = "Candles receiver turn exceeded target interval: elapsed={Elapsed}, target={TargetInterval}.")]
+        public static partial void CandlesTurnOverrun(
+            ILogger logger, TimeSpan elapsed, TimeSpan targetInterval);
+
         [LoggerMessage(EventId = 480, EventName = "MoexCandlesReceiverInstrumentFetchTimedOut", Level = LogLevel.Warning,
             Message = "Candles receiver instrument fetch timed out: secid={Secid}, market={Market}, interval={CandleInterval}, budget={Budget}.")]
         public static partial void CandlesInstrumentFetchTimedOut(
