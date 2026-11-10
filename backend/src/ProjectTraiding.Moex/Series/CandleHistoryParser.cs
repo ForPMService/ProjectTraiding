@@ -259,7 +259,8 @@ public static class CandleHistoryParser
                 ref reader, rowIndex, columnIndex, RootKey);
             if (required && value is null)
                 rowError ??= "Свеча отвергнута: begin имеет неверный формат времени.";
-           
+            else if (!required && value is null)
+                rowError ??= "Свеча отвергнута: end имеет неверный формат времени.";
 
             return value;
         }
