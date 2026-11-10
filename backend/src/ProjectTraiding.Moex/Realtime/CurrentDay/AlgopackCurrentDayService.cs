@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using System.Buffers;
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Infrastructure;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
@@ -19,6 +20,15 @@ namespace ProjectTraiding.Moex.Realtime.CurrentDay;
 /// </summary>
 public sealed class AlgopackCurrentDayService : BackgroundService
 {
+    private delegate IAsyncEnumerable<TradeStatsParsedPage<TRow>> TradeStatsPagesReader<TRow>(
+        MoexSeriesSpec spec,
+        string secId,
+        DateOnly from,
+        DateOnly till,
+        MoexOperationTags operationTags,
+        CancellationToken cancellationToken)
+        where TRow : struct;
+
     private const string StockMarket = "stock";
     private const string FuturesMarket = "futures";
     private const string StockBoardId = "TQBR";
@@ -311,65 +321,102 @@ public sealed class AlgopackCurrentDayService : BackgroundService
 
         try
         {
-            List<SeriesParsedPage> fetchedPages = [];
-            Exception? fetchFailure = null;
-            using (CancellationTokenSource fetchCts =
-                   CancellationTokenSource.CreateLinkedTokenSource(ct))
+            if (spec.DataKind == "tradestats" && market == StockMarket)
             {
-                fetchCts.CancelAfter(_instrumentFetchTimeout);
-                try
-                {
-                    IAsyncEnumerable<SeriesParsedPage> pages = _pageReader.ReadPages(
-                        spec,
-                        secid,
-                        boardId,
-                        today,
-                        today,
-                        operationTags,
-                        fetchCts.Token);
-                    await foreach (SeriesParsedPage page in pages.WithCancellation(fetchCts.Token))
-                        fetchedPages.Add(page);
-                }
-                catch (OperationCanceledException)
-                    when (!ct.IsCancellationRequested && fetchCts.IsCancellationRequested)
-                {
-                    AlgopackCurrentDayLogMessages.InstrumentFetchTimedOut(
-                        _logger, secid, market, spec.DataKind, _instrumentFetchTimeout);
-                    fetchFailure = new TimeoutException("Не все страницы ALGOPACK получены до истечения времени.");
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
-                {
-                    fetchFailure = ex;
-                }
-            }
-
-            TailFilterState filterState = new();
-            IAsyncEnumerable<SeriesParsedPage> filteredPages = FilterPages(
-                EnumeratePages(fetchedPages, ct), lastSourceTime, filterState, ct);
-            await _historyWriter.WriteRangeAsync(
-                spec,
-                secid,
-                filteredPages,
-                insertContext,
-                ct);
-
-            if (fetchFailure is null && !filterState.Incomplete && filterState.MaxSourceTime is DateTime maxSourceTime)
-            {
-                await _cursorWriter.UpsertAsync(
+                await ProcessTradeStatsInstrumentAsync(
+                    spec,
                     secid,
                     market,
                     boardId,
-                    spec.DataKind,
-                    spec.CandleInterval,
-                    maxSourceTime,
-                    lastTradeNo: null,
+                    today,
+                    lastSourceTime,
+                    _pageReader.ReadTradeStatsStockPages,
+                    TradeStatsStockProtobufSchema.Definition,
+                    TradeStatsStockProtobufSchema.MessageName,
+                    TradeStatsProtobufBatchWriter.AppendStock,
+                    insertContext,
+                    operationTags,
                     ct);
             }
+            else if (spec.DataKind == "tradestats" && market == FuturesMarket)
+            {
+                await ProcessTradeStatsInstrumentAsync(
+                    spec,
+                    secid,
+                    market,
+                    boardId,
+                    today,
+                    lastSourceTime,
+                    _pageReader.ReadTradeStatsFuturesPages,
+                    TradeStatsFuturesProtobufSchema.Definition,
+                    TradeStatsFuturesProtobufSchema.MessageName,
+                    TradeStatsProtobufBatchWriter.AppendFutures,
+                    insertContext,
+                    operationTags,
+                    ct);
+            }
+            else
+            {
+                List<SeriesParsedPage> fetchedPages = [];
+                Exception? fetchFailure = null;
+                using (CancellationTokenSource fetchCts =
+                       CancellationTokenSource.CreateLinkedTokenSource(ct))
+                {
+                    fetchCts.CancelAfter(_instrumentFetchTimeout);
+                    try
+                    {
+                        IAsyncEnumerable<SeriesParsedPage> pages = _pageReader.ReadPages(
+                            spec,
+                            secid,
+                            boardId,
+                            today,
+                            today,
+                            operationTags,
+                            fetchCts.Token);
+                        await foreach (SeriesParsedPage page in pages.WithCancellation(fetchCts.Token))
+                            fetchedPages.Add(page);
+                    }
+                    catch (OperationCanceledException)
+                        when (!ct.IsCancellationRequested && fetchCts.IsCancellationRequested)
+                    {
+                        AlgopackCurrentDayLogMessages.InstrumentFetchTimedOut(
+                            _logger, secid, market, spec.DataKind, _instrumentFetchTimeout);
+                        fetchFailure = new TimeoutException(
+                            "Не все страницы ALGOPACK получены до истечения времени.");
+                    }
+                    catch (Exception ex)
+                        when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+                    {
+                        fetchFailure = ex;
+                    }
+                }
 
-            if (fetchFailure is not null)
-                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(fetchFailure).Throw();
-            if (filterState.Incomplete)
-                throw new InvalidOperationException("Данные ALGOPACK обработаны частично.");
+                TailFilterState filterState = new();
+                IAsyncEnumerable<SeriesParsedPage> filteredPages = FilterPages(
+                    EnumeratePages(fetchedPages, ct), lastSourceTime, filterState, ct);
+                await _historyWriter.WriteRangeAsync(
+                    spec, secid, filteredPages, insertContext, ct);
+
+                if (fetchFailure is null
+                    && !filterState.Incomplete
+                    && filterState.MaxSourceTime is DateTime maxSourceTime)
+                {
+                    await _cursorWriter.UpsertAsync(
+                        secid,
+                        market,
+                        boardId,
+                        spec.DataKind,
+                        spec.CandleInterval,
+                        maxSourceTime,
+                        lastTradeNo: null,
+                        ct);
+                }
+
+                if (fetchFailure is not null)
+                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(fetchFailure).Throw();
+                if (filterState.Incomplete)
+                    throw new InvalidOperationException("Данные ALGOPACK обработаны частично.");
+            }
 
             MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Success);
             pollActivity?.SetStatus(ActivityStatusCode.Ok);
@@ -386,6 +433,87 @@ public sealed class AlgopackCurrentDayService : BackgroundService
             MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
             throw;
         }
+    }
+
+    private async Task ProcessTradeStatsInstrumentAsync<TRow>(
+        MoexSeriesSpec spec,
+        string secid,
+        string market,
+        string boardId,
+        DateOnly today,
+        DateTime? lastSourceTime,
+        TradeStatsPagesReader<TRow> readPages,
+        string protobufSchema,
+        string messageName,
+        Action<IBufferWriter<byte>, TRow> appendRow,
+        StorageInsertContext insertContext,
+        MoexOperationTags operationTags,
+        CancellationToken ct)
+        where TRow : struct
+    {
+        List<TradeStatsParsedPage<TRow>> fetchedPages = [];
+        Exception? fetchFailure = null;
+        using (CancellationTokenSource fetchCts =
+               CancellationTokenSource.CreateLinkedTokenSource(ct))
+        {
+            fetchCts.CancelAfter(_instrumentFetchTimeout);
+            try
+            {
+                IAsyncEnumerable<TradeStatsParsedPage<TRow>> pages = readPages(
+                    spec, secid, today, today, operationTags, fetchCts.Token);
+                await foreach (TradeStatsParsedPage<TRow> page
+                               in pages.WithCancellation(fetchCts.Token))
+                {
+                    fetchedPages.Add(page);
+                }
+            }
+            catch (OperationCanceledException)
+                when (!ct.IsCancellationRequested && fetchCts.IsCancellationRequested)
+            {
+                AlgopackCurrentDayLogMessages.InstrumentFetchTimedOut(
+                    _logger, secid, market, spec.DataKind, _instrumentFetchTimeout);
+                fetchFailure = new TimeoutException(
+                    "Не все страницы ALGOPACK получены до истечения времени.");
+            }
+            catch (Exception ex)
+                when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+            {
+                fetchFailure = ex;
+            }
+        }
+
+        TailFilterState filterState = new();
+        IAsyncEnumerable<TradeStatsParsedPage<TRow>> filteredPages = FilterTradeStatsPages(
+            EnumerateTradeStatsPages(fetchedPages, ct), lastSourceTime, filterState, ct);
+        await _historyWriter.WriteTradeStatsRangeAsync(
+            spec,
+            secid,
+            filteredPages,
+            protobufSchema,
+            messageName,
+            appendRow,
+            insertContext,
+            ct);
+
+        if (fetchFailure is null
+            && !filterState.Incomplete
+            && filterState.MaxSourceTime is DateTime maxSourceTime)
+        {
+            await _cursorWriter.UpsertAsync(
+                secid,
+                market,
+                boardId,
+                spec.DataKind,
+                spec.CandleInterval,
+                maxSourceTime,
+                lastTradeNo: null,
+                ct);
+        }
+
+        if (fetchFailure is not null)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(fetchFailure).Throw();
+        if (filterState.Incomplete)
+            throw new InvalidOperationException("Данные ALGOPACK обработаны частично.");
     }
 
     private static async IAsyncEnumerable<SeriesParsedPage> FilterPages(
@@ -438,9 +566,75 @@ public sealed class AlgopackCurrentDayService : BackgroundService
         }
     }
 
+    private static async IAsyncEnumerable<TradeStatsParsedPage<TRow>> FilterTradeStatsPages<TRow>(
+        IAsyncEnumerable<TradeStatsParsedPage<TRow>> pages,
+        DateTime? lastSourceTime,
+        TailFilterState state,
+        [EnumeratorCancellation] CancellationToken ct)
+        where TRow : struct
+    {
+        await foreach (TradeStatsParsedPage<TRow> page in pages.WithCancellation(ct))
+        {
+            List<SkippedSourceRow>? relevantSkippedRows = null;
+            if (page.SkippedSourceRows is not null)
+            {
+                for (int i = 0; i < page.SkippedSourceRows.Count; i++)
+                {
+                    SkippedSourceRow skipped = page.SkippedSourceRows[i];
+                    bool knownBeforeCursor = lastSourceTime is DateTime cursorTime
+                        && skipped.Time is DateTime skippedTime
+                        && skippedTime < cursorTime;
+                    if (knownBeforeCursor)
+                        continue;
+
+                    state.Incomplete = true;
+                    (relevantSkippedRows ??= []).Add(skipped);
+                }
+            }
+
+            if (page.Failure is not null)
+                state.Incomplete = true;
+
+            List<(TRow Row, DateTime Time)> filteredRows = new(page.Rows.Count);
+            for (int i = 0; i < page.Rows.Count; i++)
+            {
+                (TRow row, DateTime time) = page.Rows[i];
+                if (lastSourceTime is DateTime cursorTime && time < cursorTime)
+                    continue;
+
+                filteredRows.Add((row, time));
+                if (state.MaxSourceTime is null || time > state.MaxSourceTime.Value)
+                    state.MaxSourceTime = time;
+            }
+
+            if (filteredRows.Count > 0 || relevantSkippedRows is not null || page.Failure is not null)
+            {
+                yield return new TradeStatsParsedPage<TRow>(
+                    filteredRows,
+                    filteredRows.Count + (relevantSkippedRows?.Count ?? 0),
+                    relevantSkippedRows,
+                    page.Failure);
+            }
+        }
+    }
+
     private static async IAsyncEnumerable<SeriesParsedPage> EnumeratePages(
         IReadOnlyList<SeriesParsedPage> pages,
         [EnumeratorCancellation] CancellationToken ct)
+    {
+        for (int i = 0; i < pages.Count; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+            yield return pages[i];
+        }
+
+        await Task.CompletedTask;
+    }
+
+    private static async IAsyncEnumerable<TradeStatsParsedPage<TRow>> EnumerateTradeStatsPages<TRow>(
+        IReadOnlyList<TradeStatsParsedPage<TRow>> pages,
+        [EnumeratorCancellation] CancellationToken ct)
+        where TRow : struct
     {
         for (int i = 0; i < pages.Count; i++)
         {

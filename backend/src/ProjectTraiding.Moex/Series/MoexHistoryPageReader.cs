@@ -9,6 +9,7 @@ using ProjectTraiding.Moex.Infrastructure.Buffers;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Parsing.Errors;
+using ProjectTraiding.Moex.StorageBase.ClickHouse;
 
 namespace ProjectTraiding.Moex.Series;
 
@@ -75,6 +76,129 @@ public sealed class MoexHistoryPageReader
 
         return ReadDaySplitPages(
             spec, secId, from, till, operationTags, cancellationToken);
+    }
+
+    public IAsyncEnumerable<TradeStatsParsedPage<TradeStatsStockRow>> ReadTradeStatsStockPages(
+        MoexSeriesSpec spec,
+        string secId,
+        DateOnly from,
+        DateOnly till,
+        MoexOperationTags operationTags,
+        CancellationToken cancellationToken)
+    {
+        PageParser<TradeStatsParsedPage<TradeStatsStockRow>> parsePage =
+            (ReadOnlyMemory<byte> body, out PaginationCursorDTO cursor) =>
+                TradeStatsHistoryParser.ParseStock(body.Span, spec, secId, out cursor);
+        return ReadTradeStatsCursorPages(
+            spec, secId, from, till, operationTags, parsePage, cancellationToken);
+    }
+
+    public IAsyncEnumerable<TradeStatsParsedPage<TradeStatsFuturesRow>> ReadTradeStatsFuturesPages(
+        MoexSeriesSpec spec,
+        string secId,
+        DateOnly from,
+        DateOnly till,
+        MoexOperationTags operationTags,
+        CancellationToken cancellationToken)
+    {
+        PageParser<TradeStatsParsedPage<TradeStatsFuturesRow>> parsePage =
+            (ReadOnlyMemory<byte> body, out PaginationCursorDTO cursor) =>
+                TradeStatsHistoryParser.ParseFutures(body.Span, spec, secId, out cursor);
+        return ReadTradeStatsCursorPages(
+            spec, secId, from, till, operationTags, parsePage, cancellationToken);
+    }
+
+    private async IAsyncEnumerable<TradeStatsParsedPage<TRow>> ReadTradeStatsCursorPages<TRow>(
+        MoexSeriesSpec spec,
+        string secId,
+        DateOnly from,
+        DateOnly till,
+        MoexOperationTags operationTags,
+        PageParser<TradeStatsParsedPage<TRow>> parsePage,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+        where TRow : struct
+    {
+        if (spec.DataKind != "tradestats" || spec.Pagination != PaginationKind.Cursor)
+        {
+            throw new ArgumentException(
+                "Typed trade statistics pages require a cursor-paginated tradestats series.",
+                nameof(spec));
+        }
+
+        string method = string.Format(
+            CultureInfo.InvariantCulture, spec.MethodTemplate, secId);
+        Dictionary<string, string> query = new()
+        {
+            ["from"] = from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            ["till"] = till.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            ["iss.meta"] = "off",
+            ["iss.only"] = "data,data.cursor",
+            ["data.columns"] = spec.ColumnsParam,
+        };
+
+        int pagesElapsed = 0;
+        int totalRows = 0;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            PageFetchResult<TradeStatsParsedPage<TRow>> page = await FetchPageAsync(
+                spec, method, query, secId, operationTags,
+                parsePage, static parsed => parsed.Rows.Count, cancellationToken);
+            TradeStatsParsedPage<TRow> parsed = page.Rows;
+            PaginationCursorDTO cursor = page.Cursor;
+
+            pagesElapsed++;
+            totalRows += parsed.Rows.Count;
+            MoexLogMessages.PageReceived(
+                _logger, method, pagesElapsed, parsed.Rows.Count, page.Elapsed);
+
+            if (cursor.Index is null || cursor.PageSize is null || cursor.Total is null)
+            {
+                throw new InvalidOperationException(
+                    "Источник не вернул курсор целиком (INDEX, TOTAL, PAGESIZE): " +
+                    "полнота диапазона не доказана.");
+            }
+
+            int cursorIndex = cursor.Index.Value;
+            int cursorTotal = cursor.Total.Value;
+            int cursorPageSize = cursor.PageSize.Value;
+            if (cursorIndex < 0 || cursorTotal < 0)
+            {
+                throw new InvalidOperationException(
+                    $"Курсор источника отрицателен: INDEX={cursorIndex}, TOTAL={cursorTotal}.");
+            }
+
+            if (cursorPageSize <= 0)
+                throw new InvalidOperationException(
+                    $"Размер страницы источника не положителен: PAGESIZE={cursorPageSize}.");
+
+            if (cursorIndex > cursorTotal)
+            {
+                throw new InvalidOperationException(
+                    $"Курсор указывает за пределы набора: INDEX={cursorIndex}, TOTAL={cursorTotal}.");
+            }
+
+            long nextCursor = (long)cursorIndex + cursorPageSize;
+            if (nextCursor >= cursorTotal)
+            {
+                AccountSkippedRows(parsed, method, secId, operationTags, query);
+                yield return parsed;
+                MoexLogMessages.PaginationStopped(
+                    _logger, method, "range_exhausted", pagesElapsed, totalRows);
+                break;
+            }
+
+            if (pagesElapsed >= _options.MaxPagesPerLoad)
+            {
+                throw new InvalidOperationException(
+                    $"Достигнут защитный предел Moex:MaxPagesPerLoad={_options.MaxPagesPerLoad} " +
+                    "при неисчерпанном диапазоне.");
+            }
+
+            AccountSkippedRows(parsed, method, secId, operationTags, query);
+            yield return parsed;
+            query["start"] = ((int)nextCursor).ToString(CultureInfo.InvariantCulture);
+        }
     }
 
     private async IAsyncEnumerable<SeriesParsedPage> ReadCursorPages(
@@ -470,6 +594,23 @@ public sealed class MoexHistoryPageReader
         string secId,
         MoexOperationTags operationTags,
         Dictionary<string, string> query)
+    {
+        AccountSkippedRows(
+            parsed.SkippedSourceRows,
+            parsed.SkippedRows,
+            method,
+            secId,
+            operationTags,
+            query);
+    }
+
+    private void AccountSkippedRows<TRow>(
+        TradeStatsParsedPage<TRow> parsed,
+        string method,
+        string secId,
+        MoexOperationTags operationTags,
+        Dictionary<string, string> query)
+        where TRow : struct
     {
         AccountSkippedRows(
             parsed.SkippedSourceRows,

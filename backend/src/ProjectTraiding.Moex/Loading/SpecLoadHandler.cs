@@ -11,6 +11,15 @@ namespace ProjectTraiding.Moex.Loading;
 
 public sealed class SpecLoadHandler
 {
+    private delegate IAsyncEnumerable<TradeStatsParsedPage<TRow>> TradeStatsPagesReader<TRow>(
+        MoexSeriesSpec spec,
+        string secId,
+        DateOnly from,
+        DateOnly till,
+        MoexOperationTags operationTags,
+        CancellationToken cancellationToken)
+        where TRow : struct;
+
     private static readonly MoexSeriesSpec[] MigratedSpecs =
     [
         MoexSeriesRegistry.Hi2Stock,
@@ -115,6 +124,38 @@ public sealed class SpecLoadHandler
             operationTags.DataKind,
             operationTags.Market,
             MoexFlows.History);
+
+        if (spec.DataKind == "tradestats" && spec.Market == "stock")
+        {
+            IAsyncEnumerable<TradeStatsParsedPage<TradeStatsStockRow>> stockPages =
+                ReadTradeStatsRequestWindows(
+                    spec, task, operationTags, _reader.ReadTradeStatsStockPages, cancellationToken);
+            return await _writer.WriteTradeStatsRangeAsync(
+                spec,
+                task.Secid,
+                stockPages,
+                TradeStatsStockProtobufSchema.Definition,
+                TradeStatsStockProtobufSchema.MessageName,
+                TradeStatsProtobufBatchWriter.AppendStock,
+                insertContext,
+                cancellationToken);
+        }
+
+        if (spec.DataKind == "tradestats" && spec.Market == "futures")
+        {
+            IAsyncEnumerable<TradeStatsParsedPage<TradeStatsFuturesRow>> futuresPages =
+                ReadTradeStatsRequestWindows(
+                    spec, task, operationTags, _reader.ReadTradeStatsFuturesPages, cancellationToken);
+            return await _writer.WriteTradeStatsRangeAsync(
+                spec,
+                task.Secid,
+                futuresPages,
+                TradeStatsFuturesProtobufSchema.Definition,
+                TradeStatsFuturesProtobufSchema.MessageName,
+                TradeStatsProtobufBatchWriter.AppendFutures,
+                insertContext,
+                cancellationToken);
+        }
 
         return await _writer.WriteRangeAsync(
             spec,
@@ -264,6 +305,82 @@ public sealed class SpecLoadHandler
         }
     }
 
+    private async IAsyncEnumerable<TradeStatsParsedPage<TRow>> ReadTradeStatsRequestWindows<TRow>(
+        MoexSeriesSpec spec,
+        MoexLoadTask task,
+        MoexOperationTags operationTags,
+        TradeStatsPagesReader<TRow> readPages,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+        where TRow : struct
+    {
+        int days = 364;
+        DateOnly from = task.DateFrom;
+        while (true)
+        {
+            int remainingDays = task.DateTill.DayNumber - from.DayNumber;
+            DateOnly till = remainingDays < days ? task.DateTill : from.AddDays(days - 1);
+            await using IAsyncEnumerator<TradeStatsParsedPage<TRow>> enumerator =
+                readPages(spec, task.Secid, from, till, operationTags, cancellationToken)
+                    .GetAsyncEnumerator(cancellationToken);
+            while (true)
+            {
+                bool hasPage;
+                Exception? readFailure = null;
+                try
+                {
+                    hasPage = await enumerator.MoveNextAsync();
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex) when (MoexHistoryPageReader.IsRecoverableReadFailure(ex))
+                {
+                    readFailure = ex;
+                    hasPage = false;
+                }
+                catch (Exception ex)
+                {
+                    string endpoint = GetEndpoint(spec, task);
+                    MoexLogMessages.HistoryOperationFailed(
+                        _logger,
+                        ex,
+                        task.Secid,
+                        operationTags.DataKind,
+                        operationTags.Operation,
+                        endpoint,
+                        from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                        till.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                        "window",
+                        MoexMetrics.ClassifyError(ex),
+                        ex.Message);
+                    throw;
+                }
+
+                if (readFailure is not null)
+                {
+                    yield return new TradeStatsParsedPage<TRow>(
+                        [], 0, null,
+                        new SeriesReadFailure(from, till, readFailure.Message));
+                    break;
+                }
+
+                if (!hasPage)
+                    break;
+
+                TradeStatsParsedPage<TRow> page = enumerator.Current;
+                if (page.SourceRowsCount > 0)
+                    LastParsedPageDate = GetLastSourceDate(page);
+
+                yield return page;
+            }
+
+            if (till == task.DateTill)
+                break;
+            from = till.AddDays(1);
+        }
+    }
+
     private static string GetEndpoint(MoexSeriesSpec spec, MoexLoadTask task)
     {
         string board = spec.Market == "stock"
@@ -291,6 +408,24 @@ public sealed class SpecLoadHandler
     }
 
     private static DateOnly? GetLastSourceDate(CandleParsedPage page)
+    {
+        if (page.SourceRowsCount == 0)
+            return null;
+
+        DateTime? time;
+        List<SkippedSourceRow>? skipped = page.SkippedSourceRows;
+        if (skipped is { Count: > 0 } && skipped[^1].SourceIndex == page.SourceRowsCount - 1)
+            time = skipped[^1].Time;
+        else
+            time = page.Rows.Count > 0 ? page.Rows[^1].Time : null;
+
+        return time.HasValue && time.Value != default
+            ? DateOnly.FromDateTime(time.Value)
+            : null;
+    }
+
+    private static DateOnly? GetLastSourceDate<TRow>(TradeStatsParsedPage<TRow> page)
+        where TRow : struct
     {
         if (page.SourceRowsCount == 0)
             return null;
