@@ -91,7 +91,7 @@ public sealed class SpecLoadHandler
             spec.Market,
             MoexFlows.History);
 
-        if (spec == MoexSeriesRegistry.CandlesStock1m)
+        if (spec.DataKind == "candles" && spec.Pagination == PaginationKind.FixedPage)
         {
             IAsyncEnumerable<CandleParsedPage> candlePages = ReadCandleRequestWindows(
                 spec, task, operationTags, cancellationToken);

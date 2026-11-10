@@ -5,8 +5,9 @@ using ProtoBuf.Meta;
 namespace ProjectTraiding.Moex.StorageBase.ClickHouse;
 
 /// <summary>
-/// Typed row for <c>moex_candles_1m</c>. Begin and End are fractional Unix
-/// seconds and use the ClickHouse Protobuf schema declared below.
+/// Typed row for historical MOEX candles across the interval-specific
+/// <c>moex_candles</c> tables. Begin and End are fractional Unix seconds and
+/// use the ClickHouse Protobuf schema declared below.
 /// </summary>
 [ProtoContract]
 public struct CandleRow
