@@ -91,6 +91,23 @@ public sealed class SpecLoadHandler
             spec.Market,
             MoexFlows.History);
 
+        if (spec == MoexSeriesRegistry.CandlesStock1m)
+        {
+            IAsyncEnumerable<CandleParsedPage> candlePages = ReadCandleRequestWindows(
+                spec, task, operationTags, cancellationToken);
+            StorageInsertContext candleInsertContext = new(
+                operationTags.DataKind,
+                operationTags.Market,
+                MoexFlows.History);
+
+            return await _writer.WriteCandleRangeAsync(
+                spec,
+                task.Secid,
+                candlePages,
+                candleInsertContext,
+                cancellationToken);
+        }
+
         IAsyncEnumerable<SeriesParsedPage> pages = ReadRequestWindows(
             spec, task, operationTags, cancellationToken);
 
@@ -176,6 +193,77 @@ public sealed class SpecLoadHandler
         }
     }
 
+    private async IAsyncEnumerable<CandleParsedPage> ReadCandleRequestWindows(
+        MoexSeriesSpec spec,
+        MoexLoadTask task,
+        MoexOperationTags operationTags,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        int days = task.DataKind == "orderstats" && task.Market == "stock" ? 7 : 364;
+        DateOnly from = task.DateFrom;
+        while (true)
+        {
+            int remainingDays = task.DateTill.DayNumber - from.DayNumber;
+            DateOnly till = remainingDays < days ? task.DateTill : from.AddDays(days - 1);
+            await using IAsyncEnumerator<CandleParsedPage> enumerator = _reader.ReadCandlePages(
+                spec, task.Secid, task.Boardid, from, till, operationTags, cancellationToken)
+                .GetAsyncEnumerator(cancellationToken);
+            while (true)
+            {
+                bool hasPage;
+                Exception? readFailure = null;
+                try
+                {
+                    hasPage = await enumerator.MoveNextAsync();
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex) when (MoexHistoryPageReader.IsRecoverableReadFailure(ex))
+                {
+                    readFailure = ex;
+                    hasPage = false;
+                }
+                catch (Exception ex)
+                {
+                    string endpoint = GetEndpoint(spec, task);
+                    MoexLogMessages.HistoryOperationFailed(
+                        _logger,
+                        ex,
+                        task.Secid,
+                        operationTags.DataKind,
+                        operationTags.Operation,
+                        endpoint,
+                        from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                        till.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                        "window",
+                        MoexMetrics.ClassifyError(ex),
+                        ex.Message);
+                    throw;
+                }
+                if (readFailure is not null)
+                {
+                    yield return new CandleParsedPage(
+                        [], 0, null, new SeriesReadFailure(from, till, readFailure.Message));
+                    break;
+                }
+                if (!hasPage)
+                    break;
+
+                CandleParsedPage page = enumerator.Current;
+                if (page.SourceRowsCount > 0)
+                    LastParsedPageDate = GetLastSourceDate(page);
+
+                yield return page;
+            }
+
+            if (till == task.DateTill)
+                break;
+            from = till.AddDays(1);
+        }
+    }
+
     private static string GetEndpoint(MoexSeriesSpec spec, MoexLoadTask task)
     {
         string board = spec.Market == "stock"
@@ -186,6 +274,23 @@ public sealed class SpecLoadHandler
     }
 
     private static DateOnly? GetLastSourceDate(SeriesParsedPage page)
+    {
+        if (page.SourceRowsCount == 0)
+            return null;
+
+        DateTime? time;
+        List<SkippedSourceRow>? skipped = page.SkippedSourceRows;
+        if (skipped is { Count: > 0 } && skipped[^1].SourceIndex == page.SourceRowsCount - 1)
+            time = skipped[^1].Time;
+        else
+            time = page.Rows.Count > 0 ? page.Rows[^1].Time : null;
+
+        return time.HasValue && time.Value != default
+            ? DateOnly.FromDateTime(time.Value)
+            : null;
+    }
+
+    private static DateOnly? GetLastSourceDate(CandleParsedPage page)
     {
         if (page.SourceRowsCount == 0)
             return null;
