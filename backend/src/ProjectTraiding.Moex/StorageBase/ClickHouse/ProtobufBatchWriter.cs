@@ -50,7 +50,7 @@ public sealed class ProtobufBatchWriter<[DynamicallyAccessedMembers(DynamicallyA
     public void Append(in TRow row)
     {
         if (_isFaulted)
-            throw new InvalidOperationException("This Protobuf batch is unusable after a failed append.");
+            throw new InvalidOperationException("This Protobuf batch is unusable after a failed append or flush.");
 
         int nextRowCount = checked(_rowCount + 1);
 
@@ -75,18 +75,27 @@ public sealed class ProtobufBatchWriter<[DynamicallyAccessedMembers(DynamicallyA
     public async Task<long> FlushAsync(CancellationToken cancellationToken)
     {
         if (_isFaulted)
-            throw new InvalidOperationException("This Protobuf batch is unusable after a failed append.");
+            throw new InvalidOperationException("This Protobuf batch is unusable after a failed append or flush.");
 
         if (_rowCount == 0)
             return 0;
 
-        long insertedRows = await _executor.InsertProtobufAsync(
-            _table,
-            _columns,
-            _buffer.WrittenMemory,
-            _rowCount,
-            _insertContext,
-            cancellationToken).ConfigureAwait(false);
+        long insertedRows;
+        try
+        {
+            insertedRows = await _executor.InsertProtobufAsync(
+                _table,
+                _columns,
+                _buffer.WrittenMemory,
+                _rowCount,
+                _insertContext,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            _isFaulted = true;
+            throw;
+        }
 
         _buffer.ResetWrittenCount();
         _rowCount = 0;
