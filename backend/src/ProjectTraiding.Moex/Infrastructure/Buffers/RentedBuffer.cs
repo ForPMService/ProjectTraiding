@@ -6,7 +6,7 @@ namespace ProjectTraiding.Moex.Infrastructure.Buffers
     public readonly struct RentedBuffer : IDisposable
     {
         /// <summary>
-        /// Верхний предел роста буфера чтения тела — страховка от неограниченного разрастания.
+        /// Верхний предел фактически прочитанных байтов тела — страховка от неограниченного разрастания.
         /// Ответы MOEX такого размера не достигают; превышение означает аномалию (сбойный
         /// поток, повреждённое сжатие), при которой честнее оборвать чтение, чем раздувать
         /// память до отказа. Сторож времени (BodyReadTimeout) ограничивает длительность
@@ -48,10 +48,16 @@ namespace ProjectTraiding.Moex.Infrastructure.Buffers
             string endpoint,
             CancellationToken cancellationToken)
         {
-            int contentLength = (int)(response.Content.Headers.ContentLength ?? 1_048_576);
+            long contentLength = response.Content.Headers.ContentLength ?? 1_048_576L;
+            int contentLengthHint = contentLength <= 0
+                ? 0
+                : contentLength >= MaxBufferBytes
+                    ? MaxBufferBytes
+                    : (int)contentLength;
+
             return await RentFromStreamAsync(
                 await response.Content.ReadAsStreamAsync(cancellationToken),
-                contentLength,
+                contentLengthHint,
                 bodyReadTimeout,
                 endpoint,
                 cancellationToken);
@@ -94,27 +100,49 @@ namespace ProjectTraiding.Moex.Infrastructure.Buffers
             {
                 while (true)
                 {
-                    // Буфер заполнен — удваиваем ёмкость и переносим прочитанное, но не выше
-                    // страховки. Достигли предела и всё ещё есть данные — обрываем аномалию.
-                    if (position == arr.Length)
+                    if (position == MaxBufferBytes)
                     {
-                        if (arr.Length >= MaxBufferBytes)
+                        // На ровно 64 МиБ разрешаем EOF; один асинхронный байт отличает его от превышения.
+                        byte[] overflowProbe = new byte[1];
+                        int overflowRead = await stream.ReadAsync(
+                            overflowProbe.AsMemory(), bodyReadCts.Token);
+
+                        if (overflowRead > 0)
                         {
-                            // Не возвращаем массив здесь: это сделает завершающий catch,
-                            // иначе получился бы двойной возврат в пул.
                             throw new InvalidOperationException(
                                 $"MOEX response body exceeded safety cap of {MaxBufferBytes / (1024 * 1024)} MB.");
                         }
 
-                        int newLength = Math.Min(arr.Length * 2, MaxBufferBytes);
-                        byte[] bigger = ArrayPool<byte>.Shared.Rent(newLength);
-                        Array.Copy(arr, bigger, position);
-                        ArrayPool<byte>.Shared.Return(arr);
-                        arr = bigger;
+                        break;
                     }
 
+                    // ArrayPool может вернуть массив крупнее лимита; рост нужен только когда
+                    // текущая физическая аренда заполнена до достижения лимита тела.
+                    if (position == arr.Length)
+                    {
+                        int newLength = arr.Length > MaxBufferBytes / 2
+                            ? MaxBufferBytes
+                            : arr.Length * 2;
+                        byte[] bigger = ArrayPool<byte>.Shared.Rent(newLength);
+
+                        try
+                        {
+                            Array.Copy(arr, bigger, position);
+                        }
+                        catch
+                        {
+                            ArrayPool<byte>.Shared.Return(bigger);
+                            throw;
+                        }
+
+                        byte[] previous = arr;
+                        arr = bigger;
+                        ArrayPool<byte>.Shared.Return(previous);
+                    }
+
+                    int writableBytes = Math.Min(arr.Length - position, MaxBufferBytes - position);
                     int read = await stream.ReadAsync(
-                        arr.AsMemory(position, arr.Length - position), bodyReadCts.Token);
+                        arr.AsMemory(position, writableBytes), bodyReadCts.Token);
 
                     if (read == 0)
                         break; // фактический конец потока
