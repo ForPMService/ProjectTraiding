@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Options;
@@ -31,6 +32,16 @@ public sealed class MoexHistoryPageReader
     private delegate TPage PageParser<TPage>(
         ReadOnlyMemory<byte> body,
         out PaginationCursorDTO cursor);
+
+    private delegate HistoricalSeriesParsedPage HistoricalPageParser<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
+        ReadOnlyMemory<byte> body,
+        MoexSeriesSpec spec,
+        string secId,
+        ProtobufBatchWriter<TRow> writer,
+        out PaginationCursorDTO cursor,
+        out HistoricalSeriesTimeGroupTail<TRow>? tail)
+        where TRow : struct;
 
     public MoexHistoryPageReader(
         MoexHttpAlgClient client,
@@ -107,6 +118,94 @@ public sealed class MoexHistoryPageReader
         return ReadTradeStatsCursorPages(
             spec, secId, from, till, operationTags, parsePage, cancellationToken);
     }
+
+    public IAsyncEnumerable<HistoricalSeriesParsedPage> ReadObStatsStockPages(
+        MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
+        MoexOperationTags operationTags, ProtobufBatchWriter<ObStatsStockRow> writer,
+        CancellationToken cancellationToken)
+        => ReadTypedCursorPages(spec, secId, from, till, operationTags, writer, ParseObStatsStockPage, cancellationToken);
+
+    public IAsyncEnumerable<HistoricalSeriesParsedPage> ReadObStatsFuturesPages(
+        MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
+        MoexOperationTags operationTags, ProtobufBatchWriter<ObStatsFuturesRow> writer,
+        CancellationToken cancellationToken)
+        => ReadTypedCursorPages(spec, secId, from, till, operationTags, writer, ParseObStatsFuturesPage, cancellationToken);
+
+    public IAsyncEnumerable<HistoricalSeriesParsedPage> ReadOrderStatsStockPages(
+        MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
+        MoexOperationTags operationTags, ProtobufBatchWriter<OrderStatsStockRow> writer,
+        CancellationToken cancellationToken)
+        => ReadTypedCursorPages(spec, secId, from, till, operationTags, writer, ParseOrderStatsStockPage, cancellationToken);
+
+    public IAsyncEnumerable<HistoricalSeriesParsedPage> ReadFutoiPages(
+        MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
+        MoexOperationTags operationTags, ProtobufBatchWriter<FutoiRow> writer,
+        CancellationToken cancellationToken)
+        => ReadTypedDaySplitPages(spec, secId, from, till, operationTags, writer, ParseFutoiPage, cancellationToken);
+
+    public IAsyncEnumerable<HistoricalSeriesParsedPage> ReadHi2StockPages(
+        MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
+        MoexOperationTags operationTags, ProtobufBatchWriter<Hi2StockRow> writer,
+        CancellationToken cancellationToken)
+        => ReadTypedCursorPages(spec, secId, from, till, operationTags, writer, ParseHi2StockPage, cancellationToken);
+
+    public IAsyncEnumerable<HistoricalSeriesParsedPage> ReadHi2FuturesPages(
+        MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
+        MoexOperationTags operationTags, ProtobufBatchWriter<Hi2FuturesRow> writer,
+        CancellationToken cancellationToken)
+        => ReadTypedCursorPages(spec, secId, from, till, operationTags, writer, ParseHi2FuturesPage, cancellationToken);
+
+    public IAsyncEnumerable<HistoricalSeriesParsedPage> ReadMegaAlertsStockPages(
+        MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
+        MoexOperationTags operationTags, ProtobufBatchWriter<MegaAlertsStockRow> writer,
+        CancellationToken cancellationToken)
+        => ReadTypedCursorPages(spec, secId, from, till, operationTags, writer, ParseMegaAlertsStockPage, cancellationToken);
+
+    public IAsyncEnumerable<HistoricalSeriesParsedPage> ReadMegaAlertsFuturesPages(
+        MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
+        MoexOperationTags operationTags, ProtobufBatchWriter<MegaAlertsFuturesRow> writer,
+        CancellationToken cancellationToken)
+        => ReadTypedCursorPages(spec, secId, from, till, operationTags, writer, ParseMegaAlertsFuturesPage, cancellationToken);
+
+    private static HistoricalSeriesParsedPage ParseObStatsStockPage(
+        ReadOnlyMemory<byte> body, MoexSeriesSpec spec, string secId, ProtobufBatchWriter<ObStatsStockRow> writer,
+        out PaginationCursorDTO cursor, out HistoricalSeriesTimeGroupTail<ObStatsStockRow>? tail)
+        => ObStatsHistoryParser.ParseStock(body.Span, spec, secId, writer, out cursor, out tail);
+
+    private static HistoricalSeriesParsedPage ParseObStatsFuturesPage(
+        ReadOnlyMemory<byte> body, MoexSeriesSpec spec, string secId, ProtobufBatchWriter<ObStatsFuturesRow> writer,
+        out PaginationCursorDTO cursor, out HistoricalSeriesTimeGroupTail<ObStatsFuturesRow>? tail)
+        => ObStatsHistoryParser.ParseFutures(body.Span, spec, secId, writer, out cursor, out tail);
+
+    private static HistoricalSeriesParsedPage ParseOrderStatsStockPage(
+        ReadOnlyMemory<byte> body, MoexSeriesSpec spec, string secId, ProtobufBatchWriter<OrderStatsStockRow> writer,
+        out PaginationCursorDTO cursor, out HistoricalSeriesTimeGroupTail<OrderStatsStockRow>? tail)
+        => OrderStatsHistoryParser.Parse(body.Span, spec, secId, writer, out cursor, out tail);
+
+    private static HistoricalSeriesParsedPage ParseFutoiPage(
+        ReadOnlyMemory<byte> body, MoexSeriesSpec spec, string secId, ProtobufBatchWriter<FutoiRow> writer,
+        out PaginationCursorDTO cursor, out HistoricalSeriesTimeGroupTail<FutoiRow>? tail)
+        => FutoiHistoryParser.Parse(body.Span, spec, secId, writer, out cursor, out tail);
+
+    private static HistoricalSeriesParsedPage ParseHi2StockPage(
+        ReadOnlyMemory<byte> body, MoexSeriesSpec spec, string secId, ProtobufBatchWriter<Hi2StockRow> writer,
+        out PaginationCursorDTO cursor, out HistoricalSeriesTimeGroupTail<Hi2StockRow>? tail)
+        => Hi2HistoryParser.ParseStock(body.Span, spec, secId, writer, out cursor, out tail);
+
+    private static HistoricalSeriesParsedPage ParseHi2FuturesPage(
+        ReadOnlyMemory<byte> body, MoexSeriesSpec spec, string secId, ProtobufBatchWriter<Hi2FuturesRow> writer,
+        out PaginationCursorDTO cursor, out HistoricalSeriesTimeGroupTail<Hi2FuturesRow>? tail)
+        => Hi2HistoryParser.ParseFutures(body.Span, spec, secId, writer, out cursor, out tail);
+
+    private static HistoricalSeriesParsedPage ParseMegaAlertsStockPage(
+        ReadOnlyMemory<byte> body, MoexSeriesSpec spec, string secId, ProtobufBatchWriter<MegaAlertsStockRow> writer,
+        out PaginationCursorDTO cursor, out HistoricalSeriesTimeGroupTail<MegaAlertsStockRow>? tail)
+        => MegaAlertsHistoryParser.ParseStock(body.Span, spec, secId, writer, out cursor, out tail);
+
+    private static HistoricalSeriesParsedPage ParseMegaAlertsFuturesPage(
+        ReadOnlyMemory<byte> body, MoexSeriesSpec spec, string secId, ProtobufBatchWriter<MegaAlertsFuturesRow> writer,
+        out PaginationCursorDTO cursor, out HistoricalSeriesTimeGroupTail<MegaAlertsFuturesRow>? tail)
+        => MegaAlertsHistoryParser.ParseFutures(body.Span, spec, secId, writer, out cursor, out tail);
 
     private async IAsyncEnumerable<TradeStatsParsedPage<TRow>> ReadTradeStatsCursorPages<TRow>(
         MoexSeriesSpec spec,
@@ -199,6 +298,189 @@ public sealed class MoexHistoryPageReader
             yield return parsed;
             query["start"] = ((int)nextCursor).ToString(CultureInfo.InvariantCulture);
         }
+    }
+
+    private async IAsyncEnumerable<HistoricalSeriesParsedPage> ReadTypedCursorPages<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
+        MoexSeriesSpec spec,
+        string secId,
+        DateOnly from,
+        DateOnly till,
+        MoexOperationTags operationTags,
+        ProtobufBatchWriter<TRow> writer,
+        HistoricalPageParser<TRow> parsePageBody,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+        where TRow : struct
+    {
+        if (spec.Pagination != PaginationKind.Cursor)
+            throw new ArgumentException("Typed historical cursor pages require cursor pagination.", nameof(spec));
+
+        string method = string.Format(CultureInfo.InvariantCulture, spec.MethodTemplate, secId);
+        Dictionary<string, string> query = new()
+        {
+            ["from"] = from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            ["till"] = till.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            ["iss.meta"] = "off",
+            ["iss.only"] = "data,data.cursor",
+            ["data.columns"] = spec.ColumnsParam,
+        };
+
+        HistoricalSeriesTimeGroupTail<TRow>? pageTail = null;
+        PageParser<HistoricalSeriesParsedPage> parsePage =
+            (ReadOnlyMemory<byte> body, out PaginationCursorDTO cursor) =>
+                parsePageBody(body, spec, secId, writer, out cursor, out pageTail);
+
+        int pagesElapsed = 0;
+        int totalRows = 0;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            pageTail = null;
+            PageFetchResult<HistoricalSeriesParsedPage> fetched = await FetchPageAsync(
+                spec, method, query, secId, operationTags, parsePage,
+                parsed => checked(parsed.AcceptedRowsCount + (pageTail?.PendingAcceptedRowsCount ?? 0)),
+                cancellationToken);
+            HistoricalSeriesParsedPage parsed = fetched.Rows;
+            PaginationCursorDTO cursor = fetched.Cursor;
+            int pageAcceptedRows = checked(parsed.AcceptedRowsCount + (pageTail?.PendingAcceptedRowsCount ?? 0));
+
+            pagesElapsed++;
+            totalRows = checked(totalRows + pageAcceptedRows);
+            MoexLogMessages.PageReceived(_logger, method, pagesElapsed, pageAcceptedRows, fetched.Elapsed);
+
+            if (cursor.Index is null || cursor.PageSize is null || cursor.Total is null)
+                throw new InvalidOperationException(
+                    "Источник не вернул курсор целиком (INDEX, TOTAL, PAGESIZE): полнота диапазона не доказана.");
+
+            int cursorIndex = cursor.Index.Value;
+            int cursorTotal = cursor.Total.Value;
+            int cursorPageSize = cursor.PageSize.Value;
+            if (cursorIndex < 0 || cursorTotal < 0)
+                throw new InvalidOperationException($"Курсор источника отрицателен: INDEX={cursorIndex}, TOTAL={cursorTotal}.");
+            if (cursorPageSize <= 0)
+                throw new InvalidOperationException($"Размер страницы источника не положителен: PAGESIZE={cursorPageSize}.");
+            if (cursorIndex > cursorTotal)
+                throw new InvalidOperationException($"Курсор указывает за пределы набора: INDEX={cursorIndex}, TOTAL={cursorTotal}.");
+
+            long nextCursor = (long)cursorIndex + cursorPageSize;
+            if (nextCursor >= cursorTotal)
+            {
+                if (pageTail is not null)
+                    parsed = pageTail.CompletePage();
+                AccountSkippedRows(parsed, method, secId, operationTags, query);
+                yield return parsed;
+                MoexLogMessages.PaginationStopped(_logger, method, "range_exhausted", pagesElapsed, totalRows);
+                break;
+            }
+
+            if (pagesElapsed >= _options.MaxPagesPerLoad)
+                throw new InvalidOperationException(
+                    $"Достигнут защитный предел Moex:MaxPagesPerLoad={_options.MaxPagesPerLoad} при неисчерпанном диапазоне.");
+
+            int nextStart = checked((int)nextCursor);
+            if (pageTail is { PendingSourceRowsCount: > 0 } && pageTail.FullSourceRowsCount > 0)
+            {
+                int sourceTailStart = pageTail.StableSourceRowsCount;
+                if (sourceTailStart == 0)
+                {
+                    throw new InvalidOperationException(
+                        $"Страница {method} целиком занята одной временной группой "
+                        + $"({pageTail.FullSourceRowsCount} строк источника), продолжение чтения не гарантирует полноты.");
+                }
+
+                nextStart = checked(cursorIndex + sourceTailStart);
+            }
+
+            AccountSkippedRows(parsed, method, secId, operationTags, query);
+            pageTail = null;
+            yield return parsed;
+            query["start"] = nextStart.ToString(CultureInfo.InvariantCulture);
+        }
+    }
+
+    private async IAsyncEnumerable<HistoricalSeriesParsedPage> ReadTypedDaySplitPages<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
+        MoexSeriesSpec spec,
+        string secId,
+        DateOnly from,
+        DateOnly till,
+        MoexOperationTags operationTags,
+        ProtobufBatchWriter<TRow> writer,
+        HistoricalPageParser<TRow> parsePageBody,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+        where TRow : struct
+    {
+        if (spec.Pagination != PaginationKind.DaySplit)
+            throw new ArgumentException("Typed historical day-split pages require day-split pagination.", nameof(spec));
+
+        string method = string.Format(CultureInfo.InvariantCulture, spec.MethodTemplate, secId);
+        Dictionary<string, string> query = new()
+        {
+            ["from"] = from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            ["till"] = till.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            ["iss.meta"] = "off",
+        };
+        HistoricalSeriesTimeGroupTail<TRow>? pageTail = null;
+        PageParser<HistoricalSeriesParsedPage> parsePage =
+            (ReadOnlyMemory<byte> body, out PaginationCursorDTO cursor) =>
+                parsePageBody(body, spec, secId, writer, out cursor, out pageTail);
+
+        int dayCount = 0;
+        int totalRows = 0;
+        DateOnly current = from;
+        while (current <= till)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string date = current.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            query["from"] = date;
+            query["till"] = date;
+            pageTail = null;
+
+            PageFetchResult<HistoricalSeriesParsedPage> fetched = default;
+            Exception? fetchFailure = null;
+            try
+            {
+                fetched = await FetchPageAsync(
+                    spec, method, query, secId, operationTags, parsePage,
+                    static parsed => parsed.AcceptedRowsCount, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (IsRecoverableReadFailure(ex))
+            {
+                fetchFailure = ex;
+            }
+
+            if (fetchFailure is not null)
+            {
+                yield return new HistoricalSeriesParsedPage(
+                    0, 0, null, null,
+                    new SeriesReadFailure(current, current, fetchFailure.Message));
+                current = current.AddDays(1);
+                dayCount++;
+                continue;
+            }
+
+            HistoricalSeriesParsedPage parsed = fetched.Rows;
+            if (parsed.SourceRowsCount > 0)
+                AccountSkippedRows(parsed, method, secId, operationTags, query);
+
+            dayCount++;
+            totalRows = checked(totalRows + parsed.AcceptedRowsCount);
+            MoexLogMessages.DaySplitPageReceived(_logger, method, date, parsed.AcceptedRowsCount, fetched.Elapsed);
+            if (parsed.SourceRowsCount > 0)
+                yield return parsed;
+
+            current = current.AddDays(1);
+        }
+
+        MoexLogMessages.DaySplitCompleted(
+            _logger, method,
+            from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            till.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            dayCount, totalRows);
     }
 
     private async IAsyncEnumerable<SeriesParsedPage> ReadCursorPages(
@@ -592,6 +874,22 @@ public sealed class MoexHistoryPageReader
 
     private void AccountSkippedRows(
         CandleParsedPage parsed,
+        string method,
+        string secId,
+        MoexOperationTags operationTags,
+        Dictionary<string, string> query)
+    {
+        AccountSkippedRows(
+            parsed.SkippedSourceRows,
+            parsed.SkippedRows,
+            method,
+            secId,
+            operationTags,
+            query);
+    }
+
+    private void AccountSkippedRows(
+        HistoricalSeriesParsedPage parsed,
         string method,
         string secId,
         MoexOperationTags operationTags,

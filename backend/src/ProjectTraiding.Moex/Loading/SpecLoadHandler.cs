@@ -6,6 +6,7 @@ using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Diagnostics.CodeAnalysis;
 
 namespace ProjectTraiding.Moex.Loading;
 
@@ -17,6 +18,17 @@ public sealed class SpecLoadHandler
         DateOnly from,
         DateOnly till,
         MoexOperationTags operationTags,
+        CancellationToken cancellationToken)
+        where TRow : struct;
+
+    private delegate IAsyncEnumerable<HistoricalSeriesParsedPage> HistoricalPagesReader<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
+        MoexSeriesSpec spec,
+        string secId,
+        DateOnly from,
+        DateOnly till,
+        MoexOperationTags operationTags,
+        ProtobufBatchWriter<TRow> writer,
         CancellationToken cancellationToken)
         where TRow : struct;
 
@@ -173,9 +185,6 @@ public sealed class SpecLoadHandler
                 firstReadErrorDateFrom, firstReadErrorDateTill, firstSkippedDate);
         }
 
-        IAsyncEnumerable<SeriesParsedPage> pages = ReadRequestWindows(
-            spec, task, operationTags, cancellationToken);
-
         StorageInsertContext insertContext = new(
             operationTags.DataKind,
             operationTags.Market,
@@ -213,28 +222,117 @@ public sealed class SpecLoadHandler
                 cancellationToken);
         }
 
-        return await _writer.WriteRangeAsync(
-            spec,
-            task.Secid,
-            pages,
-            insertContext,
-            cancellationToken);
+        if (spec.DataKind == "obstats" && spec.Market == "stock")
+            return await LoadHistoricalSeriesAsync<ObStatsStockRow>(spec, task, operationTags, insertContext,
+                _reader.ReadObStatsStockPages, cancellationToken);
+        if (spec.DataKind == "obstats" && spec.Market == "futures")
+            return await LoadHistoricalSeriesAsync<ObStatsFuturesRow>(spec, task, operationTags, insertContext,
+                _reader.ReadObStatsFuturesPages, cancellationToken);
+        if (spec.DataKind == "orderstats" && spec.Market == "stock")
+            return await LoadHistoricalSeriesAsync<OrderStatsStockRow>(spec, task, operationTags, insertContext,
+                _reader.ReadOrderStatsStockPages, cancellationToken);
+        if (spec.DataKind == "futoi" && spec.Market == "futures")
+            return await LoadHistoricalSeriesAsync<FutoiRow>(spec, task, operationTags, insertContext,
+                _reader.ReadFutoiPages, cancellationToken);
+        if (spec.DataKind == "hi2" && spec.Market == "stock")
+            return await LoadHistoricalSeriesAsync<Hi2StockRow>(spec, task, operationTags, insertContext,
+                _reader.ReadHi2StockPages, cancellationToken);
+        if (spec.DataKind == "hi2" && spec.Market == "futures")
+            return await LoadHistoricalSeriesAsync<Hi2FuturesRow>(spec, task, operationTags, insertContext,
+                _reader.ReadHi2FuturesPages, cancellationToken);
+        if (spec.DataKind == "mega_alerts" && spec.Market == "stock")
+            return await LoadHistoricalSeriesAsync<MegaAlertsStockRow>(spec, task, operationTags, insertContext,
+                _reader.ReadMegaAlertsStockPages, cancellationToken);
+        if (spec.DataKind == "mega_alerts" && spec.Market == "futures")
+            return await LoadHistoricalSeriesAsync<MegaAlertsFuturesRow>(spec, task, operationTags, insertContext,
+                _reader.ReadMegaAlertsFuturesPages, cancellationToken);
+
+        throw new InvalidOperationException(
+            $"Нет типизированного обработчика исторического ряда {spec.DataKind}/{spec.Market}.");
     }
 
-    private async IAsyncEnumerable<SeriesParsedPage> ReadRequestWindows(
+    private async Task<RowWriteSummary> LoadHistoricalSeriesAsync<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
         MoexSeriesSpec spec,
         MoexLoadTask task,
         MoexOperationTags operationTags,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
+        StorageInsertContext insertContext,
+        HistoricalPagesReader<TRow> readPages,
+        CancellationToken cancellationToken)
+        where TRow : struct
     {
-        int days = task.DataKind == "orderstats" && task.Market == "stock" ? 7 : 364;
+        ProtobufBatchWriter<TRow> writer = new(
+            _executor, spec.Table, spec.Columns, insertContext);
+        long rowsRead = 0;
+        long rowsSkipped = 0;
+        long rowsInsertedReported = 0;
+        int readErrorCount = 0;
+        string? firstReadErrorReason = null;
+        DateOnly? firstReadErrorDateFrom = null;
+        DateOnly? firstReadErrorDateTill = null;
+        DateOnly? firstSkippedDate = null;
+
+        await foreach (HistoricalSeriesParsedPage page in ReadHistoricalRequestWindows(
+            spec, task, operationTags, writer, readPages, cancellationToken)
+            .WithCancellation(cancellationToken))
+        {
+            if (page.Failure is SeriesReadFailure failure)
+            {
+                if (writer.RowCount > 0)
+                    rowsInsertedReported += await writer.FlushAsync(cancellationToken);
+                readErrorCount++;
+                if (firstReadErrorReason is null)
+                {
+                    firstReadErrorReason = failure.Reason;
+                    firstReadErrorDateFrom = failure.DateFrom;
+                    firstReadErrorDateTill = failure.DateTill;
+                }
+                continue;
+            }
+
+            rowsRead += page.SourceRowsCount;
+            rowsSkipped += page.SkippedRows;
+            if (page.SkippedSourceRows is not null)
+            {
+                for (int index = 0; index < page.SkippedSourceRows.Count; index++)
+                {
+                    DateTime? skippedTime = page.SkippedSourceRows[index].Time;
+                    if (skippedTime is not null && skippedTime.Value != default)
+                        firstSkippedDate ??= DateOnly.FromDateTime(skippedTime.Value);
+                }
+            }
+
+            if (writer.RowCount >= _batchSize)
+                rowsInsertedReported += await writer.FlushAsync(cancellationToken);
+        }
+
+        if (writer.RowCount > 0)
+            rowsInsertedReported += await writer.FlushAsync(cancellationToken);
+
+        ClickHouseWriterLogMessages.RangeWritten(_logger, task.Secid, rowsRead, rowsInsertedReported);
+        return new RowWriteSummary(
+            rowsRead, rowsSkipped, readErrorCount, firstReadErrorReason,
+            firstReadErrorDateFrom, firstReadErrorDateTill, firstSkippedDate);
+    }
+
+    private async IAsyncEnumerable<HistoricalSeriesParsedPage> ReadHistoricalRequestWindows<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
+        MoexSeriesSpec spec,
+        MoexLoadTask task,
+        MoexOperationTags operationTags,
+        ProtobufBatchWriter<TRow> writer,
+        HistoricalPagesReader<TRow> readPages,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+        where TRow : struct
+    {
+        int days = spec.DataKind == "orderstats" && spec.Market == "stock" ? 7 : 364;
         DateOnly from = task.DateFrom;
         while (true)
         {
             int remainingDays = task.DateTill.DayNumber - from.DayNumber;
             DateOnly till = remainingDays < days ? task.DateTill : from.AddDays(days - 1);
-            await using IAsyncEnumerator<SeriesParsedPage> enumerator = _reader.ReadPages(
-                spec, task.Secid, task.Boardid, from, till, operationTags, cancellationToken)
+            await using IAsyncEnumerator<HistoricalSeriesParsedPage> enumerator = readPages(
+                spec, task.Secid, from, till, operationTags, writer, cancellationToken)
                 .GetAsyncEnumerator(cancellationToken);
             while (true)
             {
@@ -257,33 +355,35 @@ public sealed class SpecLoadHandler
                 {
                     string endpoint = GetEndpoint(spec, task);
                     MoexLogMessages.HistoryOperationFailed(
-                        _logger,
-                        ex,
-                        task.Secid,
-                        operationTags.DataKind,
-                        operationTags.Operation,
+                        _logger, ex, task.Secid, operationTags.DataKind, operationTags.Operation,
                         endpoint,
                         from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                         till.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                        "window",
-                        MoexMetrics.ClassifyError(ex),
-                        ex.Message);
+                        "window", MoexMetrics.ClassifyError(ex), ex.Message);
                     throw;
                 }
+
                 if (readFailure is not null)
                 {
-                    yield return new SeriesParsedPage(
-                        [], 0, null, new SeriesReadFailure(from, till, readFailure.Message));
+                    yield return new HistoricalSeriesParsedPage(
+                        0, 0, null, null,
+                        new SeriesReadFailure(from, till, readFailure.Message));
                     break;
                 }
                 if (!hasPage)
                     break;
-                SeriesParsedPage page = enumerator.Current;
-                if (page.SourceRowsCount > 0)
-                    LastParsedPageDate = GetLastSourceDate(page);
 
+                HistoricalSeriesParsedPage page = enumerator.Current;
+                if (page.SourceRowsCount > 0)
+                {
+                    DateTime? time = page.LastSourceTime;
+                    LastParsedPageDate = time.HasValue && time.Value != default
+                        ? DateOnly.FromDateTime(time.Value)
+                        : null;
+                }
                 yield return page;
             }
+
             if (till == task.DateTill)
                 break;
             from = till.AddDays(1);
@@ -445,23 +545,6 @@ public sealed class SpecLoadHandler
             : task.Boardid.ToUpperInvariant();
         return string.Format(
             CultureInfo.InvariantCulture, spec.MethodTemplate, task.Secid, board);
-    }
-
-    private static DateOnly? GetLastSourceDate(SeriesParsedPage page)
-    {
-        if (page.SourceRowsCount == 0)
-            return null;
-
-        DateTime? time;
-        List<SkippedSourceRow>? skipped = page.SkippedSourceRows;
-        if (skipped is { Count: > 0 } && skipped[^1].SourceIndex == page.SourceRowsCount - 1)
-            time = skipped[^1].Time;
-        else
-            time = page.Rows.Count > 0 ? page.Rows[^1].Time : null;
-
-        return time.HasValue && time.Value != default
-            ? DateOnly.FromDateTime(time.Value)
-            : null;
     }
 
     private static DateOnly? GetLastSourceDate(CandleParsedPage page)
