@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
-using System.Buffers;
+using System.Diagnostics.CodeAnalysis;
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Infrastructure;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
@@ -20,12 +20,17 @@ namespace ProjectTraiding.Moex.Realtime.CurrentDay;
 /// </summary>
 public sealed class AlgopackCurrentDayService : BackgroundService
 {
-    private delegate IAsyncEnumerable<TradeStatsParsedPage<TRow>> TradeStatsPagesReader<TRow>(
+    private delegate IAsyncEnumerable<TradeStatsParsedPage<TRow>> TradeStatsPagesReader<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
         MoexSeriesSpec spec,
         string secId,
         DateOnly from,
         DateOnly till,
         MoexOperationTags operationTags,
+        ProtobufBatchWriter<TRow> statsWriter,
+        ProtobufBatchWriter<CandleRow> candleWriter,
+        DateTime? lastSourceTime,
+        uint ingestPriority,
         CancellationToken cancellationToken)
         where TRow : struct;
 
@@ -52,10 +57,12 @@ public sealed class AlgopackCurrentDayService : BackgroundService
     private readonly MoexReceiverInstrumentReader _instrumentReader;
     private readonly MoexHistoryPageReader _pageReader;
     private readonly MoexHistoryWriter _historyWriter;
+    private readonly ClickHouseInsertExecutor _executor;
     private readonly StreamCursorWriter _cursorWriter;
     private readonly FutoiSubjectReader _futoiSubjectReader;
     private readonly ILogger<AlgopackCurrentDayService> _logger;
     private readonly TimeSpan _instrumentFetchTimeout;
+    private readonly int _batchSize;
     private readonly TimeOnly _hi2DailyTime;
     private readonly TimeSpan _hi2RetryInterval;
     private readonly PeriodicKind[] _periodicKinds;
@@ -65,16 +72,20 @@ public sealed class AlgopackCurrentDayService : BackgroundService
         MoexReceiverInstrumentReader instrumentReader,
         MoexHistoryPageReader pageReader,
         MoexHistoryWriter historyWriter,
+        ClickHouseInsertExecutor executor,
         StreamCursorWriter cursorWriter,
         FutoiSubjectReader futoiSubjectReader,
+        int batchSize,
         IOptions<MoexOptions> options,
         ILogger<AlgopackCurrentDayService> logger)
     {
         _instrumentReader = instrumentReader;
         _pageReader = pageReader;
         _historyWriter = historyWriter;
+        _executor = executor;
         _cursorWriter = cursorWriter;
         _futoiSubjectReader = futoiSubjectReader;
+        _batchSize = batchSize > 0 ? batchSize : throw new ArgumentOutOfRangeException(nameof(batchSize));
         _logger = logger;
 
         MoexOptions value = options.Value;
@@ -323,6 +334,13 @@ public sealed class AlgopackCurrentDayService : BackgroundService
         {
             if (spec.DataKind == "tradestats" && market == StockMarket)
             {
+                StorageInsertContext candleInsertContext = new(
+                    MoexDataKinds.Candles, market, MoexFlows.Realtime, 5);
+                ProtobufBatchWriter<TradeStatsStockRow> statsWriter = new(
+                    _executor, spec.Table, spec.Columns, insertContext);
+                ProtobufBatchWriter<CandleRow> candleWriter = new(
+                    _executor, "moex_candles_5m", MoexSeriesRegistry.CandlesStock1m.Columns,
+                    candleInsertContext);
                 await ProcessTradeStatsInstrumentAsync(
                     spec,
                     secid,
@@ -330,16 +348,21 @@ public sealed class AlgopackCurrentDayService : BackgroundService
                     boardId,
                     today,
                     lastSourceTime,
+                    statsWriter,
+                    candleWriter,
                     _pageReader.ReadTradeStatsStockPages,
-                    TradeStatsStockProtobufSchema.Definition,
-                    TradeStatsStockProtobufSchema.MessageName,
-                    TradeStatsProtobufBatchWriter.AppendStock,
-                    insertContext,
                     operationTags,
                     ct);
             }
             else if (spec.DataKind == "tradestats" && market == FuturesMarket)
             {
+                StorageInsertContext candleInsertContext = new(
+                    MoexDataKinds.Candles, market, MoexFlows.Realtime, 5);
+                ProtobufBatchWriter<TradeStatsFuturesRow> statsWriter = new(
+                    _executor, spec.Table, spec.Columns, insertContext);
+                ProtobufBatchWriter<CandleRow> candleWriter = new(
+                    _executor, "moex_candles_5m", MoexSeriesRegistry.CandlesStock1m.Columns,
+                    candleInsertContext);
                 await ProcessTradeStatsInstrumentAsync(
                     spec,
                     secid,
@@ -347,11 +370,9 @@ public sealed class AlgopackCurrentDayService : BackgroundService
                     boardId,
                     today,
                     lastSourceTime,
+                    statsWriter,
+                    candleWriter,
                     _pageReader.ReadTradeStatsFuturesPages,
-                    TradeStatsFuturesProtobufSchema.Definition,
-                    TradeStatsFuturesProtobufSchema.MessageName,
-                    TradeStatsProtobufBatchWriter.AppendFutures,
-                    insertContext,
                     operationTags,
                     ct);
             }
@@ -435,24 +456,25 @@ public sealed class AlgopackCurrentDayService : BackgroundService
         }
     }
 
-    private async Task ProcessTradeStatsInstrumentAsync<TRow>(
+    private async Task ProcessTradeStatsInstrumentAsync<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
         MoexSeriesSpec spec,
         string secid,
         string market,
         string boardId,
         DateOnly today,
         DateTime? lastSourceTime,
+        ProtobufBatchWriter<TRow> statsWriter,
+        ProtobufBatchWriter<CandleRow> candleWriter,
         TradeStatsPagesReader<TRow> readPages,
-        string protobufSchema,
-        string messageName,
-        Action<IBufferWriter<byte>, TRow> appendRow,
-        StorageInsertContext insertContext,
         MoexOperationTags operationTags,
         CancellationToken ct)
         where TRow : struct
     {
-        List<TradeStatsParsedPage<TRow>> fetchedPages = [];
+        TailFilterState filterState = new();
         Exception? fetchFailure = null;
+        long sourceRowsCount = 0;
+        long rowsInsertedReported = 0;
         using (CancellationTokenSource fetchCts =
                CancellationTokenSource.CreateLinkedTokenSource(ct))
         {
@@ -460,11 +482,29 @@ public sealed class AlgopackCurrentDayService : BackgroundService
             try
             {
                 IAsyncEnumerable<TradeStatsParsedPage<TRow>> pages = readPages(
-                    spec, secid, today, today, operationTags, fetchCts.Token);
+                    spec, secid, today, today, operationTags,
+                    statsWriter, candleWriter, lastSourceTime, 0, fetchCts.Token);
                 await foreach (TradeStatsParsedPage<TRow> page
                                in pages.WithCancellation(fetchCts.Token))
                 {
-                    fetchedPages.Add(page);
+                    sourceRowsCount += page.SourceRowsCount;
+                    if (page.Failure is not null || page.SkippedRows > 0)
+                        filterState.Incomplete = true;
+
+                    if (page.MaxAcceptedSourceTime is DateTime pageMaximum
+                        && (filterState.MaxSourceTime is null
+                            || pageMaximum > filterState.MaxSourceTime.Value))
+                    {
+                        filterState.MaxSourceTime = pageMaximum;
+                    }
+
+                    bool flushStats = statsWriter.RowCount >= _batchSize;
+                    bool flushCandles = candleWriter.RowCount >= _batchSize;
+                    if (flushStats || flushCandles)
+                    {
+                        rowsInsertedReported += await FlushTradeStatsWritersAsync(
+                            statsWriter, candleWriter, flushStats, flushCandles, ct);
+                    }
                 }
             }
             catch (OperationCanceledException)
@@ -475,25 +515,16 @@ public sealed class AlgopackCurrentDayService : BackgroundService
                 fetchFailure = new TimeoutException(
                     "Не все страницы ALGOPACK получены до истечения времени.");
             }
-            catch (Exception ex)
-                when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+            catch (Exception ex) when (MoexHistoryPageReader.IsRecoverableReadFailure(ex))
             {
                 fetchFailure = ex;
             }
         }
 
-        TailFilterState filterState = new();
-        IAsyncEnumerable<TradeStatsParsedPage<TRow>> filteredPages = FilterTradeStatsPages(
-            EnumerateTradeStatsPages(fetchedPages, ct), lastSourceTime, filterState, ct);
-        await _historyWriter.WriteTradeStatsRangeAsync(
-            spec,
-            secid,
-            filteredPages,
-            protobufSchema,
-            messageName,
-            appendRow,
-            insertContext,
-            ct);
+        rowsInsertedReported += await FlushTradeStatsWritersAsync(
+            statsWriter, candleWriter, flushStats: true, flushCandles: true, ct);
+        ClickHouseWriterLogMessages.RangeWritten(
+            _logger, secid, sourceRowsCount, rowsInsertedReported);
 
         if (fetchFailure is null
             && !filterState.Incomplete
@@ -514,6 +545,57 @@ public sealed class AlgopackCurrentDayService : BackgroundService
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(fetchFailure).Throw();
         if (filterState.Incomplete)
             throw new InvalidOperationException("Данные ALGOPACK обработаны частично.");
+    }
+
+    private static async Task<long> FlushTradeStatsWritersAsync<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
+        ProtobufBatchWriter<TRow> statsWriter,
+        ProtobufBatchWriter<CandleRow> candleWriter,
+        bool flushStats,
+        bool flushCandles,
+        CancellationToken ct)
+        where TRow : struct
+    {
+        long statsInserted = 0;
+        List<Exception>? failures = null;
+
+        if (flushStats && statsWriter.RowCount > 0)
+        {
+            try
+            {
+                statsInserted = await statsWriter.FlushAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                (failures ??= []).Add(ex);
+            }
+        }
+
+        if (flushCandles && candleWriter.RowCount > 0)
+        {
+            try
+            {
+                _ = await candleWriter.FlushAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                (failures ??= []).Add(ex);
+            }
+        }
+
+        if (ct.IsCancellationRequested
+            && failures is { Count: > 0 }
+            && failures[0] is OperationCanceledException)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failures[0]).Throw();
+        }
+
+        if (failures is { Count: 1 })
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failures[0]).Throw();
+        if (failures is { Count: > 1 })
+            throw new AggregateException("Обе вставки TradeStats завершились с ошибкой.", failures);
+
+        return statsInserted;
     }
 
     private static async IAsyncEnumerable<SeriesParsedPage> FilterPages(
@@ -566,75 +648,9 @@ public sealed class AlgopackCurrentDayService : BackgroundService
         }
     }
 
-    private static async IAsyncEnumerable<TradeStatsParsedPage<TRow>> FilterTradeStatsPages<TRow>(
-        IAsyncEnumerable<TradeStatsParsedPage<TRow>> pages,
-        DateTime? lastSourceTime,
-        TailFilterState state,
-        [EnumeratorCancellation] CancellationToken ct)
-        where TRow : struct
-    {
-        await foreach (TradeStatsParsedPage<TRow> page in pages.WithCancellation(ct))
-        {
-            List<SkippedSourceRow>? relevantSkippedRows = null;
-            if (page.SkippedSourceRows is not null)
-            {
-                for (int i = 0; i < page.SkippedSourceRows.Count; i++)
-                {
-                    SkippedSourceRow skipped = page.SkippedSourceRows[i];
-                    bool knownBeforeCursor = lastSourceTime is DateTime cursorTime
-                        && skipped.Time is DateTime skippedTime
-                        && skippedTime < cursorTime;
-                    if (knownBeforeCursor)
-                        continue;
-
-                    state.Incomplete = true;
-                    (relevantSkippedRows ??= []).Add(skipped);
-                }
-            }
-
-            if (page.Failure is not null)
-                state.Incomplete = true;
-
-            List<(TRow Row, DateTime Time)> filteredRows = new(page.Rows.Count);
-            for (int i = 0; i < page.Rows.Count; i++)
-            {
-                (TRow row, DateTime time) = page.Rows[i];
-                if (lastSourceTime is DateTime cursorTime && time < cursorTime)
-                    continue;
-
-                filteredRows.Add((row, time));
-                if (state.MaxSourceTime is null || time > state.MaxSourceTime.Value)
-                    state.MaxSourceTime = time;
-            }
-
-            if (filteredRows.Count > 0 || relevantSkippedRows is not null || page.Failure is not null)
-            {
-                yield return new TradeStatsParsedPage<TRow>(
-                    filteredRows,
-                    filteredRows.Count + (relevantSkippedRows?.Count ?? 0),
-                    relevantSkippedRows,
-                    page.Failure);
-            }
-        }
-    }
-
     private static async IAsyncEnumerable<SeriesParsedPage> EnumeratePages(
         IReadOnlyList<SeriesParsedPage> pages,
         [EnumeratorCancellation] CancellationToken ct)
-    {
-        for (int i = 0; i < pages.Count; i++)
-        {
-            ct.ThrowIfCancellationRequested();
-            yield return pages[i];
-        }
-
-        await Task.CompletedTask;
-    }
-
-    private static async IAsyncEnumerable<TradeStatsParsedPage<TRow>> EnumerateTradeStatsPages<TRow>(
-        IReadOnlyList<TradeStatsParsedPage<TRow>> pages,
-        [EnumeratorCancellation] CancellationToken ct)
-        where TRow : struct
     {
         for (int i = 0; i < pages.Count; i++)
         {

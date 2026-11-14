@@ -27,8 +27,26 @@ public sealed class SeriesRangeDeleter
         DateOnly tillInclusive,
         CancellationToken ct)
     {
-        long startTs = Stopwatch.GetTimestamp();
+        if (spec.DataKind == "tradestats")
+        {
+            await DeleteTableRangeAsync(spec.Table, "source_time", secid, from, tillInclusive, ct);
+            await DeleteTableRangeAsync("moex_candles_5m", "begin", secid, from, tillInclusive, ct);
+            return;
+        }
+
         string timeColumn = spec.DataKind == "candles" ? "begin" : "source_time";
+        await DeleteTableRangeAsync(spec.Table, timeColumn, secid, from, tillInclusive, ct);
+    }
+
+    private async Task DeleteTableRangeAsync(
+        string table,
+        string timeColumn,
+        string secid,
+        DateOnly from,
+        DateOnly tillInclusive,
+        CancellationToken ct)
+    {
+        long startTs = Stopwatch.GetTimestamp();
         string fromText = from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
             + " 00:00:00.000";
         string tillText = tillInclusive.AddDays(1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
@@ -56,14 +74,14 @@ public sealed class SeriesRangeDeleter
             Value = tillText,
         });
 
-        string existsSql = $"SELECT 1 FROM {spec.Table} WHERE {rangeCondition} LIMIT 1";
+        string existsSql = $"SELECT 1 FROM {table} WHERE {rangeCondition} LIMIT 1";
         QueryOptions existsOptions = new QueryOptions();
         object? scalar = await _client.ExecuteScalarAsync(
             existsSql, parameters, existsOptions, ct);
         if (scalar is null or DBNull)
             return;
 
-        string deleteSql = $"ALTER TABLE {spec.Table} DELETE WHERE {rangeCondition}";
+        string deleteSql = $"ALTER TABLE {table} DELETE WHERE {rangeCondition}";
         QueryOptions deleteOptions = new QueryOptions
         {
             CustomSettings = new Dictionary<string, object>
@@ -75,6 +93,6 @@ public sealed class SeriesRangeDeleter
 
         TimeSpan elapsed = Stopwatch.GetElapsedTime(startTs);
         MoexWriterLogMessages.SeriesRangeDeleted(
-            _logger, secid, spec.Table, fromText, tillText, elapsed);
+            _logger, secid, table, fromText, tillText, elapsed);
     }
 }

@@ -1,4 +1,3 @@
-using System.Buffers;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 
 namespace ProjectTraiding.Moex.Series;
@@ -68,9 +67,7 @@ public sealed class MoexHistoryWriter
                 continue;
             }
 
-            // Покрытый объём считается по строкам источника, а не по принятым: отвергнутая
-            // строка прочитана и входит в диапазон, просто не записана. Иначе rows_total
-            // изменил бы смысл — сегодня в нём число прочитанных строк.
+            // Covered volume follows source rows, including rows rejected from insertion.
             rowsRead += page.SourceRowsCount;
             rowsSkipped += page.SkippedRows;
             if (page.SkippedSourceRows is not null)
@@ -126,123 +123,6 @@ public sealed class MoexHistoryWriter
             firstReadErrorDateFrom,
             firstReadErrorDateTill,
             firstSkippedDate);
-    }
-
-    public async Task<RowWriteSummary> WriteTradeStatsRangeAsync<TRow>(
-        MoexSeriesSpec spec,
-        string secid,
-        IAsyncEnumerable<TradeStatsParsedPage<TRow>> pages,
-        string protobufSchema,
-        string messageName,
-        Action<IBufferWriter<byte>, TRow> appendRow,
-        StorageInsertContext insertContext,
-        CancellationToken cancellationToken)
-        where TRow : struct
-    {
-        EnsureRangeValid(spec, secid);
-
-        List<TRow> batch = new(_batchSize);
-        long rowsRead = 0;
-        long rowsSkipped = 0;
-        long rowsInsertedReported = 0;
-        int readErrorCount = 0;
-        string? firstReadErrorReason = null;
-        DateOnly? firstReadErrorDateFrom = null;
-        DateOnly? firstReadErrorDateTill = null;
-        DateOnly? firstSkippedDate = null;
-
-        await foreach (TradeStatsParsedPage<TRow> page
-                       in pages.WithCancellation(cancellationToken))
-        {
-            if (page.Failure is SeriesReadFailure failure)
-            {
-                if (batch.Count > 0)
-                {
-                    long reported = await InsertTradeStatsBatchAsync(
-                        spec, batch, protobufSchema, messageName, appendRow,
-                        insertContext, cancellationToken);
-                    rowsInsertedReported += reported;
-                    batch.Clear();
-                }
-
-                readErrorCount++;
-                if (firstReadErrorReason is null)
-                {
-                    firstReadErrorReason = failure.Reason;
-                    firstReadErrorDateFrom = failure.DateFrom;
-                    firstReadErrorDateTill = failure.DateTill;
-                }
-                continue;
-            }
-
-            rowsRead += page.SourceRowsCount;
-            rowsSkipped += page.SkippedRows;
-            if (page.SkippedSourceRows is not null)
-            {
-                for (int i = 0; i < page.SkippedSourceRows.Count; i++)
-                {
-                    DateTime? skippedTime = page.SkippedSourceRows[i].Time;
-                    if (skippedTime is null || skippedTime.Value == default)
-                        continue;
-
-                    DateOnly skippedDate = DateOnly.FromDateTime(skippedTime.Value);
-                    firstSkippedDate ??= skippedDate;
-                }
-            }
-
-            foreach ((TRow row, _) in page.Rows)
-            {
-                batch.Add(row);
-                if (batch.Count >= _batchSize)
-                {
-                    long reported = await InsertTradeStatsBatchAsync(
-                        spec, batch, protobufSchema, messageName, appendRow,
-                        insertContext, cancellationToken);
-                    rowsInsertedReported += reported;
-                    batch.Clear();
-                }
-            }
-        }
-
-        if (batch.Count > 0)
-        {
-            long reported = await InsertTradeStatsBatchAsync(
-                spec, batch, protobufSchema, messageName, appendRow,
-                insertContext, cancellationToken);
-            rowsInsertedReported += reported;
-        }
-
-        ClickHouseWriterLogMessages.RangeWritten(
-            _logger, secid, rowsRead, rowsInsertedReported);
-        return new RowWriteSummary(
-            rowsRead,
-            rowsSkipped,
-            readErrorCount,
-            firstReadErrorReason,
-            firstReadErrorDateFrom,
-            firstReadErrorDateTill,
-            firstSkippedDate);
-    }
-
-    private Task<long> InsertTradeStatsBatchAsync<TRow>(
-        MoexSeriesSpec spec,
-        IReadOnlyList<TRow> rows,
-        string protobufSchema,
-        string messageName,
-        Action<IBufferWriter<byte>, TRow> appendRow,
-        StorageInsertContext insertContext,
-        CancellationToken cancellationToken)
-        where TRow : struct
-    {
-        return _executor.InsertProtobufAsync(
-            spec.Table,
-            spec.Columns,
-            protobufSchema,
-            messageName,
-            rows,
-            appendRow,
-            insertContext,
-            cancellationToken);
     }
 
     private static void EnsureRangeValid(MoexSeriesSpec spec, string secid)

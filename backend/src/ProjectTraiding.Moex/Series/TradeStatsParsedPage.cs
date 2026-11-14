@@ -1,13 +1,16 @@
 namespace ProjectTraiding.Moex.Series;
 
 /// <summary>
-/// Типизированные строки страницы tradestats. Время остаётся московской меткой
-/// источника и отдельно от значения Unix-секунд, подготовленного для Protobuf.
+/// Compact summary of a parsed tradestats page. Accepted market rows are appended
+/// directly to their Protobuf writers and are not retained here.
 /// </summary>
 public readonly record struct TradeStatsParsedPage<TRow>(
-    List<(TRow Row, DateTime Time)> Rows,
     int SourceRowsCount,
+    int AcceptedRowsCount,
     List<SkippedSourceRow>? SkippedSourceRows,
+    DateTime? LastSourceTime,
+    DateTime? MaxAcceptedSourceTime,
+    int HttpSourceRowsCount,
     SeriesReadFailure? Failure = null)
     where TRow : struct
 {

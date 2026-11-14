@@ -95,12 +95,18 @@ public sealed class MoexHistoryPageReader
         DateOnly from,
         DateOnly till,
         MoexOperationTags operationTags,
+        ProtobufBatchWriter<TradeStatsStockRow> statsWriter,
+        ProtobufBatchWriter<CandleRow> candleWriter,
+        DateTime? lastSourceTime,
+        uint ingestPriority,
         CancellationToken cancellationToken)
     {
         PageParser<TradeStatsParsedPage<TradeStatsStockRow>> parsePage =
             (ReadOnlyMemory<byte> body, out PaginationCursorDTO cursor) =>
-                TradeStatsHistoryParser.ParseStock(body.Span, spec, secId, out cursor);
-        return ReadTradeStatsCursorPages(
+                TradeStatsHistoryParser.ParseStock(
+                    body.Span, spec, secId, statsWriter, candleWriter,
+                    lastSourceTime, ingestPriority, out cursor);
+        return ReadTradeStatsCursorPages<TradeStatsStockRow>(
             spec, secId, from, till, operationTags, parsePage, cancellationToken);
     }
 
@@ -110,12 +116,18 @@ public sealed class MoexHistoryPageReader
         DateOnly from,
         DateOnly till,
         MoexOperationTags operationTags,
+        ProtobufBatchWriter<TradeStatsFuturesRow> statsWriter,
+        ProtobufBatchWriter<CandleRow> candleWriter,
+        DateTime? lastSourceTime,
+        uint ingestPriority,
         CancellationToken cancellationToken)
     {
         PageParser<TradeStatsParsedPage<TradeStatsFuturesRow>> parsePage =
             (ReadOnlyMemory<byte> body, out PaginationCursorDTO cursor) =>
-                TradeStatsHistoryParser.ParseFutures(body.Span, spec, secId, out cursor);
-        return ReadTradeStatsCursorPages(
+                TradeStatsHistoryParser.ParseFutures(
+                    body.Span, spec, secId, statsWriter, candleWriter,
+                    lastSourceTime, ingestPriority, out cursor);
+        return ReadTradeStatsCursorPages<TradeStatsFuturesRow>(
             spec, secId, from, till, operationTags, parsePage, cancellationToken);
     }
 
@@ -207,7 +219,8 @@ public sealed class MoexHistoryPageReader
         out PaginationCursorDTO cursor, out HistoricalSeriesTimeGroupTail<MegaAlertsFuturesRow>? tail)
         => MegaAlertsHistoryParser.ParseFutures(body.Span, spec, secId, writer, out cursor, out tail);
 
-    private async IAsyncEnumerable<TradeStatsParsedPage<TRow>> ReadTradeStatsCursorPages<TRow>(
+    private async IAsyncEnumerable<TradeStatsParsedPage<TRow>> ReadTradeStatsCursorPages<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
         MoexSeriesSpec spec,
         string secId,
         DateOnly from,
@@ -240,16 +253,16 @@ public sealed class MoexHistoryPageReader
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            PageFetchResult<TradeStatsParsedPage<TRow>> page = await FetchPageAsync(
+            PageFetchResult<TradeStatsParsedPage<TRow>> page = await FetchPageAsync<TradeStatsParsedPage<TRow>>(
                 spec, method, query, secId, operationTags,
-                parsePage, static parsed => parsed.Rows.Count, cancellationToken);
+                parsePage, static parsed => parsed.HttpSourceRowsCount, cancellationToken);
             TradeStatsParsedPage<TRow> parsed = page.Rows;
             PaginationCursorDTO cursor = page.Cursor;
 
             pagesElapsed++;
-            totalRows += parsed.Rows.Count;
+            totalRows = checked(totalRows + parsed.AcceptedRowsCount);
             MoexLogMessages.PageReceived(
-                _logger, method, pagesElapsed, parsed.Rows.Count, page.Elapsed);
+                _logger, method, pagesElapsed, parsed.AcceptedRowsCount, page.Elapsed);
 
             if (cursor.Index is null || cursor.PageSize is null || cursor.Total is null)
             {
@@ -1090,7 +1103,7 @@ public sealed class MoexHistoryPageReader
         string secId,
         MoexOperationTags operationTags,
         PageParser<TPage> parsePage,
-        Func<TPage, int> getAcceptedRowCount,
+        Func<TPage, int> getDiagnosticRowCount,
         CancellationToken cancellationToken)
     {
         long pageStart = Stopwatch.GetTimestamp();
@@ -1179,7 +1192,7 @@ public sealed class MoexHistoryPageReader
                 { MoexTelemetryAttributes.Market, operationTags.Market },
                 { MoexTelemetryAttributes.Flow, operationTags.Flow },
             };
-            MoexMetrics.RowsReceived.Add(getAcceptedRowCount(parsed), rowsTags);
+            MoexMetrics.RowsReceived.Add(getDiagnosticRowCount(parsed), rowsTags);
 
             MoexMetrics.RecordOperationSuccess(
                 in operationTags,

@@ -12,12 +12,17 @@ namespace ProjectTraiding.Moex.Loading;
 
 public sealed class SpecLoadHandler
 {
-    private delegate IAsyncEnumerable<TradeStatsParsedPage<TRow>> TradeStatsPagesReader<TRow>(
+    private delegate IAsyncEnumerable<TradeStatsParsedPage<TRow>> TradeStatsPagesReader<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
         MoexSeriesSpec spec,
         string secId,
         DateOnly from,
         DateOnly till,
         MoexOperationTags operationTags,
+        ProtobufBatchWriter<TRow> statsWriter,
+        ProtobufBatchWriter<CandleRow> candleWriter,
+        DateTime? lastSourceTime,
+        uint ingestPriority,
         CancellationToken cancellationToken)
         where TRow : struct;
 
@@ -100,6 +105,9 @@ public sealed class SpecLoadHandler
                     "которую обслуживает приёмник реального времени.");
             }
         }
+
+        if (spec.DataKind == "tradestats")
+            ValidateTaskSecId(spec, task.Secid);
 
         // Повторная загрузка сначала удаляет полный диапазон, затем записывает его заново.
         await _rangeDeleter.DeleteAsync(
@@ -192,34 +200,16 @@ public sealed class SpecLoadHandler
 
         if (spec.DataKind == "tradestats" && spec.Market == "stock")
         {
-            IAsyncEnumerable<TradeStatsParsedPage<TradeStatsStockRow>> stockPages =
-                ReadTradeStatsRequestWindows(
-                    spec, task, operationTags, _reader.ReadTradeStatsStockPages, cancellationToken);
-            return await _writer.WriteTradeStatsRangeAsync(
-                spec,
-                task.Secid,
-                stockPages,
-                TradeStatsStockProtobufSchema.Definition,
-                TradeStatsStockProtobufSchema.MessageName,
-                TradeStatsProtobufBatchWriter.AppendStock,
-                insertContext,
-                cancellationToken);
+            return await LoadTradeStatsRangeAsync<TradeStatsStockRow>(
+                spec, task, operationTags, insertContext,
+                _reader.ReadTradeStatsStockPages, cancellationToken);
         }
 
         if (spec.DataKind == "tradestats" && spec.Market == "futures")
         {
-            IAsyncEnumerable<TradeStatsParsedPage<TradeStatsFuturesRow>> futuresPages =
-                ReadTradeStatsRequestWindows(
-                    spec, task, operationTags, _reader.ReadTradeStatsFuturesPages, cancellationToken);
-            return await _writer.WriteTradeStatsRangeAsync(
-                spec,
-                task.Secid,
-                futuresPages,
-                TradeStatsFuturesProtobufSchema.Definition,
-                TradeStatsFuturesProtobufSchema.MessageName,
-                TradeStatsProtobufBatchWriter.AppendFutures,
-                insertContext,
-                cancellationToken);
+            return await LoadTradeStatsRangeAsync<TradeStatsFuturesRow>(
+                spec, task, operationTags, insertContext,
+                _reader.ReadTradeStatsFuturesPages, cancellationToken);
         }
 
         if (spec.DataKind == "obstats" && spec.Market == "stock")
@@ -249,6 +239,134 @@ public sealed class SpecLoadHandler
 
         throw new InvalidOperationException(
             $"Нет типизированного обработчика исторического ряда {spec.DataKind}/{spec.Market}.");
+    }
+
+    private async Task<RowWriteSummary> LoadTradeStatsRangeAsync<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
+        MoexSeriesSpec spec,
+        MoexLoadTask task,
+        MoexOperationTags operationTags,
+        StorageInsertContext insertContext,
+        TradeStatsPagesReader<TRow> readPages,
+        CancellationToken cancellationToken)
+        where TRow : struct
+    {
+        ProtobufBatchWriter<TRow> statsWriter = new(
+            _executor, spec.Table, spec.Columns, insertContext);
+        StorageInsertContext candleInsertContext = new(
+            MoexDataKinds.Candles, operationTags.Market, MoexFlows.History, 5);
+        ProtobufBatchWriter<CandleRow> candleWriter = new(
+            _executor,
+            "moex_candles_5m",
+            MoexSeriesRegistry.CandlesStock1m.Columns,
+            candleInsertContext);
+
+        long rowsRead = 0;
+        long rowsSkipped = 0;
+        long rowsInsertedReported = 0;
+        int readErrorCount = 0;
+        string? firstReadErrorReason = null;
+        DateOnly? firstReadErrorDateFrom = null;
+        DateOnly? firstReadErrorDateTill = null;
+        DateOnly? firstSkippedDate = null;
+
+        await foreach (TradeStatsParsedPage<TRow> page in ReadTradeStatsRequestWindows(
+            spec, task, operationTags, readPages, statsWriter, candleWriter, cancellationToken)
+            .WithCancellation(cancellationToken))
+        {
+            if (page.Failure is SeriesReadFailure failure)
+            {
+                rowsInsertedReported += await FlushTradeStatsWritersAsync(
+                    statsWriter, candleWriter, flushStats: true, flushCandles: true, cancellationToken);
+                readErrorCount++;
+                if (firstReadErrorReason is null)
+                {
+                    firstReadErrorReason = failure.Reason;
+                    firstReadErrorDateFrom = failure.DateFrom;
+                    firstReadErrorDateTill = failure.DateTill;
+                }
+                continue;
+            }
+
+            rowsRead += page.SourceRowsCount;
+            rowsSkipped += page.SkippedRows;
+            if (page.SkippedSourceRows is not null)
+            {
+                for (int i = 0; i < page.SkippedSourceRows.Count; i++)
+                {
+                    DateTime? skippedTime = page.SkippedSourceRows[i].Time;
+                    if (skippedTime is not null && skippedTime.Value != default)
+                        firstSkippedDate ??= DateOnly.FromDateTime(skippedTime.Value);
+                }
+            }
+
+            bool flushStats = statsWriter.RowCount >= _batchSize;
+            bool flushCandles = candleWriter.RowCount >= _batchSize;
+            if (flushStats || flushCandles)
+            {
+                rowsInsertedReported += await FlushTradeStatsWritersAsync(
+                    statsWriter, candleWriter, flushStats, flushCandles, cancellationToken);
+            }
+        }
+
+        rowsInsertedReported += await FlushTradeStatsWritersAsync(
+            statsWriter, candleWriter, flushStats: true, flushCandles: true, cancellationToken);
+
+        ClickHouseWriterLogMessages.RangeWritten(_logger, task.Secid, rowsRead, rowsInsertedReported);
+        return new RowWriteSummary(
+            rowsRead, rowsSkipped, readErrorCount, firstReadErrorReason,
+            firstReadErrorDateFrom, firstReadErrorDateTill, firstSkippedDate);
+    }
+
+    private static async Task<long> FlushTradeStatsWritersAsync<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
+        ProtobufBatchWriter<TRow> statsWriter,
+        ProtobufBatchWriter<CandleRow> candleWriter,
+        bool flushStats,
+        bool flushCandles,
+        CancellationToken cancellationToken)
+        where TRow : struct
+    {
+        long statsInserted = 0;
+        List<Exception>? failures = null;
+
+        if (flushStats && statsWriter.RowCount > 0)
+        {
+            try
+            {
+                statsInserted = await statsWriter.FlushAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                (failures ??= []).Add(ex);
+            }
+        }
+
+        if (flushCandles && candleWriter.RowCount > 0)
+        {
+            try
+            {
+                _ = await candleWriter.FlushAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                (failures ??= []).Add(ex);
+            }
+        }
+
+        if (cancellationToken.IsCancellationRequested
+            && failures is { Count: > 0 }
+            && failures[0] is OperationCanceledException)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failures[0]).Throw();
+        }
+
+        if (failures is { Count: 1 })
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failures[0]).Throw();
+        if (failures is { Count: > 1 })
+            throw new AggregateException("Обе вставки TradeStats завершились с ошибкой.", failures);
+
+        return statsInserted;
     }
 
     private async Task<RowWriteSummary> LoadHistoricalSeriesAsync<
@@ -476,11 +594,14 @@ public sealed class SpecLoadHandler
         }
     }
 
-    private async IAsyncEnumerable<TradeStatsParsedPage<TRow>> ReadTradeStatsRequestWindows<TRow>(
+    private async IAsyncEnumerable<TradeStatsParsedPage<TRow>> ReadTradeStatsRequestWindows<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
         MoexSeriesSpec spec,
         MoexLoadTask task,
         MoexOperationTags operationTags,
         TradeStatsPagesReader<TRow> readPages,
+        ProtobufBatchWriter<TRow> statsWriter,
+        ProtobufBatchWriter<CandleRow> candleWriter,
         [EnumeratorCancellation] CancellationToken cancellationToken)
         where TRow : struct
     {
@@ -491,7 +612,9 @@ public sealed class SpecLoadHandler
             int remainingDays = task.DateTill.DayNumber - from.DayNumber;
             DateOnly till = remainingDays < days ? task.DateTill : from.AddDays(days - 1);
             await using IAsyncEnumerator<TradeStatsParsedPage<TRow>> enumerator =
-                readPages(spec, task.Secid, from, till, operationTags, cancellationToken)
+                readPages(
+                    spec, task.Secid, from, till, operationTags,
+                    statsWriter, candleWriter, null, 1, cancellationToken)
                     .GetAsyncEnumerator(cancellationToken);
             while (true)
             {
@@ -531,7 +654,7 @@ public sealed class SpecLoadHandler
                 if (readFailure is not null)
                 {
                     yield return new TradeStatsParsedPage<TRow>(
-                        [], 0, null,
+                        0, 0, null, null, null, 0,
                         new SeriesReadFailure(from, till, readFailure.Message));
                     break;
                 }
@@ -561,6 +684,23 @@ public sealed class SpecLoadHandler
             CultureInfo.InvariantCulture, spec.MethodTemplate, task.Secid, board);
     }
 
+    private static void ValidateTaskSecId(MoexSeriesSpec spec, string secid)
+    {
+        if (!string.IsNullOrWhiteSpace(secid))
+            return;
+
+        for (int i = 0; i < spec.TargetColumns.Length; i++)
+        {
+            TargetColumn column = spec.TargetColumns[i];
+            if (column.FillRule == FillRule.TaskSecId && column.Required)
+            {
+                throw new InvalidOperationException(
+                    column.RequiredMessage
+                    ?? "Загрузка исторического ряда отвергнута: secid пустой.");
+            }
+        }
+    }
+
     private static DateOnly? GetLastSourceDate(CandleParsedPage page)
     {
         DateTime? time = page.LastSourceTime;
@@ -572,16 +712,7 @@ public sealed class SpecLoadHandler
     private static DateOnly? GetLastSourceDate<TRow>(TradeStatsParsedPage<TRow> page)
         where TRow : struct
     {
-        if (page.SourceRowsCount == 0)
-            return null;
-
-        DateTime? time;
-        List<SkippedSourceRow>? skipped = page.SkippedSourceRows;
-        if (skipped is { Count: > 0 } && skipped[^1].SourceIndex == page.SourceRowsCount - 1)
-            time = skipped[^1].Time;
-        else
-            time = page.Rows.Count > 0 ? page.Rows[^1].Time : null;
-
+        DateTime? time = page.SourceRowsCount == 0 ? null : page.LastSourceTime;
         return time.HasValue && time.Value != default
             ? DateOnly.FromDateTime(time.Value)
             : null;

@@ -1,7 +1,10 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Realtime.CurrentDay;
+using ProjectTraiding.Moex.Series;
+using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 
 namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection;
@@ -19,7 +22,17 @@ public static class MoexAlgopackCurrentDayServiceCollectionExtensions
 
         services.TryAddSingleton<MoexReceiverInstrumentReader>();
         services.TryAddSingleton<StreamCursorWriter>();
-        services.AddHostedService<AlgopackCurrentDayService>();
+        int batchSize = configuration.GetValue<int>("ClickHouse:CandlesBatchSize", 10000);
+        services.AddHostedService(sp => new AlgopackCurrentDayService(
+            sp.GetRequiredService<MoexReceiverInstrumentReader>(),
+            sp.GetRequiredService<MoexHistoryPageReader>(),
+            sp.GetRequiredService<MoexHistoryWriter>(),
+            sp.GetRequiredService<ClickHouseInsertExecutor>(),
+            sp.GetRequiredService<StreamCursorWriter>(),
+            sp.GetRequiredService<FutoiSubjectReader>(),
+            batchSize,
+            sp.GetRequiredService<IOptions<MoexOptions>>(),
+            sp.GetRequiredService<ILogger<AlgopackCurrentDayService>>()));
 
         return services;
     }
