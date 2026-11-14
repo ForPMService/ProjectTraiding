@@ -261,6 +261,20 @@ public sealed class SpecLoadHandler
         CancellationToken cancellationToken)
         where TRow : struct
     {
+        if (string.IsNullOrWhiteSpace(task.Secid))
+        {
+            for (int index = 0; index < spec.TargetColumns.Length; index++)
+            {
+                TargetColumn column = spec.TargetColumns[index];
+                if (column.FillRule == FillRule.TaskSecId && column.Required)
+                {
+                    throw new InvalidOperationException(
+                        column.RequiredMessage
+                        ?? "Загрузка исторического ряда отвергнута: secid пустой.");
+                }
+            }
+        }
+
         ProtobufBatchWriter<TRow> writer = new(
             _executor, spec.Table, spec.Columns, insertContext);
         long rowsRead = 0;
