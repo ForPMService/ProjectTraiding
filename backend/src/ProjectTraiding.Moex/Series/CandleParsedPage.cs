@@ -1,15 +1,11 @@
-using ProjectTraiding.Moex.StorageBase.ClickHouse;
-
 namespace ProjectTraiding.Moex.Series;
 
-/// <summary>
-/// A typed candle page. Time metadata stays in MOEX Moscow wall-clock time and is
-/// kept separately from the Unix-seconds value serialized into <see cref="CandleRow.Begin"/>.
-/// </summary>
+/// <summary>Page counts and source-time diagnostics; market rows are written during parsing.</summary>
 public readonly record struct CandleParsedPage(
-    List<(CandleRow Row, DateTime Time)> Rows,
     int SourceRowsCount,
+    int AcceptedRowsCount,
     List<SkippedSourceRow>? SkippedSourceRows,
+    DateTime? LastSourceTime,
     SeriesReadFailure? Failure = null)
 {
     public int SkippedRows => SkippedSourceRows?.Count ?? 0;

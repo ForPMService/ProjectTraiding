@@ -398,6 +398,7 @@ public sealed class MoexHistoryPageReader
         DateOnly from,
         DateOnly till,
         MoexOperationTags operationTags,
+        ProtobufBatchWriter<CandleRow> writer,
         CancellationToken cancellationToken)
     {
         if (spec.DataKind != "candles" || spec.Pagination != PaginationKind.FixedPage)
@@ -408,7 +409,7 @@ public sealed class MoexHistoryPageReader
         }
 
         return ReadFixedCandlePages(
-            spec, secId, boardId, from, till, operationTags, cancellationToken);
+            spec, secId, boardId, from, till, operationTags, writer, cancellationToken);
     }
 
     private async IAsyncEnumerable<CandleParsedPage> ReadFixedCandlePages(
@@ -418,6 +419,7 @@ public sealed class MoexHistoryPageReader
         DateOnly from,
         DateOnly till,
         MoexOperationTags operationTags,
+        ProtobufBatchWriter<CandleRow> writer,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         if (spec.CandleInterval is not int candleInterval)
@@ -442,7 +444,7 @@ public sealed class MoexHistoryPageReader
 
         PageParser<CandleParsedPage> parsePage =
             (ReadOnlyMemory<byte> body, out PaginationCursorDTO cursor) =>
-                CandleHistoryParser.Parse(body.Span, spec, secId, out cursor);
+                CandleHistoryParser.Parse(body.Span, spec, secId, writer, out cursor);
 
         int queryStart = 0;
         int pagesElapsed = 0;
@@ -452,15 +454,15 @@ public sealed class MoexHistoryPageReader
             cancellationToken.ThrowIfCancellationRequested();
             PageFetchResult<CandleParsedPage> page = await FetchPageAsync(
                 spec, method, query, secId, operationTags,
-                parsePage, static parsed => parsed.Rows.Count, cancellationToken);
+                parsePage, static parsed => parsed.AcceptedRowsCount, cancellationToken);
             CandleParsedPage parsed = page.Rows;
 
             AccountSkippedRows(parsed, method, secId, operationTags, query);
 
             pagesElapsed++;
-            totalRows += parsed.Rows.Count;
+            totalRows += parsed.AcceptedRowsCount;
             MoexLogMessages.PageReceived(
-                _logger, method, pagesElapsed, parsed.Rows.Count, page.Elapsed);
+                _logger, method, pagesElapsed, parsed.AcceptedRowsCount, page.Elapsed);
 
             yield return parsed;
 
@@ -480,7 +482,7 @@ public sealed class MoexHistoryPageReader
             {
                 MoexLogMessages.FixedPagePaginationStopped(
                     _logger, method, "last_page_incomplete",
-                    pagesElapsed, totalRows, parsed.Rows.Count, FixedPageSize);
+                    pagesElapsed, totalRows, parsed.AcceptedRowsCount, FixedPageSize);
                 break;
             }
         }

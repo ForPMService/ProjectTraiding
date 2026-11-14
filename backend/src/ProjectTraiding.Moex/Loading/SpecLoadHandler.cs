@@ -47,17 +47,23 @@ public sealed class SpecLoadHandler
     private readonly MoexHistoryPageReader _reader;
     private readonly MoexHistoryWriter _writer;
     private readonly SeriesRangeDeleter _rangeDeleter;
+    private readonly ClickHouseInsertExecutor _executor;
+    private readonly int _batchSize;
     private readonly ILogger<SpecLoadHandler> _logger;
 
     public SpecLoadHandler(
         MoexHistoryPageReader reader,
         MoexHistoryWriter writer,
         SeriesRangeDeleter rangeDeleter,
-        ILogger<SpecLoadHandler> logger)
+        ClickHouseInsertExecutor executor,
+        ILogger<SpecLoadHandler> logger,
+        int batchSize)
     {
         _reader = reader;
         _writer = writer;
         _rangeDeleter = rangeDeleter;
+        _executor = executor;
+        _batchSize = batchSize > 0 ? batchSize : throw new ArgumentOutOfRangeException(nameof(batchSize));
         _logger = logger;
     }
 
@@ -102,19 +108,69 @@ public sealed class SpecLoadHandler
 
         if (spec.DataKind == "candles" && spec.Pagination == PaginationKind.FixedPage)
         {
-            IAsyncEnumerable<CandleParsedPage> candlePages = ReadCandleRequestWindows(
-                spec, task, operationTags, cancellationToken);
-            StorageInsertContext candleInsertContext = new(
-                operationTags.DataKind,
-                operationTags.Market,
-                MoexFlows.History);
+            if (string.IsNullOrWhiteSpace(task.Secid))
+            {
+                for (int i = 0; i < spec.TargetColumns.Length; i++)
+                {
+                    TargetColumn column = spec.TargetColumns[i];
+                    if (column.FillRule == FillRule.TaskSecId && column.Required)
+                        throw new InvalidOperationException(column.RequiredMessage
+                            ?? "Загрузка исторического ряда отвергнута: secid пустой.");
+                }
+            }
 
-            return await _writer.WriteCandleRangeAsync(
-                spec,
-                task.Secid,
-                candlePages,
-                candleInsertContext,
-                cancellationToken);
+            StorageInsertContext candleInsertContext = new(
+                operationTags.DataKind, operationTags.Market, MoexFlows.History);
+            ProtobufBatchWriter<CandleRow> candleWriter = new(
+                _executor, spec.Table, spec.Columns, candleInsertContext);
+            long rowsRead = 0;
+            long rowsSkipped = 0;
+            long rowsInsertedReported = 0;
+            int readErrorCount = 0;
+            string? firstReadErrorReason = null;
+            DateOnly? firstReadErrorDateFrom = null;
+            DateOnly? firstReadErrorDateTill = null;
+            DateOnly? firstSkippedDate = null;
+
+            await foreach (CandleParsedPage page in ReadCandleRequestWindows(
+                spec, task, operationTags, candleWriter, cancellationToken).WithCancellation(cancellationToken))
+            {
+                if (page.Failure is SeriesReadFailure failure)
+                {
+                    if (candleWriter.RowCount > 0)
+                        rowsInsertedReported += await candleWriter.FlushAsync(cancellationToken);
+                    readErrorCount++;
+                    if (firstReadErrorReason is null)
+                    {
+                        firstReadErrorReason = failure.Reason;
+                        firstReadErrorDateFrom = failure.DateFrom;
+                        firstReadErrorDateTill = failure.DateTill;
+                    }
+                    continue;
+                }
+
+                rowsRead += page.SourceRowsCount;
+                rowsSkipped += page.SkippedRows;
+                if (page.SkippedSourceRows is not null)
+                {
+                    for (int i = 0; i < page.SkippedSourceRows.Count; i++)
+                    {
+                        DateTime? skippedTime = page.SkippedSourceRows[i].Time;
+                        if (skippedTime is not null && skippedTime.Value != default)
+                            firstSkippedDate ??= DateOnly.FromDateTime(skippedTime.Value);
+                    }
+                }
+
+                if (candleWriter.RowCount >= _batchSize)
+                    rowsInsertedReported += await candleWriter.FlushAsync(cancellationToken);
+            }
+
+            if (candleWriter.RowCount > 0)
+                rowsInsertedReported += await candleWriter.FlushAsync(cancellationToken);
+
+            ClickHouseWriterLogMessages.RangeWritten(_logger, task.Secid, rowsRead, rowsInsertedReported);
+            return new RowWriteSummary(rowsRead, rowsSkipped, readErrorCount, firstReadErrorReason,
+                firstReadErrorDateFrom, firstReadErrorDateTill, firstSkippedDate);
         }
 
         IAsyncEnumerable<SeriesParsedPage> pages = ReadRequestWindows(
@@ -238,6 +294,7 @@ public sealed class SpecLoadHandler
         MoexSeriesSpec spec,
         MoexLoadTask task,
         MoexOperationTags operationTags,
+        ProtobufBatchWriter<CandleRow> writer,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         int days = task.DataKind == "orderstats" && task.Market == "stock" ? 7 : 364;
@@ -247,7 +304,7 @@ public sealed class SpecLoadHandler
             int remainingDays = task.DateTill.DayNumber - from.DayNumber;
             DateOnly till = remainingDays < days ? task.DateTill : from.AddDays(days - 1);
             await using IAsyncEnumerator<CandleParsedPage> enumerator = _reader.ReadCandlePages(
-                spec, task.Secid, task.Boardid, from, till, operationTags, cancellationToken)
+                spec, task.Secid, task.Boardid, from, till, operationTags, writer, cancellationToken)
                 .GetAsyncEnumerator(cancellationToken);
             while (true)
             {
@@ -286,7 +343,7 @@ public sealed class SpecLoadHandler
                 if (readFailure is not null)
                 {
                     yield return new CandleParsedPage(
-                        [], 0, null, new SeriesReadFailure(from, till, readFailure.Message));
+                        0, 0, null, null, new SeriesReadFailure(from, till, readFailure.Message));
                     break;
                 }
                 if (!hasPage)
@@ -409,16 +466,7 @@ public sealed class SpecLoadHandler
 
     private static DateOnly? GetLastSourceDate(CandleParsedPage page)
     {
-        if (page.SourceRowsCount == 0)
-            return null;
-
-        DateTime? time;
-        List<SkippedSourceRow>? skipped = page.SkippedSourceRows;
-        if (skipped is { Count: > 0 } && skipped[^1].SourceIndex == page.SourceRowsCount - 1)
-            time = skipped[^1].Time;
-        else
-            time = page.Rows.Count > 0 ? page.Rows[^1].Time : null;
-
+        DateTime? time = page.LastSourceTime;
         return time.HasValue && time.Value != default
             ? DateOnly.FromDateTime(time.Value)
             : null;

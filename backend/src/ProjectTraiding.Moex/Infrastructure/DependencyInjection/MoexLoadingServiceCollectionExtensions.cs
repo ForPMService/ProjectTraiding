@@ -46,7 +46,13 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
                 sp.GetRequiredService<ILogger<MoexHistoryWriter>>(),
                 batchSize));
 
-            services.AddScoped<SpecLoadHandler>();
+            services.AddScoped(sp => new SpecLoadHandler(
+                sp.GetRequiredService<MoexHistoryPageReader>(),
+                sp.GetRequiredService<MoexHistoryWriter>(),
+                sp.GetRequiredService<SeriesRangeDeleter>(),
+                sp.GetRequiredService<ClickHouseInsertExecutor>(),
+                sp.GetRequiredService<ILogger<SpecLoadHandler>>(),
+                batchSize));
 
             // Читатель и писатели задач, диспетчер и координатор.
             // Читатель задач состояния не хранит: у него только источник данных-одиночка.

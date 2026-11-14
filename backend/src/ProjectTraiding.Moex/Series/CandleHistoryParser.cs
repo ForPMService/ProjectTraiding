@@ -15,6 +15,7 @@ public static class CandleHistoryParser
         ReadOnlySpan<byte> body,
         MoexSeriesSpec spec,
         string taskSecId,
+        ProtobufBatchWriter<CandleRow> writer,
         out PaginationCursorDTO cursor)
     {
         if (spec.DataKind != "candles"
@@ -28,8 +29,9 @@ public static class CandleHistoryParser
         _ = spec.SourceColumnKindsValid;
         cursor = new PaginationCursorDTO();
 
-        List<(CandleRow Row, DateTime Time)> rows = [];
+        int acceptedRowsCount = 0;
         int sourceRowsCount = 0;
+        DateTime? lastSourceTime = null;
         List<SkippedSourceRow>? skippedSourceRows = null;
         Utf8JsonReader reader = new(body);
         ParseHelpersUtf8.SkipToRootObject(ref reader, RootKey);
@@ -63,7 +65,9 @@ public static class CandleHistoryParser
                 ReadRows(
                     ref reader,
                     taskSecId,
-                    rows,
+                    writer,
+                    ref acceptedRowsCount,
+                    ref lastSourceTime,
                     ref sourceRowsCount,
                     ref skippedSourceRows);
             }
@@ -74,13 +78,15 @@ public static class CandleHistoryParser
         }
 
         ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, RootKey);
-        return new CandleParsedPage(rows, sourceRowsCount, skippedSourceRows);
+        return new CandleParsedPage(sourceRowsCount, acceptedRowsCount, skippedSourceRows, lastSourceTime);
     }
 
     private static void ReadRows(
         ref Utf8JsonReader reader,
         string taskSecId,
-        List<(CandleRow Row, DateTime Time)> rows,
+        ProtobufBatchWriter<CandleRow> writer,
+        ref int acceptedRowsCount,
+        ref DateTime? lastSourceTime,
         ref int sourceRowIndex,
         ref List<SkippedSourceRow>? skippedSourceRows)
     {
@@ -162,13 +168,14 @@ public static class CandleHistoryParser
                     $"(строка {sourceRowIndex}).");
             }
 
-            double begin = 0;
-            double? end = null;
+            lastSourceTime = beginTime;
+            ulong begin = 0;
+            ulong? end = null;
             if (beginTime is DateTime sourceBegin)
             {
                 try
                 {
-                    begin = CandleDateTime64.ToUnixSeconds(sourceBegin);
+                    begin = CandleDateTime64.ToUnixWholeSeconds(sourceBegin);
                 }
                 catch (ArgumentException ex)
                 {
@@ -180,7 +187,7 @@ public static class CandleHistoryParser
             {
                 try
                 {
-                    end = CandleDateTime64.ToUnixSeconds(sourceEnd);
+                    end = CandleDateTime64.ToUnixWholeSeconds(sourceEnd);
                 }
                 catch (ArgumentException ex)
                 {
@@ -188,7 +195,7 @@ public static class CandleHistoryParser
                 }
             }
 
-            if (rowError is null && beginTime is DateTime acceptedTime)
+            if (rowError is null && beginTime is not null)
             {
                 CandleRow row = new()
                 {
@@ -203,7 +210,8 @@ public static class CandleHistoryParser
                     End = end,
                     IngestPriority = 1,
                 };
-                rows.Add((row, acceptedTime));
+                writer.Append(in row);
+                acceptedRowsCount++;
             }
             else
             {
