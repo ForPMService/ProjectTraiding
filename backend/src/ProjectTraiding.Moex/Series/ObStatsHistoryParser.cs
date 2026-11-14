@@ -12,6 +12,7 @@ internal static class ObStatsHistoryParser
         MoexSeriesSpec spec,
         string taskSecId,
         ProtobufBatchWriter<ObStatsStockRow> writer,
+        DateTime? lastSourceTime,
         out PaginationCursorDTO cursor,
         out HistoricalSeriesTimeGroupTail<ObStatsStockRow>? tail)
     {
@@ -21,7 +22,8 @@ internal static class ObStatsHistoryParser
         cursor = new PaginationCursorDTO();
         int sourceRows = 0;
         int acceptedRows = 0;
-        DateTime? lastSourceTime = null;
+        DateTime? pageLastSourceTime = null;
+        DateTime? maxAcceptedSourceTime = null;
         List<SkippedSourceRow>? skipped = null;
         Utf8JsonReader reader = new(body);
         ParseHelpersUtf8.SkipToRootObject(ref reader, spec.RootKey);
@@ -45,8 +47,9 @@ internal static class ObStatsHistoryParser
                 if (!foundColumns)
                     ParseHelpersUtf8.SchemaMismatch("[data] Секция 'data' встретилась до 'columns'. Порядок columns → data обязателен.");
                 foundData = true;
-                ReadStockRows(ref reader, spec, taskSecId, writer, ref sourceRows, ref acceptedRows,
-                    ref lastSourceTime, ref skipped);
+                ReadStockRows(ref reader, spec, taskSecId, writer, lastSourceTime,
+                    ref sourceRows, ref acceptedRows, ref pageLastSourceTime,
+                    ref maxAcceptedSourceTime, ref skipped);
             }
             else
             {
@@ -56,7 +59,11 @@ internal static class ObStatsHistoryParser
 
         ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, spec.RootKey);
         cursor = ReadCursor(ref reader);
-        return new HistoricalSeriesParsedPage(sourceRows, acceptedRows, skipped, lastSourceTime);
+        return new HistoricalSeriesParsedPage(sourceRows, acceptedRows, skipped, pageLastSourceTime)
+        {
+            MaxAcceptedSourceTime = maxAcceptedSourceTime,
+            ParsedValidRowsCount = sourceRows - (skipped?.Count ?? 0),
+        };
     }
 
     internal static HistoricalSeriesParsedPage ParseFutures(
@@ -64,6 +71,7 @@ internal static class ObStatsHistoryParser
         MoexSeriesSpec spec,
         string taskSecId,
         ProtobufBatchWriter<ObStatsFuturesRow> writer,
+        DateTime? lastSourceTime,
         out PaginationCursorDTO cursor,
         out HistoricalSeriesTimeGroupTail<ObStatsFuturesRow>? tail)
     {
@@ -73,7 +81,8 @@ internal static class ObStatsHistoryParser
         cursor = new PaginationCursorDTO();
         int sourceRows = 0;
         int acceptedRows = 0;
-        DateTime? lastSourceTime = null;
+        DateTime? pageLastSourceTime = null;
+        DateTime? maxAcceptedSourceTime = null;
         List<SkippedSourceRow>? skipped = null;
         Utf8JsonReader reader = new(body);
         ParseHelpersUtf8.SkipToRootObject(ref reader, spec.RootKey);
@@ -97,8 +106,9 @@ internal static class ObStatsHistoryParser
                 if (!foundColumns)
                     ParseHelpersUtf8.SchemaMismatch("[data] Секция 'data' встретилась до 'columns'. Порядок columns → data обязателен.");
                 foundData = true;
-                ReadFuturesRows(ref reader, spec, taskSecId, writer, ref sourceRows, ref acceptedRows,
-                    ref lastSourceTime, ref skipped);
+                ReadFuturesRows(ref reader, spec, taskSecId, writer, lastSourceTime,
+                    ref sourceRows, ref acceptedRows, ref pageLastSourceTime,
+                    ref maxAcceptedSourceTime, ref skipped);
             }
             else
             {
@@ -108,7 +118,11 @@ internal static class ObStatsHistoryParser
 
         ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, spec.RootKey);
         cursor = ReadCursor(ref reader);
-        return new HistoricalSeriesParsedPage(sourceRows, acceptedRows, skipped, lastSourceTime);
+        return new HistoricalSeriesParsedPage(sourceRows, acceptedRows, skipped, pageLastSourceTime)
+        {
+            MaxAcceptedSourceTime = maxAcceptedSourceTime,
+            ParsedValidRowsCount = sourceRows - (skipped?.Count ?? 0),
+        };
     }
 
     private static void ReadStockRows(
@@ -116,9 +130,11 @@ internal static class ObStatsHistoryParser
         MoexSeriesSpec spec,
         string taskSecId,
         ProtobufBatchWriter<ObStatsStockRow> writer,
+        DateTime? lastSourceTime,
         ref int sourceRows,
         ref int acceptedRows,
-        ref DateTime? lastSourceTime,
+        ref DateTime? pageLastSourceTime,
+        ref DateTime? maxAcceptedSourceTime,
         ref List<SkippedSourceRow>? skipped)
     {
         ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", spec.RootKey);
@@ -184,11 +200,19 @@ internal static class ObStatsHistoryParser
                 rowError ??= ex.Message;
             }
 
-            lastSourceTime = time;
+            pageLastSourceTime = time;
             if (rowError is null)
             {
-                writer.Append(in row);
-                acceptedRows++;
+                if (lastSourceTime is null || time is DateTime rowTime && rowTime >= lastSourceTime.Value)
+                {
+                    writer.Append(in row);
+                    acceptedRows++;
+                    if (time is DateTime acceptedTime
+                        && (maxAcceptedSourceTime is null || acceptedTime > maxAcceptedSourceTime.Value))
+                    {
+                        maxAcceptedSourceTime = acceptedTime;
+                    }
+                }
             }
             else
             {
@@ -204,9 +228,11 @@ internal static class ObStatsHistoryParser
         MoexSeriesSpec spec,
         string taskSecId,
         ProtobufBatchWriter<ObStatsFuturesRow> writer,
+        DateTime? lastSourceTime,
         ref int sourceRows,
         ref int acceptedRows,
-        ref DateTime? lastSourceTime,
+        ref DateTime? pageLastSourceTime,
+        ref DateTime? maxAcceptedSourceTime,
         ref List<SkippedSourceRow>? skipped)
     {
         ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", spec.RootKey);
@@ -286,11 +312,19 @@ internal static class ObStatsHistoryParser
                 rowError ??= ex.Message;
             }
 
-            lastSourceTime = time;
+            pageLastSourceTime = time;
             if (rowError is null)
             {
-                writer.Append(in row);
-                acceptedRows++;
+                if (lastSourceTime is null || time is DateTime rowTime && rowTime >= lastSourceTime.Value)
+                {
+                    writer.Append(in row);
+                    acceptedRows++;
+                    if (time is DateTime acceptedTime
+                        && (maxAcceptedSourceTime is null || acceptedTime > maxAcceptedSourceTime.Value))
+                    {
+                        maxAcceptedSourceTime = acceptedTime;
+                    }
+                }
             }
             else
             {

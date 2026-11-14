@@ -34,6 +34,18 @@ public sealed class AlgopackCurrentDayService : BackgroundService
         CancellationToken cancellationToken)
         where TRow : struct;
 
+    private delegate IAsyncEnumerable<HistoricalSeriesParsedPage> HistoricalPagesReader<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
+        MoexSeriesSpec spec,
+        string secId,
+        DateOnly from,
+        DateOnly till,
+        MoexOperationTags operationTags,
+        ProtobufBatchWriter<TRow> writer,
+        DateTime? lastSourceTime,
+        CancellationToken cancellationToken)
+        where TRow : struct;
+
     private const string StockMarket = "stock";
     private const string FuturesMarket = "futures";
     private const string StockBoardId = "TQBR";
@@ -56,7 +68,6 @@ public sealed class AlgopackCurrentDayService : BackgroundService
 
     private readonly MoexReceiverInstrumentReader _instrumentReader;
     private readonly MoexHistoryPageReader _pageReader;
-    private readonly MoexHistoryWriter _historyWriter;
     private readonly ClickHouseInsertExecutor _executor;
     private readonly StreamCursorWriter _cursorWriter;
     private readonly FutoiSubjectReader _futoiSubjectReader;
@@ -71,7 +82,6 @@ public sealed class AlgopackCurrentDayService : BackgroundService
     public AlgopackCurrentDayService(
         MoexReceiverInstrumentReader instrumentReader,
         MoexHistoryPageReader pageReader,
-        MoexHistoryWriter historyWriter,
         ClickHouseInsertExecutor executor,
         StreamCursorWriter cursorWriter,
         FutoiSubjectReader futoiSubjectReader,
@@ -81,7 +91,6 @@ public sealed class AlgopackCurrentDayService : BackgroundService
     {
         _instrumentReader = instrumentReader;
         _pageReader = pageReader;
-        _historyWriter = historyWriter;
         _executor = executor;
         _cursorWriter = cursorWriter;
         _futoiSubjectReader = futoiSubjectReader;
@@ -378,65 +387,41 @@ public sealed class AlgopackCurrentDayService : BackgroundService
             }
             else
             {
-                List<SeriesParsedPage> fetchedPages = [];
-                Exception? fetchFailure = null;
-                using (CancellationTokenSource fetchCts =
-                       CancellationTokenSource.CreateLinkedTokenSource(ct))
-                {
-                    fetchCts.CancelAfter(_instrumentFetchTimeout);
-                    try
-                    {
-                        IAsyncEnumerable<SeriesParsedPage> pages = _pageReader.ReadPages(
-                            spec,
-                            secid,
-                            boardId,
-                            today,
-                            today,
-                            operationTags,
-                            fetchCts.Token);
-                        await foreach (SeriesParsedPage page in pages.WithCancellation(fetchCts.Token))
-                            fetchedPages.Add(page);
-                    }
-                    catch (OperationCanceledException)
-                        when (!ct.IsCancellationRequested && fetchCts.IsCancellationRequested)
-                    {
-                        AlgopackCurrentDayLogMessages.InstrumentFetchTimedOut(
-                            _logger, secid, market, spec.DataKind, _instrumentFetchTimeout);
-                        fetchFailure = new TimeoutException(
-                            "Не все страницы ALGOPACK получены до истечения времени.");
-                    }
-                    catch (Exception ex)
-                        when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
-                    {
-                        fetchFailure = ex;
-                    }
-                }
-
-                TailFilterState filterState = new();
-                IAsyncEnumerable<SeriesParsedPage> filteredPages = FilterPages(
-                    EnumeratePages(fetchedPages, ct), lastSourceTime, filterState, ct);
-                await _historyWriter.WriteRangeAsync(
-                    spec, secid, filteredPages, insertContext, ct);
-
-                if (fetchFailure is null
-                    && !filterState.Incomplete
-                    && filterState.MaxSourceTime is DateTime maxSourceTime)
-                {
-                    await _cursorWriter.UpsertAsync(
-                        secid,
-                        market,
-                        boardId,
-                        spec.DataKind,
-                        spec.CandleInterval,
-                        maxSourceTime,
-                        lastTradeNo: null,
-                        ct);
-                }
-
-                if (fetchFailure is not null)
-                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(fetchFailure).Throw();
-                if (filterState.Incomplete)
-                    throw new InvalidOperationException("Данные ALGOPACK обработаны частично.");
+                if (spec.DataKind == "obstats" && market == StockMarket)
+                    await ProcessHistoricalInstrumentAsync<ObStatsStockRow>(spec, secid, market, boardId,
+                        today, lastSourceTime, new(_executor, spec.Table, spec.Columns, insertContext),
+                        _pageReader.ReadObStatsStockPages, operationTags, ct);
+                else if (spec.DataKind == "obstats" && market == FuturesMarket)
+                    await ProcessHistoricalInstrumentAsync<ObStatsFuturesRow>(spec, secid, market, boardId,
+                        today, lastSourceTime, new(_executor, spec.Table, spec.Columns, insertContext),
+                        _pageReader.ReadObStatsFuturesPages, operationTags, ct);
+                else if (spec.DataKind == "orderstats" && market == StockMarket)
+                    await ProcessHistoricalInstrumentAsync<OrderStatsStockRow>(spec, secid, market, boardId,
+                        today, lastSourceTime, new(_executor, spec.Table, spec.Columns, insertContext),
+                        _pageReader.ReadOrderStatsStockPages, operationTags, ct);
+                else if (spec.DataKind == "futoi" && market == FuturesMarket)
+                    await ProcessHistoricalInstrumentAsync<FutoiRow>(spec, secid, market, boardId,
+                        today, lastSourceTime, new(_executor, spec.Table, spec.Columns, insertContext),
+                        _pageReader.ReadFutoiPages, operationTags, ct);
+                else if (spec.DataKind == "hi2" && market == StockMarket)
+                    await ProcessHistoricalInstrumentAsync<Hi2StockRow>(spec, secid, market, boardId,
+                        today, lastSourceTime, new(_executor, spec.Table, spec.Columns, insertContext),
+                        _pageReader.ReadHi2StockPages, operationTags, ct);
+                else if (spec.DataKind == "hi2" && market == FuturesMarket)
+                    await ProcessHistoricalInstrumentAsync<Hi2FuturesRow>(spec, secid, market, boardId,
+                        today, lastSourceTime, new(_executor, spec.Table, spec.Columns, insertContext),
+                        _pageReader.ReadHi2FuturesPages, operationTags, ct);
+                else if (spec.DataKind == "mega_alerts" && market == StockMarket)
+                    await ProcessHistoricalInstrumentAsync<MegaAlertsStockRow>(spec, secid, market, boardId,
+                        today, lastSourceTime, new(_executor, spec.Table, spec.Columns, insertContext),
+                        _pageReader.ReadMegaAlertsStockPages, operationTags, ct);
+                else if (spec.DataKind == "mega_alerts" && market == FuturesMarket)
+                    await ProcessHistoricalInstrumentAsync<MegaAlertsFuturesRow>(spec, secid, market, boardId,
+                        today, lastSourceTime, new(_executor, spec.Table, spec.Columns, insertContext),
+                        _pageReader.ReadMegaAlertsFuturesPages, operationTags, ct);
+                else
+                    throw new InvalidOperationException(
+                        $"Нет типизированного обработчика текущего дня {spec.DataKind}/{market}.");
             }
 
             MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Success);
@@ -547,6 +532,136 @@ public sealed class AlgopackCurrentDayService : BackgroundService
             throw new InvalidOperationException("Данные ALGOPACK обработаны частично.");
     }
 
+    private async Task ProcessHistoricalInstrumentAsync<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
+        MoexSeriesSpec spec,
+        string secid,
+        string market,
+        string boardId,
+        DateOnly today,
+        DateTime? lastSourceTime,
+        ProtobufBatchWriter<TRow> writer,
+        HistoricalPagesReader<TRow> readPages,
+        MoexOperationTags operationTags,
+        CancellationToken ct)
+        where TRow : struct
+    {
+        TailFilterState filterState = new();
+        Exception? fetchFailure = null;
+        long sourceRowsCount = 0;
+        long rowsInsertedReported = 0;
+
+        using (CancellationTokenSource fetchCts =
+               CancellationTokenSource.CreateLinkedTokenSource(ct))
+        {
+            fetchCts.CancelAfter(_instrumentFetchTimeout);
+            IAsyncEnumerable<HistoricalSeriesParsedPage> pages = readPages(
+                spec, secid, today, today, operationTags, writer, lastSourceTime, fetchCts.Token);
+            await using IAsyncEnumerator<HistoricalSeriesParsedPage> enumerator =
+                pages.GetAsyncEnumerator(fetchCts.Token);
+
+            while (true)
+            {
+                bool hasPage;
+                try
+                {
+                    hasPage = await enumerator.MoveNextAsync();
+                }
+                catch (OperationCanceledException)
+                    when (!ct.IsCancellationRequested && fetchCts.IsCancellationRequested)
+                {
+                    AlgopackCurrentDayLogMessages.InstrumentFetchTimedOut(
+                        _logger, secid, market, spec.DataKind, _instrumentFetchTimeout);
+                    fetchFailure = new TimeoutException(
+                        "Не все страницы ALGOPACK получены до истечения времени.");
+                    break;
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    fetchFailure = ex;
+                    break;
+                }
+
+                if (!hasPage)
+                    break;
+
+                HistoricalSeriesParsedPage page = enumerator.Current;
+                if (page.Failure is not null)
+                    filterState.Incomplete = true;
+
+                int relevantSkippedRowsCount = 0;
+                if (page.SkippedSourceRows is not null)
+                {
+                    for (int i = 0; i < page.SkippedSourceRows.Count; i++)
+                    {
+                        SkippedSourceRow skipped = page.SkippedSourceRows[i];
+                        bool knownBeforeCursor = lastSourceTime is DateTime cursorTime
+                            && skipped.Time is DateTime skippedTime
+                            && skippedTime < cursorTime;
+                        if (knownBeforeCursor)
+                            continue;
+
+                        relevantSkippedRowsCount++;
+                        filterState.Incomplete = true;
+                    }
+                }
+
+                sourceRowsCount += page.AcceptedRowsCount + relevantSkippedRowsCount;
+
+                if (page.MaxAcceptedSourceTime is DateTime pageMaximum
+                    && (filterState.MaxSourceTime is null
+                        || pageMaximum > filterState.MaxSourceTime.Value))
+                {
+                    filterState.MaxSourceTime = pageMaximum;
+                }
+
+                if (writer.RowCount >= _batchSize)
+                    rowsInsertedReported += await writer.FlushAsync(ct);
+            }
+        }
+
+        if (writer.RowCount > 0)
+        {
+            try
+            {
+                rowsInsertedReported += await writer.FlushAsync(ct);
+            }
+            catch (Exception flushFailure) when (fetchFailure is not null && !ct.IsCancellationRequested)
+            {
+                throw new AggregateException(
+                    "Ошибка чтения ALGOPACK и последующая ошибка отправки уже разобранных строк.",
+                    fetchFailure,
+                    flushFailure);
+            }
+        }
+
+        ClickHouseWriterLogMessages.RangeWritten(_logger, secid, sourceRowsCount, rowsInsertedReported);
+
+        if (fetchFailure is null
+            && !filterState.Incomplete
+            && filterState.MaxSourceTime is DateTime maxSourceTime)
+        {
+            await _cursorWriter.UpsertAsync(
+                secid,
+                market,
+                boardId,
+                spec.DataKind,
+                spec.CandleInterval,
+                maxSourceTime,
+                lastTradeNo: null,
+                ct);
+        }
+
+        if (fetchFailure is not null)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(fetchFailure).Throw();
+        if (filterState.Incomplete)
+            throw new InvalidOperationException("Данные ALGOPACK обработаны частично.");
+    }
+
     private static async Task<long> FlushTradeStatsWritersAsync<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
         ProtobufBatchWriter<TRow> statsWriter,
@@ -596,69 +711,6 @@ public sealed class AlgopackCurrentDayService : BackgroundService
             throw new AggregateException("Обе вставки TradeStats завершились с ошибкой.", failures);
 
         return statsInserted;
-    }
-
-    private static async IAsyncEnumerable<SeriesParsedPage> FilterPages(
-        IAsyncEnumerable<SeriesParsedPage> pages,
-        DateTime? lastSourceTime,
-        TailFilterState state,
-        [EnumeratorCancellation] CancellationToken ct)
-    {
-        await foreach (SeriesParsedPage page in pages.WithCancellation(ct))
-        {
-            List<SkippedSourceRow>? relevantSkippedRows = null;
-            if (page.SkippedSourceRows is not null)
-            {
-                for (int i = 0; i < page.SkippedSourceRows.Count; i++)
-                {
-                    SkippedSourceRow skipped = page.SkippedSourceRows[i];
-                    bool knownBeforeCursor = lastSourceTime is DateTime cursorTime
-                        && skipped.Time is DateTime skippedTime
-                        && skippedTime < cursorTime;
-                    if (knownBeforeCursor)
-                        continue;
-
-                    state.Incomplete = true;
-                    (relevantSkippedRows ??= []).Add(skipped);
-                }
-            }
-            if (page.Failure is not null)
-                state.Incomplete = true;
-
-            List<(object?[] Row, DateTime Time)> filteredRows = new(page.Rows.Count);
-            for (int i = 0; i < page.Rows.Count; i++)
-            {
-                (object?[] row, DateTime time) = page.Rows[i];
-                if (lastSourceTime is DateTime cursorTime && time < cursorTime)
-                    continue;
-
-                filteredRows.Add((row, time));
-                if (state.MaxSourceTime is null || time > state.MaxSourceTime.Value)
-                    state.MaxSourceTime = time;
-            }
-
-            if (filteredRows.Count > 0 || relevantSkippedRows is not null || page.Failure is not null)
-            {
-                yield return new SeriesParsedPage(
-                    filteredRows,
-                    filteredRows.Count + (relevantSkippedRows?.Count ?? 0),
-                    relevantSkippedRows,
-                    page.Failure);
-            }
-        }
-    }
-
-    private static async IAsyncEnumerable<SeriesParsedPage> EnumeratePages(
-        IReadOnlyList<SeriesParsedPage> pages,
-        [EnumeratorCancellation] CancellationToken ct)
-    {
-        for (int i = 0; i < pages.Count; i++)
-        {
-            ct.ThrowIfCancellationRequested();
-            yield return pages[i];
-        }
-
-        await Task.CompletedTask;
     }
 
     private static MoexSeriesSpec? FindSpec(string dataKind, string market)

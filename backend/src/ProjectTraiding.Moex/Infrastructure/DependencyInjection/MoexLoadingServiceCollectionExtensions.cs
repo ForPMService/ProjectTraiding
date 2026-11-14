@@ -39,16 +39,10 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
             services.AddTransient<ProjectTraiding.Moex.Deletion.InstrumentDataDeletionRunner>();
             services.AddTransient<FutoiSubjectReader>();
             services.AddTransient<ProjectTraiding.Moex.Loading.Planning.MoexLoadPlanner>();
-            services.AddSingleton<MoexSeriesParser>();
             services.AddTransient<MoexHistoryPageReader>();
-            services.AddTransient(sp => new MoexHistoryWriter(
-                sp.GetRequiredService<ClickHouseInsertExecutor>(),
-                sp.GetRequiredService<ILogger<MoexHistoryWriter>>(),
-                batchSize));
 
             services.AddScoped(sp => new SpecLoadHandler(
                 sp.GetRequiredService<MoexHistoryPageReader>(),
-                sp.GetRequiredService<MoexHistoryWriter>(),
                 sp.GetRequiredService<SeriesRangeDeleter>(),
                 sp.GetRequiredService<ClickHouseInsertExecutor>(),
                 sp.GetRequiredService<ILogger<SpecLoadHandler>>(),

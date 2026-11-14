@@ -12,13 +12,14 @@ internal static class MegaAlertsHistoryParser
         MoexSeriesSpec spec,
         string taskSecId,
         ProtobufBatchWriter<MegaAlertsStockRow> writer,
+        DateTime? lastSourceTime,
         out PaginationCursorDTO cursor,
         out HistoricalSeriesTimeGroupTail<MegaAlertsStockRow>? tail)
     {
         ValidateSpec(spec, "stock", 8);
         _ = spec.SourceColumnKindsValid;
         cursor = new PaginationCursorDTO();
-        tail = new HistoricalSeriesTimeGroupTail<MegaAlertsStockRow>(writer);
+        tail = new HistoricalSeriesTimeGroupTail<MegaAlertsStockRow>(writer, lastSourceTime);
         Utf8JsonReader reader = new(body);
         ParseHelpersUtf8.SkipToRootObject(ref reader, spec.RootKey);
         bool foundColumns = false;
@@ -56,13 +57,14 @@ internal static class MegaAlertsHistoryParser
         MoexSeriesSpec spec,
         string taskSecId,
         ProtobufBatchWriter<MegaAlertsFuturesRow> writer,
+        DateTime? lastSourceTime,
         out PaginationCursorDTO cursor,
         out HistoricalSeriesTimeGroupTail<MegaAlertsFuturesRow>? tail)
     {
         ValidateSpec(spec, "futures", 9);
         _ = spec.SourceColumnKindsValid;
         cursor = new PaginationCursorDTO();
-        tail = new HistoricalSeriesTimeGroupTail<MegaAlertsFuturesRow>(writer);
+        tail = new HistoricalSeriesTimeGroupTail<MegaAlertsFuturesRow>(writer, lastSourceTime);
         Utf8JsonReader reader = new(body);
         ParseHelpersUtf8.SkipToRootObject(ref reader, spec.RootKey);
         bool foundColumns = false;

@@ -12,13 +12,14 @@ internal static class Hi2HistoryParser
         MoexSeriesSpec spec,
         string taskSecId,
         ProtobufBatchWriter<Hi2StockRow> writer,
+        DateTime? lastSourceTime,
         out PaginationCursorDTO cursor,
         out HistoricalSeriesTimeGroupTail<Hi2StockRow>? tail)
     {
         ValidateSpec(spec, "stock", 7);
         _ = spec.SourceColumnKindsValid;
         cursor = new PaginationCursorDTO();
-        tail = new HistoricalSeriesTimeGroupTail<Hi2StockRow>(writer);
+        tail = new HistoricalSeriesTimeGroupTail<Hi2StockRow>(writer, lastSourceTime);
         Utf8JsonReader reader = new(body);
         ParseHelpersUtf8.SkipToRootObject(ref reader, spec.RootKey);
         bool foundColumns = false;
@@ -56,13 +57,14 @@ internal static class Hi2HistoryParser
         MoexSeriesSpec spec,
         string taskSecId,
         ProtobufBatchWriter<Hi2FuturesRow> writer,
+        DateTime? lastSourceTime,
         out PaginationCursorDTO cursor,
         out HistoricalSeriesTimeGroupTail<Hi2FuturesRow>? tail)
     {
         ValidateSpec(spec, "futures", 8);
         _ = spec.SourceColumnKindsValid;
         cursor = new PaginationCursorDTO();
-        tail = new HistoricalSeriesTimeGroupTail<Hi2FuturesRow>(writer);
+        tail = new HistoricalSeriesTimeGroupTail<Hi2FuturesRow>(writer, lastSourceTime);
         Utf8JsonReader reader = new(body);
         ParseHelpersUtf8.SkipToRootObject(ref reader, spec.RootKey);
         bool foundColumns = false;

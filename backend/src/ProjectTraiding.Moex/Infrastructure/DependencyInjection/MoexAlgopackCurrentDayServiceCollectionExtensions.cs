@@ -26,7 +26,6 @@ public static class MoexAlgopackCurrentDayServiceCollectionExtensions
         services.AddHostedService(sp => new AlgopackCurrentDayService(
             sp.GetRequiredService<MoexReceiverInstrumentReader>(),
             sp.GetRequiredService<MoexHistoryPageReader>(),
-            sp.GetRequiredService<MoexHistoryWriter>(),
             sp.GetRequiredService<ClickHouseInsertExecutor>(),
             sp.GetRequiredService<StreamCursorWriter>(),
             sp.GetRequiredService<FutoiSubjectReader>(),

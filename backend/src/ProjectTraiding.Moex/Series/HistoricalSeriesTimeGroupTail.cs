@@ -11,31 +11,43 @@ internal sealed class HistoricalSeriesTimeGroupTail<
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow> where TRow : struct
 {
     private readonly ProtobufBatchWriter<TRow> _writer;
+    private readonly DateTime? _cursorSourceTime;
     private readonly List<Entry> _pending = [];
     private readonly List<SkippedSourceRow> _skipped = [];
     private int _sourceRowsCount;
     private int _acceptedRowsCount;
+    private int _parsedValidRowsCount;
     private DateTime? _lastSourceTime;
-    private int _pendingAcceptedRowsCount;
+    private DateTime? _maxAcceptedSourceTime;
+    private int _pendingParsedValidRowsCount;
 
-    public HistoricalSeriesTimeGroupTail(ProtobufBatchWriter<TRow> writer) => _writer = writer;
+    public HistoricalSeriesTimeGroupTail(
+        ProtobufBatchWriter<TRow> writer,
+        DateTime? lastSourceTime = null)
+    {
+        _writer = writer;
+        _cursorSourceTime = lastSourceTime;
+    }
 
     public int StableSourceRowsCount => _sourceRowsCount;
     public int PendingSourceRowsCount => _pending.Count;
-    public int PendingAcceptedRowsCount => _pendingAcceptedRowsCount;
+    public int PendingParsedValidRowsCount => _pendingParsedValidRowsCount;
     public int FullSourceRowsCount => checked(_sourceRowsCount + _pending.Count);
-    public int FullAcceptedRowsCount => checked(_acceptedRowsCount + _pendingAcceptedRowsCount);
 
     public HistoricalSeriesParsedPage PrefixPage => new(
         _sourceRowsCount,
         _acceptedRowsCount,
         _skipped.Count == 0 ? null : _skipped,
-        _lastSourceTime);
+        _lastSourceTime)
+    {
+        MaxAcceptedSourceTime = _maxAcceptedSourceTime,
+        ParsedValidRowsCount = _parsedValidRowsCount,
+    };
 
     public void AddAccepted(int sourceIndex, DateTime? time, in TRow row)
     {
         _pending.Add(new Entry(sourceIndex, time, row, null, Accepted: true));
-        _pendingAcceptedRowsCount++;
+        _pendingParsedValidRowsCount++;
         CommitStablePrefix();
     }
 
@@ -89,10 +101,19 @@ internal sealed class HistoricalSeriesTimeGroupTail<
             Entry entry = _pending[index];
             if (entry.Accepted)
             {
-                TRow row = entry.Row;
-                _writer.Append(in row);
-                _acceptedRowsCount++;
-                _pendingAcceptedRowsCount--;
+                _parsedValidRowsCount++;
+                _pendingParsedValidRowsCount--;
+                if (IsAtOrAfterCursor(entry.Time))
+                {
+                    TRow row = entry.Row;
+                    _writer.Append(in row);
+                    _acceptedRowsCount++;
+                    if (entry.Time is DateTime acceptedTime
+                        && (_maxAcceptedSourceTime is null || acceptedTime > _maxAcceptedSourceTime.Value))
+                    {
+                        _maxAcceptedSourceTime = acceptedTime;
+                    }
+                }
             }
             else
             {
@@ -107,6 +128,10 @@ internal sealed class HistoricalSeriesTimeGroupTail<
         if (count > 0)
             _pending.RemoveRange(0, count);
     }
+
+    private bool IsAtOrAfterCursor(DateTime? sourceTime)
+        => _cursorSourceTime is null
+            || sourceTime is DateTime value && value >= _cursorSourceTime.Value;
 
     private readonly record struct Entry(
         int SourceIndex,

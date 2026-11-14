@@ -34,6 +34,7 @@ public sealed class SpecLoadHandler
         DateOnly till,
         MoexOperationTags operationTags,
         ProtobufBatchWriter<TRow> writer,
+        DateTime? lastSourceTime,
         CancellationToken cancellationToken)
         where TRow : struct;
 
@@ -62,7 +63,6 @@ public sealed class SpecLoadHandler
     public DateOnly? LastParsedPageDate { get; private set; }
 
     private readonly MoexHistoryPageReader _reader;
-    private readonly MoexHistoryWriter _writer;
     private readonly SeriesRangeDeleter _rangeDeleter;
     private readonly ClickHouseInsertExecutor _executor;
     private readonly int _batchSize;
@@ -70,14 +70,12 @@ public sealed class SpecLoadHandler
 
     public SpecLoadHandler(
         MoexHistoryPageReader reader,
-        MoexHistoryWriter writer,
         SeriesRangeDeleter rangeDeleter,
         ClickHouseInsertExecutor executor,
         ILogger<SpecLoadHandler> logger,
         int batchSize)
     {
         _reader = reader;
-        _writer = writer;
         _rangeDeleter = rangeDeleter;
         _executor = executor;
         _batchSize = batchSize > 0 ? batchSize : throw new ArgumentOutOfRangeException(nameof(batchSize));
@@ -464,7 +462,7 @@ public sealed class SpecLoadHandler
             int remainingDays = task.DateTill.DayNumber - from.DayNumber;
             DateOnly till = remainingDays < days ? task.DateTill : from.AddDays(days - 1);
             await using IAsyncEnumerator<HistoricalSeriesParsedPage> enumerator = readPages(
-                spec, task.Secid, from, till, operationTags, writer, cancellationToken)
+                spec, task.Secid, from, till, operationTags, writer, null, cancellationToken)
                 .GetAsyncEnumerator(cancellationToken);
             while (true)
             {

@@ -12,6 +12,7 @@ internal static class FutoiHistoryParser
         MoexSeriesSpec spec,
         string taskSecId,
         ProtobufBatchWriter<FutoiRow> writer,
+        DateTime? lastSourceTime,
         out PaginationCursorDTO cursor,
         out HistoricalSeriesTimeGroupTail<FutoiRow>? tail)
     {
@@ -24,7 +25,8 @@ internal static class FutoiHistoryParser
         tail = null;
         int sourceRows = 0;
         int acceptedRows = 0;
-        DateTime? lastSourceTime = null;
+        DateTime? pageLastSourceTime = null;
+        DateTime? maxAcceptedSourceTime = null;
         List<SkippedSourceRow>? skipped = null;
         Utf8JsonReader reader = new(body);
         ParseHelpersUtf8.SkipToRootObject(ref reader, spec.RootKey);
@@ -47,7 +49,9 @@ internal static class FutoiHistoryParser
                 if (!foundColumns)
                     ParseHelpersUtf8.SchemaMismatch("[futoi] Секция 'data' встретилась до 'columns'. Порядок columns → data обязателен.");
                 foundData = true;
-                ReadRows(ref reader, spec, writer, ref sourceRows, ref acceptedRows, ref lastSourceTime, ref skipped);
+                ReadRows(ref reader, spec, writer, lastSourceTime,
+                    ref sourceRows, ref acceptedRows, ref pageLastSourceTime,
+                    ref maxAcceptedSourceTime, ref skipped);
             }
             else
             {
@@ -56,16 +60,22 @@ internal static class FutoiHistoryParser
         }
 
         ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, spec.RootKey);
-        return new HistoricalSeriesParsedPage(sourceRows, acceptedRows, skipped, lastSourceTime);
+        return new HistoricalSeriesParsedPage(sourceRows, acceptedRows, skipped, pageLastSourceTime)
+        {
+            MaxAcceptedSourceTime = maxAcceptedSourceTime,
+            ParsedValidRowsCount = sourceRows - (skipped?.Count ?? 0),
+        };
     }
 
     private static void ReadRows(
         ref Utf8JsonReader reader,
         MoexSeriesSpec spec,
         ProtobufBatchWriter<FutoiRow> writer,
+        DateTime? lastSourceTime,
         ref int sourceRows,
         ref int acceptedRows,
-        ref DateTime? lastSourceTime,
+        ref DateTime? pageLastSourceTime,
+        ref DateTime? maxAcceptedSourceTime,
         ref List<SkippedSourceRow>? skipped)
     {
         ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", spec.RootKey);
@@ -131,11 +141,19 @@ internal static class FutoiHistoryParser
                 rowError ??= ex.Message;
             }
 
-            lastSourceTime = time;
+            pageLastSourceTime = time;
             if (rowError is null)
             {
-                writer.Append(in row);
-                acceptedRows++;
+                if (lastSourceTime is null || time is DateTime rowTime && rowTime >= lastSourceTime.Value)
+                {
+                    writer.Append(in row);
+                    acceptedRows++;
+                    if (time is DateTime acceptedTime
+                        && (maxAcceptedSourceTime is null || acceptedTime > maxAcceptedSourceTime.Value))
+                    {
+                        maxAcceptedSourceTime = acceptedTime;
+                    }
+                }
             }
             else
             {
