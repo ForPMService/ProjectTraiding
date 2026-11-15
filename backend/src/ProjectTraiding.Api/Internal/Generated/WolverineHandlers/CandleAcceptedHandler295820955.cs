@@ -26,13 +26,13 @@ namespace Internal.Generated.WolverineHandlers
             Wolverine.Runtime.WolverineTracing.MessageActivity(context.Envelope)?.SetTag("message.handler", "ProjectTraiding.CustomFeatures.Realtime.CandleAcceptedHandler");
             Wolverine.Runtime.WolverineTracing.MessageActivity(context.Envelope)?.SetTag("handler.type", "ProjectTraiding.CustomFeatures.Realtime.CandleAcceptedHandler");
             var candleAcceptedHandler = new ProjectTraiding.CustomFeatures.Realtime.CandleAcceptedHandler(_candleSubscriptionRegistry, _loggerOfCandleAcceptedHandler);
-
+            
             // The actual message execution
             await candleAcceptedHandler.HandleAsync(candleAccepted, cancellation);
         }
     }
 
     // END: CandleAcceptedHandler295820955
-
-
+    
+    
 }

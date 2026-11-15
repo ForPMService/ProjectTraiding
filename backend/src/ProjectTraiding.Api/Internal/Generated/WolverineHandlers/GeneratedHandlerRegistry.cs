@@ -19,8 +19,8 @@ namespace Internal.Generated.WolverineHandlers
     }
 
     // END: GeneratedHandlerRegistry
-
-
+    
+    
     // START: AotRoots
     // Native AOT rooting companion (jasperfx#743). Generated code is only ever reached reflectively, so without these roots ILC trims it and TypeLoadMode.Static finds nothing.
     [global::System.CodeDom.Compiler.GeneratedCode("JasperFx", "1.0.0")]
@@ -38,6 +38,6 @@ namespace Internal.Generated.WolverineHandlers
     }
 
     // END: AotRoots
-
-
+    
+    
 }
