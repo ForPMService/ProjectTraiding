@@ -31,6 +31,12 @@ public static partial class MoexCandlesWebSocketEndpoints
             .status div, article { border: 1px solid #303b4a; border-radius: 8px; background: #171f2a; padding: 12px 14px; }
             .label { display: block; color: #93a2b6; font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; }
             .value { overflow-wrap: anywhere; }
+            .table-wrap { max-width: 100%; overflow-x: auto; }
+            table.candles { border-collapse: collapse; width: 100%; font-size: .82rem; }
+            table.candles th, table.candles td { padding: 3px 6px; white-space: nowrap; text-align: right; }
+            table.candles th:first-child, table.candles td:first-child,
+            table.candles th:nth-child(2), table.candles td:nth-child(2),
+            table.candles th:nth-child(3), table.candles td:nth-child(3) { text-align: left; }
             #events { display: grid; gap: 10px; }
             article header { display: flex; gap: 12px; align-items: baseline; justify-content: space-between; flex-wrap: wrap; }
             article time { color: #93a2b6; font-size: .85rem; }
@@ -48,26 +54,24 @@ public static partial class MoexCandlesWebSocketEndpoints
             <div><span class="label">STOMP CONNECTED</span><span class="value" id="authenticated">Ожидание</span></div>
             <div><span class="label">Подписка / RECEIPT</span><span class="value" id="subscription">Ожидание CONNECTED</span></div>
             <div><span class="label">Последнее сообщение MOEX</span><span class="value" id="last-received">—</span></div>
+            <div><span class="label">Авторизация ISS+</span><span class="value" id="auth-mode">—</span></div>
+            <div><span class="label">С последнего MESSAGE</span><span class="value" id="message-age">Ожидание сообщения</span></div>
           </section>
           <section aria-live="polite">
             <h2>Последняя свеча из сообщения</h2>
             <p id="candle-message-info">Тип: — · Получено: — · seqnum: —</p>
-            <dl id="latest-candle">
-              <dt>Дата</dt><dd>—</dd>
-              <dt>FROM</dt><dd>—</dd>
-              <dt>TILL</dt><dd>—</dd>
-              <dt>OPEN</dt><dd>—</dd>
-              <dt>HIGH</dt><dd>—</dd>
-              <dt>LOW</dt><dd>—</dd>
-              <dt>CLOSE</dt><dd>—</dd>
-              <dt>VOLUME</dt><dd>—</dd>
-            </dl>
+            <div class="table-wrap">
+              <table class="candles" id="latest-candle">
+                <thead><tr><th>Дата</th><th>FROM</th><th>TILL</th><th>OPEN</th><th>HIGH</th><th>LOW</th><th>CLOSE</th><th>VOLUME</th></tr></thead>
+                <tbody><tr><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr></tbody>
+              </table>
+            </div>
             <p>Завершённость свечи протоколом здесь не определяется.</p>
             <h2 id="candle-table-title">Последние свечи</h2>
-            <table>
+            <div class="table-wrap"><table class="candles">
               <thead><tr><th>Дата</th><th>FROM</th><th>TILL</th><th>OPEN</th><th>HIGH</th><th>LOW</th><th>CLOSE</th><th>VOLUME</th></tr></thead>
               <tbody id="candles-body"><tr><td colspan="8">Ожидание MESSAGE</td></tr></tbody>
-            </table>
+            </table></div>
           </section>
           <main id="events" aria-live="polite"></main>
           <script>
@@ -78,9 +82,28 @@ public static partial class MoexCandlesWebSocketEndpoints
             const lastReceived = document.getElementById('last-received');
             const events = document.getElementById('events');
             const candleMessageInfo = document.getElementById('candle-message-info');
-            const latestCandle = document.getElementById('latest-candle');
+            const latestCandle = document.querySelector('#latest-candle tbody');
             const candleTableTitle = document.getElementById('candle-table-title');
             const candlesBody = document.getElementById('candles-body');
+            const authMode = document.getElementById('auth-mode');
+            const messageAge = document.getElementById('message-age');
+            let lastMessageAt = null;
+            let disconnected = false;
+
+            function formatElapsed(seconds) {
+              const minutes = Math.floor(seconds / 60);
+              const remainder = seconds % 60;
+              return String(minutes).padStart(2, '0') + ':' + String(remainder).padStart(2, '0');
+            }
+
+            setInterval(() => {
+              if (lastMessageAt === null) {
+                messageAge.textContent = disconnected ? 'Отключено · ожидание сообщения' : 'Ожидание сообщения';
+                return;
+              }
+              const elapsed = Math.max(0, Math.floor((Date.now() - lastMessageAt) / 1000));
+              messageAge.textContent = formatElapsed(elapsed) + (disconnected ? ' · Отключено' : '');
+            }, 1000);
 
             function formatValue(value) {
               if (value === undefined) return '—';
@@ -125,15 +148,23 @@ public static partial class MoexCandlesWebSocketEndpoints
                 formatValue(record.OPEN), formatValue(record.HIGH), formatValue(record.LOW),
                 formatValue(record.CLOSE), formatValue(record.VOLUME)
               ];
-              for (let index = 0; index < values.length; index++) {
-                latestCandle.children[index * 2 + 1].textContent = values[index];
+              const row = document.createElement('tr');
+              for (const value of values) {
+                const cell = document.createElement('td');
+                cell.textContent = value;
+                row.append(cell);
               }
+              latestCandle.replaceChildren(row);
             }
 
             function clearLatestCandle() {
-              for (let index = 1; index < latestCandle.children.length; index += 2) {
-                latestCandle.children[index].textContent = '—';
+              const row = document.createElement('tr');
+              for (let index = 0; index < 8; index++) {
+                const cell = document.createElement('td');
+                cell.textContent = '—';
+                row.append(cell);
               }
+              latestCandle.replaceChildren(row);
             }
 
             function renderCandleMessage(item) {
@@ -233,12 +264,22 @@ public static partial class MoexCandlesWebSocketEndpoints
             source.addEventListener('diagnostic', event => {
               const item = JSON.parse(event.data);
               if (item.receivedAt) lastReceived.textContent = new Date(item.receivedAt).toLocaleString();
-              if (item.kind === 'message') renderCandleMessage(item);
+              if (item.kind === 'message') {
+                lastMessageAt = Date.now();
+                messageAge.textContent = '00:00' + (disconnected ? ' · Отключено' : '');
+                renderCandleMessage(item);
+              }
               switch (item.kind) {
                 case 'connecting': connection.textContent = 'Соединение с MOEX…'; break;
                 case 'websocket_connected': connection.textContent = 'WebSocket установлен'; break;
                 case 'connect_sent': connection.textContent = 'WebSocket установлен; ожидается STOMP CONNECTED'; break;
-                case 'stomp_connected': authenticated.textContent = 'Получен'; subscription.textContent = 'SUBSCRIBE отправляется'; break;
+                case 'auth_mode': authMode.textContent = item.details || '—'; break;
+                case 'stomp_connected':
+                  disconnected = false;
+                  connection.textContent = 'Подключено';
+                  authenticated.textContent = 'Получен';
+                  subscription.textContent = 'SUBSCRIBE отправляется';
+                  break;
                 case 'subscribe_sent': subscription.textContent = 'SUBSCRIBE отправлен; ожидается RECEIPT'; break;
                 case 'receipt':
                   if (item.details?.includes('receipt-id:sub-1')) subscription.textContent = 'Получен RECEIPT для sub-1';
@@ -246,17 +287,22 @@ public static partial class MoexCandlesWebSocketEndpoints
                 case 'message':
                   if (subscription.textContent.startsWith('SUBSCRIBE')) subscription.textContent = 'Получен MESSAGE; RECEIPT ожидается отдельно';
                   break;
-                case 'moex_error': subscription.textContent = 'MOEX вернул ERROR'; break;
-                case 'connection_closed': connection.textContent = 'Соединение закрыто'; source.close(); break;
-                case 'error': connection.textContent = 'Ошибка; поток завершён'; source.close(); break;
-                case 'closed': connection.textContent = 'Диагностическое соединение закрыто'; source.close(); break;
+                case 'moex_error':
+                  disconnected = true;
+                  connection.textContent = 'Ошибка MOEX (STOMP ERROR)';
+                  subscription.textContent = 'MOEX вернул ERROR';
+                  break;
+                case 'connection_closed': disconnected = true; connection.textContent = 'Отключено'; source.close(); break;
+                case 'error': disconnected = true; connection.textContent = 'Ошибка; отключено'; source.close(); break;
+                case 'closed': disconnected = true; connection.textContent = 'Отключено'; source.close(); break;
               }
               addEvent(item);
             });
 
             source.onerror = () => {
+              disconnected = true;
               if (connection.textContent !== 'Соединение закрыто' && connection.textContent !== 'Диагностическое соединение закрыто') {
-                connection.textContent = 'Поток событий завершён';
+                connection.textContent = 'Отключено (поток событий завершён)';
               }
               source.close();
             };
@@ -277,6 +323,7 @@ public static partial class MoexCandlesWebSocketEndpoints
 
     private static async Task StreamCandlesEventsAsync(
         HttpContext context,
+        IConfiguration configuration,
         ILogger<MoexCandlesDiagnosticLoggerCategory> logger,
         CancellationToken cancellationToken)
     {
@@ -291,6 +338,13 @@ public static partial class MoexCandlesWebSocketEndpoints
         using ClientWebSocket webSocket = new ClientWebSocket();
         webSocket.Options.AddSubProtocol("STOMP");
 
+        string? login = configuration["MoexWebSocket:Login"];
+        string? passcode = configuration["MoexWebSocket:Passcode"];
+        bool usePassport = !string.IsNullOrWhiteSpace(login) && !string.IsNullOrWhiteSpace(passcode);
+        string authDomain = usePassport ? "passport" : "DEMO";
+        string authLogin = usePassport ? login! : "guest";
+        string authPasscode = usePassport ? passcode! : "guest";
+
         MoexStompSessionState sessionState = new MoexStompSessionState();
         using CancellationTokenSource connectTimeout = new CancellationTokenSource(WebSocketConnectTimeout);
         using CancellationTokenSource connectCancellation = CancellationTokenSource.CreateLinkedTokenSource(
@@ -303,6 +357,10 @@ public static partial class MoexCandlesWebSocketEndpoints
 
         try
         {
+            await WriteEventAsync(
+                context,
+                new MoexCandlesSseEvent("auth_mode", DateTimeOffset.UtcNow, Details: usePassport ? "Passport" : "DEMO"),
+                cancellationToken);
             await WriteEventAsync(context, new MoexCandlesSseEvent("connecting", DateTimeOffset.UtcNow, Details: WebSocketUrl), cancellationToken);
             await webSocket.ConnectAsync(new Uri(WebSocketUrl), connectCancellation.Token);
             connectTimeout.CancelAfter(Timeout.InfiniteTimeSpan);
@@ -311,7 +369,7 @@ public static partial class MoexCandlesWebSocketEndpoints
             await SendFrameAsync(
                 webSocket,
                 "CONNECT",
-                ["domain:DEMO", "login:guest", "passcode:guest"],
+                [$"domain:{authDomain}", $"login:{authLogin}", $"passcode:{authPasscode}"],
                 cancellationToken);
             stompConnectedTimeout.CancelAfter(StompConnectedTimeout);
             await WriteEventAsync(context, new MoexCandlesSseEvent("connect_sent", DateTimeOffset.UtcNow, Command: "CONNECT"), cancellationToken);
