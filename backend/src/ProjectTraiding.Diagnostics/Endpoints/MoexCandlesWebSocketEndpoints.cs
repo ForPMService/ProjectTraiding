@@ -204,9 +204,9 @@ public static partial class MoexCandlesWebSocketEndpoints
                     break;
                 }
 
-                if (receiveResult.MessageType != WebSocketMessageType.Text)
+                if (receiveResult.MessageType is not WebSocketMessageType.Text and not WebSocketMessageType.Binary)
                 {
-                    throw new InvalidDataException($"Ожидался текстовый WebSocket-кадр, получен {receiveResult.MessageType}.");
+                    throw new InvalidDataException($"Ожидался текстовый или бинарный WebSocket-кадр, получен {receiveResult.MessageType}.");
                 }
 
                 frameReader.Append(receiveBuffer.AsSpan(0, receiveResult.Count));
