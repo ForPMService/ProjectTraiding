@@ -18,6 +18,7 @@ public static class DiagnosticsEndpointRouteBuilderExtensions
         diagnostics.MapRealtimeDebugEndpoints();
         diagnostics.MapCalendarDiagnosticsEndpoints();
         diagnostics.MapCorporateDiagnosticsEndpoints();
+        diagnostics.MapMoexCandlesWebSocketEndpoints();
 
         return routes;
     }
