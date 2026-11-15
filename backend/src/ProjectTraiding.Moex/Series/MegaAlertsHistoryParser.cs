@@ -17,7 +17,6 @@ internal static class MegaAlertsHistoryParser
         out HistoricalSeriesTimeGroupTail<MegaAlertsStockRow>? tail)
     {
         ValidateSpec(spec, "stock", 8);
-        _ = spec.SourceColumnKindsValid;
         cursor = new PaginationCursorDTO();
         tail = new HistoricalSeriesTimeGroupTail<MegaAlertsStockRow>(writer, lastSourceTime);
         Utf8JsonReader reader = new(body);
@@ -62,7 +61,6 @@ internal static class MegaAlertsHistoryParser
         out HistoricalSeriesTimeGroupTail<MegaAlertsFuturesRow>? tail)
     {
         ValidateSpec(spec, "futures", 9);
-        _ = spec.SourceColumnKindsValid;
         cursor = new PaginationCursorDTO();
         tail = new HistoricalSeriesTimeGroupTail<MegaAlertsFuturesRow>(writer, lastSourceTime);
         Utf8JsonReader reader = new(body);

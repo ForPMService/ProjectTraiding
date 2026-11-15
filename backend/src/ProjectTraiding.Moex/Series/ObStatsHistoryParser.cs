@@ -17,7 +17,6 @@ internal static class ObStatsHistoryParser
         out HistoricalSeriesTimeGroupTail<ObStatsStockRow>? tail)
     {
         ValidateSpec(spec, "stock", 21);
-        _ = spec.SourceColumnKindsValid;
         tail = null;
         cursor = new PaginationCursorDTO();
         int sourceRows = 0;
@@ -76,7 +75,6 @@ internal static class ObStatsHistoryParser
         out HistoricalSeriesTimeGroupTail<ObStatsFuturesRow>? tail)
     {
         ValidateSpec(spec, "futures", 35);
-        _ = spec.SourceColumnKindsValid;
         tail = null;
         cursor = new PaginationCursorDTO();
         int sourceRows = 0;

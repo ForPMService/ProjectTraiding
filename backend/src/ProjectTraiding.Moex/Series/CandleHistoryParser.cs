@@ -26,7 +26,6 @@ public static class CandleHistoryParser
                 "CandleHistoryParser requires a registered candles series specification.");
         }
 
-        _ = spec.SourceColumnKindsValid;
         cursor = new PaginationCursorDTO();
 
         int acceptedRowsCount = 0;

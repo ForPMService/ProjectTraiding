@@ -20,7 +20,6 @@ internal static class FutoiHistoryParser
             || spec.Pagination != PaginationKind.DaySplit || spec.SourceColumns.Length != 13)
             throw new ArgumentException("Typed FUTOI parsing requires the registered day-split futoi series.", nameof(spec));
 
-        _ = spec.SourceColumnKindsValid;
         cursor = new PaginationCursorDTO();
         tail = null;
         int sourceRows = 0;

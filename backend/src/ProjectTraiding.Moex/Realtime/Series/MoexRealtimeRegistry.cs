@@ -4,69 +4,60 @@ using ProjectTraiding.Moex.Series;
 namespace ProjectTraiding.Moex.Realtime.Series;
 
 /// <summary>
-/// Sole declaration of MOEX realtime source columns and the corresponding HTTP columns
-/// parameters. Target row layouts are represented by their Protobuf structs.
+/// Declares MOEX realtime source columns and their HTTP columns parameters.
+/// Candle source columns are shared with the historical series declarations.
 /// </summary>
 public static class MoexRealtimeRegistry
 {
     public static readonly SourceColumn[] TradesStockSourceColumns =
     [
-        new(0, "TRADENO"u8.ToArray(), ColumnKind.Int64),
-        new(1, "TRADETIME"u8.ToArray(), ColumnKind.MomentTime),
-        new(2, "SECID"u8.ToArray(), ColumnKind.String),
-        new(3, "PRICE"u8.ToArray(), ColumnKind.Double),
-        new(4, "QUANTITY"u8.ToArray(), ColumnKind.Int64),
-        new(5, "PERIOD"u8.ToArray(), ColumnKind.String),
-        new(6, "VALUE"u8.ToArray(), ColumnKind.Double),
-        new(7, "BOARDID"u8.ToArray(), ColumnKind.String),
-        new(8, "SYSTIME"u8.ToArray(), ColumnKind.DateTime),
-        new(9, "BUYSELL"u8.ToArray(), ColumnKind.String),
-        new(10, "DECIMALS"u8.ToArray(), ColumnKind.Int32),
-        new(11, "TRADINGSESSION"u8.ToArray(), ColumnKind.String),
-        new(12, "TRADEDATE"u8.ToArray(), ColumnKind.MomentDate),
-        new(13, "TRADE_SESSION_DATE"u8.ToArray(), ColumnKind.String),
+        new(0, "TRADENO"u8.ToArray()),
+        new(1, "TRADETIME"u8.ToArray()),
+        new(2, "SECID"u8.ToArray()),
+        new(3, "PRICE"u8.ToArray()),
+        new(4, "QUANTITY"u8.ToArray()),
+        new(5, "PERIOD"u8.ToArray()),
+        new(6, "VALUE"u8.ToArray()),
+        new(7, "BOARDID"u8.ToArray()),
+        new(8, "SYSTIME"u8.ToArray()),
+        new(9, "BUYSELL"u8.ToArray()),
+        new(10, "DECIMALS"u8.ToArray()),
+        new(11, "TRADINGSESSION"u8.ToArray()),
+        new(12, "TRADEDATE"u8.ToArray()),
+        new(13, "TRADE_SESSION_DATE"u8.ToArray()),
     ];
 
     public static readonly SourceColumn[] TradesFuturesSourceColumns =
     [
-        new(0, "TRADENO"u8.ToArray(), ColumnKind.Int64),
-        new(1, "BOARDNAME"u8.ToArray(), ColumnKind.String),
-        new(2, "SECID"u8.ToArray(), ColumnKind.String),
-        new(3, "TRADEDATE"u8.ToArray(), ColumnKind.MomentDate),
-        new(4, "TRADETIME"u8.ToArray(), ColumnKind.MomentTime),
-        new(5, "PRICE"u8.ToArray(), ColumnKind.Double),
-        new(6, "QUANTITY"u8.ToArray(), ColumnKind.Int64),
-        new(7, "SYSTIME"u8.ToArray(), ColumnKind.DateTime),
-        new(8, "RECNO"u8.ToArray(), ColumnKind.Int64),
-        new(9, "OPENPOSITION"u8.ToArray(), ColumnKind.Int64),
-        new(10, "OFFMARKETDEAL"u8.ToArray(), ColumnKind.Int32),
-        new(11, "BUYSELL"u8.ToArray(), ColumnKind.String),
-        new(12, "TRADE_SESSION_DATE"u8.ToArray(), ColumnKind.String),
+        new(0, "TRADENO"u8.ToArray()),
+        new(1, "BOARDNAME"u8.ToArray()),
+        new(2, "SECID"u8.ToArray()),
+        new(3, "TRADEDATE"u8.ToArray()),
+        new(4, "TRADETIME"u8.ToArray()),
+        new(5, "PRICE"u8.ToArray()),
+        new(6, "QUANTITY"u8.ToArray()),
+        new(7, "SYSTIME"u8.ToArray()),
+        new(8, "RECNO"u8.ToArray()),
+        new(9, "OPENPOSITION"u8.ToArray()),
+        new(10, "OFFMARKETDEAL"u8.ToArray()),
+        new(11, "BUYSELL"u8.ToArray()),
+        new(12, "TRADE_SESSION_DATE"u8.ToArray()),
     ];
 
     public static readonly SourceColumn[] OrderbookSourceColumns =
     [
-        new(0, "BOARDID"u8.ToArray(), ColumnKind.String),
-        new(1, "SECID"u8.ToArray(), ColumnKind.String),
-        new(2, "BUYSELL"u8.ToArray(), ColumnKind.String),
-        new(3, "PRICE"u8.ToArray(), ColumnKind.Double),
-        new(4, "QUANTITY"u8.ToArray(), ColumnKind.Int64),
-        new(5, "SEQNUM"u8.ToArray(), ColumnKind.Int64),
-        new(6, "UPDATETIME"u8.ToArray(), ColumnKind.String),
-        new(7, "DECIMALS"u8.ToArray(), ColumnKind.Int64),
+        new(0, "BOARDID"u8.ToArray()),
+        new(1, "SECID"u8.ToArray()),
+        new(2, "BUYSELL"u8.ToArray()),
+        new(3, "PRICE"u8.ToArray()),
+        new(4, "QUANTITY"u8.ToArray()),
+        new(5, "SEQNUM"u8.ToArray()),
+        new(6, "UPDATETIME"u8.ToArray()),
+        new(7, "DECIMALS"u8.ToArray()),
     ];
 
     public static readonly SourceColumn[] CandleSourceColumns =
-    [
-        new(0, "open"u8.ToArray(), ColumnKind.Double),
-        new(1, "close"u8.ToArray(), ColumnKind.Double),
-        new(2, "high"u8.ToArray(), ColumnKind.Double),
-        new(3, "low"u8.ToArray(), ColumnKind.Double),
-        new(4, "value"u8.ToArray(), ColumnKind.Double),
-        new(5, "volume"u8.ToArray(), ColumnKind.Double),
-        new(6, "begin"u8.ToArray(), ColumnKind.DateTime),
-        new(7, "end"u8.ToArray(), ColumnKind.DateTime),
-    ];
+        MoexSeriesSpec.CandleSourceColumns;
 
     public static readonly string TradesStockColumnsParam =
         BuildColumnsParam(TradesStockSourceColumns);
@@ -95,12 +86,6 @@ public static class MoexRealtimeRegistry
     [
         "secid", "source_time", "buy_sell", "price", "board_id", "quantity", "decimals",
         "trade_session_date", "ingest_priority",
-    ];
-
-    public static readonly string[] CandleInsertColumns =
-    [
-        "secid", "open", "close", "high", "low", "value", "volume", "begin", "end",
-        "ingest_priority",
     ];
 
     public const string StockTradesTable = "moex_trades_stock";

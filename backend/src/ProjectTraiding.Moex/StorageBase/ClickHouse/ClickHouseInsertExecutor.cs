@@ -3,15 +3,13 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net.Http;
-using System.Text;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 
 namespace ProjectTraiding.Moex.StorageBase.ClickHouse
 {
     /// <summary>
-    /// Исполнитель одной вставки в ClickHouse: пишет готовую пачку строк одним INSERT
-    /// в форматах RowBinary и Protobuf. Общий механизм для всех рядов —
-    /// таблица, столбцы и строки приходят параметрами.
+    /// Исполнитель одной вставки в ClickHouse: отправляет подготовленную пачку
+    /// типизированных строк одним INSERT в формате Protobuf.
     /// Содержимое строк не проверяет: парсер уже признал данные корректными.
     /// </summary>
     public sealed class ClickHouseInsertExecutor
@@ -33,35 +31,6 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
         /// <summary>
         /// Пишет одну пачку одним INSERT. Возвращает число вставленных строк.
         /// </summary>
-        public Task<long> InsertAsync(
-            string table,
-            IReadOnlyList<string> columns,
-            IReadOnlyDictionary<string, string> columnTypes,
-            IReadOnlyList<object?[]> rows,
-            StorageInsertContext insertContext,
-            CancellationToken ct)
-        {
-            if (rows.Count == 0)
-                return Task.FromResult(0L);
-
-            // ColumnTypes задан явно → драйвер не шлёт SELECT ... WHERE 1=0 перед вставкой.
-            InsertOptions options = new InsertOptions
-            {
-                BatchSize = rows.Count,
-                MaxDegreeOfParallelism = 1,
-                ColumnTypes = columnTypes,
-                CustomSettings = CreateFlowSettings(insertContext),
-                Compressor = null,    
-            };
-
-            return ExecuteInsertAsync(
-                table,
-                rows.Count,
-                insertContext,
-                token => _client.InsertBinaryAsync(table, columns, rows, options, token),
-                ct);
-        }
-
         /// <summary>
         /// Отправляет готовую пачку length-delimited Protobuf одним INSERT.
         /// Успешный результат — число строк, переданных в запросе.
@@ -127,43 +96,6 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
                     : MoexOutcomes.Error;
 
                 RecordInsert(in insertContext, outcome, null);
-                throw;
-            }
-        }
-
-        private async Task<long> ExecuteInsertAsync(
-            string table,
-            int rowCount,
-            StorageInsertContext insertContext,
-            Func<CancellationToken, Task<long>> insertOperation,
-            CancellationToken ct)
-        {
-            ClickHouseWriterLogMessages.WriteStarted(_logger, table, rowCount);
-
-            // Собственного отрезка трассы у вставки нет намеренно: он создавался бы на
-            // каждый инструмент с новыми строками и на каждую страницу загрузки, а исход
-            // вставки и число строк несут счётчики, отказ — событие журнала.
-            try
-            {
-                long inserted = await insertOperation(ct).ConfigureAwait(false);
-
-                RecordInsert(in insertContext, MoexOutcomes.Success, inserted);
-                return inserted;
-            }
-            catch (Exception ex)
-            {
-                ClickHouseWriterLogMessages.WriteFailed(_logger, ex, table, ex.GetType().Name);
-
-                // Обработчик остаётся один: разводить отмену в отдельный catch значило бы
-                // лишить её существующего события журнала. Различие видно по типу исключения,
-                // и на исход метрики оно влияет, а на журналирование — нет.
-                string outcome = ex is OperationCanceledException
-                    ? MoexOutcomes.Cancelled
-                    : MoexOutcomes.Error;
-
-                // Число вставленных строк не записывается: драйвер его не подтвердил.
-                RecordInsert(in insertContext, outcome, null);
-
                 throw;
             }
         }

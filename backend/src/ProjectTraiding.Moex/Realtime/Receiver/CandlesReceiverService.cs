@@ -228,7 +228,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             ProtobufBatchWriter<CandleRow> writer = new(
                 executor,
                 MoexRealtimeRegistry.CandleTableFor(interval),
-                MoexRealtimeRegistry.CandleInsertColumns,
+                CandleRow.InsertColumns,
                 insertContext);
             List<RealtimeRowFailure> rowFailures = new();
             TimeSpan fetchBudgetRemaining = _instrumentFetchTimeout;

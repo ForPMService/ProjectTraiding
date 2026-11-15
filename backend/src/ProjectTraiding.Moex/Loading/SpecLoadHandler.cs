@@ -105,7 +105,7 @@ public sealed class SpecLoadHandler
         }
 
         if (spec.DataKind == "tradestats")
-            ValidateTaskSecId(spec, task.Secid);
+            ValidateTaskSecId(task.Secid);
 
         // Повторная загрузка сначала удаляет полный диапазон, затем записывает его заново.
         await _rangeDeleter.DeleteAsync(
@@ -128,13 +128,8 @@ public sealed class SpecLoadHandler
         {
             if (string.IsNullOrWhiteSpace(task.Secid))
             {
-                for (int i = 0; i < spec.TargetColumns.Length; i++)
-                {
-                    TargetColumn column = spec.TargetColumns[i];
-                    if (column.FillRule == FillRule.TaskSecId && column.Required)
-                        throw new InvalidOperationException(column.RequiredMessage
-                            ?? "Загрузка исторического ряда отвергнута: secid пустой.");
-                }
+                throw new InvalidOperationException(
+                    "Загрузка свечей отвергнута: secid пустой.");
             }
 
             StorageInsertContext candleInsertContext = new(
@@ -377,18 +372,17 @@ public sealed class SpecLoadHandler
         CancellationToken cancellationToken)
         where TRow : struct
     {
-        if (string.IsNullOrWhiteSpace(task.Secid))
+        if (spec.DataKind != "futoi" && string.IsNullOrWhiteSpace(task.Secid))
         {
-            for (int index = 0; index < spec.TargetColumns.Length; index++)
+            string errorMessage = spec.DataKind switch
             {
-                TargetColumn column = spec.TargetColumns[index];
-                if (column.FillRule == FillRule.TaskSecId && column.Required)
-                {
-                    throw new InvalidOperationException(
-                        column.RequiredMessage
-                        ?? "Загрузка исторического ряда отвергнута: secid пустой.");
-                }
-            }
+                "obstats" => "Загрузка статистики стакана отвергнута: secid пустой.",
+                "orderstats" => "Загрузка статистики заявок отвергнута: secid пустой.",
+                "hi2" => "Загрузка концентрации отвергнута: secid пустой.",
+                "mega_alerts" => "Загрузка мегаалёртов отвергнута: secid пустой.",
+                _ => "Загрузка исторического ряда отвергнута: secid пустой.",
+            };
+            throw new InvalidOperationException(errorMessage);
         }
 
         ProtobufBatchWriter<TRow> writer = new(
@@ -682,21 +676,13 @@ public sealed class SpecLoadHandler
             CultureInfo.InvariantCulture, spec.MethodTemplate, task.Secid, board);
     }
 
-    private static void ValidateTaskSecId(MoexSeriesSpec spec, string secid)
+    private static void ValidateTaskSecId(string secid)
     {
         if (!string.IsNullOrWhiteSpace(secid))
             return;
 
-        for (int i = 0; i < spec.TargetColumns.Length; i++)
-        {
-            TargetColumn column = spec.TargetColumns[i];
-            if (column.FillRule == FillRule.TaskSecId && column.Required)
-            {
-                throw new InvalidOperationException(
-                    column.RequiredMessage
-                    ?? "Загрузка исторического ряда отвергнута: secid пустой.");
-            }
-        }
+        throw new InvalidOperationException(
+            "Загрузка статистики сделок отвергнута: secid пустой.");
     }
 
     private static DateOnly? GetLastSourceDate(CandleParsedPage page)

@@ -83,7 +83,6 @@ public static class TradeStatsHistoryParser
         Utf8JsonReader reader = new(body);
 
         ParseHelpersUtf8.SkipToRootObject(ref reader, spec.RootKey);
-        _ = spec.SourceColumnKindsValid;
 
         bool foundColumns = false;
         bool foundData = false;
@@ -405,7 +404,7 @@ public static class TradeStatsHistoryParser
         {
             if (rowError is not null)
                 throw new InvalidOperationException(rowError);
-            ValidateSecId(taskSecId, spec);
+            ValidateSecId(taskSecId);
             requiredSourceTime = MoexClickHouseTime.BuildSourceTime(in sourceTimeParts);
             row.SourceTime = CandleDateTime64.ToUnixWholeSeconds(requiredSourceTime);
             candle = BuildCandle(
@@ -462,7 +461,7 @@ public static class TradeStatsHistoryParser
         {
             if (rowError is not null)
                 throw new InvalidOperationException(rowError);
-            ValidateSecId(taskSecId, spec);
+            ValidateSecId(taskSecId);
             requiredSourceTime = MoexClickHouseTime.BuildSourceTime(in sourceTimeParts);
             row.SourceTime = CandleDateTime64.ToUnixWholeSeconds(requiredSourceTime);
 
@@ -639,15 +638,13 @@ public static class TradeStatsHistoryParser
         }
     }
 
-    private static void ValidateSecId(string taskSecId, MoexSeriesSpec spec)
+    private static void ValidateSecId(string taskSecId)
     {
         if (!string.IsNullOrWhiteSpace(taskSecId))
             return;
 
-        TargetColumn secIdColumn = spec.TargetColumns[0];
         throw new InvalidOperationException(
-            secIdColumn.RequiredMessage
-            ?? $"Строка отвергнута: обязательная колонка {secIdColumn.Name} пуста.");
+            "Загрузка статистики сделок отвергнута: secid пустой.");
     }
 
     private static void ValidateSpec(MoexSeriesSpec spec, string expectedMarket)

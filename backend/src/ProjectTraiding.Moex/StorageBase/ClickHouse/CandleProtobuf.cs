@@ -11,6 +11,12 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse;
 [ProtoContract]
 public struct CandleRow
 {
+    public static readonly string[] InsertColumns =
+    [
+        "secid", "open", "close", "high", "low", "value", "volume", "begin", "end",
+        "ingest_priority",
+    ];
+
     [ProtoMember(1)]
     public string Secid { get; set; }
 

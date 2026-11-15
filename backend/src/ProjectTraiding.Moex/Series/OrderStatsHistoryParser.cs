@@ -19,7 +19,6 @@ internal static class OrderStatsHistoryParser
         if (spec.DataKind != "orderstats" || spec.Market != "stock" || spec.Pagination != PaginationKind.Cursor || spec.SourceColumns.Length != 26)
             throw new ArgumentException("Typed order statistics require stock orderstats with cursor pagination.", nameof(spec));
 
-        _ = spec.SourceColumnKindsValid;
         tail = null;
         cursor = new PaginationCursorDTO();
         int sourceRows = 0;

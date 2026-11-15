@@ -17,7 +17,6 @@ internal static class Hi2HistoryParser
         out HistoricalSeriesTimeGroupTail<Hi2StockRow>? tail)
     {
         ValidateSpec(spec, "stock", 7);
-        _ = spec.SourceColumnKindsValid;
         cursor = new PaginationCursorDTO();
         tail = new HistoricalSeriesTimeGroupTail<Hi2StockRow>(writer, lastSourceTime);
         Utf8JsonReader reader = new(body);
@@ -62,7 +61,6 @@ internal static class Hi2HistoryParser
         out HistoricalSeriesTimeGroupTail<Hi2FuturesRow>? tail)
     {
         ValidateSpec(spec, "futures", 8);
-        _ = spec.SourceColumnKindsValid;
         cursor = new PaginationCursorDTO();
         tail = new HistoricalSeriesTimeGroupTail<Hi2FuturesRow>(writer, lastSourceTime);
         Utf8JsonReader reader = new(body);
