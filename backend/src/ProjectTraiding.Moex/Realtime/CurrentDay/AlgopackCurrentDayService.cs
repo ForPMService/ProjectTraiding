@@ -460,18 +460,47 @@ public sealed class AlgopackCurrentDayService : BackgroundService
         Exception? fetchFailure = null;
         long sourceRowsCount = 0;
         long rowsInsertedReported = 0;
+        TimeSpan fetchBudgetRemaining = _instrumentFetchTimeout;
         using (CancellationTokenSource fetchCts =
                CancellationTokenSource.CreateLinkedTokenSource(ct))
         {
-            fetchCts.CancelAfter(_instrumentFetchTimeout);
             try
             {
                 IAsyncEnumerable<TradeStatsParsedPage<TRow>> pages = readPages(
                     spec, secid, today, today, operationTags,
                     statsWriter, candleWriter, lastSourceTime, 0, fetchCts.Token);
-                await foreach (TradeStatsParsedPage<TRow> page
-                               in pages.WithCancellation(fetchCts.Token))
+                await using IAsyncEnumerator<TradeStatsParsedPage<TRow>> enumerator =
+                    pages.GetAsyncEnumerator(fetchCts.Token);
+
+                while (true)
                 {
+                    fetchCts.CancelAfter(fetchBudgetRemaining);
+                    Stopwatch fetchTimer = Stopwatch.StartNew();
+                    bool hasPage;
+                    try
+                    {
+                        hasPage = await enumerator.MoveNextAsync();
+                    }
+                    catch (OperationCanceledException)
+                        when (!ct.IsCancellationRequested && fetchCts.IsCancellationRequested)
+                    {
+                        AlgopackCurrentDayLogMessages.InstrumentFetchTimedOut(
+                            _logger, secid, market, spec.DataKind, _instrumentFetchTimeout);
+                        fetchFailure = new TimeoutException(
+                            "Не все страницы ALGOPACK получены до истечения времени.");
+                        break;
+                    }
+                    finally
+                    {
+                        fetchBudgetRemaining -= fetchTimer.Elapsed;
+                        if (!fetchCts.IsCancellationRequested)
+                            fetchCts.CancelAfter(Timeout.InfiniteTimeSpan);
+                    }
+
+                    if (!hasPage)
+                        break;
+
+                    TradeStatsParsedPage<TRow> page = enumerator.Current;
                     sourceRowsCount += page.SourceRowsCount;
                     if (page.Failure is not null || page.SkippedRows > 0)
                         filterState.Incomplete = true;
@@ -550,11 +579,11 @@ public sealed class AlgopackCurrentDayService : BackgroundService
         Exception? fetchFailure = null;
         long sourceRowsCount = 0;
         long rowsInsertedReported = 0;
+        TimeSpan fetchBudgetRemaining = _instrumentFetchTimeout;
 
         using (CancellationTokenSource fetchCts =
                CancellationTokenSource.CreateLinkedTokenSource(ct))
         {
-            fetchCts.CancelAfter(_instrumentFetchTimeout);
             IAsyncEnumerable<HistoricalSeriesParsedPage> pages = readPages(
                 spec, secid, today, today, operationTags, writer, lastSourceTime, fetchCts.Token);
             await using IAsyncEnumerator<HistoricalSeriesParsedPage> enumerator =
@@ -563,6 +592,8 @@ public sealed class AlgopackCurrentDayService : BackgroundService
             while (true)
             {
                 bool hasPage;
+                fetchCts.CancelAfter(fetchBudgetRemaining);
+                Stopwatch fetchTimer = Stopwatch.StartNew();
                 try
                 {
                     hasPage = await enumerator.MoveNextAsync();
@@ -584,6 +615,12 @@ public sealed class AlgopackCurrentDayService : BackgroundService
                 {
                     fetchFailure = ex;
                     break;
+                }
+                finally
+                {
+                    fetchBudgetRemaining -= fetchTimer.Elapsed;
+                    if (!fetchCts.IsCancellationRequested)
+                        fetchCts.CancelAfter(Timeout.InfiniteTimeSpan);
                 }
 
                 if (!hasPage)
