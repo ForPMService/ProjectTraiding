@@ -49,6 +49,26 @@ public static partial class MoexCandlesWebSocketEndpoints
             <div><span class="label">Подписка / RECEIPT</span><span class="value" id="subscription">Ожидание CONNECTED</span></div>
             <div><span class="label">Последнее сообщение MOEX</span><span class="value" id="last-received">—</span></div>
           </section>
+          <section aria-live="polite">
+            <h2>Последняя свеча из сообщения</h2>
+            <p id="candle-message-info">Тип: — · Получено: — · seqnum: —</p>
+            <dl id="latest-candle">
+              <dt>Дата</dt><dd>—</dd>
+              <dt>FROM</dt><dd>—</dd>
+              <dt>TILL</dt><dd>—</dd>
+              <dt>OPEN</dt><dd>—</dd>
+              <dt>HIGH</dt><dd>—</dd>
+              <dt>LOW</dt><dd>—</dd>
+              <dt>CLOSE</dt><dd>—</dd>
+              <dt>VOLUME</dt><dd>—</dd>
+            </dl>
+            <p>Завершённость свечи протоколом здесь не определяется.</p>
+            <h2 id="candle-table-title">Последние свечи</h2>
+            <table>
+              <thead><tr><th>Дата</th><th>FROM</th><th>TILL</th><th>OPEN</th><th>HIGH</th><th>LOW</th><th>CLOSE</th><th>VOLUME</th></tr></thead>
+              <tbody id="candles-body"><tr><td colspan="8">Ожидание MESSAGE</td></tr></tbody>
+            </table>
+          </section>
           <main id="events" aria-live="polite"></main>
           <script>
             const source = new EventSource(`${location.pathname}/events`);
@@ -57,6 +77,122 @@ public static partial class MoexCandlesWebSocketEndpoints
             const subscription = document.getElementById('subscription');
             const lastReceived = document.getElementById('last-received');
             const events = document.getElementById('events');
+            const candleMessageInfo = document.getElementById('candle-message-info');
+            const latestCandle = document.getElementById('latest-candle');
+            const candleTableTitle = document.getElementById('candle-table-title');
+            const candlesBody = document.getElementById('candles-body');
+
+            function formatValue(value) {
+              if (value === undefined) return '—';
+              if (value === null) return 'null';
+              if (Array.isArray(value)) return '[' + value.map(formatValue).join(', ') + ']';
+              if (typeof value === 'object') return JSON.stringify(value);
+              return String(value);
+            }
+
+            function displayDate(value) {
+              if (typeof value !== 'string') return formatValue(value);
+              const separator = value.search(/[T ]/);
+              return separator < 0 ? value : value.slice(0, separator);
+            }
+
+            function mapRows(message) {
+              if (!Array.isArray(message.columns) || !Array.isArray(message.data)) return [];
+              const records = [];
+              for (const row of message.data) {
+                if (!Array.isArray(row)) continue;
+                const record = {};
+                for (let index = 0; index < message.columns.length; index++) {
+                  record[message.columns[index]] = row[index];
+                }
+                records.push(record);
+              }
+              return records;
+            }
+
+            function compareFromDescending(left, right) {
+              const leftValue = formatValue(left.FROM);
+              const rightValue = formatValue(right.FROM);
+              const leftTime = Date.parse(leftValue);
+              const rightTime = Date.parse(rightValue);
+              if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) return rightTime - leftTime;
+              return rightValue.localeCompare(leftValue);
+            }
+
+            function setLatestCandle(record) {
+              const values = [
+                displayDate(record.FROM), formatValue(record.FROM), formatValue(record.TILL),
+                formatValue(record.OPEN), formatValue(record.HIGH), formatValue(record.LOW),
+                formatValue(record.CLOSE), formatValue(record.VOLUME)
+              ];
+              for (let index = 0; index < values.length; index++) {
+                latestCandle.children[index * 2 + 1].textContent = values[index];
+              }
+            }
+
+            function clearLatestCandle() {
+              for (let index = 1; index < latestCandle.children.length; index += 2) {
+                latestCandle.children[index].textContent = '—';
+              }
+            }
+
+            function renderCandleMessage(item) {
+              let message;
+              try {
+                message = JSON.parse(item.body);
+              } catch {
+                candleMessageInfo.textContent = 'Не удалось разобрать JSON сообщения; полный STOMP кадр доступен ниже.';
+                return;
+              }
+
+              const properties = message.properties && typeof message.properties === 'object' ? message.properties : {};
+              const messageType = formatValue(properties.type ?? 'не указан');
+              const seqnum = Object.prototype.hasOwnProperty.call(properties, 'seqnum')
+                ? formatValue(properties.seqnum)
+                : '—';
+              const received = item.receivedAt ? new Date(item.receivedAt).toLocaleString() : '—';
+              candleMessageInfo.textContent = `Тип: ${messageType} · Получено: ${received} · seqnum: ${seqnum}`;
+
+              const records = mapRows(message).sort(compareFromDescending);
+              const visibleRecords = records.slice(0, 10);
+              const tableFragment = document.createDocumentFragment();
+              for (const record of visibleRecords) {
+                const row = document.createElement('tr');
+                const values = [
+                  displayDate(record.FROM), record.FROM, record.TILL, record.OPEN,
+                  record.HIGH, record.LOW, record.CLOSE, record.VOLUME
+                ];
+                for (const value of values) {
+                  const cell = document.createElement('td');
+                  cell.textContent = formatValue(value);
+                  row.append(cell);
+                }
+                tableFragment.append(row);
+              }
+              candlesBody.replaceChildren(tableFragment);
+              candleTableTitle.textContent = messageType === 'updates'
+                ? 'Изменённые записи в последнем updates (до 10)'
+                : messageType === 'removal'
+                  ? 'Удалённые записи в последнем removal (до 10)'
+                  : messageType === 'snapshot'
+                    ? 'Последние свечи snapshot (до 10)'
+                    : 'Строки последнего сообщения (до 10)';
+
+              if (visibleRecords.length === 0) {
+                const row = document.createElement('tr');
+                const cell = document.createElement('td');
+                cell.colSpan = 8;
+                cell.textContent = 'В сообщении нет строк данных.';
+                row.append(cell);
+                candlesBody.append(row);
+              }
+
+              if (messageType === 'removal' || visibleRecords.length === 0) {
+                clearLatestCandle();
+              } else if ((messageType === 'snapshot' || messageType === 'updates') && visibleRecords.length > 0) {
+                setLatestCandle(visibleRecords[0]);
+              }
+            }
 
             function addEvent(item) {
               const article = document.createElement('article');
@@ -74,15 +210,22 @@ public static partial class MoexCandlesWebSocketEndpoints
                 details.textContent = item.details;
                 article.append(details);
               }
-              if (item.headers?.length) {
-                const headers = document.createElement('pre');
-                headers.textContent = 'Заголовки:\n' + item.headers.join('\n');
-                article.append(headers);
-              }
-              if (item.body) {
-                const body = document.createElement('pre');
-                body.textContent = item.body;
-                article.append(body);
+              if (item.headers?.length || item.body) {
+                const rawFrame = document.createElement('details');
+                const summary = document.createElement('summary');
+                summary.textContent = 'Исходные заголовки и тело STOMP';
+                rawFrame.append(summary);
+                if (item.headers?.length) {
+                  const headers = document.createElement('pre');
+                  headers.textContent = 'Заголовки:\n' + item.headers.join('\n');
+                  rawFrame.append(headers);
+                }
+                if (item.body) {
+                  const body = document.createElement('pre');
+                  body.textContent = item.body;
+                  rawFrame.append(body);
+                }
+                article.append(rawFrame);
               }
               events.prepend(article);
             }
@@ -90,6 +233,7 @@ public static partial class MoexCandlesWebSocketEndpoints
             source.addEventListener('diagnostic', event => {
               const item = JSON.parse(event.data);
               if (item.receivedAt) lastReceived.textContent = new Date(item.receivedAt).toLocaleString();
+              if (item.kind === 'message') renderCandleMessage(item);
               switch (item.kind) {
                 case 'connecting': connection.textContent = 'Соединение с MOEX…'; break;
                 case 'websocket_connected': connection.textContent = 'WebSocket установлен'; break;
