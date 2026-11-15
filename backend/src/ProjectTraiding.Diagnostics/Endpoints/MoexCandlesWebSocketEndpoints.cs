@@ -37,6 +37,8 @@ public static partial class MoexCandlesWebSocketEndpoints
             table.candles th:first-child, table.candles td:first-child,
             table.candles th:nth-child(2), table.candles td:nth-child(2),
             table.candles th:nth-child(3), table.candles td:nth-child(3) { text-align: left; }
+            table.candles tr.updated { animation: candle-update-highlight 1.2s ease-out; }
+            @keyframes candle-update-highlight { from { background: #526b3e; } to { background: transparent; } }
             #events { display: grid; gap: 10px; }
             article header { display: flex; gap: 12px; align-items: baseline; justify-content: space-between; flex-wrap: wrap; }
             article time { color: #93a2b6; font-size: .85rem; }
@@ -58,7 +60,7 @@ public static partial class MoexCandlesWebSocketEndpoints
             <div><span class="label">С последнего MESSAGE</span><span class="value" id="message-age">Ожидание сообщения</span></div>
           </section>
           <section aria-live="polite">
-            <h2>Последняя свеча из сообщения</h2>
+            <h2>Последняя свеча</h2>
             <p id="candle-message-info">Тип: — · Получено: — · seqnum: —</p>
             <div class="table-wrap">
               <table class="candles" id="latest-candle">
@@ -67,7 +69,7 @@ public static partial class MoexCandlesWebSocketEndpoints
               </table>
             </div>
             <p>Завершённость свечи протоколом здесь не определяется.</p>
-            <h2 id="candle-table-title">Последние свечи</h2>
+            <h2>Последние 10 свечей</h2>
             <div class="table-wrap"><table class="candles">
               <thead><tr><th>Дата</th><th>FROM</th><th>TILL</th><th>OPEN</th><th>HIGH</th><th>LOW</th><th>CLOSE</th><th>VOLUME</th></tr></thead>
               <tbody id="candles-body"><tr><td colspan="8">Ожидание MESSAGE</td></tr></tbody>
@@ -83,10 +85,10 @@ public static partial class MoexCandlesWebSocketEndpoints
             const events = document.getElementById('events');
             const candleMessageInfo = document.getElementById('candle-message-info');
             const latestCandle = document.querySelector('#latest-candle tbody');
-            const candleTableTitle = document.getElementById('candle-table-title');
             const candlesBody = document.getElementById('candles-body');
             const authMode = document.getElementById('auth-mode');
             const messageAge = document.getElementById('message-age');
+            const candlesByFrom = new Map();
             let lastMessageAt = null;
             let disconnected = false;
 
@@ -136,10 +138,61 @@ public static partial class MoexCandlesWebSocketEndpoints
             function compareFromDescending(left, right) {
               const leftValue = formatValue(left.FROM);
               const rightValue = formatValue(right.FROM);
-              const leftTime = Date.parse(leftValue);
-              const rightTime = Date.parse(rightValue);
-              if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) return rightTime - leftTime;
-              return rightValue.localeCompare(leftValue);
+              return leftValue < rightValue ? 1 : leftValue > rightValue ? -1 : 0;
+            }
+
+            function getFromKey(record) {
+              return record.FROM === undefined || record.FROM === null ? null : formatValue(record.FROM);
+            }
+
+            function hasChangedFields(previous, update) {
+              for (const field of Object.keys(update)) {
+                if (update[field] === undefined) continue;
+                if (JSON.stringify(previous[field]) !== JSON.stringify(update[field])) return true;
+              }
+              return false;
+            }
+
+            function trimCandleState() {
+              const newestFirst = Array.from(candlesByFrom.values()).sort(compareFromDescending);
+              for (const record of newestFirst.slice(10)) {
+                candlesByFrom.delete(getFromKey(record));
+              }
+            }
+
+            function applyCandleMessage(messageType, incomingRecords) {
+              const changedKeys = new Set();
+              if (messageType === 'snapshot') {
+                candlesByFrom.clear();
+                for (const record of incomingRecords) {
+                  const key = getFromKey(record);
+                  if (key !== null) candlesByFrom.set(key, record);
+                }
+              } else if (messageType === 'updates') {
+                for (const update of incomingRecords) {
+                  const key = getFromKey(update);
+                  if (key === null) continue;
+                  const previous = candlesByFrom.get(key);
+                  if (previous && hasChangedFields(previous, update)) changedKeys.add(key);
+                  if (previous) {
+                    const merged = { ...previous };
+                    for (const field of Object.keys(update)) {
+                      if (update[field] !== undefined) merged[field] = update[field];
+                    }
+                    candlesByFrom.set(key, merged);
+                  } else {
+                    candlesByFrom.set(key, update);
+                  }
+                }
+              } else if (messageType === 'removal') {
+                for (const removed of incomingRecords) {
+                  const key = getFromKey(removed);
+                  if (key !== null) candlesByFrom.delete(key);
+                }
+              }
+
+              trimCandleState();
+              return changedKeys;
             }
 
             function setLatestCandle(record) {
@@ -184,7 +237,8 @@ public static partial class MoexCandlesWebSocketEndpoints
               const received = item.receivedAt ? new Date(item.receivedAt).toLocaleString() : '—';
               candleMessageInfo.textContent = `Тип: ${messageType} · Получено: ${received} · seqnum: ${seqnum}`;
 
-              const records = mapRows(message).sort(compareFromDescending);
+              const changedKeys = applyCandleMessage(messageType, mapRows(message));
+              const records = Array.from(candlesByFrom.values()).sort(compareFromDescending);
               const visibleRecords = records.slice(0, 10);
               const tableFragment = document.createDocumentFragment();
               for (const record of visibleRecords) {
@@ -198,16 +252,11 @@ public static partial class MoexCandlesWebSocketEndpoints
                   cell.textContent = formatValue(value);
                   row.append(cell);
                 }
+                const key = getFromKey(record);
+                if (key !== null && changedKeys.has(key)) row.classList.add('updated');
                 tableFragment.append(row);
               }
               candlesBody.replaceChildren(tableFragment);
-              candleTableTitle.textContent = messageType === 'updates'
-                ? 'Изменённые записи в последнем updates (до 10)'
-                : messageType === 'removal'
-                  ? 'Удалённые записи в последнем removal (до 10)'
-                  : messageType === 'snapshot'
-                    ? 'Последние свечи snapshot (до 10)'
-                    : 'Строки последнего сообщения (до 10)';
 
               if (visibleRecords.length === 0) {
                 const row = document.createElement('tr');
@@ -218,9 +267,9 @@ public static partial class MoexCandlesWebSocketEndpoints
                 candlesBody.append(row);
               }
 
-              if (messageType === 'removal' || visibleRecords.length === 0) {
+              if (visibleRecords.length === 0) {
                 clearLatestCandle();
-              } else if ((messageType === 'snapshot' || messageType === 'updates') && visibleRecords.length > 0) {
+              } else {
                 setLatestCandle(visibleRecords[0]);
               }
             }
@@ -263,7 +312,9 @@ public static partial class MoexCandlesWebSocketEndpoints
 
             source.addEventListener('diagnostic', event => {
               const item = JSON.parse(event.data);
-              if (item.receivedAt) lastReceived.textContent = new Date(item.receivedAt).toLocaleString();
+              if (item.kind === 'message' && item.receivedAt) {
+                lastReceived.textContent = new Date(item.receivedAt).toLocaleString();
+              }
               if (item.kind === 'message') {
                 lastMessageAt = Date.now();
                 messageAge.textContent = '00:00' + (disconnected ? ' · Отключено' : '');
