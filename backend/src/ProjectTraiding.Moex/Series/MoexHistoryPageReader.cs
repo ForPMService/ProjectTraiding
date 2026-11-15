@@ -64,12 +64,28 @@ public sealed class MoexHistoryPageReader
         DateTime? lastSourceTime,
         uint ingestPriority,
         CancellationToken cancellationToken)
+        => ReadTradeStatsStockPages(
+            spec, secId, from, till, operationTags, statsWriter, candleWriter,
+            lastSourceTime, ingestPriority, cancellationToken, acceptedCandles: null);
+
+    public IAsyncEnumerable<TradeStatsParsedPage<TradeStatsStockRow>> ReadTradeStatsStockPages(
+        MoexSeriesSpec spec,
+        string secId,
+        DateOnly from,
+        DateOnly till,
+        MoexOperationTags operationTags,
+        ProtobufBatchWriter<TradeStatsStockRow> statsWriter,
+        ProtobufBatchWriter<CandleRow> candleWriter,
+        DateTime? lastSourceTime,
+        uint ingestPriority,
+        CancellationToken cancellationToken,
+        List<CandleRow>? acceptedCandles)
     {
         PageParser<TradeStatsParsedPage<TradeStatsStockRow>> parsePage =
             (ReadOnlyMemory<byte> body, out PaginationCursorDTO cursor) =>
                 TradeStatsHistoryParser.ParseStock(
                     body.Span, spec, secId, statsWriter, candleWriter,
-                    lastSourceTime, ingestPriority, out cursor);
+                    lastSourceTime, ingestPriority, out cursor, acceptedCandles);
         return ReadTradeStatsCursorPages<TradeStatsStockRow>(
             spec, secId, from, till, operationTags, parsePage, cancellationToken);
     }
@@ -85,12 +101,28 @@ public sealed class MoexHistoryPageReader
         DateTime? lastSourceTime,
         uint ingestPriority,
         CancellationToken cancellationToken)
+        => ReadTradeStatsFuturesPages(
+            spec, secId, from, till, operationTags, statsWriter, candleWriter,
+            lastSourceTime, ingestPriority, cancellationToken, acceptedCandles: null);
+
+    public IAsyncEnumerable<TradeStatsParsedPage<TradeStatsFuturesRow>> ReadTradeStatsFuturesPages(
+        MoexSeriesSpec spec,
+        string secId,
+        DateOnly from,
+        DateOnly till,
+        MoexOperationTags operationTags,
+        ProtobufBatchWriter<TradeStatsFuturesRow> statsWriter,
+        ProtobufBatchWriter<CandleRow> candleWriter,
+        DateTime? lastSourceTime,
+        uint ingestPriority,
+        CancellationToken cancellationToken,
+        List<CandleRow>? acceptedCandles)
     {
         PageParser<TradeStatsParsedPage<TradeStatsFuturesRow>> parsePage =
             (ReadOnlyMemory<byte> body, out PaginationCursorDTO cursor) =>
                 TradeStatsHistoryParser.ParseFutures(
                     body.Span, spec, secId, statsWriter, candleWriter,
-                    lastSourceTime, ingestPriority, out cursor);
+                    lastSourceTime, ingestPriority, out cursor, acceptedCandles);
         return ReadTradeStatsCursorPages<TradeStatsFuturesRow>(
             spec, secId, from, till, operationTags, parsePage, cancellationToken);
     }

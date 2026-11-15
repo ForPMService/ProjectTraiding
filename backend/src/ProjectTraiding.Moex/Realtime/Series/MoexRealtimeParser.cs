@@ -273,7 +273,8 @@ public static class MoexRealtimeParser
         string secid,
         ProtobufBatchWriter<CandleRow> writer,
         DateTime now,
-        DateTime? lastBegin)
+        DateTime? lastBegin,
+        List<CandleRow>? acceptedCandles = null)
     {
         List<RealtimeRowFailure> failures = new();
         int sourceRowsCount = 0;
@@ -312,6 +313,7 @@ public static class MoexRealtimeParser
                     failures,
                     writer,
                     secid,
+                    acceptedCandles,
                     now,
                     lastBegin,
                     ref sourceRowsCount,
@@ -331,6 +333,7 @@ public static class MoexRealtimeParser
             SourceRowsCount = sourceRowsCount,
             AcceptedRowsCount = acceptedRowsCount,
             MaxAcceptedBegin = maxAcceptedBegin,
+            AcceptedCandles = acceptedCandles,
         };
     }
 
@@ -735,6 +738,7 @@ public static class MoexRealtimeParser
         List<RealtimeRowFailure> failures,
         ProtobufBatchWriter<CandleRow> writer,
         string secid,
+        List<CandleRow>? acceptedCandles,
         DateTime now,
         DateTime? lastBegin,
         ref int sourceRowsCount,
@@ -799,6 +803,8 @@ public static class MoexRealtimeParser
                         ? CandleDateTime64.ToUnixWholeSeconds(endValue)
                         : null;
                     writer.Append(in row);
+                    if (acceptedCandles is not null)
+                        acceptedCandles.Add(row);
                     acceptedRowsCount++;
                     if (maxAcceptedBegin is null || beginValue > maxAcceptedBegin.Value)
                         maxAcceptedBegin = beginValue;

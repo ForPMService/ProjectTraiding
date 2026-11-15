@@ -15,6 +15,7 @@ public static class TradeStatsHistoryParser
         string taskSecId,
         ProtobufBatchWriter<TRow> statsWriter,
         ProtobufBatchWriter<CandleRow> candleWriter,
+        List<CandleRow>? acceptedCandles,
         DateTime? lastSourceTime,
         uint ingestPriority,
         ref int httpSourceRowsCount,
@@ -33,11 +34,12 @@ public static class TradeStatsHistoryParser
         ProtobufBatchWriter<CandleRow> candleWriter,
         DateTime? lastSourceTime,
         uint ingestPriority,
-        out PaginationCursorDTO cursor)
+        out PaginationCursorDTO cursor,
+        List<CandleRow>? acceptedCandles = null)
     {
         ValidateSpec(spec, "stock");
         return Parse(
-            body, spec, taskSecId, statsWriter, candleWriter, lastSourceTime, ingestPriority,
+            body, spec, taskSecId, statsWriter, candleWriter, acceptedCandles, lastSourceTime, ingestPriority,
             ReadStockRows, out cursor);
     }
 
@@ -49,11 +51,12 @@ public static class TradeStatsHistoryParser
         ProtobufBatchWriter<CandleRow> candleWriter,
         DateTime? lastSourceTime,
         uint ingestPriority,
-        out PaginationCursorDTO cursor)
+        out PaginationCursorDTO cursor,
+        List<CandleRow>? acceptedCandles = null)
     {
         ValidateSpec(spec, "futures");
         return Parse(
-            body, spec, taskSecId, statsWriter, candleWriter, lastSourceTime, ingestPriority,
+            body, spec, taskSecId, statsWriter, candleWriter, acceptedCandles, lastSourceTime, ingestPriority,
             ReadFuturesRows, out cursor);
     }
 
@@ -64,6 +67,7 @@ public static class TradeStatsHistoryParser
         string taskSecId,
         ProtobufBatchWriter<TRow> statsWriter,
         ProtobufBatchWriter<CandleRow> candleWriter,
+        List<CandleRow>? acceptedCandles,
         DateTime? lastSourceTime,
         uint ingestPriority,
         RowReader<TRow> readRows,
@@ -108,7 +112,7 @@ public static class TradeStatsHistoryParser
 
                 foundData = true;
                 readRows(
-                    ref reader, spec, taskSecId, statsWriter, candleWriter,
+                    ref reader, spec, taskSecId, statsWriter, candleWriter, acceptedCandles,
                     lastSourceTime, ingestPriority,
                     ref httpSourceRowsCount, ref sourceRowsCount, ref acceptedRowsCount,
                     ref pageLastSourceTime, ref maxAcceptedSourceTime, ref skippedSourceRows);
@@ -165,6 +169,7 @@ public static class TradeStatsHistoryParser
         string taskSecId,
         ProtobufBatchWriter<TradeStatsStockRow> statsWriter,
         ProtobufBatchWriter<CandleRow> candleWriter,
+        List<CandleRow>? acceptedCandles,
         DateTime? lastSourceTime,
         uint ingestPriority,
         ref int httpSourceRowsCount,
@@ -250,7 +255,7 @@ public static class TradeStatsHistoryParser
             }
 
             FinishStockRow(
-                ref reader, spec, taskSecId, statsWriter, candleWriter,
+                ref reader, spec, taskSecId, statsWriter, candleWriter, acceptedCandles,
                 lastSourceTime, ingestPriority, sourceRowIndex, ref sourceTimeParts,
                 ref httpSourceRowsCount, ref sourceRowsCount, ref acceptedRowsCount,
                 ref pageLastSourceTime, ref maxAcceptedSourceTime, ref skippedSourceRows,
@@ -265,6 +270,7 @@ public static class TradeStatsHistoryParser
         string taskSecId,
         ProtobufBatchWriter<TradeStatsFuturesRow> statsWriter,
         ProtobufBatchWriter<CandleRow> candleWriter,
+        List<CandleRow>? acceptedCandles,
         DateTime? lastSourceTime,
         uint ingestPriority,
         ref int httpSourceRowsCount,
@@ -356,7 +362,7 @@ public static class TradeStatsHistoryParser
             }
 
             FinishFuturesRow(
-                ref reader, spec, taskSecId, statsWriter, candleWriter,
+                ref reader, spec, taskSecId, statsWriter, candleWriter, acceptedCandles,
                 lastSourceTime, ingestPriority, sourceRowIndex, ref sourceTimeParts,
                 ref httpSourceRowsCount, ref sourceRowsCount, ref acceptedRowsCount,
                 ref pageLastSourceTime, ref maxAcceptedSourceTime, ref skippedSourceRows,
@@ -371,6 +377,7 @@ public static class TradeStatsHistoryParser
         string taskSecId,
         ProtobufBatchWriter<TradeStatsStockRow> statsWriter,
         ProtobufBatchWriter<CandleRow> candleWriter,
+        List<CandleRow>? acceptedCandles,
         DateTime? lastSourceTime,
         uint ingestPriority,
         int sourceRowIndex,
@@ -415,6 +422,8 @@ public static class TradeStatsHistoryParser
 
         statsWriter.Append(in row);
         candleWriter.Append(in candle);
+        if (acceptedCandles is not null)
+            acceptedCandles.Add(candle);
         acceptedRowsCount++;
         UpdateMaximum(ref maxAcceptedSourceTime, requiredSourceTime);
     }
@@ -425,6 +434,7 @@ public static class TradeStatsHistoryParser
         string taskSecId,
         ProtobufBatchWriter<TradeStatsFuturesRow> statsWriter,
         ProtobufBatchWriter<CandleRow> candleWriter,
+        List<CandleRow>? acceptedCandles,
         DateTime? lastSourceTime,
         uint ingestPriority,
         int sourceRowIndex,
@@ -476,6 +486,8 @@ public static class TradeStatsHistoryParser
 
         statsWriter.Append(in row);
         candleWriter.Append(in candle);
+        if (acceptedCandles is not null)
+            acceptedCandles.Add(candle);
         acceptedRowsCount++;
         UpdateMaximum(ref maxAcceptedSourceTime, requiredSourceTime);
     }

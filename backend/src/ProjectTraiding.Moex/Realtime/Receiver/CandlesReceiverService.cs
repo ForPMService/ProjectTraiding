@@ -5,8 +5,10 @@ using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Infrastructure;
 using ProjectTraiding.Moex.Realtime.Series;
+using ProjectTraiding.Moex.Realtime.Subscriptions;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
+using Wolverine;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -32,6 +34,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
         // Формат строки приёма задан CandleRow и проверенной схемой moex_candles_*.
         private readonly IServiceScopeFactory _scopeFactory;
+        private readonly CandleSubscriptionRegistry _candleSubscriptions;
         private readonly ILogger<CandlesReceiverService> _logger;
         private readonly TimeSpan _instrumentFetchTimeout;
         private readonly TimeSpan _stalePollThreshold;
@@ -40,6 +43,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
         public CandlesReceiverService(
             IServiceScopeFactory scopeFactory,
+            CandleSubscriptionRegistry candleSubscriptions,
             ILogger<CandlesReceiverService> logger,
             TimeSpan pollInterval,
             TimeSpan instrumentFetchTimeout,
@@ -48,6 +52,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             : base(pollInterval)
         {
             _scopeFactory = scopeFactory;
+            _candleSubscriptions = candleSubscriptions;
             _logger = logger;
             _instrumentFetchTimeout = instrumentFetchTimeout;
             _stalePollThreshold = stalePollThreshold;
@@ -108,12 +113,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     scope.ServiceProvider.GetRequiredService<MoexRealtimeRestClient>();
                 ClickHouseInsertExecutor executor =
                     scope.ServiceProvider.GetRequiredService<ClickHouseInsertExecutor>();
+                IMessageBus? messageBus = null;
                 foreach (KeyValuePair<string, CandleInstrumentState> pair in States)
                 {
                     try
                     {
-                        await PollInstrumentAsync(
-                            pair.Key, pair.Value, client, executor, ct);
+                        messageBus = await PollInstrumentAsync(
+                            pair.Key, pair.Value, client, executor,
+                            scope.ServiceProvider, messageBus, ct);
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested)
                     {
@@ -158,19 +165,22 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             return Task.CompletedTask;
         }
 
-        private async Task PollInstrumentAsync(
+        private async Task<IMessageBus?> PollInstrumentAsync(
             string secid,
             CandleInstrumentState state,
             MoexRealtimeRestClient client,
             ClickHouseInsertExecutor executor,
+            IServiceProvider scopedServices,
+            IMessageBus? messageBus,
             CancellationToken commitCt)
         {
             foreach (int interval in CandleIntervals)
             {
                 try
                 {
-                    await PollIntervalAsync(
-                        secid, state, client, executor, interval, commitCt);
+                    messageBus = await PollIntervalAsync(
+                        secid, state, client, executor, interval,
+                        scopedServices, messageBus, commitCt);
                 }
                 catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
                 {
@@ -182,14 +192,18 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         _logger, ex, secid, state.Market, interval);
                 }
             }
+
+            return messageBus;
         }
 
-        private async Task PollIntervalAsync(
+        private async Task<IMessageBus?> PollIntervalAsync(
             string secid,
             CandleInstrumentState state,
             MoexRealtimeRestClient client,
             ClickHouseInsertExecutor executor,
             int interval,
+            IServiceProvider scopedServices,
+            IMessageBus? messageBus,
             CancellationToken commitCt)
         {
             // Московское время фиксируем один раз: им задаётся окно запроса и проверяется begin.
@@ -250,6 +264,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                                 writer,
                                 now,
                                 lastBeginForWindow,
+                                _candleSubscriptions,
                                 fetchCts.Token);
                         await using IAsyncEnumerator<RealtimeCandlesPageSummary> enumerator =
                             pages.GetAsyncEnumerator(fetchCts.Token);
@@ -312,6 +327,51 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                             sourceRowsCount += page.SourceRowsCount;
                             for (int i = 0; i < page.RowFailures.Count; i++)
                                 rowFailures.Add(page.RowFailures[i]);
+
+                            List<CandleRow>? acceptedCandles = page.AcceptedCandles;
+                            if (acceptedCandles is not null &&
+                                acceptedCandles.Count > 0 &&
+                                _candleSubscriptions.HasSubscribers)
+                            {
+                                try
+                                {
+                                    messageBus ??= scopedServices.GetRequiredService<IMessageBus>();
+                                }
+                                catch (Exception ex)
+                                {
+                                    CandleRow firstCandle = acceptedCandles[0];
+                                    MoexRealtimeReceiverLogMessages.CandleAcceptedPublishFailed(
+                                        _logger, ex, firstCandle.Secid, state.Market,
+                                        interval, firstCandle.Begin);
+                                }
+
+                                if (messageBus is not null)
+                                {
+                                    for (int i = 0; i < acceptedCandles.Count; i++)
+                                    {
+                                        commitCt.ThrowIfCancellationRequested();
+                                        CandleRow candle = acceptedCandles[i];
+                                        try
+                                        {
+                                            await messageBus.PublishAsync(
+                                                new CandleAccepted(candle, state.Market, interval));
+                                            commitCt.ThrowIfCancellationRequested();
+                                        }
+                                        catch (OperationCanceledException)
+                                            when (commitCt.IsCancellationRequested)
+                                        {
+                                            throw;
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            MoexRealtimeReceiverLogMessages.CandleAcceptedPublishFailed(
+                                                _logger, ex, candle.Secid, state.Market,
+                                                interval, candle.Begin);
+                                        }
+                                    }
+                                }
+                            }
+
                             if (page.MaxAcceptedBegin is DateTime pageMaximum)
                             {
                                 if (maxAcceptedBegin is null || pageMaximum > maxAcceptedBegin.Value)
@@ -391,7 +451,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     {
                         MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error, interval);
                         pollActivity?.SetStatus(ActivityStatusCode.Error);
-                        return;
+                        return messageBus;
                     }
                     if (fetchFailure is not null)
                     {
@@ -431,6 +491,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     throw;
                 }
             }
+
+            return messageBus;
         }
 
         private static void UpdateConfirmedTime(

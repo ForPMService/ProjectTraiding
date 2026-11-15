@@ -5,6 +5,7 @@ using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Parsing;
 using ProjectTraiding.Moex.Parsing.Errors;
 using ProjectTraiding.Moex.Realtime.Series;
+using ProjectTraiding.Moex.Realtime.Subscriptions;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using System.Globalization;
 using System.Runtime.CompilerServices;
@@ -226,6 +227,7 @@ namespace ProjectTraiding.Moex.Clients
             ProtobufBatchWriter<CandleRow> writer,
             DateTime now,
             DateTime? lastBegin,
+            CandleSubscriptionRegistry candleSubscriptions,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             string endpoint = BuildEndpoint(market, ticker, "/candles.json");
@@ -260,6 +262,10 @@ namespace ProjectTraiding.Moex.Clients
                 if (start > 0)
                     queryParams["start"] = start.ToString(CultureInfo.InvariantCulture);
 
+                List<CandleRow>? acceptedCandles = candleSubscriptions.HasSubscribers
+                    ? new List<CandleRow>()
+                    : null;
+
                 RealtimeCandlesPageSummary page = await FetchCandlesPageAsync(
                     endpoint,
                     queryParams,
@@ -267,6 +273,7 @@ namespace ProjectTraiding.Moex.Clients
                     writer,
                     now,
                     lastBegin,
+                    acceptedCandles,
                     cancellationToken);
 
                 for (int i = 0; i < page.RowFailures.Count; i++)
@@ -300,6 +307,7 @@ namespace ProjectTraiding.Moex.Clients
             ProtobufBatchWriter<CandleRow> writer,
             DateTime now,
             DateTime? lastBegin,
+            List<CandleRow>? acceptedCandles,
             CancellationToken cancellationToken)
         {
             using HttpResponseMessage response = await _transport.SendAsync(
@@ -309,7 +317,7 @@ namespace ProjectTraiding.Moex.Clients
             try
             {
                 return MoexRealtimeParser.ParseCandles(
-                    rentedArr.Span, ticker, writer, now, lastBegin);
+                    rentedArr.Span, ticker, writer, now, lastBegin, acceptedCandles);
             }
             catch (MoexSchemaMismatchException ex)
             {

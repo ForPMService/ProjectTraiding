@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Realtime.CurrentDay;
+using ProjectTraiding.Moex.Realtime.Subscriptions;
 using ProjectTraiding.Moex.Series;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
@@ -29,6 +30,8 @@ public static class MoexAlgopackCurrentDayServiceCollectionExtensions
             sp.GetRequiredService<ClickHouseInsertExecutor>(),
             sp.GetRequiredService<StreamCursorWriter>(),
             sp.GetRequiredService<FutoiSubjectReader>(),
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            sp.GetRequiredService<CandleSubscriptionRegistry>(),
             batchSize,
             sp.GetRequiredService<IOptions<MoexOptions>>(),
             sp.GetRequiredService<ILogger<AlgopackCurrentDayService>>()));

@@ -1,9 +1,12 @@
 using System.Diagnostics;
+using JasperFx;
+using JasperFx.CodeGeneration;
 using Microsoft.Extensions.Options;
 using ProjectTraiding.Api.Infrastructure;
 using ProjectTraiding.Api.Telegram;
 using ProjectTraiding.CustomFeatures.Infrastructure.DependencyInjection;
 using ProjectTraiding.CustomFeatures.Options;
+using ProjectTraiding.CustomFeatures.Realtime;
 #if DEBUG
 using ProjectTraiding.Diagnostics.DependencyInjection;
 #endif
@@ -13,11 +16,16 @@ using ProjectTraiding.Management.DependencyInjection;
 using ProjectTraiding.Moex.Infrastructure.DependencyInjection;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Options;
+using ProjectTraiding.Moex.Realtime.Subscriptions;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using ProjectTraiding.Observability.Infrastructure.DependencyInjection;
 using ProjectTraiding.Telegram;
+using Wolverine;
 
 var builder = WebApplication.CreateBuilder(args);
+bool isWolverineCodeGeneration = args.Length >= 2
+    && string.Equals(args[0], "codegen", StringComparison.OrdinalIgnoreCase)
+    && string.Equals(args[1], "write", StringComparison.OrdinalIgnoreCase);
 
 // ══════════════════════════════════════════════
 // Наблюдаемость — до остальных модулей.
@@ -32,10 +40,26 @@ builder.Services.AddClickHouse(builder.Configuration);
 builder.Services.AddPostgre(builder.Configuration);
 builder.Services.AddCustomFeatures();
 builder.Services.AddCustomFeaturesCalendarSource(builder.Configuration);
-builder.Services.AddMoexLoading(builder.Configuration);
-builder.Services.AddMoexRealtimeReceiver(builder.Configuration);
-builder.Services.AddMoexAlgopackCurrentDay(builder.Configuration);
-builder.Services.AddTelegram(builder.Configuration);
+if (!isWolverineCodeGeneration)
+{
+    // Code generation only needs Wolverine's application model. Do not start market,
+    // PostgreSQL-backed or Telegram background workers as a side effect of the CLI.
+    builder.Services.AddMoexLoading(builder.Configuration);
+    builder.Services.AddMoexRealtimeReceiver(builder.Configuration);
+    builder.Services.AddMoexAlgopackCurrentDay(builder.Configuration);
+    builder.Services.AddTelegram(builder.Configuration);
+}
+
+builder.Host.UseWolverine(options =>
+{
+    options.Discovery.IncludeAssembly(typeof(CandleAcceptedHandler).Assembly);
+    options.LocalQueueFor<CandleAccepted>().Sequential();
+#if DEBUG
+    options.CodeGeneration.TypeLoadMode = TypeLoadMode.Dynamic;
+#else
+    options.CodeGeneration.TypeLoadMode = TypeLoadMode.Static;
+#endif
+});
 
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -101,5 +125,9 @@ if (app.Environment.IsDevelopment())
 
 app.UseRateLimiter();
 app.UseHttpsRedirection();
+#if DEBUG
+return await app.RunJasperFxCommands(args);
+#else
 await app.RunAsync();
 return 0;
+#endif

@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Realtime.Receiver;
+using ProjectTraiding.Moex.Realtime.Subscriptions;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 
@@ -65,6 +66,7 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
                 MoexOptions opt = sp.GetRequiredService<IOptions<MoexOptions>>().Value;
                 return new CandlesReceiverService(
                     sp.GetRequiredService<IServiceScopeFactory>(),
+                    sp.GetRequiredService<CandleSubscriptionRegistry>(),
                     sp.GetRequiredService<ILogger<CandlesReceiverService>>(),
                     TimeSpan.FromSeconds(opt.CandlesPollSeconds),
                     opt.RealtimeInstrumentFetchTimeout,

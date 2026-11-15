@@ -43,6 +43,7 @@ public sealed class RealtimeOrderbookPage
 public sealed class RealtimeCandlesPageSummary
 {
     public required List<RealtimeRowFailure> RowFailures { get; init; }
+    public List<CandleRow>? AcceptedCandles { get; init; }
     public int SourceRowsCount { get; init; }
     public int AcceptedRowsCount { get; init; }
     public DateTime? MaxAcceptedBegin { get; init; }

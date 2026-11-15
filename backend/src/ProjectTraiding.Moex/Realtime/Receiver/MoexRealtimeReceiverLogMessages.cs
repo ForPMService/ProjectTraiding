@@ -133,6 +133,16 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         public static partial void CandleRowSkipped(
             ILogger logger, string secid, string dataKind, int candleInterval, int position, string reason);
 
+        [LoggerMessage(EventId = 490, EventName = "MoexCandleAcceptedPublishFailed", Level = LogLevel.Warning,
+            Message = "Accepted candle event could not be published: secid={Secid}, market={Market}, interval={Interval}, begin={Begin}.")]
+        public static partial void CandleAcceptedPublishFailed(
+            ILogger logger,
+            Exception exception,
+            string secid,
+            string market,
+            int interval,
+            ulong begin);
+
         [LoggerMessage(EventId = 482, EventName = "MoexTradesReceiverInstrumentStopped", Level = LogLevel.Information,
             Message = "Trades receiver instrument stopped: secid={Secid}, rows={RowsTotal}.")]
         public static partial void TradesInstrumentStopped(
