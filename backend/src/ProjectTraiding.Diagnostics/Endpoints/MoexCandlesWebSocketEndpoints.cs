@@ -8,6 +8,8 @@ namespace ProjectTraiding.Diagnostics.Endpoints;
 
 public static partial class MoexCandlesWebSocketEndpoints
 {
+    private static readonly TimeSpan WebSocketConnectTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan StompConnectedTimeout = TimeSpan.FromSeconds(15);
     private const string WebSocketUrl = "wss://iss.moex.com/infocx/v3/websocket";
     private const string SubscriptionId = "sub-1";
     private const string SubscriptionDestination = "MXSE.candles";
@@ -146,11 +148,20 @@ public static partial class MoexCandlesWebSocketEndpoints
         webSocket.Options.AddSubProtocol("STOMP");
 
         MoexStompSessionState sessionState = new MoexStompSessionState();
+        using CancellationTokenSource connectTimeout = new CancellationTokenSource(WebSocketConnectTimeout);
+        using CancellationTokenSource connectCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            connectTimeout.Token);
+        using CancellationTokenSource stompConnectedTimeout = new CancellationTokenSource();
+        using CancellationTokenSource stompConnectedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            stompConnectedTimeout.Token);
 
         try
         {
             await WriteEventAsync(context, new MoexCandlesSseEvent("connecting", DateTimeOffset.UtcNow, Details: WebSocketUrl), cancellationToken);
-            await webSocket.ConnectAsync(new Uri(WebSocketUrl), cancellationToken);
+            await webSocket.ConnectAsync(new Uri(WebSocketUrl), connectCancellation.Token);
+            connectTimeout.CancelAfter(Timeout.InfiniteTimeSpan);
             await WriteEventAsync(context, new MoexCandlesSseEvent("websocket_connected", DateTimeOffset.UtcNow), cancellationToken);
 
             await SendFrameAsync(
@@ -158,6 +169,7 @@ public static partial class MoexCandlesWebSocketEndpoints
                 "CONNECT",
                 ["domain:DEMO", "login:guest", "passcode:guest"],
                 cancellationToken);
+            stompConnectedTimeout.CancelAfter(StompConnectedTimeout);
             await WriteEventAsync(context, new MoexCandlesSseEvent("connect_sent", DateTimeOffset.UtcNow, Command: "CONNECT"), cancellationToken);
 
             MoexStompFrameReader frameReader = new MoexStompFrameReader();
@@ -166,9 +178,14 @@ public static partial class MoexCandlesWebSocketEndpoints
             {
                 if (frameReader.TryReadFrame(out MoexStompFrame frame))
                 {
+                    if (frame.Command == "CONNECTED")
+                    {
+                        stompConnectedTimeout.Cancel();
+                    }
+
                     await HandleFrameAsync(context, webSocket, frame, cancellationToken, logger, sessionState);
 
-                    if (frame.Command == "ERROR" && !sessionState.StompConnected)
+                    if (frame.Command == "ERROR")
                     {
                         break;
                     }
@@ -176,7 +193,10 @@ public static partial class MoexCandlesWebSocketEndpoints
                     continue;
                 }
 
-                ValueWebSocketReceiveResult receiveResult = await webSocket.ReceiveAsync(receiveBuffer.AsMemory(), cancellationToken);
+                CancellationToken receiveToken = sessionState.StompConnected
+                    ? cancellationToken
+                    : stompConnectedCancellation.Token;
+                ValueWebSocketReceiveResult receiveResult = await webSocket.ReceiveAsync(receiveBuffer.AsMemory(), receiveToken);
                 if (receiveResult.MessageType == WebSocketMessageType.Close)
                 {
                     string closeDetails = $"MOEX закрыл WebSocket: {webSocket.CloseStatus} {webSocket.CloseStatusDescription}".Trim();
@@ -195,6 +215,22 @@ public static partial class MoexCandlesWebSocketEndpoints
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // Браузер закрыл поток или запрос остановлен хостом; соединение будет закрыто в finally.
+        }
+        catch (OperationCanceledException) when (connectTimeout.IsCancellationRequested)
+        {
+            await WriteTimeoutEventAsync(
+                context,
+                logger,
+                "Превышено время ожидания установки WebSocket-соединения (15 секунд).",
+                cancellationToken);
+        }
+        catch (OperationCanceledException) when (stompConnectedTimeout.IsCancellationRequested && !sessionState.StompConnected)
+        {
+            await WriteTimeoutEventAsync(
+                context,
+                logger,
+                "Превышено время ожидания STOMP CONNECTED после CONNECT (15 секунд).",
+                cancellationToken);
         }
         catch (Exception exception)
         {
@@ -231,6 +267,16 @@ public static partial class MoexCandlesWebSocketEndpoints
                 }
             }
         }
+    }
+
+    private static async Task WriteTimeoutEventAsync(
+        HttpContext context,
+        ILogger logger,
+        string details,
+        CancellationToken cancellationToken)
+    {
+        logger.LogWarning("{DiagnosticTimeout}", details);
+        await WriteEventAsync(context, new MoexCandlesSseEvent("error", DateTimeOffset.UtcNow, Details: details), cancellationToken);
     }
 
     private static async Task HandleFrameAsync(
