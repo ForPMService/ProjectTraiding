@@ -30,13 +30,12 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
         private static readonly int[] CandleIntervals = [1, 10, 60, 24];
 
-        // Формат строки приёма задан общей декларацией свечей:
-        // secid, open, close, high, low, value, volume, begin, end, ingest_priority.
+        // Формат строки приёма задан CandleRow и проверенной схемой moex_candles_*.
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<CandlesReceiverService> _logger;
         private readonly TimeSpan _instrumentFetchTimeout;
         private readonly TimeSpan _stalePollThreshold;
-        private readonly List<object?[]> _candlesToWrite = new();
+        private readonly int _batchSize;
         private bool _initialized;
 
         public CandlesReceiverService(
@@ -44,13 +43,17 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             ILogger<CandlesReceiverService> logger,
             TimeSpan pollInterval,
             TimeSpan instrumentFetchTimeout,
-            TimeSpan stalePollThreshold)
+            TimeSpan stalePollThreshold,
+            int batchSize)
             : base(pollInterval)
         {
             _scopeFactory = scopeFactory;
             _logger = logger;
             _instrumentFetchTimeout = instrumentFetchTimeout;
             _stalePollThreshold = stalePollThreshold;
+            _batchSize = batchSize > 0
+                ? batchSize
+                : throw new ArgumentOutOfRangeException(nameof(batchSize));
         }
 
         protected override void LogStarted(TimeSpan pollInterval)
@@ -103,14 +106,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
                 MoexRealtimeRestClient client =
                     scope.ServiceProvider.GetRequiredService<MoexRealtimeRestClient>();
-                RealtimeSpecRowWriter writer =
-                    scope.ServiceProvider.GetRequiredService<RealtimeSpecRowWriter>();
+                ClickHouseInsertExecutor executor =
+                    scope.ServiceProvider.GetRequiredService<ClickHouseInsertExecutor>();
                 foreach (KeyValuePair<string, CandleInstrumentState> pair in States)
                 {
                     try
                     {
                         await PollInstrumentAsync(
-                            pair.Key, pair.Value, client, writer, ct);
+                            pair.Key, pair.Value, client, executor, ct);
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested)
                     {
@@ -159,7 +162,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             string secid,
             CandleInstrumentState state,
             MoexRealtimeRestClient client,
-            RealtimeSpecRowWriter writer,
+            ClickHouseInsertExecutor executor,
             CancellationToken commitCt)
         {
             foreach (int interval in CandleIntervals)
@@ -167,7 +170,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 try
                 {
                     await PollIntervalAsync(
-                        secid, state, client, writer, interval, commitCt);
+                        secid, state, client, executor, interval, commitCt);
                 }
                 catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
                 {
@@ -185,22 +188,16 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             string secid,
             CandleInstrumentState state,
             MoexRealtimeRestClient client,
-            RealtimeSpecRowWriter writer,
+            ClickHouseInsertExecutor executor,
             int interval,
             CancellationToken commitCt)
         {
-            MoexRealtimeSpec spec = MoexRealtimeRegistry.CandlesFor(interval);
-
             // Московское время фиксируем один раз: им задаётся окно запроса и проверяется begin.
             DateTime now = MoexTime.Now;
             bool hasLastBegin = state.LastBeginByInterval.TryGetValue(
                 interval, out DateTime lastBegin);
             DateTime? lastBeginForWindow = hasLastBegin ? lastBegin : null;
             DateTime from = RequestWindowStart(interval, now, lastBeginForWindow);
-
-            // Получение окна свечей — под собственным бюджетом, живущим строго вокруг вызова клиента
-            // и уничтожаемым до фиксации. Причины те же, что в стакане: таймер бюджета не должен
-            // сработать во время записи и выдать сбой хранилища за тайм-аут получения.
             MoexOperationTags operationTags = new MoexOperationTags(
                 MoexLogSources.RealtimeRest,
                 MoexOperations.RealtimeCandlesPoll,
@@ -214,179 +211,243 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 MoexFlows.Realtime,
                 CandleInterval: interval);
 
-            RealtimeCandlesPage candles;
+            ProtobufBatchWriter<CandleRow> writer = new(
+                executor,
+                MoexRealtimeRegistry.CandleTableFor(interval),
+                MoexRealtimeRegistry.CandleInsertColumns,
+                insertContext);
+            List<RealtimeRowFailure> rowFailures = new();
+            TimeSpan fetchBudgetRemaining = _instrumentFetchTimeout;
+            TimeSpan fetchElapsed = TimeSpan.Zero;
+            Exception? fetchFailure = null;
+            bool fetchTimedOut = false;
+            bool fetchOutcomeRecorded = false;
+            int sourceRowsCount = 0;
+            long rowsInserted = 0;
+            DateTime? maxAcceptedBegin = null;
+            DateTime? pendingMaxBegin = null;
+
             using (Activity? pollActivity =
                    MoexTelemetry.ActivitySource.StartActivity("moex.realtime.instrument.poll"))
             {
-            pollActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
-            pollActivity?.SetTag(MoexTelemetryAttributes.Market, operationTags.Market);
-            pollActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
-            pollActivity?.SetTag(MoexTelemetryAttributes.CandleInterval, interval);
+                pollActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
+                pollActivity?.SetTag(MoexTelemetryAttributes.Market, operationTags.Market);
+                pollActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
+                pollActivity?.SetTag(MoexTelemetryAttributes.CandleInterval, interval);
 
-            long fetchStart = Stopwatch.GetTimestamp();
-
-            using (CancellationTokenSource fetchCts =
-                   CancellationTokenSource.CreateLinkedTokenSource(commitCt))
-            {
-                fetchCts.CancelAfter(_instrumentFetchTimeout);
-                using Activity? fetchActivity =
-                    MoexTelemetry.ActivitySource.StartActivity("moex.realtime.fetch");
-                fetchActivity?.SetTag(MoexTelemetryAttributes.Source, operationTags.Source);
-                fetchActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
-                fetchActivity?.SetTag(MoexTelemetryAttributes.Market, operationTags.Market);
-                fetchActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
-                fetchActivity?.SetTag(MoexTelemetryAttributes.CandleInterval, interval);
                 try
                 {
-                    candles = await client.GetCandlesTodayAsync(
-                        state.Market,
-                        secid,
-                        from,
-                        now,
-                        interval,
-                        fetchCts.Token);
-
-                    TagList rowsTags = new TagList
+                    using (CancellationTokenSource fetchCts =
+                           CancellationTokenSource.CreateLinkedTokenSource(commitCt))
                     {
-                        { MoexTelemetryAttributes.Source, operationTags.Source },
-                        { MoexTelemetryAttributes.DataKind, operationTags.DataKind },
-                        { MoexTelemetryAttributes.Market, operationTags.Market },
-                        { MoexTelemetryAttributes.Flow, operationTags.Flow },
-                        { MoexTelemetryAttributes.CandleInterval, interval },
-                    };
-                    MoexMetrics.RowsReceived.Add(candles.SourceRowsCount, rowsTags);
+                        IAsyncEnumerable<RealtimeCandlesPageSummary> pages =
+                            client.GetCandlesTodayPagesAsync(
+                                state.Market,
+                                secid,
+                                from,
+                                now,
+                                interval,
+                                writer,
+                                now,
+                                lastBeginForWindow,
+                                fetchCts.Token);
+                        await using IAsyncEnumerator<RealtimeCandlesPageSummary> enumerator =
+                            pages.GetAsyncEnumerator(fetchCts.Token);
 
-                    MoexMetrics.RecordOperationSuccess(
-                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
-                    fetchActivity?.SetStatus(ActivityStatusCode.Ok);
+                        while (true)
+                        {
+                            commitCt.ThrowIfCancellationRequested();
+                            if (fetchBudgetRemaining <= TimeSpan.Zero ||
+                                fetchCts.IsCancellationRequested)
+                            {
+                                fetchTimedOut = true;
+                                break;
+                            }
+
+                            fetchCts.CancelAfter(fetchBudgetRemaining);
+                            Stopwatch fetchTimer = Stopwatch.StartNew();
+                            bool hasPage = false;
+                            using (Activity? fetchActivity =
+                                   MoexTelemetry.ActivitySource.StartActivity("moex.realtime.fetch"))
+                            {
+                                fetchActivity?.SetTag(MoexTelemetryAttributes.Source, operationTags.Source);
+                                fetchActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
+                                fetchActivity?.SetTag(MoexTelemetryAttributes.Market, operationTags.Market);
+                                fetchActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
+                                fetchActivity?.SetTag(MoexTelemetryAttributes.CandleInterval, interval);
+                                try
+                                {
+                                    hasPage = await enumerator.MoveNextAsync();
+                                    fetchActivity?.SetStatus(ActivityStatusCode.Ok);
+                                }
+                                catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
+                                {
+                                    fetchActivity?.SetStatus(ActivityStatusCode.Ok);
+                                    throw;
+                                }
+                                catch (OperationCanceledException) when (fetchCts.IsCancellationRequested)
+                                {
+                                    fetchTimedOut = true;
+                                    fetchActivity?.SetStatus(ActivityStatusCode.Error);
+                                }
+                                catch (Exception ex)
+                                {
+                                    fetchFailure = ex;
+                                    fetchActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                                }
+                                finally
+                                {
+                                    fetchTimer.Stop();
+                                    fetchElapsed += fetchTimer.Elapsed;
+                                    fetchBudgetRemaining -= fetchTimer.Elapsed;
+                                    if (!fetchCts.IsCancellationRequested)
+                                        fetchCts.CancelAfter(Timeout.InfiniteTimeSpan);
+                                }
+                            }
+
+                            if (fetchTimedOut || fetchFailure is not null || !hasPage)
+                                break;
+
+                            RealtimeCandlesPageSummary page = enumerator.Current;
+                            sourceRowsCount += page.SourceRowsCount;
+                            for (int i = 0; i < page.RowFailures.Count; i++)
+                                rowFailures.Add(page.RowFailures[i]);
+                            if (page.MaxAcceptedBegin is DateTime pageMaximum)
+                            {
+                                if (maxAcceptedBegin is null || pageMaximum > maxAcceptedBegin.Value)
+                                    maxAcceptedBegin = pageMaximum;
+                                if (pendingMaxBegin is null || pageMaximum > pendingMaxBegin.Value)
+                                    pendingMaxBegin = pageMaximum;
+                            }
+
+                            if (writer.RowCount >= _batchSize)
+                            {
+                                int expectedRows = writer.RowCount;
+                                long insertedRows = await writer.FlushAsync(commitCt);
+                                if (insertedRows != expectedRows)
+                                {
+                                    throw new InvalidOperationException(
+                                        $"ClickHouse подтвердил запись {insertedRows} из {expectedRows} свечей " +
+                                        $"интервала {interval} для {secid}.");
+                                }
+                                state.RowsTotal += insertedRows;
+                                rowsInserted += insertedRows;
+                                UpdateConfirmedTime(state, interval, pendingMaxBegin);
+                                pendingMaxBegin = null;
+                            }
+                        }
+                    }
+
+                    if (fetchTimedOut)
+                    {
+                        MoexRealtimeReceiverLogMessages.CandlesInstrumentFetchTimedOut(
+                            _logger, secid, state.Market, interval, _instrumentFetchTimeout);
+                        MoexMetrics.RecordOperationTimeout(
+                            in operationTags, fetchElapsed.TotalSeconds);
+                        fetchOutcomeRecorded = true;
+                    }
+                    else if (fetchFailure is not null)
+                    {
+                        MoexMetrics.RecordOperationError(
+                            in operationTags, fetchFailure, fetchElapsed.TotalSeconds);
+                        fetchOutcomeRecorded = true;
+                    }
+                    else
+                    {
+                        TagList rowsTags = new TagList
+                        {
+                            { MoexTelemetryAttributes.Source, operationTags.Source },
+                            { MoexTelemetryAttributes.DataKind, operationTags.DataKind },
+                            { MoexTelemetryAttributes.Market, operationTags.Market },
+                            { MoexTelemetryAttributes.Flow, operationTags.Flow },
+                            { MoexTelemetryAttributes.CandleInterval, interval },
+                        };
+                        MoexMetrics.RowsReceived.Add(sourceRowsCount, rowsTags);
+                        MoexMetrics.RecordOperationSuccess(
+                            in operationTags, fetchElapsed.TotalSeconds);
+                        fetchOutcomeRecorded = true;
+                    }
+
+                    if (fetchFailure is null && !fetchTimedOut && writer.RowCount > 0)
+                    {
+                        int expectedRows = writer.RowCount;
+                        long insertedRows = await writer.FlushAsync(commitCt);
+                        if (insertedRows != expectedRows)
+                        {
+                            throw new InvalidOperationException(
+                                $"ClickHouse подтвердил запись {insertedRows} из {expectedRows} свечей " +
+                                $"интервала {interval} для {secid}.");
+                        }
+                        state.RowsTotal += insertedRows;
+                        rowsInserted += insertedRows;
+                        UpdateConfirmedTime(state, interval, pendingMaxBegin);
+                    }
+
+                    foreach (RealtimeRowFailure failure in rowFailures)
+                        MoexRealtimeReceiverLogMessages.CandleRowSkipped(
+                            _logger, secid, DataKind, interval, failure.Position, failure.Reason);
+
+                    if (fetchTimedOut)
+                    {
+                        MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error, interval);
+                        pollActivity?.SetStatus(ActivityStatusCode.Error);
+                        return;
+                    }
+                    if (fetchFailure is not null)
+                    {
+                        pollActivity?.SetStatus(ActivityStatusCode.Error, fetchFailure.Message);
+                        System.Runtime.ExceptionServices.ExceptionDispatchInfo
+                            .Capture(fetchFailure)
+                            .Throw();
+                    }
+                    if (rowFailures.Count > 0)
+                        throw new InvalidOperationException("Окно свечей обработано частично.");
+
+                    if (rowsInserted > 0 && maxAcceptedBegin is DateTime confirmedBegin)
+                        state.LastBeginByInterval[interval] = confirmedBegin;
+
+                    DateTimeOffset pollSucceededAt = DateTimeOffset.UtcNow;
+                    MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Success, interval);
+                    state.LastSuccessfulPollByInterval[interval] = pollSucceededAt;
+                    state.LastSuccessfulPollTime = pollSucceededAt;
+                    pollActivity?.SetStatus(ActivityStatusCode.Ok);
                 }
                 catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
                 {
-                    fetchActivity?.SetStatus(ActivityStatusCode.Ok);
                     pollActivity?.SetStatus(ActivityStatusCode.Ok);
-                    MoexMetrics.RecordOperationCancelled(
-                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                    if (!fetchOutcomeRecorded)
+                    {
+                        MoexMetrics.RecordOperationCancelled(
+                            in operationTags, fetchElapsed.TotalSeconds);
+                    }
                     MoexMetrics.RecordRealtimePoll(
                         in operationTags, MoexOutcomes.Cancelled, interval);
                     throw;
                 }
-                catch (OperationCanceledException) when (fetchCts.IsCancellationRequested)
+                catch (Exception)
                 {
-                    fetchActivity?.SetStatus(ActivityStatusCode.Error);
                     pollActivity?.SetStatus(ActivityStatusCode.Error);
-                    MoexRealtimeReceiverLogMessages.CandlesInstrumentFetchTimedOut(
-                        _logger, secid, state.Market, interval, _instrumentFetchTimeout);
-                    MoexMetrics.RecordOperationTimeout(
-                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
-                    MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error, interval);
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    fetchActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                    pollActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                    MoexMetrics.RecordOperationError(
-                        in operationTags, ex, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                     MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error, interval);
                     throw;
                 }
             }
+        }
 
-            // Формирующиеся строки тоже записываются: приоритет ReplacingMergeTree оставляет
-            // одну актуальную версию (secid, begin). Более старые begin отсекает граница состояния.
-            // Тот же буфер на все опросы: очищается перед отбором. Предыдущая вставка к этому
-            // моменту уже завершена — она выполняется с ожиданием внутри того же опроса.
-            // Принадлежит одному обороту одной службы; опросы выполняются последовательно.
-            _candlesToWrite.Clear();
-            List<object?[]> candlesToWrite = _candlesToWrite;
-            DateTime maxBegin = hasLastBegin ? lastBegin : DateTime.MinValue;
+        private static void UpdateConfirmedTime(
+            CandleInstrumentState state,
+            int interval,
+            DateTime? confirmedBegin)
+        {
+            if (confirmedBegin is not DateTime begin)
+                return;
 
-            try
+            DateTimeOffset confirmedTime = MoexTime.ToDateTimeOffset(begin);
+            state.LastConfirmedMarketTimeByInterval[interval] = confirmedTime;
+            if (state.LastConfirmedMarketTime is null ||
+                confirmedTime > state.LastConfirmedMarketTime.Value)
             {
-                foreach (RealtimeRowFailure failure in candles.RowFailures)
-                    MoexRealtimeReceiverLogMessages.CandleRowSkipped(
-                        _logger, secid, DataKind, interval, failure.Position, failure.Reason);
-
-                for (int i = 0; i < candles.Rows.Count; i++)
-                {
-                    DateTime? begin = candles.Rows[i].Begin;
-
-                    // Свеча без начала пропускается и страницу не отвергает: приём этим
-                    // отличается от исторической загрузки намеренно.
-                    if (begin is null)
-                        continue;
-
-                    DateTime beginValue = begin.Value;
-                    if (!IsCandleBeginAtOrBeforeNow(beginValue, now))
-                        continue;
-
-                    if (hasLastBegin && beginValue < lastBegin)
-                        continue;
-
-                    candlesToWrite.Add(candles.Rows[i].Row);
-
-                    if (beginValue > maxBegin)
-                        maxBegin = beginValue;
-                }
-
-                if (candlesToWrite.Count > 0)
-                {
-                    // Фиксация — под хостовым commitCt. У свечей курсора в базе нет; durable-запись —
-                    // только ClickHouse, за ней сразу двигаются граница и счётчик состояния. Запись
-                    // предварительна (приоритет 0): источник истины — исторический загрузчик (приоритет 1),
-                    // он перекрывает свечу при слиянии. До планировщика догрузки текущего дня
-                    // предварительная версия может дожить до ручного прогона; точные расчёты обязаны
-                    // считать строки приёмника предварительными.
-                    long insertedRows = await writer.WriteAsync(
-                        spec,
-                        secid,
-                        candlesToWrite,
-                        insertContext,
-                        commitCt);
-                    state.RowsTotal += insertedRows;
-                    if (insertedRows != candlesToWrite.Count)
-                    {
-                        throw new InvalidOperationException(
-                            $"ClickHouse подтвердил запись {insertedRows} из {candlesToWrite.Count} свечей " +
-                            $"интервала {interval} для {secid}.");
-                    }
-
-                    if (candles.RowFailures.Count == 0)
-                        state.LastBeginByInterval[interval] = maxBegin;
-
-                    DateTimeOffset confirmedTime = MoexTime.ToDateTimeOffset(maxBegin);
-                    state.LastConfirmedMarketTimeByInterval[interval] = confirmedTime;
-                    if (state.LastConfirmedMarketTime is null ||
-                        confirmedTime > state.LastConfirmedMarketTime.Value)
-                    {
-                        state.LastConfirmedMarketTime = confirmedTime;
-                    }
-                }
-
-                if (candles.RowFailures.Count > 0)
-                    throw new InvalidOperationException("Окно свечей обработано частично.");
-
-                DateTimeOffset pollSucceededAt = DateTimeOffset.UtcNow;
-                MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Success, interval);
-                state.LastSuccessfulPollByInterval[interval] = pollSucceededAt;
-                state.LastSuccessfulPollTime = pollSucceededAt;
-                pollActivity?.SetStatus(ActivityStatusCode.Ok);
+                state.LastConfirmedMarketTime = confirmedTime;
             }
-            catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
-            {
-                pollActivity?.SetStatus(ActivityStatusCode.Ok);
-                MoexMetrics.RecordRealtimePoll(
-                    in operationTags, MoexOutcomes.Cancelled, interval);
-                throw;
-            }
-            catch (Exception)
-            {
-                pollActivity?.SetStatus(ActivityStatusCode.Error);
-                MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error, interval);
-                throw;
-            }
-            }
-
         }
 
         private static DateTime RequestWindowStart(int interval, DateTime now, DateTime? lastBegin)
@@ -405,9 +466,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     $"Неизвестный интервал свечей приёма: {interval}."),
             };
         }
-
-        private static bool IsCandleBeginAtOrBeforeNow(DateTime begin, DateTime now)
-            => begin <= now;
 
         protected override void LogInstrumentPreparationFailed(Exception exception, string secid)
             => MoexRealtimeReceiverLogMessages.CandlesInstrumentPreparationFailed(

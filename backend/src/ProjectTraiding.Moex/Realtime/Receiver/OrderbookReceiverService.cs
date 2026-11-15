@@ -78,8 +78,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
                 MoexRealtimeRestClient client =
                     scope.ServiceProvider.GetRequiredService<MoexRealtimeRestClient>();
-                RealtimeSpecRowWriter writer =
-                    scope.ServiceProvider.GetRequiredService<RealtimeSpecRowWriter>();
+                ClickHouseInsertExecutor executor =
+                    scope.ServiceProvider.GetRequiredService<ClickHouseInsertExecutor>();
                 foreach (KeyValuePair<string, ReceiverInstrumentState> pair in States)
                 {
                     try
@@ -88,7 +88,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                             pair.Key,
                             pair.Value,
                             client,
-                            writer,
+                            executor,
                             ct);
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -138,13 +138,9 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             string secid,
             ReceiverInstrumentState state,
             MoexRealtimeRestClient client,
-            RealtimeSpecRowWriter writer,
+            ClickHouseInsertExecutor executor,
             CancellationToken commitCt)
         {
-            MoexRealtimeSpec spec = MoexRealtimeRegistry.Orderbook;
-
-            // Снимок стакана — под собственным бюджетом, живущим строго вокруг вызова клиента и
-            // уничтожаемым до фиксации. Причины те же, что в опросе сделок.
             MoexOperationTags operationTags = new MoexOperationTags(
                 MoexLogSources.RealtimeRest,
                 MoexOperations.RealtimeOrderbookPoll,
@@ -157,121 +153,128 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 operationTags.Market,
                 MoexFlows.Realtime);
 
-            RealtimeParsedPage page;
+            RealtimeOrderbookPage page;
             using (Activity? pollActivity =
                    MoexTelemetry.ActivitySource.StartActivity("moex.realtime.instrument.poll"))
             {
-            pollActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
-            pollActivity?.SetTag(MoexTelemetryAttributes.Market, operationTags.Market);
-            pollActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
+                pollActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
+                pollActivity?.SetTag(MoexTelemetryAttributes.Market, operationTags.Market);
+                pollActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
 
-            long fetchStart = Stopwatch.GetTimestamp();
+                long fetchStart = Stopwatch.GetTimestamp();
+                using (CancellationTokenSource fetchCts =
+                       CancellationTokenSource.CreateLinkedTokenSource(commitCt))
+                {
+                    fetchCts.CancelAfter(_instrumentFetchTimeout);
+                    using Activity? fetchActivity =
+                        MoexTelemetry.ActivitySource.StartActivity("moex.realtime.fetch");
+                    fetchActivity?.SetTag(MoexTelemetryAttributes.Source, operationTags.Source);
+                    fetchActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
+                    fetchActivity?.SetTag(MoexTelemetryAttributes.Market, operationTags.Market);
+                    fetchActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
+                    try
+                    {
+                        page = await client.GetOrderbookAsync(
+                            state.Market, secid, fetchCts.Token);
+                        TagList rowsTags = new TagList
+                        {
+                            { MoexTelemetryAttributes.Source, operationTags.Source },
+                            { MoexTelemetryAttributes.DataKind, operationTags.DataKind },
+                            { MoexTelemetryAttributes.Market, operationTags.Market },
+                            { MoexTelemetryAttributes.Flow, operationTags.Flow },
+                        };
+                        MoexMetrics.RowsReceived.Add(page.Rows.Count, rowsTags);
+                        MoexMetrics.RecordOperationSuccess(
+                            in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                        fetchActivity?.SetStatus(ActivityStatusCode.Ok);
+                    }
+                    catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
+                    {
+                        fetchActivity?.SetStatus(ActivityStatusCode.Ok);
+                        MoexMetrics.RecordOperationCancelled(
+                            in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                        throw;
+                    }
+                    catch (OperationCanceledException) when (fetchCts.IsCancellationRequested)
+                    {
+                        fetchActivity?.SetStatus(ActivityStatusCode.Error);
+                        pollActivity?.SetStatus(ActivityStatusCode.Error);
+                        MoexRealtimeReceiverLogMessages.OrderbookInstrumentFetchTimedOut(
+                            _logger, secid, state.Market, _instrumentFetchTimeout);
+                        MoexMetrics.RecordOperationTimeout(
+                            in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                        MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
+                        return;
+                    }
+                    catch (Exception ex)
+                    {
+                        fetchActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                        pollActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                        MoexMetrics.RecordOperationError(
+                            in operationTags, ex, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                        MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
+                        throw;
+                    }
+                }
 
-            using (CancellationTokenSource fetchCts =
-                   CancellationTokenSource.CreateLinkedTokenSource(commitCt))
-            {
-                fetchCts.CancelAfter(_instrumentFetchTimeout);
-                using Activity? fetchActivity =
-                    MoexTelemetry.ActivitySource.StartActivity("moex.realtime.fetch");
-                fetchActivity?.SetTag(MoexTelemetryAttributes.Source, operationTags.Source);
-                fetchActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
-                fetchActivity?.SetTag(MoexTelemetryAttributes.Market, operationTags.Market);
-                fetchActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
                 try
                 {
-                    page = await client.GetOrderbookAsync(
-                        state.Market, secid, fetchCts.Token);
-
-                    TagList rowsTags = new TagList
+                    foreach (RealtimeRowFailure failure in page.RowFailures)
                     {
-                        { MoexTelemetryAttributes.Source, operationTags.Source },
-                        { MoexTelemetryAttributes.DataKind, operationTags.DataKind },
-                        { MoexTelemetryAttributes.Market, operationTags.Market },
-                        { MoexTelemetryAttributes.Flow, operationTags.Flow },
-                    };
-                    MoexMetrics.RowsReceived.Add(page.Rows.Count, rowsTags);
+                        _logger.LogWarning(
+                            "MOEX row skipped: secid={Secid}, dataKind={DataKind}, position={Position}, reason={Reason}",
+                            secid, DataKind, failure.Position, failure.Reason);
+                    }
+                    if (page.RowFailures.Count > 0)
+                        throw new InvalidOperationException("Снимок стакана обработан частично.");
 
-                    MoexMetrics.RecordOperationSuccess(
-                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
-                    fetchActivity?.SetStatus(ActivityStatusCode.Ok);
+                    if (page.Rows.Count > 0)
+                    {
+                        ulong snapshotTime = page.Rows[0].SourceTime;
+                        for (int i = 1; i < page.Rows.Count; i++)
+                        {
+                            if (page.Rows[i].SourceTime != snapshotTime)
+                                throw new InvalidOperationException(
+                                    "Строки стакана относятся к разным снимкам.");
+                        }
+
+                        ProtobufBatchWriter<RealtimeOrderbookRow> writer = new(
+                            executor,
+                            MoexRealtimeRegistry.OrderbookTable,
+                            MoexRealtimeRegistry.OrderbookInsertColumns,
+                            insertContext);
+                        for (int i = 0; i < page.Rows.Count; i++)
+                        {
+                            RealtimeOrderbookRow row = page.Rows[i];
+                            writer.Append(in row);
+                        }
+                        int expectedRows = writer.RowCount;
+                        long insertedRows = await writer.FlushAsync(commitCt);
+                        if (insertedRows != expectedRows)
+                        {
+                            throw new InvalidOperationException(
+                                $"ClickHouse подтвердил запись {insertedRows} из {expectedRows} строк стакана.");
+                        }
+                        state.RowsTotal += insertedRows;
+                        state.LastConfirmedMarketTime = MoexTime.ToDateTimeOffset(page.FirstTime);
+                    }
+
+                    MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Success);
+                    state.LastSuccessfulPollTime = DateTimeOffset.UtcNow;
+                    pollActivity?.SetStatus(ActivityStatusCode.Ok);
                 }
                 catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
                 {
-                    fetchActivity?.SetStatus(ActivityStatusCode.Ok);
                     pollActivity?.SetStatus(ActivityStatusCode.Ok);
-                    // Остановка хоста — не отказ источника.
-                    MoexMetrics.RecordOperationCancelled(
-                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                     MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Cancelled);
                     throw;
                 }
-                catch (OperationCanceledException) when (fetchCts.IsCancellationRequested)
-                {
-                    fetchActivity?.SetStatus(ActivityStatusCode.Error);
-                    pollActivity?.SetStatus(ActivityStatusCode.Error);
-                    // Истёк собственный бюджет получения инструмента. Это отказ по тайм-ауту,
-                    // а не отмена: хост работает, оборот продолжается со следующего инструмента.
-                    MoexRealtimeReceiverLogMessages.OrderbookInstrumentFetchTimedOut(
-                        _logger, secid, state.Market, _instrumentFetchTimeout);
-                    MoexMetrics.RecordOperationTimeout(
-                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
-                    MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
-                    return;
-                }
                 catch (Exception ex)
                 {
-                    fetchActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                     pollActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                    MoexMetrics.RecordOperationError(
-                        in operationTags, ex, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                     MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
                     throw;
                 }
-            }
-
-            try
-            {
-                foreach (RealtimeRowFailure failure in page.RowFailures)
-                    _logger.LogWarning("MOEX row skipped: secid={Secid}, dataKind={DataKind}, position={Position}, reason={Reason}",
-                        secid, DataKind, failure.Position, failure.Reason);
-                // Стакан представляет единый снимок, его частичная запись недопустима.
-                if (page.RowFailures.Count > 0)
-                    throw new InvalidOperationException("Снимок стакана обработан частично.");
-                if (page.Rows.Count > 0)
-                {
-                    foreach (object?[] row in page.Rows)
-                        if (row[spec.KeyTimeIndex] is not DateTime time || time != page.FirstTime)
-                            throw new InvalidOperationException("Строки стакана относятся к разным снимкам.");
-
-                    // Фиксация — под хостовым commitCt. У стакана курсора нет, durable-запись — только
-                    // ClickHouse; за ней сразу двигается накопленный счётчик состояния.
-                    await writer.WriteAsync(
-                        spec,
-                        secid,
-                        page.Rows,
-                        insertContext,
-                        commitCt);
-
-                    state.RowsTotal += page.Rows.Count;
-                    state.LastConfirmedMarketTime = MoexTime.ToDateTimeOffset(page.FirstTime);
-                }
-
-                MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Success);
-                state.LastSuccessfulPollTime = DateTimeOffset.UtcNow;
-                pollActivity?.SetStatus(ActivityStatusCode.Ok);
-            }
-            catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
-            {
-                pollActivity?.SetStatus(ActivityStatusCode.Ok);
-                MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Cancelled);
-                throw;
-            }
-            catch (Exception)
-            {
-                pollActivity?.SetStatus(ActivityStatusCode.Error);
-                MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
-                throw;
-            }
             }
 
         }

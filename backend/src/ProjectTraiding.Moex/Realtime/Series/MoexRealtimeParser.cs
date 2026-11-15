@@ -6,231 +6,60 @@ using ProjectTraiding.Moex.StorageBase.ClickHouse;
 
 namespace ProjectTraiding.Moex.Realtime.Series;
 
-/// <summary>
-/// Разбор ответов приёма непосредственно в строки вставки по декларации. Состояния нет:
-/// рабочие массивы и границы принадлежат одному вызову и не переживают страницу.
-/// </summary>
+/// <summary>Stateless, one-pass parsers for the MOEX realtime response shapes.</summary>
 public static class MoexRealtimeParser
 {
-    public static RealtimeParsedPage ParsePage(
-        ReadOnlySpan<byte> body, MoexRealtimeSpec spec, string secid)
+    public static RealtimeStockTradesPage ParseStockTrades(
+        ReadOnlySpan<byte> body,
+        string secid)
     {
-        // Дата сессии читается тем же проходом, что и таблица: источник отдаёт блок версии
-        // данных после таблицы, и отдельный проход ради него протаскивал читатель через всю
-        // таблицу впустую. Значения ниже заполняются, когда проход дойдёт до этого блока.
+        List<RealtimeStockTradeRow> rows = new();
+        List<RealtimeRowFailure> failures = new();
         DateOnly? sessionDate = null;
         Exception? sessionDateFailure = null;
-
-        List<object?[]> rows = [];
-        List<RealtimeRowFailure> failures = [];
-        DateTime firstTime = default;
+        int sourceRowsCount = 0;
         DateTime lastTime = default;
         long? lastTradeNo = null;
         long? maxTradeNo = null;
         DateTime? maxTradeNoTime = null;
         Exception? maxTradeNoTimeFailure = null;
-        Exception? guardFailure = null;
-
-        // Первый отказ первой строки среди колонок до колонки даты сессии. Нужен, чтобы
-        // восстановить прежний порядок отсеянного отказа после разбора всего тела.
-        Exception? firstRowFailureBeforeSessionDate = null;
-
-        // Один рабочий массив переиспользуется всеми строками страницы. Каждая позиция
-        // ниже присваивается заново, включая null, чтобы значения строк не смешивались.
-        object?[] sourceValues = new object?[spec.SourceColumns.Length];
-
-        // Повторяющийся SEQNUM снимка разбирается один раз, но проверка пустоты и формы
-        // остаётся построчной: одинаковость номера — наблюдение, а не договор источника.
-        long? cachedSnapshotSeqNum = null;
-        DateTime? cachedSnapshotTime = null;
-        Exception? cachedSnapshotFailure = null;
 
         ColumnAndNumbersForParsing.ExpectedSchema dataVersionSchema =
             ColumnAndNumbersForParsing.RealtimeDataVersionSchema;
-
         Utf8JsonReader reader = new(body);
         ParseHelpersUtf8.EnterResponseObject(ref reader);
-
-        bool foundTable = false;
+        bool foundTrades = false;
         bool foundDataVersion = false;
-        bool foundColumns = false;
-        bool foundData = false;
 
-        // Свойства верхнего уровня разбираются по мере встречи, в любом порядке: от порядка
-        // блоков в ответе разбор не зависит, и требованием к источнику он не становится.
-        //
-        // Обход прекращается, как только разобраны оба нужных блока. Прежние два прохода
-        // тоже заканчивались на своём блоке и хвост ответа за ним не читали: без этого
-        // условия повреждённый хвост после двух исправных блоков начал бы отвергать ответ,
-        // которого прежний разбор даже не касался, а на диагностических ответах читатель
-        // зря протаскивался бы через секцию доходностей.
-        while (!(foundTable && foundDataVersion) && reader.Read())
+        while (!(foundTrades && foundDataVersion) && reader.Read())
         {
             if (reader.TokenType == JsonTokenType.EndObject)
                 break;
-
             if (reader.TokenType != JsonTokenType.PropertyName)
                 continue;
 
-            // Разбирается только первое вхождение каждого блока. Прежний вход в корневой
-            // блок возвращал управление на первом совпадении и до повторов не доходил;
-            // без этих признаков одиночный проход разобрал бы вторую таблицу в те же строки
-            // и подменил бы дату сессии вторым блоком версии данных.
-            //
-            // Остановка обхода выше эти признаки не заменяет: повтор может встретиться
-            // раньше, чем найден второй нужный блок, — например при порядке
-            // «таблица, таблица, версия данных».
             if (!foundDataVersion && reader.ValueTextEquals(dataVersionSchema.RootKey))
             {
                 foundDataVersion = true;
                 ParseHelpersUtf8.ExpectObjectStart(ref reader, dataVersionSchema.RootKey);
                 sessionDate = ReadDataVersionBlock(
                     ref reader, dataVersionSchema, out sessionDateFailure);
-                continue;
             }
-
-            if (foundTable || !reader.ValueTextEquals(spec.RootKey))
+            else if (!foundTrades && reader.ValueTextEquals("trades"u8))
             {
-                reader.Skip();
-                continue;
-            }
-
-            foundTable = true;
-            ParseHelpersUtf8.ExpectObjectStart(ref reader, spec.RootKey);
-
-            while (reader.Read())
-            {
-                if (reader.TokenType == JsonTokenType.EndObject)
-                    break;
-
-                if (reader.TokenType != JsonTokenType.PropertyName)
-                    continue;
-
-                if (reader.ValueTextEquals("columns"u8))
-                {
-                    foundColumns = true;
-                    ParseHelpersUtf8.ValidateSourceColumnsUtf8(
-                        ref reader, spec.SourceColumns, spec.RootKey);
-                }
-                else if (reader.ValueTextEquals("data"u8))
-                {
-                    if (!foundColumns)
-                    {
-                        ParseHelpersUtf8.SchemaMismatch(
-                            $"[{spec.RootKey}] Секция 'data' встретилась до 'columns'. " +
-                            "Порядок columns → data обязателен.");
-                    }
-
-                    foundData = true;
-                    ReadPageRows(
-                        ref reader,
-                        rows,
-                        sourceValues,
-                        failures,
-                        spec,
-                        secid,
-                        ref firstTime,
-                        ref lastTime,
-                        ref lastTradeNo,
-                        ref maxTradeNo,
-                        ref maxTradeNoTime,
-                        ref maxTradeNoTimeFailure,
-                        ref guardFailure,
-                        ref firstRowFailureBeforeSessionDate,
-                        ref cachedSnapshotSeqNum,
-                        ref cachedSnapshotTime,
-                        ref cachedSnapshotFailure);
-                }
-                else
-                {
-                    reader.Skip();
-                }
-            }
-
-            ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, spec.RootKey);
-        }
-
-        // Отсутствующий блок проверяется в прежнем порядке: сначала блок версии данных,
-        // затем таблица. Прежде первый проход искал блок версии данных и отказывал первым.
-        if (!foundDataVersion)
-            ParseHelpersUtf8.RootKeyMissing(dataVersionSchema.RootKey);
-
-        if (!foundTable)
-            ParseHelpersUtf8.RootKeyMissing(spec.RootKey);
-
-        // Дата сессии известна только после разбора блока версии данных, а строки к этому
-        // моменту уже собраны. Проставляется по ссылкам на готовые строки: повторного
-        // разбора тела нет, есть один проход по списку.
-        if (spec.SessionDateIndex >= 0 && sessionDate is not null)
-        {
-            // Значение одно на всю страницу, а ячейка строки хранит ссылку: без вынесенной
-            // упаковки на каждую строку приходился бы отдельный ящик с одной и той же датой.
-            object boxedSessionDate = sessionDate.Value;
-            for (int i = 0; i < rows.Count; i++)
-                rows[i][spec.SessionDateIndex] = boxedSessionDate;
-        }
-
-        // Прежний порядок отсеянного отказа. Раньше отказ даты сессии участвовал в отборе
-        // на месте своей колонки в каждой строке, поэтому побеждал всё, что стоит после неё,
-        // и уступал тому, что стоит до неё в первой строке. Это правило и восстанавливается.
-        if (sessionDateFailure is not null && rows.Count > 0 && spec.SessionDateIndex >= 0)
-        {
-            guardFailure = firstRowFailureBeforeSessionDate ?? sessionDateFailure;
-            // Общая дата сессии нужна каждой строке: ни одну из них нельзя подтвердить.
-            failures.Add(new RealtimeRowFailure(-1, sessionDateFailure.Message));
-            rows.Clear();
-        }
-
-        return new RealtimeParsedPage(
-            rows,
-            firstTime,
-            lastTime,
-            lastTradeNo,
-            maxTradeNo,
-            maxTradeNoTime,
-            maxTradeNoTimeFailure,
-            guardFailure,
-            failures);
-    }
-
-    public static RealtimeCandlesPage ParseCandles(
-        ReadOnlySpan<byte> body, MoexRealtimeSpec spec, string secid)
-    {
-        List<(object?[] Row, DateTime? Begin)> rows = [];
-        List<RealtimeRowFailure> failures = [];
-        int sourceRowsCount = 0;
-        object?[] sourceValues = new object?[spec.SourceColumns.Length];
-        Utf8JsonReader reader = new(body);
-
-        ParseHelpersUtf8.SkipToRootObject(ref reader, spec.RootKey);
-
-        bool foundColumns = false;
-        bool foundData = false;
-        while (reader.Read())
-        {
-            if (reader.TokenType == JsonTokenType.EndObject)
-                break;
-
-            if (reader.TokenType != JsonTokenType.PropertyName)
-                continue;
-
-            if (reader.ValueTextEquals("columns"u8))
-            {
-                foundColumns = true;
-                ParseHelpersUtf8.ValidateSourceColumnsUtf8(
-                    ref reader, spec.SourceColumns, spec.RootKey);
-            }
-            else if (reader.ValueTextEquals("data"u8))
-            {
-                if (!foundColumns)
-                {
-                    ParseHelpersUtf8.SchemaMismatch(
-                        $"[{spec.RootKey}] Секция 'data' встретилась до 'columns'. " +
-                        "Порядок columns → data обязателен.");
-                }
-
-                foundData = true;
-                ReadCandleRows(ref reader, rows, sourceValues, failures, ref sourceRowsCount, spec, secid);
+                foundTrades = true;
+                ParseHelpersUtf8.ExpectObjectStart(ref reader, "trades");
+                ReadStockTradesTable(
+                    ref reader,
+                    rows,
+                    failures,
+                    secid,
+                    ref sourceRowsCount,
+                    ref lastTime,
+                    ref lastTradeNo,
+                    ref maxTradeNo,
+                    ref maxTradeNoTime,
+                    ref maxTradeNoTimeFailure);
             }
             else
             {
@@ -238,15 +67,749 @@ public static class MoexRealtimeParser
             }
         }
 
-        ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, spec.RootKey);
-        return new RealtimeCandlesPage(rows, sourceRowsCount, failures);
+        if (!foundDataVersion)
+            ParseHelpersUtf8.RootKeyMissing(dataVersionSchema.RootKey);
+        if (!foundTrades)
+            ParseHelpersUtf8.RootKeyMissing("trades");
+
+        if (sessionDateFailure is not null && rows.Count > 0)
+        {
+            failures.Add(new RealtimeRowFailure(-1, sessionDateFailure.Message));
+            rows.Clear();
+        }
+        else if (sessionDate is DateOnly date)
+        {
+            uint? clickHouseDate = ToClickHouseDate(date);
+            for (int i = 0; i < rows.Count; i++)
+            {
+                RealtimeStockTradeRow row = rows[i];
+                row.TradeSessionDate = clickHouseDate;
+                rows[i] = row;
+            }
+        }
+
+        return new RealtimeStockTradesPage
+        {
+            Rows = rows,
+            RowFailures = failures,
+            SourceRowsCount = sourceRowsCount,
+            LastTime = lastTime,
+            LastTradeNo = lastTradeNo,
+            MaxTradeNo = maxTradeNo,
+            MaxTradeNoTime = maxTradeNoTime,
+            MaxTradeNoTimeFailure = maxTradeNoTimeFailure,
+        };
     }
 
-    /// <summary>
-    /// Читает блок версии данных с текущей позиции: читатель уже стоит на его StartObject.
-    /// Возвращает дату сессии; отказ разбора самой даты не бросается, а отдаётся наружу —
-    /// он занимает место колонки даты сессии в строке, как и прежде.
-    /// </summary>
+    public static RealtimeFuturesTradesPage ParseFuturesTrades(
+        ReadOnlySpan<byte> body,
+        string secid)
+    {
+        List<RealtimeFuturesTradeRow> rows = new();
+        List<RealtimeRowFailure> failures = new();
+        DateOnly? sessionDate = null;
+        Exception? sessionDateFailure = null;
+        int sourceRowsCount = 0;
+        DateTime lastTime = default;
+        long? lastTradeNo = null;
+        long? maxTradeNo = null;
+        DateTime? maxTradeNoTime = null;
+        Exception? maxTradeNoTimeFailure = null;
+
+        ColumnAndNumbersForParsing.ExpectedSchema dataVersionSchema =
+            ColumnAndNumbersForParsing.RealtimeDataVersionSchema;
+        Utf8JsonReader reader = new(body);
+        ParseHelpersUtf8.EnterResponseObject(ref reader);
+        bool foundTrades = false;
+        bool foundDataVersion = false;
+
+        while (!(foundTrades && foundDataVersion) && reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.EndObject)
+                break;
+            if (reader.TokenType != JsonTokenType.PropertyName)
+                continue;
+
+            if (!foundDataVersion && reader.ValueTextEquals(dataVersionSchema.RootKey))
+            {
+                foundDataVersion = true;
+                ParseHelpersUtf8.ExpectObjectStart(ref reader, dataVersionSchema.RootKey);
+                sessionDate = ReadDataVersionBlock(
+                    ref reader, dataVersionSchema, out sessionDateFailure);
+            }
+            else if (!foundTrades && reader.ValueTextEquals("trades"u8))
+            {
+                foundTrades = true;
+                ParseHelpersUtf8.ExpectObjectStart(ref reader, "trades");
+                ReadFuturesTradesTable(
+                    ref reader,
+                    rows,
+                    failures,
+                    secid,
+                    ref sourceRowsCount,
+                    ref lastTime,
+                    ref lastTradeNo,
+                    ref maxTradeNo,
+                    ref maxTradeNoTime,
+                    ref maxTradeNoTimeFailure);
+            }
+            else
+            {
+                reader.Skip();
+            }
+        }
+
+        if (!foundDataVersion)
+            ParseHelpersUtf8.RootKeyMissing(dataVersionSchema.RootKey);
+        if (!foundTrades)
+            ParseHelpersUtf8.RootKeyMissing("trades");
+
+        if (sessionDateFailure is not null && rows.Count > 0)
+        {
+            failures.Add(new RealtimeRowFailure(-1, sessionDateFailure.Message));
+            rows.Clear();
+        }
+        else if (sessionDate is DateOnly date)
+        {
+            uint? clickHouseDate = ToClickHouseDate(date);
+            for (int i = 0; i < rows.Count; i++)
+            {
+                RealtimeFuturesTradeRow row = rows[i];
+                row.TradeSessionDate = clickHouseDate;
+                rows[i] = row;
+            }
+        }
+
+        return new RealtimeFuturesTradesPage
+        {
+            Rows = rows,
+            RowFailures = failures,
+            SourceRowsCount = sourceRowsCount,
+            LastTime = lastTime,
+            LastTradeNo = lastTradeNo,
+            MaxTradeNo = maxTradeNo,
+            MaxTradeNoTime = maxTradeNoTime,
+            MaxTradeNoTimeFailure = maxTradeNoTimeFailure,
+        };
+    }
+
+    public static RealtimeOrderbookPage ParseOrderbook(
+        ReadOnlySpan<byte> body,
+        string secid)
+    {
+        List<RealtimeOrderbookRow> rows = new();
+        List<RealtimeRowFailure> failures = new();
+        DateOnly? sessionDate = null;
+        Exception? sessionDateFailure = null;
+        int sourceRowsCount = 0;
+        DateTime firstTime = default;
+
+        ColumnAndNumbersForParsing.ExpectedSchema dataVersionSchema =
+            ColumnAndNumbersForParsing.RealtimeDataVersionSchema;
+        Utf8JsonReader reader = new(body);
+        ParseHelpersUtf8.EnterResponseObject(ref reader);
+        bool foundOrderbook = false;
+        bool foundDataVersion = false;
+
+        while (!(foundOrderbook && foundDataVersion) && reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.EndObject)
+                break;
+            if (reader.TokenType != JsonTokenType.PropertyName)
+                continue;
+
+            if (!foundDataVersion && reader.ValueTextEquals(dataVersionSchema.RootKey))
+            {
+                foundDataVersion = true;
+                ParseHelpersUtf8.ExpectObjectStart(ref reader, dataVersionSchema.RootKey);
+                sessionDate = ReadDataVersionBlock(
+                    ref reader, dataVersionSchema, out sessionDateFailure);
+            }
+            else if (!foundOrderbook && reader.ValueTextEquals("orderbook"u8))
+            {
+                foundOrderbook = true;
+                ParseHelpersUtf8.ExpectObjectStart(ref reader, "orderbook");
+                ReadOrderbookTable(
+                    ref reader, rows, failures, secid, ref sourceRowsCount, ref firstTime);
+            }
+            else
+            {
+                reader.Skip();
+            }
+        }
+
+        if (!foundDataVersion)
+            ParseHelpersUtf8.RootKeyMissing(dataVersionSchema.RootKey);
+        if (!foundOrderbook)
+            ParseHelpersUtf8.RootKeyMissing("orderbook");
+
+        if (sessionDateFailure is not null && rows.Count > 0)
+        {
+            failures.Add(new RealtimeRowFailure(-1, sessionDateFailure.Message));
+            rows.Clear();
+        }
+        else if (sessionDate is DateOnly date)
+        {
+            uint? clickHouseDate = ToClickHouseDate(date);
+            for (int i = 0; i < rows.Count; i++)
+            {
+                RealtimeOrderbookRow row = rows[i];
+                row.TradeSessionDate = clickHouseDate;
+                rows[i] = row;
+            }
+        }
+
+        return new RealtimeOrderbookPage
+        {
+            Rows = rows,
+            RowFailures = failures,
+            SourceRowsCount = sourceRowsCount,
+            FirstTime = firstTime,
+        };
+    }
+
+    public static RealtimeCandlesPageSummary ParseCandles(
+        ReadOnlySpan<byte> body,
+        string secid,
+        ProtobufBatchWriter<CandleRow> writer,
+        DateTime now,
+        DateTime? lastBegin)
+    {
+        List<RealtimeRowFailure> failures = new();
+        int sourceRowsCount = 0;
+        int acceptedRowsCount = 0;
+        DateTime? maxAcceptedBegin = null;
+        Utf8JsonReader reader = new(body);
+        ParseHelpersUtf8.SkipToRootObject(ref reader, "candles");
+
+        bool foundColumns = false;
+        bool foundData = false;
+        while (reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.EndObject)
+                break;
+            if (reader.TokenType != JsonTokenType.PropertyName)
+                continue;
+
+            if (reader.ValueTextEquals("columns"u8))
+            {
+                foundColumns = true;
+                ParseHelpersUtf8.ValidateSourceColumnsUtf8(
+                    ref reader, MoexRealtimeRegistry.CandleSourceColumns, "candles");
+            }
+            else if (reader.ValueTextEquals("data"u8))
+            {
+                if (!foundColumns)
+                {
+                    ParseHelpersUtf8.SchemaMismatch(
+                        "[candles] Секция 'data' встретилась до 'columns'. " +
+                        "Порядок columns → data обязателен.");
+                }
+
+                foundData = true;
+                ReadCandleRows(
+                    ref reader,
+                    failures,
+                    writer,
+                    secid,
+                    now,
+                    lastBegin,
+                    ref sourceRowsCount,
+                    ref acceptedRowsCount,
+                    ref maxAcceptedBegin);
+            }
+            else
+            {
+                reader.Skip();
+            }
+        }
+
+        ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, "candles");
+        return new RealtimeCandlesPageSummary
+        {
+            RowFailures = failures,
+            SourceRowsCount = sourceRowsCount,
+            AcceptedRowsCount = acceptedRowsCount,
+            MaxAcceptedBegin = maxAcceptedBegin,
+        };
+    }
+
+    private static void ReadStockTradesTable(
+        ref Utf8JsonReader reader,
+        List<RealtimeStockTradeRow> rows,
+        List<RealtimeRowFailure> failures,
+        string secid,
+        ref int sourceRowsCount,
+        ref DateTime lastTime,
+        ref long? lastTradeNo,
+        ref long? maxTradeNo,
+        ref DateTime? maxTradeNoTime,
+        ref Exception? maxTradeNoTimeFailure)
+    {
+        bool foundColumns = false;
+        bool foundData = false;
+        while (reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.EndObject)
+                break;
+            if (reader.TokenType != JsonTokenType.PropertyName)
+                continue;
+            if (reader.ValueTextEquals("columns"u8))
+            {
+                foundColumns = true;
+                ParseHelpersUtf8.ValidateSourceColumnsUtf8(
+                    ref reader, MoexRealtimeRegistry.TradesStockSourceColumns, "trades");
+            }
+            else if (reader.ValueTextEquals("data"u8))
+            {
+                if (!foundColumns)
+                {
+                    ParseHelpersUtf8.SchemaMismatch(
+                        "[trades] Секция 'data' встретилась до 'columns'. " +
+                        "Порядок columns → data обязателен.");
+                }
+                foundData = true;
+                ReadStockTradeRows(
+                    ref reader, rows, failures, secid, ref sourceRowsCount,
+                    ref lastTime, ref lastTradeNo, ref maxTradeNo,
+                    ref maxTradeNoTime, ref maxTradeNoTimeFailure);
+            }
+            else
+            {
+                reader.Skip();
+            }
+        }
+        ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, "trades");
+    }
+
+    private static void ReadFuturesTradesTable(
+        ref Utf8JsonReader reader,
+        List<RealtimeFuturesTradeRow> rows,
+        List<RealtimeRowFailure> failures,
+        string secid,
+        ref int sourceRowsCount,
+        ref DateTime lastTime,
+        ref long? lastTradeNo,
+        ref long? maxTradeNo,
+        ref DateTime? maxTradeNoTime,
+        ref Exception? maxTradeNoTimeFailure)
+    {
+        bool foundColumns = false;
+        bool foundData = false;
+        while (reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.EndObject)
+                break;
+            if (reader.TokenType != JsonTokenType.PropertyName)
+                continue;
+            if (reader.ValueTextEquals("columns"u8))
+            {
+                foundColumns = true;
+                ParseHelpersUtf8.ValidateSourceColumnsUtf8(
+                    ref reader, MoexRealtimeRegistry.TradesFuturesSourceColumns, "trades");
+            }
+            else if (reader.ValueTextEquals("data"u8))
+            {
+                if (!foundColumns)
+                {
+                    ParseHelpersUtf8.SchemaMismatch(
+                        "[trades] Секция 'data' встретилась до 'columns'. " +
+                        "Порядок columns → data обязателен.");
+                }
+                foundData = true;
+                ReadFuturesTradeRows(
+                    ref reader, rows, failures, secid, ref sourceRowsCount,
+                    ref lastTime, ref lastTradeNo, ref maxTradeNo,
+                    ref maxTradeNoTime, ref maxTradeNoTimeFailure);
+            }
+            else
+            {
+                reader.Skip();
+            }
+        }
+        ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, "trades");
+    }
+
+    private static void ReadOrderbookTable(
+        ref Utf8JsonReader reader,
+        List<RealtimeOrderbookRow> rows,
+        List<RealtimeRowFailure> failures,
+        string secid,
+        ref int sourceRowsCount,
+        ref DateTime firstTime)
+    {
+        bool foundColumns = false;
+        bool foundData = false;
+        while (reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.EndObject)
+                break;
+            if (reader.TokenType != JsonTokenType.PropertyName)
+                continue;
+            if (reader.ValueTextEquals("columns"u8))
+            {
+                foundColumns = true;
+                ParseHelpersUtf8.ValidateSourceColumnsUtf8(
+                    ref reader, MoexRealtimeRegistry.OrderbookSourceColumns, "orderbook");
+            }
+            else if (reader.ValueTextEquals("data"u8))
+            {
+                if (!foundColumns)
+                {
+                    ParseHelpersUtf8.SchemaMismatch(
+                        "[orderbook] Секция 'data' встретилась до 'columns'. " +
+                        "Порядок columns → data обязателен.");
+                }
+                foundData = true;
+                ReadOrderbookRows(
+                    ref reader, rows, failures, secid, ref sourceRowsCount, ref firstTime);
+            }
+            else
+            {
+                reader.Skip();
+            }
+        }
+        ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, "orderbook");
+    }
+
+    private static void ReadStockTradeRows(
+        ref Utf8JsonReader reader,
+        List<RealtimeStockTradeRow> rows,
+        List<RealtimeRowFailure> failures,
+        string secid,
+        ref int sourceRowsCount,
+        ref DateTime lastTime,
+        ref long? lastTradeNo,
+        ref long? maxTradeNo,
+        ref DateTime? maxTradeNoTime,
+        ref Exception? maxTradeNoTimeFailure)
+    {
+        ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", "trades");
+        int rowIndex = 0;
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+        {
+            if (reader.TokenType != JsonTokenType.StartArray)
+            {
+                ParseHelpersUtf8.SchemaMismatch(
+                    $"[trades] Ожидался StartArray строки {rowIndex}, получено {reader.TokenType}.");
+            }
+
+            RealtimeStockTradeRow row = new() { Secid = secid, IngestPriority = 0 };
+            long? tradeNo = null;
+            SourceTimeParts timeParts = default;
+            Exception? rowFailure = null;
+            for (int position = 0; position < 14; position++)
+            {
+                ReadCell(ref reader, rowIndex, position, 14, "trades");
+                if (reader.TokenType == JsonTokenType.Null)
+                    continue;
+
+                try
+                {
+                    switch (position)
+                    {
+                        case 0: tradeNo = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, "trades"); break;
+                        case 1: timeParts.Time = ParseHelpersUtf8.ReadMomentTimeUtf8(ref reader, rowIndex, position, "trades", out timeParts.RawTime); break;
+                        case 2: ParseHelpersUtf8.ExpectString(ref reader, rowIndex, position, "trades"); break;
+                        case 3: row.Price = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, "trades"); break;
+                        case 4: row.Quantity = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, "trades"); break;
+                        case 5: row.Period = ParseHelpersUtf8.ReadString(ref reader, rowIndex, position, "trades"); break;
+                        case 6: row.Value = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, "trades"); break;
+                        case 7: row.BoardId = ParseHelpersUtf8.ReadString(ref reader, rowIndex, position, "trades"); break;
+                        case 8: row.Systime = ReadUnixTime(ref reader, rowIndex, position, "trades"); break;
+                        case 9: row.BuySell = ParseHelpersUtf8.ReadString(ref reader, rowIndex, position, "trades"); break;
+                        case 10: row.Decimals = ParseHelpersUtf8.ReadInt(ref reader, rowIndex, position, "trades"); break;
+                        case 11: row.TradingSession = ParseHelpersUtf8.ReadString(ref reader, rowIndex, position, "trades"); break;
+                        case 12: timeParts.Date = ParseHelpersUtf8.ReadMomentDateUtf8(ref reader, rowIndex, position, "trades", out timeParts.RawDate); break;
+                        case 13: ParseHelpersUtf8.ExpectString(ref reader, rowIndex, position, "trades"); break;
+                    }
+                }
+                catch (Exception ex) when (IsRowValueFailure(ex))
+                {
+                    rowFailure ??= ex;
+                }
+            }
+            FinishRow(ref reader, rowIndex, 14, "trades");
+
+            DateTime? sourceTime = TryBuildSourceTime(in timeParts, out Exception? timeFailure);
+            if (rowFailure is null && string.IsNullOrWhiteSpace(secid))
+                rowFailure = new InvalidOperationException("Запись сделок отвергнута: secid пустой.");
+            if (rowFailure is null && sourceTime is null)
+                rowFailure = timeFailure;
+            if (rowFailure is null && tradeNo is null)
+                rowFailure = new InvalidOperationException("Сделка отвергнута: TRADENO пуст.");
+
+            row.TradeNo = tradeNo.GetValueOrDefault();
+            if (rowFailure is null)
+            {
+                ulong sourceTimeValue = CandleDateTime64.ToUnixWholeSeconds(sourceTime!.Value);
+                row.SourceTime = sourceTimeValue;
+                rows.Add(row);
+                lastTime = sourceTime.Value;
+                lastTradeNo = tradeNo;
+                if (maxTradeNo is null || tradeNo!.Value > maxTradeNo.Value)
+                {
+                    maxTradeNo = tradeNo;
+                    maxTradeNoTime = sourceTime;
+                    maxTradeNoTimeFailure = null;
+                }
+            }
+            else
+            {
+                failures.Add(new RealtimeRowFailure(rowIndex, rowFailure.Message));
+            }
+            sourceRowsCount++;
+            rowIndex++;
+        }
+    }
+
+    private static void ReadFuturesTradeRows(
+        ref Utf8JsonReader reader,
+        List<RealtimeFuturesTradeRow> rows,
+        List<RealtimeRowFailure> failures,
+        string secid,
+        ref int sourceRowsCount,
+        ref DateTime lastTime,
+        ref long? lastTradeNo,
+        ref long? maxTradeNo,
+        ref DateTime? maxTradeNoTime,
+        ref Exception? maxTradeNoTimeFailure)
+    {
+        ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", "trades");
+        int rowIndex = 0;
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+        {
+            if (reader.TokenType != JsonTokenType.StartArray)
+            {
+                ParseHelpersUtf8.SchemaMismatch(
+                    $"[trades] Ожидался StartArray строки {rowIndex}, получено {reader.TokenType}.");
+            }
+
+            RealtimeFuturesTradeRow row = new() { Secid = secid, IngestPriority = 0 };
+            long? tradeNo = null;
+            SourceTimeParts timeParts = default;
+            Exception? rowFailure = null;
+            for (int position = 0; position < 13; position++)
+            {
+                ReadCell(ref reader, rowIndex, position, 13, "trades");
+                if (reader.TokenType == JsonTokenType.Null)
+                    continue;
+
+                try
+                {
+                    switch (position)
+                    {
+                        case 0: tradeNo = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, "trades"); break;
+                        case 1: row.BoardName = ParseHelpersUtf8.ReadString(ref reader, rowIndex, position, "trades"); break;
+                        case 2: ParseHelpersUtf8.ExpectString(ref reader, rowIndex, position, "trades"); break;
+                        case 3: timeParts.Date = ParseHelpersUtf8.ReadMomentDateUtf8(ref reader, rowIndex, position, "trades", out timeParts.RawDate); break;
+                        case 4: timeParts.Time = ParseHelpersUtf8.ReadMomentTimeUtf8(ref reader, rowIndex, position, "trades", out timeParts.RawTime); break;
+                        case 5: row.Price = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, "trades"); break;
+                        case 6: row.Quantity = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, "trades"); break;
+                        case 7: row.Systime = ReadUnixTime(ref reader, rowIndex, position, "trades"); break;
+                        case 8: row.RecNo = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, "trades"); break;
+                        case 9: row.OpenPosition = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, "trades"); break;
+                        case 10: row.OffMarketDeal = ParseHelpersUtf8.ReadInt(ref reader, rowIndex, position, "trades"); break;
+                        case 11: row.BuySell = ParseHelpersUtf8.ReadString(ref reader, rowIndex, position, "trades"); break;
+                        case 12: ParseHelpersUtf8.ExpectString(ref reader, rowIndex, position, "trades"); break;
+                    }
+                }
+                catch (Exception ex) when (IsRowValueFailure(ex))
+                {
+                    rowFailure ??= ex;
+                }
+            }
+            FinishRow(ref reader, rowIndex, 13, "trades");
+
+            DateTime? sourceTime = TryBuildSourceTime(in timeParts, out Exception? timeFailure);
+            if (rowFailure is null && string.IsNullOrWhiteSpace(secid))
+                rowFailure = new InvalidOperationException("Запись сделок отвергнута: secid пустой.");
+            if (rowFailure is null && sourceTime is null)
+                rowFailure = timeFailure;
+            if (rowFailure is null && tradeNo is null)
+                rowFailure = new InvalidOperationException("Сделка отвергнута: TRADENO пуст.");
+
+            row.TradeNo = tradeNo.GetValueOrDefault();
+            if (rowFailure is null)
+            {
+                row.SourceTime = CandleDateTime64.ToUnixWholeSeconds(sourceTime!.Value);
+                rows.Add(row);
+                lastTime = sourceTime.Value;
+                lastTradeNo = tradeNo;
+                if (maxTradeNo is null || tradeNo!.Value > maxTradeNo.Value)
+                {
+                    maxTradeNo = tradeNo;
+                    maxTradeNoTime = sourceTime;
+                    maxTradeNoTimeFailure = null;
+                }
+            }
+            else
+            {
+                failures.Add(new RealtimeRowFailure(rowIndex, rowFailure.Message));
+            }
+            sourceRowsCount++;
+            rowIndex++;
+        }
+    }
+
+    private static void ReadOrderbookRows(
+        ref Utf8JsonReader reader,
+        List<RealtimeOrderbookRow> rows,
+        List<RealtimeRowFailure> failures,
+        string secid,
+        ref int sourceRowsCount,
+        ref DateTime firstTime)
+    {
+        ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", "orderbook");
+        int rowIndex = 0;
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+        {
+            if (reader.TokenType != JsonTokenType.StartArray)
+            {
+                ParseHelpersUtf8.SchemaMismatch(
+                    $"[orderbook] Ожидался StartArray строки {rowIndex}, получено {reader.TokenType}.");
+            }
+
+            RealtimeOrderbookRow row = new() { Secid = secid, IngestPriority = 0 };
+            string? buySell = null;
+            double? price = null;
+            long? seqNum = null;
+            Exception? rowFailure = null;
+            for (int position = 0; position < 8; position++)
+            {
+                ReadCell(ref reader, rowIndex, position, 8, "orderbook");
+                if (reader.TokenType == JsonTokenType.Null)
+                    continue;
+
+                try
+                {
+                    switch (position)
+                    {
+                        case 0: row.BoardId = ParseHelpersUtf8.ReadString(ref reader, rowIndex, position, "orderbook"); break;
+                        case 1: ParseHelpersUtf8.ExpectString(ref reader, rowIndex, position, "orderbook"); break;
+                        case 2: buySell = ParseHelpersUtf8.ReadString(ref reader, rowIndex, position, "orderbook"); break;
+                        case 3: price = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, "orderbook"); break;
+                        case 4: row.Quantity = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, "orderbook"); break;
+                        case 5: seqNum = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, "orderbook"); break;
+                        case 6: ParseHelpersUtf8.ExpectString(ref reader, rowIndex, position, "orderbook"); break;
+                        case 7: row.Decimals = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, "orderbook"); break;
+                    }
+                }
+                catch (Exception ex) when (IsRowValueFailure(ex))
+                {
+                    rowFailure ??= ex;
+                }
+            }
+            FinishRow(ref reader, rowIndex, 8, "orderbook");
+
+            DateTime? sourceTime = ReadSnapshotTime(seqNum, out Exception? timeFailure);
+            if (rowFailure is null && string.IsNullOrWhiteSpace(secid))
+                rowFailure = new InvalidOperationException("Запись стакана отвергнута: secid пустой.");
+            if (rowFailure is null && sourceTime is null)
+                rowFailure = timeFailure;
+            if (rowFailure is null && string.IsNullOrWhiteSpace(buySell))
+                rowFailure = new InvalidOperationException("Строка стакана отвергнута: BUYSELL пуст.");
+            if (rowFailure is null && price is null)
+                rowFailure = new InvalidOperationException("Строка стакана отвергнута: PRICE пуст.");
+
+            if (rowFailure is null)
+            {
+                row.SourceTime = CandleDateTime64.ToUnixWholeSeconds(sourceTime!.Value);
+                row.BuySell = buySell!;
+                row.Price = price!.Value;
+                if (rows.Count == 0)
+                    firstTime = sourceTime.Value;
+                rows.Add(row);
+            }
+            else
+            {
+                failures.Add(new RealtimeRowFailure(rowIndex, rowFailure.Message));
+            }
+            sourceRowsCount++;
+            rowIndex++;
+        }
+    }
+
+    private static void ReadCandleRows(
+        ref Utf8JsonReader reader,
+        List<RealtimeRowFailure> failures,
+        ProtobufBatchWriter<CandleRow> writer,
+        string secid,
+        DateTime now,
+        DateTime? lastBegin,
+        ref int sourceRowsCount,
+        ref int acceptedRowsCount,
+        ref DateTime? maxAcceptedBegin)
+    {
+        ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", "candles");
+        int rowIndex = 0;
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+        {
+            if (reader.TokenType != JsonTokenType.StartArray)
+            {
+                ParseHelpersUtf8.SchemaMismatch(
+                    $"[candles] Ожидался StartArray строки {rowIndex}, получено {reader.TokenType}.");
+            }
+
+            CandleRow row = new() { Secid = secid, IngestPriority = 0 };
+            DateTime? begin = null;
+            DateTime? end = null;
+            Exception? rowFailure = null;
+            for (int position = 0; position < 8; position++)
+            {
+                ReadCell(ref reader, rowIndex, position, 8, "candles");
+                if (reader.TokenType == JsonTokenType.Null)
+                    continue;
+                try
+                {
+                    switch (position)
+                    {
+                        case 0: row.Open = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, "candles"); break;
+                        case 1: row.Close = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, "candles"); break;
+                        case 2: row.High = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, "candles"); break;
+                        case 3: row.Low = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, "candles"); break;
+                        case 4: row.Value = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, "candles"); break;
+                        case 5: row.Volume = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, "candles"); break;
+                        case 6: begin = ParseHelpersUtf8.ReadDateTimeUtf8(ref reader, rowIndex, position, "candles"); break;
+                        case 7: end = ParseHelpersUtf8.ReadDateTimeUtf8(ref reader, rowIndex, position, "candles"); break;
+                    }
+                }
+                catch (Exception ex) when (IsRowValueFailure(ex))
+                {
+                    rowFailure ??= ex;
+                }
+            }
+            FinishRow(ref reader, rowIndex, 8, "candles");
+
+            if (rowFailure is null && begin is null)
+                rowFailure = new InvalidOperationException(
+                    "Свеча отвергнута: начало пусто или неверно.");
+
+            if (rowFailure is not null)
+            {
+                failures.Add(new RealtimeRowFailure(sourceRowsCount, rowFailure.Message));
+            }
+            else
+            {
+                DateTime beginValue = begin!.Value;
+                if (beginValue <= now && (lastBegin is null || beginValue >= lastBegin.Value))
+                {
+                    row.Begin = CandleDateTime64.ToUnixWholeSeconds(beginValue);
+                    row.End = end is DateTime endValue
+                        ? CandleDateTime64.ToUnixWholeSeconds(endValue)
+                        : null;
+                    writer.Append(in row);
+                    acceptedRowsCount++;
+                    if (maxAcceptedBegin is null || beginValue > maxAcceptedBegin.Value)
+                        maxAcceptedBegin = beginValue;
+                }
+            }
+
+            sourceRowsCount++;
+            rowIndex++;
+        }
+    }
+
     private static DateOnly? ReadDataVersionBlock(
         ref Utf8JsonReader reader,
         ColumnAndNumbersForParsing.ExpectedSchema schema,
@@ -255,16 +818,13 @@ public static class MoexRealtimeParser
         bool foundColumns = false;
         bool foundData = false;
         int rowCount = 0;
-        string? tradeSessionDate = null;
-
+        string? sessionDate = null;
         while (reader.Read())
         {
             if (reader.TokenType == JsonTokenType.EndObject)
                 break;
-
             if (reader.TokenType != JsonTokenType.PropertyName)
                 continue;
-
             if (reader.ValueTextEquals("columns"u8))
             {
                 foundColumns = true;
@@ -278,11 +838,9 @@ public static class MoexRealtimeParser
                         $"[{schema.RootKey}] Секция 'data' встретилась до 'columns'. " +
                         "Порядок columns → data обязателен.");
                 }
-
                 foundData = true;
                 int currentRowCount = 0;
-                tradeSessionDate = ReadSessionDateData(
-                    ref reader, schema, ref currentRowCount);
+                sessionDate = ReadSessionDateData(ref reader, schema, ref currentRowCount);
                 rowCount = currentRowCount;
             }
             else
@@ -292,17 +850,15 @@ public static class MoexRealtimeParser
         }
 
         ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, schema.RootKey);
-
         if (rowCount == 0)
         {
             ParseHelpersUtf8.SchemaMismatch(
                 $"[{schema.RootKey}] Блок dataversion не содержит ни одной строки.");
         }
-
         try
         {
             failure = null;
-            return MoexClickHouseTime.ParseDate(tradeSessionDate);
+            return MoexClickHouseTime.ParseDate(sessionDate);
         }
         catch (Exception ex) when (
             ex is InvalidOperationException or FormatException or ArgumentOutOfRangeException)
@@ -317,514 +873,165 @@ public static class MoexRealtimeParser
         ColumnAndNumbersForParsing.ExpectedSchema schema,
         ref int rowCount)
     {
-        ParseHelpersUtf8.ReadAndExpect(
-            ref reader, JsonTokenType.StartArray, "data", schema.RootKey);
-
-        string? tradeSessionDate = null;
+        ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", schema.RootKey);
+        string? sessionDate = null;
         while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
         {
             if (rowCount > 0)
             {
                 ParseHelpersUtf8.SchemaMismatch(
-                    $"[{schema.RootKey}] Ожидалась ровно 1 строка в dataversion, " +
-                    "но найдено больше.");
+                    $"[{schema.RootKey}] Ожидалась ровно 1 строка в dataversion, но найдено больше.");
             }
-
             for (int position = 0; position < schema.TotalColumns; position++)
             {
                 if (!reader.Read())
                 {
                     ParseHelpersUtf8.SchemaMismatch(
-                        $"[{schema.RootKey}] Неожиданный конец JSON в строке {rowCount}, " +
-                        $"позиция {position}.");
+                        $"[{schema.RootKey}] Неожиданный конец JSON в строке {rowCount}, позиция {position}.");
                 }
-
                 if (reader.TokenType == JsonTokenType.EndArray)
                 {
                     ParseHelpersUtf8.SchemaMismatch(
-                        $"[{schema.RootKey}] Короткая строка данных: ожидалось " +
-                        $"{schema.TotalColumns} колонок, получено {position} " +
-                        $"(строка {rowCount}).");
+                        $"[{schema.RootKey}] Короткая строка данных: ожидалось {schema.TotalColumns} колонок, " +
+                        $"получено {position} (строка {rowCount}).");
                 }
-
+                if (reader.TokenType is JsonTokenType.StartArray or JsonTokenType.StartObject or JsonTokenType.EndObject)
+                {
+                    ParseHelpersUtf8.SchemaMismatch(
+                        $"[{schema.RootKey}] Недопустимая структура значения в строке {rowCount}, колонка {position}.");
+                }
                 if (reader.TokenType == JsonTokenType.Null)
                     continue;
-
                 switch (position)
                 {
-                    case 0:
-                        _ = ParseHelpersUtf8.ReadInt(
-                            ref reader, rowCount, position, schema.RootKey);
-                        break;
-                    case 1:
-                        _ = ParseHelpersUtf8.ReadLong(
-                            ref reader, rowCount, position, schema.RootKey);
-                        break;
-                    case 2:
-                        // Значение отбрасывается — создавать из него строку незачем,
-                        // сверка вида токена остаётся прежней.
-                        ParseHelpersUtf8.ExpectString(
-                            ref reader, rowCount, position, schema.RootKey);
-                        break;
-                    case 3:
-                        tradeSessionDate = ParseHelpersUtf8.ReadString(
-                            ref reader, rowCount, position, schema.RootKey);
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException(
-                            nameof(position), position, "Неизвестная колонка dataversion.");
+                    case 0: _ = ParseHelpersUtf8.ReadInt(ref reader, rowCount, position, schema.RootKey); break;
+                    case 1: _ = ParseHelpersUtf8.ReadLong(ref reader, rowCount, position, schema.RootKey); break;
+                    case 2: ParseHelpersUtf8.ExpectString(ref reader, rowCount, position, schema.RootKey); break;
+                    case 3: sessionDate = ParseHelpersUtf8.ReadString(ref reader, rowCount, position, schema.RootKey); break;
                 }
             }
-
             if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
             {
                 ParseHelpersUtf8.SchemaMismatch(
-                    $"[{schema.RootKey}] Ожидался EndArray после " +
-                    $"{schema.TotalColumns} колонок (строка {rowCount}).");
+                    $"[{schema.RootKey}] Ожидался EndArray после {schema.TotalColumns} колонок (строка {rowCount}).");
             }
-
             rowCount++;
         }
-
-        return tradeSessionDate;
+        return sessionDate;
     }
 
-    private static void ReadPageRows(
+    private static ulong? ReadUnixTime(
         ref Utf8JsonReader reader,
-        List<object?[]> rows,
-        object?[] sourceValues,
-        List<RealtimeRowFailure> failures,
-        MoexRealtimeSpec spec,
-        string secid,
-        ref DateTime firstTime,
-        ref DateTime lastTime,
-        ref long? lastTradeNo,
-        ref long? maxTradeNo,
-        ref DateTime? maxTradeNoTime,
-        ref Exception? maxTradeNoTimeFailure,
-        ref Exception? guardFailure,
-        ref Exception? firstRowFailureBeforeSessionDate,
-        ref long? cachedSnapshotSeqNum,
-        ref DateTime? cachedSnapshotTime,
-        ref Exception? cachedSnapshotFailure)
-    {
-        ParseHelpersUtf8.ReadAndExpect(
-            ref reader, JsonTokenType.StartArray, "data", spec.RootKey);
-
-        int rowIndex = 0;
-        SourceTimeParts sourceTimeParts = default;
-        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
-        {
-            if (reader.TokenType != JsonTokenType.StartArray)
-            {
-                ParseHelpersUtf8.SchemaMismatch(
-                    $"[{spec.RootKey}] Ожидался StartArray строки {rowIndex}, " +
-                    $"получено {reader.TokenType}.");
-            }
-
-            Exception? rowFailure = ReadSourceValues(ref reader, sourceValues, spec, ref sourceTimeParts, rowIndex);
-
-            object?[] row = new object?[spec.TargetColumns.Length];
-            DateTime? rowKeyTime = null;
-            Exception? rowKeyTimeFailure = null;
-            long? rowTradeNo = null;
-
-            for (int i = 0; i < spec.TargetColumns.Length; i++)
-            {
-                TargetColumn column = spec.TargetColumns[i];
-                object? value;
-                Exception? valueFailure = null;
-
-                switch (column.FillRule)
-                {
-                    case FillRule.TaskSecId:
-                        value = secid;
-                        break;
-                    case FillRule.Direct:
-                        value = sourceValues[column.SourceIndex];
-                        break;
-                    case FillRule.SourceDateTime:
-                        try
-                        {
-                            value = MoexClickHouseTime.BuildSourceTime(in sourceTimeParts);
-                        }
-                        catch (Exception ex) when (
-                            ex is InvalidOperationException or FormatException
-                                or ArgumentOutOfRangeException)
-                        {
-                            // Пустые значения и неверный формат дают разные отказы. Сохраняется
-                            // исходное исключение, чтобы не подменить ни его тип, ни его текст.
-                            valueFailure = ex;
-                            value = null;
-                        }
-                        break;
-                    case FillRule.WallClock:
-                        if (spec.SourceColumns[column.SourceIndex].Kind == ColumnKind.String)
-                        {
-                            try
-                            {
-                                value = MoexClickHouseTime.ParseWallClock(
-                                    sourceValues[column.SourceIndex] as string);
-                            }
-                            catch (Exception ex) when (
-                                ex is InvalidOperationException or FormatException
-                                    or ArgumentOutOfRangeException)
-                            {
-                                valueFailure = ex;
-                                value = null;
-                            }
-                        }
-                        else
-                        {
-                            // Значение уже прочитано разбором по байтам с видом
-                            // «неопределённый». Берётся готовый объект вместо
-                            // распаковки с повторной упаковкой.
-                            value = sourceValues[column.SourceIndex];
-                        }
-                        break;
-                    case FillRule.Constant:
-                        value = column.Constant;
-                        break;
-                    case FillRule.SessionDate:
-                        // Дата сессии на этот момент ещё не прочитана: её блок источник
-                        // отдаёт после таблицы. Место колонки занимает пустое значение,
-                        // а дата и её отказ проставляются после разбора всего тела.
-                        // Обязательной эта колонка не объявлена ни в одной декларации,
-                        // поэтому пустое значение здесь отказа не порождает.
-                        value = null;
-                        break;
-                    case FillRule.SnapshotTimeFromSeqNum:
-                        value = ReadSnapshotTime(
-                            sourceValues[column.SourceIndex],
-                            ref cachedSnapshotSeqNum,
-                            ref cachedSnapshotTime,
-                            ref cachedSnapshotFailure,
-                            out valueFailure);
-                        break;
-                    case FillRule.ExternalSecId:
-                    default:
-                        throw new ArgumentOutOfRangeException(
-                            nameof(column), column.FillRule, "Неизвестное правило заполнения.");
-                }
-
-                if (valueFailure is null && IsRequiredValueMissing(column, value))
-                {
-                    valueFailure = new InvalidOperationException(
-                        column.RequiredMessage
-                        ?? $"Строка отвергнута: обязательная колонка {column.Name} пуста.");
-                }
-
-                rowFailure ??= valueFailure;
-                row[i] = value;
-
-                // Отказы первой строки до колонки даты сессии запоминаются отдельно:
-                // из них и из отказа даты сессии восстанавливается прежний порядок отбора.
-                //
-                // Первая строка определяется по числу уже собранных строк, а не по счётчику
-                // строк этого вызова: счётчик местный и обнуляется на каждой секции 'data',
-                // а секций внутри блока может встретиться несколько — разбор их допускает.
-                // Соседняя строка метода уже определяет первую строку страницы этим же
-                // способом: по нулевому числу собранных строк выставляется время первой строки.
-                if (rows.Count == 0 && spec.SessionDateIndex >= 0 && i < spec.SessionDateIndex)
-                    firstRowFailureBeforeSessionDate ??= valueFailure;
-
-                if (i == spec.KeyTimeIndex)
-                {
-                    rowKeyTime = value is DateTime time ? time : null;
-                    rowKeyTimeFailure = valueFailure;
-                }
-
-                if (i == spec.TradeNoIndex)
-                    rowTradeNo = value is long tradeNo ? tradeNo : null;
-            }
-
-            if (rowFailure is not null)
-            {
-                guardFailure ??= rowFailure;
-                failures.Add(new RealtimeRowFailure(rowIndex, rowFailure.Message));
-                rowIndex++;
-                continue;
-            }
-
-            DateTime keyTime = rowKeyTime ?? default;
-            if (rows.Count == 0)
-                firstTime = keyTime;
-            lastTime = keyTime;
-            lastTradeNo = rowTradeNo;
-
-            if (rowTradeNo is not null
-                && (maxTradeNo is null || rowTradeNo.Value > maxTradeNo.Value))
-            {
-                maxTradeNo = rowTradeNo;
-                maxTradeNoTime = rowKeyTime;
-                maxTradeNoTimeFailure = rowKeyTimeFailure;
-            }
-
-            rows.Add(row);
-            rowIndex++;
-        }
-    }
-
-    private static void ReadCandleRows(
-        ref Utf8JsonReader reader,
-        List<(object?[] Row, DateTime? Begin)> rows,
-        object?[] sourceValues,
-        List<RealtimeRowFailure> failures,
-        ref int sourceRowsCount,
-        MoexRealtimeSpec spec,
-        string secid)
-    {
-        ParseHelpersUtf8.ReadAndExpect(
-            ref reader, JsonTokenType.StartArray, "data", spec.RootKey);
-
-        int rowIndex = 0;
-        SourceTimeParts sourceTimeParts = default;
-        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
-        {
-            if (reader.TokenType != JsonTokenType.StartArray)
-            {
-                ParseHelpersUtf8.SchemaMismatch(
-                    $"[{spec.RootKey}] Ожидался StartArray строки {rowIndex}, " +
-                    $"получено {reader.TokenType}.");
-            }
-
-            Exception? rowFailure = ReadSourceValues(ref reader, sourceValues, spec, ref sourceTimeParts, rowIndex);
-
-            object?[] row = new object?[spec.TargetColumns.Length];
-            for (int i = 0; i < spec.TargetColumns.Length; i++)
-            {
-                TargetColumn column = spec.TargetColumns[i];
-                object? value = null;
-                try
-                {
-                    value = column.FillRule switch
-                    {
-                        FillRule.TaskSecId => secid,
-                        FillRule.Direct => sourceValues[column.SourceIndex],
-                        FillRule.WallClock =>
-                            spec.SourceColumns[column.SourceIndex].Kind == ColumnKind.String
-                                ? MoexClickHouseTime.ParseWallClock(
-                                    sourceValues[column.SourceIndex] as string)
-                                : sourceValues[column.SourceIndex],
-                        FillRule.Constant => column.Constant,
-                        _ => throw new ArgumentOutOfRangeException(
-                            nameof(column), column.FillRule, "Неизвестное правило заполнения."),
-                    };
-                }
-                catch (Exception ex) when (ex is InvalidOperationException or FormatException)
-                {
-                    rowFailure ??= ex;
-                }
-                row[i] = value;
-            }
-
-            DateTime? begin = row[spec.KeyTimeIndex] is DateTime beginValue
-                ? beginValue
-                : null;
-            if (begin is null)
-                rowFailure ??= new InvalidOperationException("Свеча отвергнута: начало пусто или неверно.");
-            if (rowFailure is null)
-                rows.Add((row, begin));
-            else
-                failures.Add(new RealtimeRowFailure(sourceRowsCount, rowFailure.Message));
-            sourceRowsCount++;
-            rowIndex++;
-        }
-    }
-
-    private static Exception? ReadSourceValues(
-        ref Utf8JsonReader reader,
-        object?[] sourceValues,
-        MoexRealtimeSpec spec,
-        ref SourceTimeParts sourceTimeParts,
-        int rowIndex)
-    {
-        sourceTimeParts.Reset();
-        Exception? failure = null;
-        for (int position = 0; position < spec.SourceColumns.Length; position++)
-        {
-            if (!reader.Read())
-            {
-                ParseHelpersUtf8.SchemaMismatch(
-                    $"[{spec.RootKey}] Неожиданный конец JSON в строке {rowIndex}, " +
-                    $"позиция {position}.");
-            }
-
-            if (reader.TokenType == JsonTokenType.EndArray)
-            {
-                ParseHelpersUtf8.SchemaMismatch(
-                    $"[{spec.RootKey}] Короткая строка данных: ожидалось " +
-                    $"{spec.SourceColumns.Length} колонок, получено {position} " +
-                    $"(строка {rowIndex}).");
-            }
-
-            if (reader.TokenType is JsonTokenType.StartArray or JsonTokenType.StartObject or JsonTokenType.EndObject)
-                ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Недопустимая структура значения в строке {rowIndex}, колонка {position}.");
-            sourceValues[position] = null;
-            if (reader.TokenType != JsonTokenType.Null)
-            {
-                try
-                {
-                    sourceValues[position] = ReadValue(
-                        ref reader, spec.SourceColumns[position], spec.SourceColumnUsed[position],
-                        ref sourceTimeParts, rowIndex, spec.RootKey);
-                }
-                catch (Exception ex) when (ex is InvalidOperationException or FormatException or OverflowException)
-                {
-                    failure ??= ex;
-                }
-            }
-        }
-
-        if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
-        {
-            ParseHelpersUtf8.SchemaMismatch(
-                $"[{spec.RootKey}] Ожидался EndArray после " +
-                $"{spec.SourceColumns.Length} колонок (строка {rowIndex}).");
-        }
-        return failure;
-    }
-
-    private static object? ReadValue(
-        ref Utf8JsonReader reader,
-        SourceColumn column,
-        bool used,
-        ref SourceTimeParts sourceTimeParts,
         int rowIndex,
+        int position,
         string rootKey)
     {
-        if (used)
-            return ReadUsedValue(ref reader, column, ref sourceTimeParts, rowIndex, rootKey);
-
-        // На эту колонку не ссылается ни одна целевая колонка. Сверка вида токена остаётся —
-        // она датчик дрейфа схемы источника, — но строка из значения не создаётся.
-        if (column.Kind == ColumnKind.String)
-        {
-            ParseHelpersUtf8.ExpectString(ref reader, rowIndex, column.Position, rootKey);
-            return null;
-        }
-
-        // Сегодня невостребованных колонок прочих видов нет ни в одной декларации. Ветвь
-        // существует ради будущих деклараций и читает значение тем же помощником, отбрасывая
-        // результат: так проверки и тексты исключений остаются буквально прежними.
-        _ = ReadUsedValue(ref reader, column, ref sourceTimeParts, rowIndex, rootKey);
-        return null;
+        DateTime? value = ParseHelpersUtf8.ReadDateTimeUtf8(
+            ref reader, rowIndex, position, rootKey);
+        return value is DateTime time ? CandleDateTime64.ToUnixWholeSeconds(time) : null;
     }
 
-    private static object? ReadUsedValue(
-        ref Utf8JsonReader reader,
-        SourceColumn column,
-        ref SourceTimeParts sourceTimeParts,
-        int rowIndex,
-        string rootKey)
-    {
-        return column.Kind switch
-        {
-            ColumnKind.String => ParseHelpersUtf8.ReadString(
-                ref reader, rowIndex, column.Position, rootKey),
-            ColumnKind.Int32 => ParseHelpersUtf8.ReadInt(
-                ref reader, rowIndex, column.Position, rootKey),
-            ColumnKind.Int64 => ParseHelpersUtf8.ReadLong(
-                ref reader, rowIndex, column.Position, rootKey),
-            ColumnKind.Double => ParseHelpersUtf8.ReadDouble(
-                ref reader, rowIndex, column.Position, rootKey),
-            ColumnKind.DateTime => ParseHelpersUtf8.ReadDateTimeUtf8(
-                ref reader, rowIndex, column.Position, rootKey),
-            ColumnKind.MomentDate => ReadMomentDate(
-                ref reader, column, ref sourceTimeParts, rowIndex, rootKey),
-            ColumnKind.MomentTime => ReadMomentTime(
-                ref reader, column, ref sourceTimeParts, rowIndex, rootKey),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(column), column.Kind, "Неизвестный тип колонки источника."),
-        };
-    }
-
-    private static object? ReadMomentDate(
-        ref Utf8JsonReader reader,
-        SourceColumn column,
-        ref SourceTimeParts sourceTimeParts,
-        int rowIndex,
-        string rootKey)
-    {
-        sourceTimeParts.Date = ParseHelpersUtf8.ReadMomentDateUtf8(
-            ref reader, rowIndex, column.Position, rootKey, out sourceTimeParts.RawDate);
-        return null;
-    }
-
-    private static object? ReadMomentTime(
-        ref Utf8JsonReader reader,
-        SourceColumn column,
-        ref SourceTimeParts sourceTimeParts,
-        int rowIndex,
-        string rootKey)
-    {
-        sourceTimeParts.Time = ParseHelpersUtf8.ReadMomentTimeUtf8(
-            ref reader, rowIndex, column.Position, rootKey, out sourceTimeParts.RawTime);
-        return null;
-    }
-
-    private static DateTime? ReadSnapshotTime(
-        object? sourceValue,
-        ref long? cachedSeqNum,
-        ref DateTime? cachedTime,
-        ref Exception? cachedFailure,
+    private static DateTime? TryBuildSourceTime(
+        in SourceTimeParts parts,
         out Exception? failure)
     {
-        long? seqNum = sourceValue is long value ? value : null;
-        if (seqNum is null || seqNum.Value <= 0)
+        try
         {
-            failure = new InvalidOperationException(
-                "Строка стакана отвергнута: SEQNUM пуст.");
+            DateTime value = MoexClickHouseTime.BuildSourceTime(in parts);
+            failure = null;
+            return value;
+        }
+        catch (Exception ex) when (
+            ex is InvalidOperationException or FormatException or ArgumentOutOfRangeException)
+        {
+            failure = ex;
             return null;
         }
+    }
 
-        long seqNumValue = seqNum.Value;
-        if (seqNumValue < 10_000_000_000_000L || seqNumValue > 99_999_999_999_999L)
+    private static DateTime? ReadSnapshotTime(long? seqNum, out Exception? failure)
+    {
+        if (seqNum is null || seqNum.Value <= 0)
         {
-            string text = seqNumValue.ToString(CultureInfo.InvariantCulture);
+            failure = new InvalidOperationException("Строка стакана отвергнута: SEQNUM пуст.");
+            return null;
+        }
+        long value = seqNum.Value;
+        if (value < 10_000_000_000_000L || value > 99_999_999_999_999L)
+        {
+            string text = value.ToString(CultureInfo.InvariantCulture);
             failure = new InvalidOperationException(
                 $"Строка стакана отвергнута: SEQNUM='{text}' не в форме YYYYMMDDHHmmss.");
             return null;
         }
 
-        if (cachedSeqNum != seqNumValue)
+        long rest = value;
+        int second = (int)(rest % 100);
+        rest /= 100;
+        int minute = (int)(rest % 100);
+        rest /= 100;
+        int hour = (int)(rest % 100);
+        rest /= 100;
+        int day = (int)(rest % 100);
+        rest /= 100;
+        int month = (int)(rest % 100);
+        int year = (int)(rest / 100);
+        try
         {
-            cachedSeqNum = seqNumValue;
-            cachedTime = null;
-            cachedFailure = null;
-
-            long rest = seqNumValue;
-            int second = (int)(rest % 100);
-            rest /= 100;
-            int minute = (int)(rest % 100);
-            rest /= 100;
-            int hour = (int)(rest % 100);
-            rest /= 100;
-            int day = (int)(rest % 100);
-            rest /= 100;
-            int month = (int)(rest % 100);
-            int year = (int)(rest / 100);
-
-            try
-            {
-                cachedTime = new DateTime(
-                    year, month, day, hour, minute, second, DateTimeKind.Unspecified);
-            }
-            catch (Exception ex) when (
-                ex is InvalidOperationException or FormatException or ArgumentOutOfRangeException)
-            {
-                cachedFailure = ex;
-            }
+            failure = null;
+            return new DateTime(year, month, day, hour, minute, second, DateTimeKind.Unspecified);
         }
-
-        failure = cachedFailure;
-        return cachedTime;
+        catch (ArgumentOutOfRangeException ex)
+        {
+            failure = ex;
+            return null;
+        }
     }
 
-    private static bool IsRequiredValueMissing(TargetColumn column, object? value)
+    private static uint? ToClickHouseDate(DateOnly date)
     {
-        return column.Required
-            && (value is null || value is string text && string.IsNullOrWhiteSpace(text));
+        int epochDayNumber = DateOnly.FromDateTime(DateTime.UnixEpoch).DayNumber;
+        return checked((uint)(date.DayNumber - epochDayNumber));
     }
 
+    private static void ReadCell(
+        ref Utf8JsonReader reader,
+        int rowIndex,
+        int position,
+        int columnCount,
+        string rootKey)
+    {
+        if (!reader.Read())
+        {
+            ParseHelpersUtf8.SchemaMismatch(
+                $"[{rootKey}] Неожиданный конец JSON в строке {rowIndex}, позиция {position}.");
+        }
+        if (reader.TokenType == JsonTokenType.EndArray)
+        {
+            ParseHelpersUtf8.SchemaMismatch(
+                $"[{rootKey}] Короткая строка данных: ожидалось {columnCount} колонок, " +
+                $"получено {position} (строка {rowIndex}).");
+        }
+        if (reader.TokenType is JsonTokenType.StartArray or JsonTokenType.StartObject or JsonTokenType.EndObject)
+        {
+            ParseHelpersUtf8.SchemaMismatch(
+                $"[{rootKey}] Недопустимая структура значения в строке {rowIndex}, колонка {position}.");
+        }
+    }
+
+    private static void FinishRow(
+        ref Utf8JsonReader reader,
+        int rowIndex,
+        int columnCount,
+        string rootKey)
+    {
+        if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
+        {
+            ParseHelpersUtf8.SchemaMismatch(
+                $"[{rootKey}] Ожидался EndArray после {columnCount} колонок (строка {rowIndex}).");
+        }
+    }
+
+    private static bool IsRowValueFailure(Exception exception)
+        => exception is InvalidOperationException or FormatException or OverflowException;
 }

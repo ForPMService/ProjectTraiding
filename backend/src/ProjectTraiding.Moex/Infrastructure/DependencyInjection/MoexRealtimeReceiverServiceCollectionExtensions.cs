@@ -33,8 +33,8 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
 
             services.AddSingleton<MoexReceiverInstrumentReader>();
             services.AddSingleton<StreamCursorWriter>();
-            // Писатель строк приёма состояния не хранит: у него только исполнитель вставки.
-            services.AddSingleton<RealtimeSpecRowWriter>();
+            int candlesBatchSize = configuration.GetValue<int>(
+                "ClickHouse:CandlesBatchSize", 10_000);
 
             services.AddHostedService(sp =>
             {
@@ -69,7 +69,8 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
                     TimeSpan.FromSeconds(opt.CandlesPollSeconds),
                     opt.RealtimeInstrumentFetchTimeout,
                     TimeSpan.FromSeconds(
-                        opt.CandlesPollSeconds * (double)opt.RealtimeStalePollIntervals));
+                        opt.CandlesPollSeconds * (double)opt.RealtimeStalePollIntervals),
+                    candlesBatchSize);
             });
 
             return services;

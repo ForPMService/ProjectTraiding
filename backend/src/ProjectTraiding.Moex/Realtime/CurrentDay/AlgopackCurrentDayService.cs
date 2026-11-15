@@ -474,6 +474,17 @@ public sealed class AlgopackCurrentDayService : BackgroundService
 
                 while (true)
                 {
+                    ct.ThrowIfCancellationRequested();
+                    if (fetchBudgetRemaining <= TimeSpan.Zero ||
+                        fetchCts.IsCancellationRequested)
+                    {
+                        AlgopackCurrentDayLogMessages.InstrumentFetchTimedOut(
+                            _logger, secid, market, spec.DataKind, _instrumentFetchTimeout);
+                        fetchFailure = new TimeoutException(
+                            "Не все страницы ALGOPACK получены до истечения времени.");
+                        break;
+                    }
+
                     fetchCts.CancelAfter(fetchBudgetRemaining);
                     Stopwatch fetchTimer = Stopwatch.StartNew();
                     bool hasPage;
@@ -591,6 +602,17 @@ public sealed class AlgopackCurrentDayService : BackgroundService
 
             while (true)
             {
+                ct.ThrowIfCancellationRequested();
+                if (fetchBudgetRemaining <= TimeSpan.Zero ||
+                    fetchCts.IsCancellationRequested)
+                {
+                    AlgopackCurrentDayLogMessages.InstrumentFetchTimedOut(
+                        _logger, secid, market, spec.DataKind, _instrumentFetchTimeout);
+                    fetchFailure = new TimeoutException(
+                        "Не все страницы ALGOPACK получены до истечения времени.");
+                    break;
+                }
+
                 bool hasPage;
                 fetchCts.CancelAfter(fetchBudgetRemaining);
                 Stopwatch fetchTimer = Stopwatch.StartNew();

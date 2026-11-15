@@ -81,8 +81,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         scope.ServiceProvider, instruments, ct);
                 }
 
-                RealtimeSpecRowWriter writer =
-                    scope.ServiceProvider.GetRequiredService<RealtimeSpecRowWriter>();
+                ClickHouseInsertExecutor executor =
+                    scope.ServiceProvider.GetRequiredService<ClickHouseInsertExecutor>();
                 foreach (KeyValuePair<string, TradesInstrumentState> pair in States)
                 {
                     try
@@ -91,7 +91,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                             pair.Key,
                             pair.Value,
                             client,
-                            writer,
+                            executor,
                             cursorWriter,
                             ct);
                     }
@@ -183,39 +183,48 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             string secid,
             TradesInstrumentState state,
             MoexRealtimeRestClient client,
-            RealtimeSpecRowWriter writer,
+            ClickHouseInsertExecutor executor,
             StreamCursorWriter cursorWriter,
             CancellationToken commitCt)
         {
-            MoexRealtimeSpec spec = MoexRealtimeRegistry.TradesFor(state.Market);
+            if (state.Market == MoexMarkets.Stock)
+            {
+                await PollStockAsync(secid, state, client, executor, cursorWriter, commitCt);
+                return;
+            }
+            if (state.Market == MoexMarkets.Futures)
+            {
+                await PollFuturesAsync(secid, state, client, executor, cursorWriter, commitCt);
+                return;
+            }
+            throw new InvalidOperationException(
+                $"Неизвестный рынок инструмента приёмника: '{state.Market}'.");
+        }
 
-            // Получение одной страницы — под собственным бюджетом, живущим строго вокруг вызова
-            // клиента. По истечении RealtimeInstrumentFetchTimeout получение отменяется, инструмент
-            // пропускается до следующего оборота. Бюджет уничтожается ЗДЕСЬ, до фиксации: иначе его
-            // таймер, сработав во время медленной записи, мог бы ошибочно попасть на исключение
-            // фазы фиксации и выдать сбой хранилища за тайм-аут получения.
-            MoexOperationTags operationTags = new MoexOperationTags(
+        private async Task PollStockAsync(
+            string secid,
+            TradesInstrumentState state,
+            MoexRealtimeRestClient client,
+            ClickHouseInsertExecutor executor,
+            StreamCursorWriter cursorWriter,
+            CancellationToken commitCt)
+        {
+            MoexOperationTags operationTags = new(
                 MoexLogSources.RealtimeRest,
                 MoexOperations.RealtimeTradesPoll,
                 MoexDataKinds.Trades,
                 state.Market,
                 MoexFlows.Realtime);
-
-            StorageInsertContext insertContext = new StorageInsertContext(
-                operationTags.DataKind,
-                operationTags.Market,
-                MoexFlows.Realtime);
-
-            RealtimeParsedPage page;
-            using (Activity? pollActivity =
-                   MoexTelemetry.ActivitySource.StartActivity("moex.realtime.instrument.poll"))
-            {
+            StorageInsertContext insertContext = new(
+                operationTags.DataKind, operationTags.Market, MoexFlows.Realtime);
+            using Activity? pollActivity =
+                MoexTelemetry.ActivitySource.StartActivity("moex.realtime.instrument.poll");
             pollActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
             pollActivity?.SetTag(MoexTelemetryAttributes.Market, operationTags.Market);
             pollActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
 
             long fetchStart = Stopwatch.GetTimestamp();
-
+            RealtimeStockTradesPage page;
             using (CancellationTokenSource fetchCts =
                    CancellationTokenSource.CreateLinkedTokenSource(commitCt))
             {
@@ -228,19 +237,9 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 fetchActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
                 try
                 {
-                    page = await client.GetTradesAsync(
-                        state.Market,
-                        secid,
-                        state.AfterTradeNo,
-                        cancellationToken: fetchCts.Token);
-                    TagList rowsTags = new TagList
-                    {
-                        { MoexTelemetryAttributes.Source, operationTags.Source },
-                        { MoexTelemetryAttributes.DataKind, operationTags.DataKind },
-                        { MoexTelemetryAttributes.Market, operationTags.Market },
-                        { MoexTelemetryAttributes.Flow, operationTags.Flow },
-                    };
-                    MoexMetrics.RowsReceived.Add(page.Rows.Count, rowsTags);
+                    page = await client.GetStockTradesAsync(
+                        secid, state.AfterTradeNo, cancellationToken: fetchCts.Token);
+                    RecordTradeRowsReceived(operationTags, page.Rows.Count);
                     MoexMetrics.RecordOperationSuccess(
                         in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                     fetchActivity?.SetStatus(ActivityStatusCode.Ok);
@@ -248,10 +247,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
                 {
                     fetchActivity?.SetStatus(ActivityStatusCode.Ok);
-                    pollActivity?.SetStatus(ActivityStatusCode.Ok);
                     MoexMetrics.RecordOperationCancelled(
                         in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
-                    MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Cancelled);
                     throw;
                 }
                 catch (OperationCanceledException) when (fetchCts.IsCancellationRequested)
@@ -278,36 +275,47 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
             try
             {
-                foreach (RealtimeRowFailure failure in page.RowFailures)
-                    _logger.LogWarning("MOEX row skipped: secid={Secid}, dataKind={DataKind}, position={Position}, reason={Reason}",
-                        secid, DataKind, failure.Position, failure.Reason);
+                LogTradeFailures(secid, page.RowFailures);
+                long? previous = state.AfterTradeNo;
+                for (int i = 0; i < page.Rows.Count; i++)
+                {
+                    long tradeNo = page.Rows[i].TradeNo;
+                    if (previous is not null && tradeNo <= previous.Value)
+                        throw new InvalidOperationException("Нарушен порядок номеров сделок.");
+                    previous = tradeNo;
+                }
 
                 if (page.Rows.Count > 0)
                 {
-                    // Последовательность проверяем до записи и до продвижения курсора.
-                    long? previous = state.AfterTradeNo;
-                    foreach (object?[] row in page.Rows)
+                    ProtobufBatchWriter<RealtimeStockTradeRow> writer = new(
+                        executor,
+                        MoexRealtimeRegistry.StockTradesTable,
+                        MoexRealtimeRegistry.StockTradeInsertColumns,
+                        insertContext);
+                    for (int i = 0; i < page.Rows.Count; i++)
                     {
-                        long tradeNo = (long)row[spec.TradeNoIndex]!;
-                        if (previous is not null && tradeNo <= previous.Value)
-                            throw new InvalidOperationException("Нарушен порядок номеров сделок.");
-                        previous = tradeNo;
+                        RealtimeStockTradeRow row = page.Rows[i];
+                        writer.Append(in row);
                     }
-
-                    await writer.WriteAsync(spec, secid, page.Rows, insertContext, commitCt);
-                    state.RowsTotal += page.Rows.Count;
+                    int expectedRows = writer.RowCount;
+                    long insertedRows = await writer.FlushAsync(commitCt);
+                    if (insertedRows != expectedRows)
+                    {
+                        throw new InvalidOperationException(
+                            $"ClickHouse подтвердил запись {insertedRows} из {expectedRows} сделок.");
+                    }
+                    state.RowsTotal += insertedRows;
                     state.LastConfirmedMarketTime = MoexTime.ToDateTimeOffset(page.LastTime);
 
-                    // Пропуск в странице не позволяет доказать полноту участка.
                     if (page.RowFailures.Count == 0)
                     {
                         long lastTradeNo = page.LastTradeNo!.Value;
-                        await UpdateCursorAsync(cursorWriter, secid, state.Market, state.BoardId,
+                        await UpdateCursorAsync(
+                            cursorWriter, secid, state.Market, state.BoardId,
                             DataKind, null, page.LastTime, lastTradeNo, commitCt);
                         state.AfterTradeNo = lastTradeNo;
                     }
                 }
-
                 if (page.RowFailures.Count > 0)
                     throw new InvalidOperationException("Страница сделок обработана частично.");
 
@@ -321,14 +329,170 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Cancelled);
                 throw;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                pollActivity?.SetStatus(ActivityStatusCode.Error);
+                pollActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
                 throw;
             }
+        }
+
+        private async Task PollFuturesAsync(
+            string secid,
+            TradesInstrumentState state,
+            MoexRealtimeRestClient client,
+            ClickHouseInsertExecutor executor,
+            StreamCursorWriter cursorWriter,
+            CancellationToken commitCt)
+        {
+            MoexOperationTags operationTags = new(
+                MoexLogSources.RealtimeRest,
+                MoexOperations.RealtimeTradesPoll,
+                MoexDataKinds.Trades,
+                state.Market,
+                MoexFlows.Realtime);
+            StorageInsertContext insertContext = new(
+                operationTags.DataKind, operationTags.Market, MoexFlows.Realtime);
+            using Activity? pollActivity =
+                MoexTelemetry.ActivitySource.StartActivity("moex.realtime.instrument.poll");
+            pollActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
+            pollActivity?.SetTag(MoexTelemetryAttributes.Market, operationTags.Market);
+            pollActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
+
+            long fetchStart = Stopwatch.GetTimestamp();
+            RealtimeFuturesTradesPage page;
+            using (CancellationTokenSource fetchCts =
+                   CancellationTokenSource.CreateLinkedTokenSource(commitCt))
+            {
+                fetchCts.CancelAfter(_instrumentFetchTimeout);
+                using Activity? fetchActivity =
+                    MoexTelemetry.ActivitySource.StartActivity("moex.realtime.fetch");
+                fetchActivity?.SetTag(MoexTelemetryAttributes.Source, operationTags.Source);
+                fetchActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
+                fetchActivity?.SetTag(MoexTelemetryAttributes.Market, operationTags.Market);
+                fetchActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
+                try
+                {
+                    page = await client.GetFuturesTradesAsync(
+                        secid, state.AfterTradeNo, cancellationToken: fetchCts.Token);
+                    RecordTradeRowsReceived(operationTags, page.Rows.Count);
+                    MoexMetrics.RecordOperationSuccess(
+                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                    fetchActivity?.SetStatus(ActivityStatusCode.Ok);
+                }
+                catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
+                {
+                    fetchActivity?.SetStatus(ActivityStatusCode.Ok);
+                    MoexMetrics.RecordOperationCancelled(
+                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                    throw;
+                }
+                catch (OperationCanceledException) when (fetchCts.IsCancellationRequested)
+                {
+                    fetchActivity?.SetStatus(ActivityStatusCode.Error);
+                    pollActivity?.SetStatus(ActivityStatusCode.Error);
+                    MoexRealtimeReceiverLogMessages.TradesInstrumentFetchTimedOut(
+                        _logger, secid, state.Market, _instrumentFetchTimeout);
+                    MoexMetrics.RecordOperationTimeout(
+                        in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                    MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    fetchActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                    pollActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                    MoexMetrics.RecordOperationError(
+                        in operationTags, ex, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
+                    MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
+                    throw;
+                }
             }
 
+            try
+            {
+                LogTradeFailures(secid, page.RowFailures);
+                long? previous = state.AfterTradeNo;
+                for (int i = 0; i < page.Rows.Count; i++)
+                {
+                    long tradeNo = page.Rows[i].TradeNo;
+                    if (previous is not null && tradeNo <= previous.Value)
+                        throw new InvalidOperationException("Нарушен порядок номеров сделок.");
+                    previous = tradeNo;
+                }
+
+                if (page.Rows.Count > 0)
+                {
+                    ProtobufBatchWriter<RealtimeFuturesTradeRow> writer = new(
+                        executor,
+                        MoexRealtimeRegistry.FuturesTradesTable,
+                        MoexRealtimeRegistry.FuturesTradeInsertColumns,
+                        insertContext);
+                    for (int i = 0; i < page.Rows.Count; i++)
+                    {
+                        RealtimeFuturesTradeRow row = page.Rows[i];
+                        writer.Append(in row);
+                    }
+                    int expectedRows = writer.RowCount;
+                    long insertedRows = await writer.FlushAsync(commitCt);
+                    if (insertedRows != expectedRows)
+                    {
+                        throw new InvalidOperationException(
+                            $"ClickHouse подтвердил запись {insertedRows} из {expectedRows} сделок.");
+                    }
+                    state.RowsTotal += insertedRows;
+                    state.LastConfirmedMarketTime = MoexTime.ToDateTimeOffset(page.LastTime);
+
+                    if (page.RowFailures.Count == 0)
+                    {
+                        long lastTradeNo = page.LastTradeNo!.Value;
+                        await UpdateCursorAsync(
+                            cursorWriter, secid, state.Market, state.BoardId,
+                            DataKind, null, page.LastTime, lastTradeNo, commitCt);
+                        state.AfterTradeNo = lastTradeNo;
+                    }
+                }
+                if (page.RowFailures.Count > 0)
+                    throw new InvalidOperationException("Страница сделок обработана частично.");
+
+                MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Success);
+                state.LastSuccessfulPollTime = DateTimeOffset.UtcNow;
+                pollActivity?.SetStatus(ActivityStatusCode.Ok);
+            }
+            catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
+            {
+                pollActivity?.SetStatus(ActivityStatusCode.Ok);
+                MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Cancelled);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                pollActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error);
+                throw;
+            }
+        }
+
+        private static void RecordTradeRowsReceived(MoexOperationTags operationTags, int rowCount)
+        {
+            TagList rowsTags = new TagList
+            {
+                { MoexTelemetryAttributes.Source, operationTags.Source },
+                { MoexTelemetryAttributes.DataKind, operationTags.DataKind },
+                { MoexTelemetryAttributes.Market, operationTags.Market },
+                { MoexTelemetryAttributes.Flow, operationTags.Flow },
+            };
+            MoexMetrics.RowsReceived.Add(rowCount, rowsTags);
+        }
+
+        private void LogTradeFailures(string secid, List<RealtimeRowFailure> failures)
+        {
+            foreach (RealtimeRowFailure failure in failures)
+            {
+                _logger.LogWarning(
+                    "MOEX row skipped: secid={Secid}, dataKind={DataKind}, position={Position}, reason={Reason}",
+                    secid, DataKind, failure.Position, failure.Reason);
+            }
         }
 
         private static async Task UpdateCursorAsync(
@@ -399,25 +563,34 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
             try
             {
-                RealtimeParsedPage page = await client.GetTradesAsync(
-                    instrument.Market, instrument.Secid, null, reversedParams, ct);
-                TagList rowsTags = new TagList
+                (long TradeNo, DateTime SourceTime)? tail;
+                if (instrument.Market == MoexMarkets.Stock)
                 {
-                    { MoexTelemetryAttributes.Source, operationTags.Source },
-                    { MoexTelemetryAttributes.DataKind, operationTags.DataKind },
-                    { MoexTelemetryAttributes.Market, operationTags.Market },
-                    { MoexTelemetryAttributes.Flow, operationTags.Flow },
-                };
-                MoexMetrics.RowsReceived.Add(page.Rows.Count, rowsTags);
-
-                // Здесь и только здесь — на месте нынешнего отбора хвоста, между счётчиком
-                // строк и записью успеха операции. Иначе меняется наблюдаемая картина отказа.
-                foreach (RealtimeRowFailure failure in page.RowFailures)
-                    _logger.LogWarning("MOEX row skipped: secid={Secid}, dataKind={DataKind}, position={Position}, reason={Reason}",
-                        instrument.Secid, DataKind, failure.Position, failure.Reason);
-                if (page.RowFailures.Count > 0)
-                    throw new InvalidOperationException("Хвост сделок обработан частично.");
-                (long TradeNo, DateTime SourceTime)? tail = PickTail(page);
+                    RealtimeStockTradesPage page = await client.GetStockTradesAsync(
+                        instrument.Secid, null, reversedParams, ct);
+                    RecordTradeRowsReceived(operationTags, page.Rows.Count);
+                    LogTradeFailures(instrument.Secid, page.RowFailures);
+                    if (page.RowFailures.Count > 0)
+                        throw new InvalidOperationException("Хвост сделок обработан частично.");
+                    tail = PickTail(
+                        page.MaxTradeNo, page.MaxTradeNoTime, page.MaxTradeNoTimeFailure);
+                }
+                else if (instrument.Market == MoexMarkets.Futures)
+                {
+                    RealtimeFuturesTradesPage page = await client.GetFuturesTradesAsync(
+                        instrument.Secid, null, reversedParams, ct);
+                    RecordTradeRowsReceived(operationTags, page.Rows.Count);
+                    LogTradeFailures(instrument.Secid, page.RowFailures);
+                    if (page.RowFailures.Count > 0)
+                        throw new InvalidOperationException("Хвост сделок обработан частично.");
+                    tail = PickTail(
+                        page.MaxTradeNo, page.MaxTradeNoTime, page.MaxTradeNoTimeFailure);
+                }
+                else
+                {
+                    throw new InvalidOperationException(
+                        $"Неизвестный рынок инструмента приёмника: '{instrument.Market}'.");
+                }
 
                 MoexMetrics.RecordOperationSuccess(
                     in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
@@ -441,26 +614,28 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         }
 
         private static (long TradeNo, DateTime SourceTime)? PickTail(
-            RealtimeParsedPage page)
+            long? maxTradeNo,
+            DateTime? maxTradeNoTime,
+            Exception? maxTradeNoTimeFailure)
         {
             // Строки с пустым номером сделки холодный старт пропускает молча — их отсеял
             // сам разборщик, отбирая наибольший номер. Общий признак отвергнутой строки
             // на этом пути не смотрят вовсе: сегодня отбор хвоста страницу не отвергает.
-            if (page.MaxTradeNo is null)
+            if (maxTradeNo is null)
                 return null;
 
             // Но у выбранной строки момент обязан быть: сегодня отбор хвоста вызывает сборку
             // момента именно на ней, и она отказывает. Причин отказа две и они различны —
             // пустые дата или время дают один отказ, непустые неверного формата другой, —
             // поэтому поднимается сохранённая причина, а не одна на оба случая.
-            if (page.MaxTradeNoTime is null)
+            if (maxTradeNoTime is null)
             {
-                throw page.MaxTradeNoTimeFailure
+                throw maxTradeNoTimeFailure
                     ?? new InvalidOperationException(
                         "Строка статистики отвергнута: пустые дата или время торгов.");
             }
 
-            return (page.MaxTradeNo.Value, page.MaxTradeNoTime.Value);
+            return (maxTradeNo.Value, maxTradeNoTime.Value);
         }
 
         protected override void LogInstrumentPreparationFailed(Exception exception, string secid)
