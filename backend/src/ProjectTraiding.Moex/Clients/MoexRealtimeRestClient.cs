@@ -42,7 +42,7 @@ namespace ProjectTraiding.Moex.Clients
         // значило бы создавать массив имён, раскодировать каждое из двоичного представления
         // и склеивать результат — на каждый инструмент, на каждом обороте.
         private static readonly string DataVersionColumnsParam =
-            ColumnAndNumbersForParsing.RealtimeDataVersionSchema.BuildColumnsParam();
+            MoexColumnSets.DataVersionColumnsParam;
 
         // Набор параметров запроса стакана постоянен и не зависит от вызова: собирать
         // одинаковый словарь на каждый опрос каждого инструмента незачем.

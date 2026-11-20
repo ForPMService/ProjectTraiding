@@ -86,8 +86,30 @@ public static class MoexColumnSets
     public static readonly ImmutableArray<string> Orderbook =
     ["BOARDID", "SECID", "BUYSELL", "PRICE", "QUANTITY", "SEQNUM", "UPDATETIME", "DECIMALS"];
 
+    public static readonly ImmutableArray<string> Cursor =
+    ["INDEX", "TOTAL", "PAGESIZE"];
+
+    public static readonly ImmutableArray<string> DataVersion =
+    ["data_version", "seqnum", "trade_date", "trade_session_date"];
+
+    public static readonly ImmutableArray<string> SecuritiesStock =
+    [
+        "SECID", "BOARDID", "SHORTNAME", "LOTSIZE", "STATUS", "DECIMALS", "SECNAME",
+        "MINSTEP", "ISSUESIZE", "ISIN", "CURRENCYID", "SECTYPE", "LISTLEVEL",
+    ];
+
+    public static readonly ImmutableArray<string> SecuritiesFutures =
+    [
+        "SECID", "BOARDID", "SHORTNAME", "SECNAME", "DECIMALS", "MINSTEP", "LASTTRADEDATE",
+        "LASTDELDATE", "SECTYPE", "ASSETCODE", "LOTVOLUME", "INITIALMARGIN", "HIGHLIMIT",
+        "LOWLIMIT", "STEPPRICE", "BUYSELLFEE",
+    ];
+
     public static readonly string TradesStockColumnsParam = string.Join(',', TradesStock);
     public static readonly string TradesFuturesColumnsParam = string.Join(',', TradesFutures);
     public static readonly string OrderbookColumnsParam = string.Join(',', Orderbook);
     public static readonly string CandlesColumnsParam = string.Join(',', Candles);
+    public static readonly string DataVersionColumnsParam = string.Join(',', DataVersion);
+    public static readonly string SecuritiesStockColumnsParam = string.Join(',', SecuritiesStock);
+    public static readonly string SecuritiesFuturesColumnsParam = string.Join(',', SecuritiesFutures);
 }

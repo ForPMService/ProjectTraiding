@@ -1,4 +1,5 @@
 using ProjectTraiding.Moex.Contracts.Dto.Iss;
+using ProjectTraiding.Moex.DataFormats;
 using ProjectTraiding.Moex.Infrastructure.Buffers;
 using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Parsing;
@@ -57,7 +58,7 @@ namespace ProjectTraiding.Moex.Clients
         // <summary>
         /// Карточки всех фьючерсов RFUD — паспортный блок securities.
         ///
-        /// Источник: /engines/futures/markets/forts/boards/RFUD/securities.json?iss.meta=off
+        /// Источник: /engines/futures/markets/forts/boards/RFUD/securities.json
         /// Режим: APIM (платный, Bearer).
         /// Парсер: ParsingInstrumentCardUtf8.ParseFuturesCards (один проход: securities).
         /// Источник продолжает отдавать блок marketdata, он не разбирается:
@@ -77,10 +78,16 @@ namespace ProjectTraiding.Moex.Clients
             try
             {
                 const string endpoint =
-                    "/engines/futures/markets/forts/boards/RFUD/securities.json?iss.meta=off";
+                    "/engines/futures/markets/forts/boards/RFUD/securities.json";
+                Dictionary<string, string> queryParams = new()
+                {
+                    ["iss.meta"] = "off",
+                    ["securities.columns"] = MoexColumnSets.SecuritiesFuturesColumnsParam,
+                };
  
                 using var response = await SendRequestAsync(
                     endpoint,
+                    queryParams,
                     cancellationToken: cancellationToken,
                     flow: operationTags.Flow);
                 using var rentedArr = await RentedBuffer.RentFromResponseAsync(

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ProjectTraiding.Moex.Contracts.Dto.Iss;
+using ProjectTraiding.Moex.DataFormats;
 using ProjectTraiding.Moex.Infrastructure.Buffers;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Options;
@@ -56,7 +57,7 @@ namespace ProjectTraiding.Moex.Clients
         /// <summary>
         /// Карточки всех акций TQBR — паспортный блок securities.
         ///
-        /// Источник: /engines/stock/markets/shares/boards/tqbr/securities.json?iss.meta=off
+        /// Источник: /engines/stock/markets/shares/boards/tqbr/securities.json
         /// Режим: ISS (публичный, без ключа).
         /// Парсер: ParsingInstrumentCardUtf8.ParseStockCards (один проход: securities).
         /// Источник продолжает отдавать блок marketdata, он не разбирается:
@@ -76,10 +77,16 @@ namespace ProjectTraiding.Moex.Clients
             try
             {
                 const string endpoint =
-                    "/engines/stock/markets/shares/boards/tqbr/securities.json?iss.meta=off";
+                    "/engines/stock/markets/shares/boards/tqbr/securities.json";
+                Dictionary<string, string> queryParams = new()
+                {
+                    ["iss.meta"] = "off",
+                    ["securities.columns"] = MoexColumnSets.SecuritiesStockColumnsParam,
+                };
  
                 using var response = await _transport.SendAsync(
                     endpoint,
+                    queryParams,
                     cancellationToken: cancellationToken,
                     flow: operationTags.Flow);
                 using var rentedArr = await RentedBuffer.RentFromResponseAsync(

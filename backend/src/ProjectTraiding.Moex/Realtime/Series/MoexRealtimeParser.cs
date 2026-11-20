@@ -10,6 +10,8 @@ namespace ProjectTraiding.Moex.Realtime.Series;
 /// <summary>Stateless, one-pass parsers for the MOEX realtime response shapes.</summary>
 public static class MoexRealtimeParser
 {
+    private const string DataVersionRootKey = "dataversion";
+
     public static RealtimeStockTradesPage ParseStockTrades(
         ReadOnlySpan<byte> body,
         string secid)
@@ -25,8 +27,6 @@ public static class MoexRealtimeParser
         DateTime? maxTradeNoTime = null;
         Exception? maxTradeNoTimeFailure = null;
 
-        ColumnAndNumbersForParsing.ExpectedSchema dataVersionSchema =
-            ColumnAndNumbersForParsing.RealtimeDataVersionSchema;
         Utf8JsonReader reader = new(body);
         ParseHelpersUtf8.EnterResponseObject(ref reader);
         bool foundTrades = false;
@@ -39,12 +39,12 @@ public static class MoexRealtimeParser
             if (reader.TokenType != JsonTokenType.PropertyName)
                 continue;
 
-            if (!foundDataVersion && reader.ValueTextEquals(dataVersionSchema.RootKey))
+            if (!foundDataVersion && reader.ValueTextEquals(DataVersionRootKey))
             {
                 foundDataVersion = true;
-                ParseHelpersUtf8.ExpectObjectStart(ref reader, dataVersionSchema.RootKey);
+                ParseHelpersUtf8.ExpectObjectStart(ref reader, DataVersionRootKey);
                 sessionDate = ReadDataVersionBlock(
-                    ref reader, dataVersionSchema, out sessionDateFailure);
+                    ref reader, out sessionDateFailure);
             }
             else if (!foundTrades && reader.ValueTextEquals("trades"u8))
             {
@@ -69,7 +69,7 @@ public static class MoexRealtimeParser
         }
 
         if (!foundDataVersion)
-            ParseHelpersUtf8.RootKeyMissing(dataVersionSchema.RootKey);
+            ParseHelpersUtf8.RootKeyMissing(DataVersionRootKey);
         if (!foundTrades)
             ParseHelpersUtf8.RootKeyMissing("trades");
 
@@ -117,8 +117,6 @@ public static class MoexRealtimeParser
         DateTime? maxTradeNoTime = null;
         Exception? maxTradeNoTimeFailure = null;
 
-        ColumnAndNumbersForParsing.ExpectedSchema dataVersionSchema =
-            ColumnAndNumbersForParsing.RealtimeDataVersionSchema;
         Utf8JsonReader reader = new(body);
         ParseHelpersUtf8.EnterResponseObject(ref reader);
         bool foundTrades = false;
@@ -131,12 +129,12 @@ public static class MoexRealtimeParser
             if (reader.TokenType != JsonTokenType.PropertyName)
                 continue;
 
-            if (!foundDataVersion && reader.ValueTextEquals(dataVersionSchema.RootKey))
+            if (!foundDataVersion && reader.ValueTextEquals(DataVersionRootKey))
             {
                 foundDataVersion = true;
-                ParseHelpersUtf8.ExpectObjectStart(ref reader, dataVersionSchema.RootKey);
+                ParseHelpersUtf8.ExpectObjectStart(ref reader, DataVersionRootKey);
                 sessionDate = ReadDataVersionBlock(
-                    ref reader, dataVersionSchema, out sessionDateFailure);
+                    ref reader, out sessionDateFailure);
             }
             else if (!foundTrades && reader.ValueTextEquals("trades"u8))
             {
@@ -161,7 +159,7 @@ public static class MoexRealtimeParser
         }
 
         if (!foundDataVersion)
-            ParseHelpersUtf8.RootKeyMissing(dataVersionSchema.RootKey);
+            ParseHelpersUtf8.RootKeyMissing(DataVersionRootKey);
         if (!foundTrades)
             ParseHelpersUtf8.RootKeyMissing("trades");
 
@@ -205,8 +203,6 @@ public static class MoexRealtimeParser
         int sourceRowsCount = 0;
         DateTime firstTime = default;
 
-        ColumnAndNumbersForParsing.ExpectedSchema dataVersionSchema =
-            ColumnAndNumbersForParsing.RealtimeDataVersionSchema;
         Utf8JsonReader reader = new(body);
         ParseHelpersUtf8.EnterResponseObject(ref reader);
         bool foundOrderbook = false;
@@ -219,12 +215,12 @@ public static class MoexRealtimeParser
             if (reader.TokenType != JsonTokenType.PropertyName)
                 continue;
 
-            if (!foundDataVersion && reader.ValueTextEquals(dataVersionSchema.RootKey))
+            if (!foundDataVersion && reader.ValueTextEquals(DataVersionRootKey))
             {
                 foundDataVersion = true;
-                ParseHelpersUtf8.ExpectObjectStart(ref reader, dataVersionSchema.RootKey);
+                ParseHelpersUtf8.ExpectObjectStart(ref reader, DataVersionRootKey);
                 sessionDate = ReadDataVersionBlock(
-                    ref reader, dataVersionSchema, out sessionDateFailure);
+                    ref reader, out sessionDateFailure);
             }
             else if (!foundOrderbook && reader.ValueTextEquals("orderbook"u8))
             {
@@ -240,7 +236,7 @@ public static class MoexRealtimeParser
         }
 
         if (!foundDataVersion)
-            ParseHelpersUtf8.RootKeyMissing(dataVersionSchema.RootKey);
+            ParseHelpersUtf8.RootKeyMissing(DataVersionRootKey);
         if (!foundOrderbook)
             ParseHelpersUtf8.RootKeyMissing("orderbook");
 
@@ -819,7 +815,6 @@ public static class MoexRealtimeParser
 
     private static DateOnly? ReadDataVersionBlock(
         ref Utf8JsonReader reader,
-        ColumnAndNumbersForParsing.ExpectedSchema schema,
         out Exception? failure)
     {
         bool foundColumns = false;
@@ -835,19 +830,20 @@ public static class MoexRealtimeParser
             if (reader.ValueTextEquals("columns"u8))
             {
                 foundColumns = true;
-                ParseHelpersUtf8.ValidateColumnsUtf8(ref reader, schema);
+                ParseHelpersUtf8.ValidateInputColumnsUtf8(
+                    ref reader, MoexColumnSets.DataVersion, DataVersionRootKey);
             }
             else if (reader.ValueTextEquals("data"u8))
             {
                 if (!foundColumns)
                 {
                     ParseHelpersUtf8.SchemaMismatch(
-                        $"[{schema.RootKey}] Секция 'data' встретилась до 'columns'. " +
+                        $"[{DataVersionRootKey}] Секция 'data' встретилась до 'columns'. " +
                         "Порядок columns → data обязателен.");
                 }
                 foundData = true;
                 int currentRowCount = 0;
-                sessionDate = ReadSessionDateData(ref reader, schema, ref currentRowCount);
+                sessionDate = ReadSessionDateData(ref reader, ref currentRowCount);
                 rowCount = currentRowCount;
             }
             else
@@ -856,11 +852,11 @@ public static class MoexRealtimeParser
             }
         }
 
-        ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, schema.RootKey);
+        ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, DataVersionRootKey);
         if (rowCount == 0)
         {
             ParseHelpersUtf8.SchemaMismatch(
-                $"[{schema.RootKey}] Блок dataversion не содержит ни одной строки.");
+                $"[{DataVersionRootKey}] Блок dataversion не содержит ни одной строки.");
         }
         try
         {
@@ -877,53 +873,53 @@ public static class MoexRealtimeParser
 
     private static string? ReadSessionDateData(
         ref Utf8JsonReader reader,
-        ColumnAndNumbersForParsing.ExpectedSchema schema,
         ref int rowCount)
     {
-        ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", schema.RootKey);
+        ParseHelpersUtf8.ReadAndExpect(
+            ref reader, JsonTokenType.StartArray, "data", DataVersionRootKey);
         string? sessionDate = null;
-        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+        bool foundDataEnd = false;
+        while (reader.Read())
         {
+            if (reader.TokenType == JsonTokenType.EndArray)
+            {
+                foundDataEnd = true;
+                break;
+            }
+
             if (rowCount > 0)
             {
                 ParseHelpersUtf8.SchemaMismatch(
-                    $"[{schema.RootKey}] Ожидалась ровно 1 строка в dataversion, но найдено больше.");
+                    $"[{DataVersionRootKey}] Ожидалась ровно 1 строка в dataversion, но найдено больше.");
             }
-            for (int position = 0; position < schema.TotalColumns; position++)
-            {
-                if (!reader.Read())
-                {
-                    ParseHelpersUtf8.SchemaMismatch(
-                        $"[{schema.RootKey}] Неожиданный конец JSON в строке {rowCount}, позиция {position}.");
-                }
-                if (reader.TokenType == JsonTokenType.EndArray)
-                {
-                    ParseHelpersUtf8.SchemaMismatch(
-                        $"[{schema.RootKey}] Короткая строка данных: ожидалось {schema.TotalColumns} колонок, " +
-                        $"получено {position} (строка {rowCount}).");
-                }
-                if (reader.TokenType is JsonTokenType.StartArray or JsonTokenType.StartObject or JsonTokenType.EndObject)
-                {
-                    ParseHelpersUtf8.SchemaMismatch(
-                        $"[{schema.RootKey}] Недопустимая структура значения в строке {rowCount}, колонка {position}.");
-                }
-                if (reader.TokenType == JsonTokenType.Null)
-                    continue;
-                switch (position)
-                {
-                    case 0: _ = ParseHelpersUtf8.ReadInt(ref reader, rowCount, position, schema.RootKey); break;
-                    case 1: _ = ParseHelpersUtf8.ReadLong(ref reader, rowCount, position, schema.RootKey); break;
-                    case 2: ParseHelpersUtf8.ExpectString(ref reader, rowCount, position, schema.RootKey); break;
-                    case 3: sessionDate = ParseHelpersUtf8.ReadString(ref reader, rowCount, position, schema.RootKey); break;
-                }
-            }
-            if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
+
+            if (reader.TokenType != JsonTokenType.StartArray)
             {
                 ParseHelpersUtf8.SchemaMismatch(
-                    $"[{schema.RootKey}] Ожидался EndArray после {schema.TotalColumns} колонок (строка {rowCount}).");
+                    $"[{DataVersionRootKey}] Ожидалась строка-массив в data, " +
+                    $"получено {reader.TokenType}.");
             }
+
+            _ = ParseHelpersUtf8.ReadNextNullableInt(
+                ref reader, rowCount, DataVersionRootKey, 0);
+            _ = ParseHelpersUtf8.ReadNextNullableLong(
+                ref reader, rowCount, DataVersionRootKey, 1);
+            ParseHelpersUtf8.ExpectNextNullableString(
+                ref reader, rowCount, DataVersionRootKey, 2);
+            sessionDate = ParseHelpersUtf8.ReadNextNullableString(
+                ref reader, rowCount, DataVersionRootKey, 3);
+
+            ParseHelpersUtf8.ExpectRowEnd(
+                ref reader, rowCount, DataVersionRootKey, MoexColumnSets.DataVersion.Length);
             rowCount++;
         }
+
+        if (!foundDataEnd)
+        {
+            ParseHelpersUtf8.SchemaMismatch(
+                $"[{DataVersionRootKey}] Ожидался EndArray у секции data.");
+        }
+
         return sessionDate;
     }
 
