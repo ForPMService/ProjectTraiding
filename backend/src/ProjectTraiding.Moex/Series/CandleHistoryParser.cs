@@ -1,37 +1,35 @@
 using System.Text.Json;
 using ProjectTraiding.Moex.Contracts.Dto;
+using ProjectTraiding.Moex.DataFormats;
 using ProjectTraiding.Moex.Parsing;
-using ProjectTraiding.Moex.Parsing.Errors;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 
 namespace ProjectTraiding.Moex.Series;
 
-/// <summary>Parses MOEX historical candle pages directly into the generated protobuf row.</summary>
+/// <summary>Parses MOEX historical candle rows directly into the protobuf writer.</summary>
 public static class CandleHistoryParser
 {
     private const string RootKey = "candles";
 
-    public static CandleParsedPage Parse(
+    /// <returns>The physical number of input rows in data[], used by FixedPage.</returns>
+    internal static int Parse(
         ReadOnlySpan<byte> body,
         MoexSeriesSpec spec,
         string taskSecId,
         ProtobufBatchWriter<CandleRow> writer,
+        HistoricalReadState state,
         out PaginationCursorDTO cursor)
     {
-        if (spec.DataKind != "candles"
+        if (spec.DataKind != RootKey
             || spec.RootKey != RootKey
-            || spec.InputColumns.Length != 8)
+            || !spec.InputColumns.SequenceEqual(MoexColumnSets.Candles))
         {
             throw new InvalidOperationException(
-                "CandleHistoryParser requires a registered candles series specification.");
+                "CandleHistoryParser requires the registered candles input schema.");
         }
 
         cursor = new PaginationCursorDTO();
-
-        int acceptedRowsCount = 0;
         int sourceRowsCount = 0;
-        DateTime? lastSourceTime = null;
-        List<SkippedSourceRow>? skippedSourceRows = null;
         Utf8JsonReader reader = new(body);
         ParseHelpersUtf8.SkipToRootObject(ref reader, RootKey);
 
@@ -41,34 +39,21 @@ public static class CandleHistoryParser
         {
             if (reader.TokenType == JsonTokenType.EndObject)
                 break;
-
             if (reader.TokenType != JsonTokenType.PropertyName)
                 continue;
 
             if (reader.ValueTextEquals("columns"u8))
             {
                 foundColumns = true;
-                ParseHelpersUtf8.ValidateInputColumnsUtf8(
-                    ref reader, spec.InputColumns, RootKey);
+                ParseHelpersUtf8.ValidateInputColumnsUtf8(ref reader, MoexColumnSets.Candles, RootKey);
             }
             else if (reader.ValueTextEquals("data"u8))
             {
                 if (!foundColumns)
-                {
                     ParseHelpersUtf8.SchemaMismatch(
-                        "[candles] Секция 'data' встретилась до 'columns'. " +
-                        "Порядок columns → data обязателен.");
-                }
-
+                        "[candles] Секция 'data' встретилась до 'columns'. Порядок columns → data обязателен.");
                 foundData = true;
-                ReadRows(
-                    ref reader,
-                    taskSecId,
-                    writer,
-                    ref acceptedRowsCount,
-                    ref lastSourceTime,
-                    ref sourceRowsCount,
-                    ref skippedSourceRows);
+                ReadRows(ref reader, taskSecId, writer, state, ref sourceRowsCount);
             }
             else
             {
@@ -77,97 +62,40 @@ public static class CandleHistoryParser
         }
 
         ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, RootKey);
-        return new CandleParsedPage(sourceRowsCount, acceptedRowsCount, skippedSourceRows, lastSourceTime);
+        return sourceRowsCount;
     }
 
     private static void ReadRows(
         ref Utf8JsonReader reader,
         string taskSecId,
         ProtobufBatchWriter<CandleRow> writer,
-        ref int acceptedRowsCount,
-        ref DateTime? lastSourceTime,
-        ref int sourceRowIndex,
-        ref List<SkippedSourceRow>? skippedSourceRows)
+        HistoricalReadState state,
+        ref int sourceRowIndex)
     {
-        ParseHelpersUtf8.ReadAndExpect(
-            ref reader, JsonTokenType.StartArray, "data", RootKey);
-
+        ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", RootKey);
         while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
         {
             if (reader.TokenType != JsonTokenType.StartArray)
-            {
                 ParseHelpersUtf8.SchemaMismatch(
-                    $"[candles] Ожидался StartArray строки {sourceRowIndex}, " +
-                    $"получено {reader.TokenType}.");
-            }
+                    $"[candles] Ожидался StartArray строки {sourceRowIndex}, получено {reader.TokenType}.");
 
             string? rowError = string.IsNullOrWhiteSpace(taskSecId)
                 ? "Загрузка свечей отвергнута: secid пустой."
                 : null;
-            double? open = null;
-            double? close = null;
-            double? high = null;
-            double? low = null;
-            double? value = null;
-            double? volume = null;
-            DateTime? beginTime = null;
-            DateTime? endTime = null;
+            double? open = ReadNextDouble(ref reader, sourceRowIndex, 0, ref rowError);
+            double? close = ReadNextDouble(ref reader, sourceRowIndex, 1, ref rowError);
+            double? high = ReadNextDouble(ref reader, sourceRowIndex, 2, ref rowError);
+            double? low = ReadNextDouble(ref reader, sourceRowIndex, 3, ref rowError);
+            double? value = ReadNextDouble(ref reader, sourceRowIndex, 4, ref rowError);
+            double? volume = ReadNextDouble(ref reader, sourceRowIndex, 5, ref rowError);
+            DateTime? beginTime = ReadNextDateTime(ref reader, sourceRowIndex, 6, required: true, ref rowError);
+            DateTime? endTime = ReadNextDateTime(ref reader, sourceRowIndex, 7, required: false, ref rowError);
+            ParseHelpersUtf8.ExpectRowEnd(ref reader, sourceRowIndex, RootKey, MoexColumnSets.Candles.Length);
 
-            for (int position = 0; position < 8; position++)
-            {
-                if (!reader.Read())
-                {
-                    ParseHelpersUtf8.SchemaMismatch(
-                        $"[candles] Неожиданный конец JSON в строке {sourceRowIndex}, " +
-                        $"позиция {position}.");
-                }
+            sourceRowIndex++;
+            state.RecordPhysicalRow();
+            state.SetPageLastSourceTime(beginTime);
 
-                if (reader.TokenType == JsonTokenType.EndArray)
-                {
-                    ParseHelpersUtf8.SchemaMismatch(
-                        $"[candles] Короткая строка данных: ожидалось 8 колонок, " +
-                        $"получено {position} (строка {sourceRowIndex}).");
-                }
-
-                switch (position)
-                {
-                    case 0:
-                        open = ReadOptionalDouble(ref reader, sourceRowIndex, position, ref rowError);
-                        break;
-                    case 1:
-                        close = ReadOptionalDouble(ref reader, sourceRowIndex, position, ref rowError);
-                        break;
-                    case 2:
-                        high = ReadOptionalDouble(ref reader, sourceRowIndex, position, ref rowError);
-                        break;
-                    case 3:
-                        low = ReadOptionalDouble(ref reader, sourceRowIndex, position, ref rowError);
-                        break;
-                    case 4:
-                        value = ReadOptionalDouble(ref reader, sourceRowIndex, position, ref rowError);
-                        break;
-                    case 5:
-                        volume = ReadOptionalDouble(ref reader, sourceRowIndex, position, ref rowError);
-                        break;
-                    case 6:
-                        beginTime = ReadDateTime(
-                            ref reader, sourceRowIndex, position, required: true, ref rowError);
-                        break;
-                    case 7:
-                        endTime = ReadDateTime(
-                            ref reader, sourceRowIndex, position, required: false, ref rowError);
-                        break;
-                }
-            }
-
-            if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
-            {
-                ParseHelpersUtf8.SchemaMismatch(
-                    $"[candles] Ожидался EndArray после 8 колонок " +
-                    $"(строка {sourceRowIndex}).");
-            }
-
-            lastSourceTime = beginTime;
             ulong begin = 0;
             ulong? end = null;
             if (beginTime is DateTime sourceBegin)
@@ -210,35 +138,29 @@ public static class CandleHistoryParser
                     IngestPriority = 1,
                 };
                 writer.Append(in row);
-                acceptedRowsCount++;
+                state.RecordAccepted(beginTime, covered: true, receivedMetric: true);
             }
             else
             {
-                skippedSourceRows ??= new List<SkippedSourceRow>();
-                skippedSourceRows.Add(new SkippedSourceRow(
-                    sourceRowIndex,
+                state.RecordSkipped(
+                    sourceRowIndex - 1,
                     beginTime,
-                    rowError ?? "Свеча отвергнута: begin пустой."));
+                    rowError ?? "Свеча отвергнута: begin пустой.");
             }
-
-            sourceRowIndex++;
         }
     }
 
-    private static double? ReadOptionalDouble(
+    private static double? ReadNextDouble(
         ref Utf8JsonReader reader,
         int rowIndex,
         int columnIndex,
         ref string? rowError)
     {
-        if (reader.TokenType == JsonTokenType.Null)
-            return null;
-
         try
         {
-            return ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, columnIndex, RootKey);
+            return ParseHelpersUtf8.ReadNextNullableDouble(ref reader, rowIndex, RootKey, columnIndex);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or FormatException)
+        catch (Exception ex) when (ex is InvalidOperationException or FormatException or ArgumentException)
         {
             rowError ??= ex.Message;
             reader.Skip();
@@ -246,32 +168,34 @@ public static class CandleHistoryParser
         }
     }
 
-    private static DateTime? ReadDateTime(
+    private static DateTime? ReadNextDateTime(
         ref Utf8JsonReader reader,
         int rowIndex,
         int columnIndex,
         bool required,
         ref string? rowError)
     {
-        if (reader.TokenType == JsonTokenType.Null)
-        {
-            if (required)
-                rowError ??= "Свеча отвергнута: begin пустой.";
-            return null;
-        }
-
         try
         {
-            DateTime? value = ParseHelpersUtf8.ReadDateTimeUtf8(
-                ref reader, rowIndex, columnIndex, RootKey);
-            if (required && value is null)
-                rowError ??= "Свеча отвергнута: begin имеет неверный формат времени.";
-            else if (!required && value is null)
-                rowError ??= "Свеча отвергнута: end имеет неверный формат времени.";
+            DateTime? value = ParseHelpersUtf8.ReadNextNullableDateTime(
+                ref reader, rowIndex, RootKey, columnIndex, out bool wasNull);
+            if (wasNull)
+            {
+                if (required)
+                    rowError ??= "Свеча отвергнута: begin пустой.";
+                return null;
+            }
 
+            if (value is null)
+            {
+                rowError ??= required
+                    ? "Свеча отвергнута: begin имеет неверный формат времени."
+                    : "Свеча отвергнута: end имеет неверный формат времени.";
+                return null;
+            }
             return value;
         }
-        catch (Exception ex) when (ex is InvalidOperationException or FormatException)
+        catch (Exception ex) when (ex is InvalidOperationException or FormatException or ArgumentException)
         {
             rowError ??= ex.Message;
             reader.Skip();

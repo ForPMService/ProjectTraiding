@@ -401,6 +401,45 @@ namespace ProjectTraiding.Moex.Parsing
             return ReadString(ref reader, rowIndex, columnIndex, rootKey);
         }
 
+        internal static DateOnly? ReadNextMomentDate(
+            ref Utf8JsonReader reader,
+            int rowIndex,
+            int columnIndex,
+            string rootKey,
+            out string? raw)
+        {
+            raw = null;
+            if (!ReadNextScalar(ref reader, rowIndex, rootKey, columnIndex))
+                return null;
+
+            return ReadMomentDateUtf8(ref reader, rowIndex, columnIndex, rootKey, out raw);
+        }
+
+        internal static TimeOnly? ReadNextMomentTime(
+            ref Utf8JsonReader reader,
+            int rowIndex,
+            int columnIndex,
+            string rootKey,
+            out string? raw)
+        {
+            raw = null;
+            if (!ReadNextScalar(ref reader, rowIndex, rootKey, columnIndex))
+                return null;
+
+            return ReadMomentTimeUtf8(ref reader, rowIndex, columnIndex, rootKey, out raw);
+        }
+
+        internal static DateTime? ReadNextNullableDateTime(
+            ref Utf8JsonReader reader,
+            int rowIndex,
+            string rootKey,
+            int columnIndex,
+            out bool wasNull)
+        {
+            wasNull = !ReadNextScalar(ref reader, rowIndex, rootKey, columnIndex);
+            return wasNull ? null : ReadDateTimeUtf8(ref reader, rowIndex, columnIndex, rootKey);
+        }
+
         internal static void ExpectNextNullableString(
             ref Utf8JsonReader reader,
             int rowIndex,

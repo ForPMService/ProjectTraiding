@@ -1,48 +1,41 @@
-using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using System.Diagnostics.CodeAnalysis;
+using ProjectTraiding.Moex.StorageBase.ClickHouse;
 
 namespace ProjectTraiding.Moex.Series;
 
-/// <summary>
-/// Holds only the unresolved suffix of a HI2 or MegaAlerts page. Rows before the
-/// current time-group boundary are appended as soon as that boundary is known.
-/// </summary>
+/// <summary>Holds only the unresolved final timestamp group for one cursor page.</summary>
 internal sealed class HistoricalSeriesTimeGroupTail<
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow> where TRow : struct
 {
     private readonly ProtobufBatchWriter<TRow> _writer;
-    private readonly DateTime? _cursorSourceTime;
+    private readonly HistoricalReadState _state;
+    private readonly DateTime? _confirmedSourceTime;
+    private readonly string _method;
+    private readonly string? _from;
+    private readonly string? _till;
+    private readonly string _pagePosition;
     private readonly List<Entry> _pending = [];
-    private readonly List<SkippedSourceRow> _skipped = [];
-    private int _sourceRowsCount;
-    private int _acceptedRowsCount;
-    private int _parsedValidRowsCount;
-    private DateTime? _lastSourceTime;
-    private DateTime? _maxAcceptedSourceTime;
+    private int _stableSourceRowsCount;
     private int _pendingParsedValidRowsCount;
 
     public HistoricalSeriesTimeGroupTail(
         ProtobufBatchWriter<TRow> writer,
-        DateTime? lastSourceTime = null)
+        HistoricalReadState state,
+        DateTime? confirmedSourceTime = null)
     {
         _writer = writer;
-        _cursorSourceTime = lastSourceTime;
+        _state = state;
+        _confirmedSourceTime = confirmedSourceTime;
+        _method = state.PageMethod;
+        _from = state.PageFrom;
+        _till = state.PageTill;
+        _pagePosition = state.PagePosition;
     }
 
-    public int StableSourceRowsCount => _sourceRowsCount;
+    public int StableSourceRowsCount => _stableSourceRowsCount;
     public int PendingSourceRowsCount => _pending.Count;
     public int PendingParsedValidRowsCount => _pendingParsedValidRowsCount;
-    public int FullSourceRowsCount => checked(_sourceRowsCount + _pending.Count);
-
-    public HistoricalSeriesParsedPage PrefixPage => new(
-        _sourceRowsCount,
-        _acceptedRowsCount,
-        _skipped.Count == 0 ? null : _skipped,
-        _lastSourceTime)
-    {
-        MaxAcceptedSourceTime = _maxAcceptedSourceTime,
-        ParsedValidRowsCount = _parsedValidRowsCount,
-    };
+    public int FullSourceRowsCount => checked(_stableSourceRowsCount + _pending.Count);
 
     public void AddAccepted(int sourceIndex, DateTime? time, in TRow row)
     {
@@ -57,10 +50,21 @@ internal sealed class HistoricalSeriesTimeGroupTail<
         CommitStablePrefix();
     }
 
-    public HistoricalSeriesParsedPage CompletePage()
+    public void CommitComplete()
     {
-        CommitPrefix(_pending.Count);
-        return PrefixPage;
+        CommitPrefix(_pending.Count, receivedMetric: false);
+    }
+
+    /// <summary>Accounts pending refusals only when the operation cannot continue the group.</summary>
+    public void RecordPendingSkipsFrom(int sourceOffset = 0)
+    {
+        for (int index = Math.Max(0, sourceOffset); index < _pending.Count; index++)
+        {
+            Entry entry = _pending[index];
+            if (!entry.Accepted)
+                _state.RecordSkipped(
+                    entry.SourceIndex, entry.Time, entry.Reason!, _method, _from, _till, _pagePosition);
+        }
     }
 
     private void CommitStablePrefix()
@@ -70,8 +74,6 @@ internal sealed class HistoricalSeriesTimeGroupTail<
             CommitPrefix(tailStart);
     }
 
-    // This mirrors MoexHistoryPageReader.FindTailGroupStart: unknown timestamps
-    // stay attached to the nearest known group on their right when one exists.
     private int FindTailGroupStart()
     {
         if (_pending.Count == 0)
@@ -82,56 +84,44 @@ internal sealed class HistoricalSeriesTimeGroupTail<
         {
             DateTime? time = _pending[index].Time;
             if (groupTime is null)
-            {
                 groupTime = time;
-            }
             else if (time is not null && time != groupTime)
-            {
                 return index + 1;
-            }
         }
-
         return 0;
     }
 
-    private void CommitPrefix(int count)
+    private void CommitPrefix(int count, bool receivedMetric = true)
     {
         for (int index = 0; index < count; index++)
         {
             Entry entry = _pending[index];
+            _state.SetPageLastSourceTime(entry.Time);
             if (entry.Accepted)
             {
-                _parsedValidRowsCount++;
                 _pendingParsedValidRowsCount--;
-                if (IsAtOrAfterCursor(entry.Time))
+                _state.RecordParsedValidRow(receivedMetric);
+                bool beforeCursor = _confirmedSourceTime is DateTime cursor
+                    && entry.Time is DateTime time
+                    && time < cursor;
+                if (!beforeCursor)
                 {
                     TRow row = entry.Row;
                     _writer.Append(in row);
-                    _acceptedRowsCount++;
-                    if (entry.Time is DateTime acceptedTime
-                        && (_maxAcceptedSourceTime is null || acceptedTime > _maxAcceptedSourceTime.Value))
-                    {
-                        _maxAcceptedSourceTime = acceptedTime;
-                    }
+                    _state.RecordAccepted(entry.Time);
                 }
             }
             else
             {
-                _skipped.Add(new SkippedSourceRow(
-                    entry.SourceIndex, entry.Time, entry.Reason!));
+                _state.RecordSkipped(
+                    entry.SourceIndex, entry.Time, entry.Reason!, _method, _from, _till, _pagePosition);
             }
-
-            _sourceRowsCount++;
-            _lastSourceTime = entry.Time;
+            _stableSourceRowsCount++;
         }
 
         if (count > 0)
             _pending.RemoveRange(0, count);
     }
-
-    private bool IsAtOrAfterCursor(DateTime? sourceTime)
-        => _cursorSourceTime is null
-            || sourceTime is DateTime value && value >= _cursorSourceTime.Value;
 
     private readonly record struct Entry(
         int SourceIndex,

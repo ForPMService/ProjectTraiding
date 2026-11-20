@@ -1,5 +1,7 @@
 using System.Text.Json;
+using System.Collections.Immutable;
 using ProjectTraiding.Moex.Contracts.Dto;
+using ProjectTraiding.Moex.DataFormats;
 using ProjectTraiding.Moex.Parsing;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 
@@ -7,351 +9,248 @@ namespace ProjectTraiding.Moex.Series;
 
 internal static class ObStatsHistoryParser
 {
-    internal static HistoricalSeriesParsedPage ParseStock(
-        ReadOnlySpan<byte> body,
-        MoexSeriesSpec spec,
-        string taskSecId,
-        ProtobufBatchWriter<ObStatsStockRow> writer,
-        DateTime? lastSourceTime,
-        out PaginationCursorDTO cursor,
-        out HistoricalSeriesTimeGroupTail<ObStatsStockRow>? tail)
+    internal static void ParseStock(ReadOnlySpan<byte> body, MoexSeriesSpec spec, string taskSecId,
+        ProtobufBatchWriter<ObStatsStockRow> writer, DateTime? lastSourceTime,
+        HistoricalReadState state, out PaginationCursorDTO cursor)
     {
-        ValidateSpec(spec, "stock", 21);
-        tail = null;
-        cursor = new PaginationCursorDTO();
-        int sourceRows = 0;
-        int acceptedRows = 0;
-        DateTime? pageLastSourceTime = null;
-        DateTime? maxAcceptedSourceTime = null;
-        List<SkippedSourceRow>? skipped = null;
+        ValidateSpec(spec, "stock", MoexColumnSets.ObStatsStock);
+        ParseEnvelope(body, spec, MoexColumnSets.ObStatsStock, state, out cursor,
+            (ref Utf8JsonReader reader) => ReadStockRows(ref reader, spec, taskSecId, writer, lastSourceTime, state));
+    }
+
+    internal static void ParseFutures(ReadOnlySpan<byte> body, MoexSeriesSpec spec, string taskSecId,
+        ProtobufBatchWriter<ObStatsFuturesRow> writer, DateTime? lastSourceTime,
+        HistoricalReadState state, out PaginationCursorDTO cursor)
+    {
+        ValidateSpec(spec, "futures", MoexColumnSets.ObStatsFutures);
+        ParseEnvelope(body, spec, MoexColumnSets.ObStatsFutures, state, out cursor,
+            (ref Utf8JsonReader reader) => ReadFuturesRows(ref reader, spec, taskSecId, writer, lastSourceTime, state));
+    }
+
+    private delegate void ReadRows(ref Utf8JsonReader reader);
+
+    private static void ParseEnvelope(ReadOnlySpan<byte> body, MoexSeriesSpec spec,
+        ImmutableArray<string> columns, HistoricalReadState state,
+        out PaginationCursorDTO cursor, ReadRows readRows)
+    {
         Utf8JsonReader reader = new(body);
         ParseHelpersUtf8.SkipToRootObject(ref reader, spec.RootKey);
         bool foundColumns = false;
         bool foundData = false;
-
         while (reader.Read())
         {
             if (reader.TokenType == JsonTokenType.EndObject)
                 break;
             if (reader.TokenType != JsonTokenType.PropertyName)
                 continue;
-
             if (reader.ValueTextEquals("columns"u8))
             {
                 foundColumns = true;
-                ParseHelpersUtf8.ValidateInputColumnsUtf8(ref reader, spec.InputColumns, spec.RootKey);
+                ParseHelpersUtf8.ValidateInputColumnsUtf8(ref reader, columns, spec.RootKey);
             }
             else if (reader.ValueTextEquals("data"u8))
             {
                 if (!foundColumns)
-                    ParseHelpersUtf8.SchemaMismatch("[data] Секция 'data' встретилась до 'columns'. Порядок columns → data обязателен.");
+                    ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Секция 'data' встретилась до 'columns'. Порядок columns → data обязателен.");
                 foundData = true;
-                ReadStockRows(ref reader, spec, taskSecId, writer, lastSourceTime,
-                    ref sourceRows, ref acceptedRows, ref pageLastSourceTime,
-                    ref maxAcceptedSourceTime, ref skipped);
+                readRows(ref reader);
             }
             else
             {
                 reader.Skip();
             }
         }
-
         ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, spec.RootKey);
         cursor = ReadCursor(ref reader);
-        return new HistoricalSeriesParsedPage(sourceRows, acceptedRows, skipped, pageLastSourceTime)
-        {
-            MaxAcceptedSourceTime = maxAcceptedSourceTime,
-            ParsedValidRowsCount = sourceRows - (skipped?.Count ?? 0),
-        };
     }
 
-    internal static HistoricalSeriesParsedPage ParseFutures(
-        ReadOnlySpan<byte> body,
-        MoexSeriesSpec spec,
-        string taskSecId,
-        ProtobufBatchWriter<ObStatsFuturesRow> writer,
-        DateTime? lastSourceTime,
-        out PaginationCursorDTO cursor,
-        out HistoricalSeriesTimeGroupTail<ObStatsFuturesRow>? tail)
-    {
-        ValidateSpec(spec, "futures", 35);
-        tail = null;
-        cursor = new PaginationCursorDTO();
-        int sourceRows = 0;
-        int acceptedRows = 0;
-        DateTime? pageLastSourceTime = null;
-        DateTime? maxAcceptedSourceTime = null;
-        List<SkippedSourceRow>? skipped = null;
-        Utf8JsonReader reader = new(body);
-        ParseHelpersUtf8.SkipToRootObject(ref reader, spec.RootKey);
-        bool foundColumns = false;
-        bool foundData = false;
-
-        while (reader.Read())
-        {
-            if (reader.TokenType == JsonTokenType.EndObject)
-                break;
-            if (reader.TokenType != JsonTokenType.PropertyName)
-                continue;
-
-            if (reader.ValueTextEquals("columns"u8))
-            {
-                foundColumns = true;
-                ParseHelpersUtf8.ValidateInputColumnsUtf8(ref reader, spec.InputColumns, spec.RootKey);
-            }
-            else if (reader.ValueTextEquals("data"u8))
-            {
-                if (!foundColumns)
-                    ParseHelpersUtf8.SchemaMismatch("[data] Секция 'data' встретилась до 'columns'. Порядок columns → data обязателен.");
-                foundData = true;
-                ReadFuturesRows(ref reader, spec, taskSecId, writer, lastSourceTime,
-                    ref sourceRows, ref acceptedRows, ref pageLastSourceTime,
-                    ref maxAcceptedSourceTime, ref skipped);
-            }
-            else
-            {
-                reader.Skip();
-            }
-        }
-
-        ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, spec.RootKey);
-        cursor = ReadCursor(ref reader);
-        return new HistoricalSeriesParsedPage(sourceRows, acceptedRows, skipped, pageLastSourceTime)
-        {
-            MaxAcceptedSourceTime = maxAcceptedSourceTime,
-            ParsedValidRowsCount = sourceRows - (skipped?.Count ?? 0),
-        };
-    }
-
-    private static void ReadStockRows(
-        ref Utf8JsonReader reader,
-        MoexSeriesSpec spec,
-        string taskSecId,
-        ProtobufBatchWriter<ObStatsStockRow> writer,
-        DateTime? lastSourceTime,
-        ref int sourceRows,
-        ref int acceptedRows,
-        ref DateTime? pageLastSourceTime,
-        ref DateTime? maxAcceptedSourceTime,
-        ref List<SkippedSourceRow>? skipped)
+    private static void ReadStockRows(ref Utf8JsonReader reader, MoexSeriesSpec spec, string taskSecId,
+        ProtobufBatchWriter<ObStatsStockRow> writer, DateTime? lastSourceTime, HistoricalReadState state)
     {
         ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", spec.RootKey);
+        int rowIndex = 0;
         while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
         {
-            int rowIndex = sourceRows;
-            if (reader.TokenType != JsonTokenType.StartArray)
-                ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Ожидался StartArray строки {rowIndex}, получено {reader.TokenType}.");
-
+            ExpectRowStart(ref reader, spec, rowIndex);
+            state.RecordPhysicalRow();
             SourceTimeParts timeParts = default;
-            string? rowError = string.IsNullOrWhiteSpace(taskSecId) ? "Загрузка статистики стакана отвергнута: secid пустой." : null;
+            string? error = string.IsNullOrWhiteSpace(taskSecId) ? "Загрузка статистики стакана отвергнута: secid пустой." : null;
             ObStatsStockRow row = new() { Secid = taskSecId };
-            for (int position = 0; position < spec.InputColumns.Length; position++)
-            {
-                ReadCell(ref reader, spec, rowIndex, position);
-                if (reader.TokenType == JsonTokenType.Null)
-                    continue;
-                try
-                {
-                    switch (position)
-                    {
-                        case 0: ReadMomentDate(ref reader, spec, rowIndex, ref timeParts); break;
-                        case 1: ReadMomentTime(ref reader, spec, rowIndex, ref timeParts); break;
-                        case 2: ParseHelpersUtf8.ExpectString(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 3: row.SpreadBbo = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 4: row.SpreadLv10 = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 5: row.Spread1Mio = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 6: row.LevelsB = ParseHelpersUtf8.ReadInt(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 7: row.LevelsS = ParseHelpersUtf8.ReadInt(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 8: row.VolB = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 9: row.VolS = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 10: row.ValB = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 11: row.ValS = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 12: row.ImbalanceVolBbo = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 13: row.ImbalanceValBbo = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 14: row.ImbalanceVol = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 15: row.ImbalanceVal = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 16: row.VwapB = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 17: row.VwapS = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 18: row.VwapB1Mio = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 19: row.VwapS1Mio = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 20: row.Systime = ReadOptionalWallClock(ref reader, spec, rowIndex, position, ref rowError); break;
-                        default: ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Неизвестная исходная колонка {position}."); break;
-                    }
-                }
-                catch (Exception ex) when (ex is InvalidOperationException or FormatException or ArgumentException)
-                {
-                    rowError ??= ex.Message;
-                    reader.Skip();
-                }
-            }
+            ReadMomentDate(ref reader, spec, rowIndex, 0, ref timeParts, ref error);
+            ReadMomentTime(ref reader, spec, rowIndex, 1, ref timeParts, ref error);
+            ExpectString(ref reader, spec, rowIndex, 2, ref error);
+            row.SpreadBbo = ReadDouble(ref reader, spec, rowIndex, 3, ref error);
+            row.SpreadLv10 = ReadDouble(ref reader, spec, rowIndex, 4, ref error);
+            row.Spread1Mio = ReadDouble(ref reader, spec, rowIndex, 5, ref error);
+            row.LevelsB = ReadInt(ref reader, spec, rowIndex, 6, ref error);
+            row.LevelsS = ReadInt(ref reader, spec, rowIndex, 7, ref error);
+            row.VolB = ReadLong(ref reader, spec, rowIndex, 8, ref error);
+            row.VolS = ReadLong(ref reader, spec, rowIndex, 9, ref error);
+            row.ValB = ReadLong(ref reader, spec, rowIndex, 10, ref error);
+            row.ValS = ReadLong(ref reader, spec, rowIndex, 11, ref error);
+            row.ImbalanceVolBbo = ReadDouble(ref reader, spec, rowIndex, 12, ref error);
+            row.ImbalanceValBbo = ReadDouble(ref reader, spec, rowIndex, 13, ref error);
+            row.ImbalanceVol = ReadDouble(ref reader, spec, rowIndex, 14, ref error);
+            row.ImbalanceVal = ReadDouble(ref reader, spec, rowIndex, 15, ref error);
+            row.VwapB = ReadDouble(ref reader, spec, rowIndex, 16, ref error);
+            row.VwapS = ReadDouble(ref reader, spec, rowIndex, 17, ref error);
+            row.VwapB1Mio = ReadDouble(ref reader, spec, rowIndex, 18, ref error);
+            row.VwapS1Mio = ReadDouble(ref reader, spec, rowIndex, 19, ref error);
+            row.Systime = ReadSystime(ref reader, spec, rowIndex, 20, ref error);
+            ParseHelpersUtf8.ExpectRowEnd(ref reader, rowIndex, spec.RootKey, MoexColumnSets.ObStatsStock.Length);
 
-            FinishRow(ref reader, spec, rowIndex);
             DateTime? time = TryReadSourceTime(in timeParts);
-            try
+            state.SetPageLastSourceTime(time);
+            if (error is null)
             {
-                if (rowError is not null)
-                    throw new InvalidOperationException(rowError);
-                row.SourceTime = CandleDateTime64.ToUnixWholeSeconds(MoexClickHouseTime.BuildSourceTime(in timeParts));
+                try { row.SourceTime = CandleDateTime64.ToUnixWholeSeconds(MoexClickHouseTime.BuildSourceTime(in timeParts)); }
+                catch (Exception ex) when (IsRowRejection(ex)) { error ??= ex.Message; }
             }
-            catch (Exception ex) when (ex is InvalidOperationException or FormatException or ArgumentException)
+            if (error is null)
             {
-                rowError ??= ex.Message;
-            }
-
-            pageLastSourceTime = time;
-            if (rowError is null)
-            {
-                if (lastSourceTime is null || time is DateTime rowTime && rowTime >= lastSourceTime.Value)
+                state.RecordParsedValidRow(receivedMetric: true);
+                if (!IsBeforeCursor(time, lastSourceTime))
                 {
                     writer.Append(in row);
-                    acceptedRows++;
-                    if (time is DateTime acceptedTime
-                        && (maxAcceptedSourceTime is null || acceptedTime > maxAcceptedSourceTime.Value))
-                    {
-                        maxAcceptedSourceTime = acceptedTime;
-                    }
+                    state.RecordAccepted(time);
                 }
             }
-            else
-            {
-                skipped ??= [];
-                skipped.Add(new SkippedSourceRow(rowIndex, time, rowError));
-            }
-            sourceRows++;
+            else state.RecordSkipped(rowIndex, time, error);
+            rowIndex++;
         }
     }
 
-    private static void ReadFuturesRows(
-        ref Utf8JsonReader reader,
-        MoexSeriesSpec spec,
-        string taskSecId,
-        ProtobufBatchWriter<ObStatsFuturesRow> writer,
-        DateTime? lastSourceTime,
-        ref int sourceRows,
-        ref int acceptedRows,
-        ref DateTime? pageLastSourceTime,
-        ref DateTime? maxAcceptedSourceTime,
-        ref List<SkippedSourceRow>? skipped)
+    private static void ReadFuturesRows(ref Utf8JsonReader reader, MoexSeriesSpec spec, string taskSecId,
+        ProtobufBatchWriter<ObStatsFuturesRow> writer, DateTime? lastSourceTime, HistoricalReadState state)
     {
         ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", spec.RootKey);
+        int rowIndex = 0;
         while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
         {
-            int rowIndex = sourceRows;
-            if (reader.TokenType != JsonTokenType.StartArray)
-                ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Ожидался StartArray строки {rowIndex}, получено {reader.TokenType}.");
-
+            ExpectRowStart(ref reader, spec, rowIndex);
+            state.RecordPhysicalRow();
             SourceTimeParts timeParts = default;
-            string? rowError = string.IsNullOrWhiteSpace(taskSecId) ? "Загрузка статистики стакана отвергнута: secid пустой." : null;
+            string? error = string.IsNullOrWhiteSpace(taskSecId) ? "Загрузка статистики стакана отвергнута: secid пустой." : null;
             ObStatsFuturesRow row = new() { Secid = taskSecId };
-            for (int position = 0; position < spec.InputColumns.Length; position++)
-            {
-                ReadCell(ref reader, spec, rowIndex, position);
-                if (reader.TokenType == JsonTokenType.Null)
-                    continue;
-                try
-                {
-                    switch (position)
-                    {
-                        case 0: ReadMomentDate(ref reader, spec, rowIndex, ref timeParts); break;
-                        case 1: ReadMomentTime(ref reader, spec, rowIndex, ref timeParts); break;
-                        case 2: ParseHelpersUtf8.ExpectString(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 3: row.AssetCode = ParseHelpersUtf8.ReadString(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 4: row.MidPrice = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 5: row.MicroPrice = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 6: row.SpreadL1 = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 7: row.SpreadL2 = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 8: row.SpreadL3 = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 9: row.SpreadL5 = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 10: row.SpreadL10 = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 11: row.SpreadL20 = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 12: row.LevelsB = ParseHelpersUtf8.ReadInt(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 13: row.LevelsS = ParseHelpersUtf8.ReadInt(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 14: row.VolBL1 = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 15: row.VolBL2 = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 16: row.VolBL3 = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 17: row.VolBL5 = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 18: row.VolBL10 = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 19: row.VolBL20 = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 20: row.VolSL1 = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 21: row.VolSL2 = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 22: row.VolSL3 = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 23: row.VolSL5 = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 24: row.VolSL10 = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 25: row.VolSL20 = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 26: row.VwapBL3 = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 27: row.VwapBL5 = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 28: row.VwapBL10 = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 29: row.VwapBL20 = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 30: row.VwapSL3 = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 31: row.VwapSL5 = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 32: row.VwapSL10 = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 33: row.VwapSL20 = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, spec.RootKey); break;
-                        case 34: row.Systime = ReadOptionalWallClock(ref reader, spec, rowIndex, position, ref rowError); break;
-                        default: ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Неизвестная исходная колонка {position}."); break;
-                    }
-                }
-                catch (Exception ex) when (ex is InvalidOperationException or FormatException or ArgumentException)
-                {
-                    rowError ??= ex.Message;
-                    reader.Skip();
-                }
-            }
+            ReadMomentDate(ref reader, spec, rowIndex, 0, ref timeParts, ref error);
+            ReadMomentTime(ref reader, spec, rowIndex, 1, ref timeParts, ref error);
+            ExpectString(ref reader, spec, rowIndex, 2, ref error);
+            row.AssetCode = ReadString(ref reader, spec, rowIndex, 3, ref error);
+            row.MidPrice = ReadDouble(ref reader, spec, rowIndex, 4, ref error);
+            row.MicroPrice = ReadDouble(ref reader, spec, rowIndex, 5, ref error);
+            row.SpreadL1 = ReadDouble(ref reader, spec, rowIndex, 6, ref error);
+            row.SpreadL2 = ReadDouble(ref reader, spec, rowIndex, 7, ref error);
+            row.SpreadL3 = ReadDouble(ref reader, spec, rowIndex, 8, ref error);
+            row.SpreadL5 = ReadDouble(ref reader, spec, rowIndex, 9, ref error);
+            row.SpreadL10 = ReadDouble(ref reader, spec, rowIndex, 10, ref error);
+            row.SpreadL20 = ReadDouble(ref reader, spec, rowIndex, 11, ref error);
+            row.LevelsB = ReadInt(ref reader, spec, rowIndex, 12, ref error);
+            row.LevelsS = ReadInt(ref reader, spec, rowIndex, 13, ref error);
+            row.VolBL1 = ReadLong(ref reader, spec, rowIndex, 14, ref error);
+            row.VolBL2 = ReadLong(ref reader, spec, rowIndex, 15, ref error);
+            row.VolBL3 = ReadLong(ref reader, spec, rowIndex, 16, ref error);
+            row.VolBL5 = ReadLong(ref reader, spec, rowIndex, 17, ref error);
+            row.VolBL10 = ReadLong(ref reader, spec, rowIndex, 18, ref error);
+            row.VolBL20 = ReadLong(ref reader, spec, rowIndex, 19, ref error);
+            row.VolSL1 = ReadLong(ref reader, spec, rowIndex, 20, ref error);
+            row.VolSL2 = ReadLong(ref reader, spec, rowIndex, 21, ref error);
+            row.VolSL3 = ReadLong(ref reader, spec, rowIndex, 22, ref error);
+            row.VolSL5 = ReadLong(ref reader, spec, rowIndex, 23, ref error);
+            row.VolSL10 = ReadLong(ref reader, spec, rowIndex, 24, ref error);
+            row.VolSL20 = ReadLong(ref reader, spec, rowIndex, 25, ref error);
+            row.VwapBL3 = ReadDouble(ref reader, spec, rowIndex, 26, ref error);
+            row.VwapBL5 = ReadDouble(ref reader, spec, rowIndex, 27, ref error);
+            row.VwapBL10 = ReadDouble(ref reader, spec, rowIndex, 28, ref error);
+            row.VwapBL20 = ReadDouble(ref reader, spec, rowIndex, 29, ref error);
+            row.VwapSL3 = ReadDouble(ref reader, spec, rowIndex, 30, ref error);
+            row.VwapSL5 = ReadDouble(ref reader, spec, rowIndex, 31, ref error);
+            row.VwapSL10 = ReadDouble(ref reader, spec, rowIndex, 32, ref error);
+            row.VwapSL20 = ReadDouble(ref reader, spec, rowIndex, 33, ref error);
+            row.Systime = ReadSystime(ref reader, spec, rowIndex, 34, ref error);
+            ParseHelpersUtf8.ExpectRowEnd(ref reader, rowIndex, spec.RootKey, MoexColumnSets.ObStatsFutures.Length);
 
-            FinishRow(ref reader, spec, rowIndex);
             DateTime? time = TryReadSourceTime(in timeParts);
-            try
+            state.SetPageLastSourceTime(time);
+            if (error is null)
             {
-                if (rowError is not null)
-                    throw new InvalidOperationException(rowError);
-                row.SourceTime = CandleDateTime64.ToUnixWholeSeconds(MoexClickHouseTime.BuildSourceTime(in timeParts));
+                try { row.SourceTime = CandleDateTime64.ToUnixWholeSeconds(MoexClickHouseTime.BuildSourceTime(in timeParts)); }
+                catch (Exception ex) when (IsRowRejection(ex)) { error ??= ex.Message; }
             }
-            catch (Exception ex) when (ex is InvalidOperationException or FormatException or ArgumentException)
+            if (error is null)
             {
-                rowError ??= ex.Message;
-            }
-
-            pageLastSourceTime = time;
-            if (rowError is null)
-            {
-                if (lastSourceTime is null || time is DateTime rowTime && rowTime >= lastSourceTime.Value)
+                state.RecordParsedValidRow(receivedMetric: true);
+                if (!IsBeforeCursor(time, lastSourceTime))
                 {
                     writer.Append(in row);
-                    acceptedRows++;
-                    if (time is DateTime acceptedTime
-                        && (maxAcceptedSourceTime is null || acceptedTime > maxAcceptedSourceTime.Value))
-                    {
-                        maxAcceptedSourceTime = acceptedTime;
-                    }
+                    state.RecordAccepted(time);
                 }
             }
-            else
-            {
-                skipped ??= [];
-                skipped.Add(new SkippedSourceRow(rowIndex, time, rowError));
-            }
-            sourceRows++;
+            else state.RecordSkipped(rowIndex, time, error);
+            rowIndex++;
         }
     }
 
-    private static void ReadCell(ref Utf8JsonReader reader, MoexSeriesSpec spec, int rowIndex, int position)
+    private static void ReadMomentDate(ref Utf8JsonReader reader, MoexSeriesSpec spec, int row, int column,
+        ref SourceTimeParts parts, ref string? error)
     {
-        if (!reader.Read())
-            ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Неожиданный конец JSON в строке {rowIndex}, позиция {position}.");
-        if (reader.TokenType == JsonTokenType.EndArray)
-            ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Короткая строка: ожидалось {spec.InputColumns.Length} колонок, получено {position} (строка {rowIndex}).");
+        try { parts.Date = ParseHelpersUtf8.ReadNextMomentDate(ref reader, row, column, spec.RootKey, out parts.RawDate); }
+        catch (Exception ex) when (IsRowRejection(ex)) { error ??= ex.Message; reader.Skip(); }
     }
 
-    private static void FinishRow(ref Utf8JsonReader reader, MoexSeriesSpec spec, int rowIndex)
+    private static void ReadMomentTime(ref Utf8JsonReader reader, MoexSeriesSpec spec, int row, int column,
+        ref SourceTimeParts parts, ref string? error)
     {
-        if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
-            ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Ожидался EndArray после {spec.InputColumns.Length} колонок (строка {rowIndex}).");
+        try { parts.Time = ParseHelpersUtf8.ReadNextMomentTime(ref reader, row, column, spec.RootKey, out parts.RawTime); }
+        catch (Exception ex) when (IsRowRejection(ex)) { error ??= ex.Message; reader.Skip(); }
     }
 
-    private static void ReadMomentDate(ref Utf8JsonReader reader, MoexSeriesSpec spec, int rowIndex, ref SourceTimeParts parts)
-        => parts.Date = ParseHelpersUtf8.ReadMomentDateUtf8(ref reader, rowIndex, 0, spec.RootKey, out parts.RawDate);
+    private static void ExpectString(ref Utf8JsonReader reader, MoexSeriesSpec spec, int row, int col, ref string? error)
+    {
+        try { ParseHelpersUtf8.ExpectNextNullableString(ref reader, row, spec.RootKey, col); }
+        catch (Exception ex) when (IsRowRejection(ex)) { error ??= ex.Message; reader.Skip(); }
+    }
 
-    private static void ReadMomentTime(ref Utf8JsonReader reader, MoexSeriesSpec spec, int rowIndex, ref SourceTimeParts parts)
-        => parts.Time = ParseHelpersUtf8.ReadMomentTimeUtf8(ref reader, rowIndex, 1, spec.RootKey, out parts.RawTime);
+    private static string? ReadString(ref Utf8JsonReader reader, MoexSeriesSpec spec, int row, int col, ref string? error)
+    {
+        try { return ParseHelpersUtf8.ReadNextNullableString(ref reader, row, spec.RootKey, col); }
+        catch (Exception ex) when (IsRowRejection(ex)) { error ??= ex.Message; reader.Skip(); return null; }
+    }
+
+    private static double? ReadDouble(ref Utf8JsonReader reader, MoexSeriesSpec spec, int row, int col, ref string? error)
+    {
+        try { return ParseHelpersUtf8.ReadNextNullableDouble(ref reader, row, spec.RootKey, col); }
+        catch (Exception ex) when (IsRowRejection(ex)) { error ??= ex.Message; reader.Skip(); return null; }
+    }
+
+    private static int? ReadInt(ref Utf8JsonReader reader, MoexSeriesSpec spec, int row, int col, ref string? error)
+    {
+        try { return ParseHelpersUtf8.ReadNextNullableInt(ref reader, row, spec.RootKey, col); }
+        catch (Exception ex) when (IsRowRejection(ex)) { error ??= ex.Message; reader.Skip(); return null; }
+    }
+
+    private static long? ReadLong(ref Utf8JsonReader reader, MoexSeriesSpec spec, int row, int col, ref string? error)
+    {
+        try { return ParseHelpersUtf8.ReadNextNullableLong(ref reader, row, spec.RootKey, col); }
+        catch (Exception ex) when (IsRowRejection(ex)) { error ??= ex.Message; reader.Skip(); return null; }
+    }
+
+    private static ulong? ReadSystime(ref Utf8JsonReader reader, MoexSeriesSpec spec, int row, int col, ref string? error)
+    {
+        try
+        {
+            DateTime? value = ParseHelpersUtf8.ReadNextNullableDateTime(ref reader, row, spec.RootKey, col, out bool wasNull);
+            if (value is null && !wasNull && !reader.ValueTextEquals(""u8))
+                error ??= $"[{spec.RootKey}] Некорректное непустое systime в строке {row}.";
+            return value.HasValue ? CandleDateTime64.ToUnixWholeSeconds(value.Value) : null;
+        }
+        catch (Exception ex) when (IsRowRejection(ex)) { error ??= ex.Message; reader.Skip(); return null; }
+    }
+
+    private static void ExpectRowStart(ref Utf8JsonReader reader, MoexSeriesSpec spec, int row)
+    {
+        if (reader.TokenType != JsonTokenType.StartArray)
+            ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Ожидался StartArray строки {row}, получено {reader.TokenType}.");
+    }
 
     private static DateTime? TryReadSourceTime(in SourceTimeParts parts)
     {
@@ -359,21 +258,17 @@ internal static class ObStatsHistoryParser
         catch (Exception ex) when (ex is InvalidOperationException or FormatException or ArgumentException) { return null; }
     }
 
-    private static ulong? ReadOptionalWallClock(ref Utf8JsonReader reader, MoexSeriesSpec spec, int rowIndex, int position, ref string? rowError)
-    {
-        DateTime? value = ParseHelpersUtf8.ReadDateTimeUtf8(ref reader, rowIndex, position, spec.RootKey);
-        if (value is null && !reader.ValueTextEquals(""u8))
-            rowError ??= $"[{spec.RootKey}] Некорректное непустое systime в строке {rowIndex}.";
-        return value.HasValue ? CandleDateTime64.ToUnixWholeSeconds(value.Value) : null;
-    }
+    private static bool IsBeforeCursor(DateTime? sourceTime, DateTime? cursor)
+        => cursor is DateTime cursorTime && sourceTime is DateTime time && time < cursorTime;
+
+    private static bool IsRowRejection(Exception exception)
+        => exception is InvalidOperationException or FormatException or ArgumentException or OverflowException;
 
     private static PaginationCursorDTO ReadCursor(ref Utf8JsonReader reader)
     {
-        PaginationCursorDTO cursor = new();
         while (reader.Read())
         {
-            if (reader.TokenType == JsonTokenType.EndObject)
-                break;
+            if (reader.TokenType == JsonTokenType.EndObject) break;
             if (reader.TokenType == JsonTokenType.PropertyName && reader.ValueTextEquals("data.cursor"u8))
             {
                 try { return ParseHelpersUtf8.ReadCursorRootObject(ref reader); }
@@ -381,12 +276,13 @@ internal static class ObStatsHistoryParser
             }
             reader.Skip();
         }
-        return cursor;
+        return new PaginationCursorDTO();
     }
 
-    private static void ValidateSpec(MoexSeriesSpec spec, string market, int sourceColumns)
+    private static void ValidateSpec(MoexSeriesSpec spec, string market, IReadOnlyList<string> columns)
     {
-        if (spec.DataKind != "obstats" || spec.Market != market || spec.Pagination != PaginationKind.Cursor || spec.InputColumns.Length != sourceColumns)
+        if (spec.DataKind != "obstats" || spec.Market != market || spec.Pagination != PaginationKind.Cursor
+            || !spec.InputColumns.SequenceEqual(columns))
             throw new ArgumentException($"Typed order-book statistics require {market} obstats with cursor pagination.", nameof(spec));
     }
 }
