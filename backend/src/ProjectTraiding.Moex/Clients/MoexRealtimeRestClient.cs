@@ -3,13 +3,7 @@ using ProjectTraiding.Moex.Infrastructure.Buffers;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.DataFormats;
 using ProjectTraiding.Moex.Options;
-using ProjectTraiding.Moex.Parsing;
-using ProjectTraiding.Moex.Parsing.Errors;
-using ProjectTraiding.Moex.Realtime.Series;
-using ProjectTraiding.Moex.Realtime.Subscriptions;
-using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using System.Globalization;
-using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace ProjectTraiding.Moex.Clients
@@ -79,7 +73,6 @@ namespace ProjectTraiding.Moex.Clients
             };
 
         private readonly MoexOptions _options;
-        private readonly ILogger<MoexRealtimeRestClient> _logger;
         private readonly MoexHttpTransport _transport;
 
         public MoexRealtimeRestClient(
@@ -88,7 +81,6 @@ namespace ProjectTraiding.Moex.Clients
             ILogger<MoexRealtimeRestClient> logger)
         {
             _options = options.Value;
-            _logger = logger;
             _transport = new MoexHttpTransport(
                 httpClient,
                 logger,
@@ -102,7 +94,7 @@ namespace ProjectTraiding.Moex.Clients
         // Типизированные realtime endpoints
         // ═══════════════════════════════════════════════════════════
 
-        public async Task<RealtimeStockTradesPage> GetStockTradesAsync(
+        public async Task<RentedBuffer> GetStockTradesAsync(
             string ticker,
             long? afterTradeNo = null,
             Dictionary<string, string>? queryParams = null,
@@ -135,21 +127,11 @@ namespace ProjectTraiding.Moex.Clients
             using HttpResponseMessage response =
                 await _transport.SendAsync(
                     endpoint, queryParams, cancellationToken, MoexFlows.Realtime);
-            using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
+            return await RentedBuffer.RentFromResponseAsync(
                 response, _options.BodyReadTimeout, endpoint, cancellationToken);
-            try
-            {
-                return MoexRealtimeParser.ParseStockTrades(rentedArr.Span, ticker);
-            }
-            catch (MoexSchemaMismatchException ex)
-            {
-                MoexLogMessages.ParseFailed(
-                    _logger, ex, endpoint, MoexErrorTypes.SchemaMismatch, ex.Message);
-                throw;
-            }
         }
 
-        public async Task<RealtimeFuturesTradesPage> GetFuturesTradesAsync(
+        public async Task<RentedBuffer> GetFuturesTradesAsync(
             string ticker,
             long? afterTradeNo = null,
             Dictionary<string, string>? queryParams = null,
@@ -178,21 +160,11 @@ namespace ProjectTraiding.Moex.Clients
             using HttpResponseMessage response =
                 await _transport.SendAsync(
                     endpoint, queryParams, cancellationToken, MoexFlows.Realtime);
-            using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
+            return await RentedBuffer.RentFromResponseAsync(
                 response, _options.BodyReadTimeout, endpoint, cancellationToken);
-            try
-            {
-                return MoexRealtimeParser.ParseFuturesTrades(rentedArr.Span, ticker);
-            }
-            catch (MoexSchemaMismatchException ex)
-            {
-                MoexLogMessages.ParseFailed(
-                    _logger, ex, endpoint, MoexErrorTypes.SchemaMismatch, ex.Message);
-                throw;
-            }
         }
 
-        public async Task<RealtimeOrderbookPage> GetOrderbookAsync(
+        public async Task<RentedBuffer> GetOrderbookAsync(
             string market,
             string ticker,
             CancellationToken cancellationToken = default)
@@ -201,35 +173,21 @@ namespace ProjectTraiding.Moex.Clients
             using HttpResponseMessage response =
                 await _transport.SendAsync(
                     endpoint, OrderbookQueryParams, cancellationToken, MoexFlows.Realtime);
-            using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
+            return await RentedBuffer.RentFromResponseAsync(
                 response, _options.BodyReadTimeout, endpoint, cancellationToken);
-            try
-            {
-                return MoexRealtimeParser.ParseOrderbook(rentedArr.Span, ticker);
-            }
-            catch (MoexSchemaMismatchException ex)
-            {
-                MoexLogMessages.ParseFailed(
-                    _logger, ex, endpoint, MoexErrorTypes.SchemaMismatch, ex.Message);
-                throw;
-            }
         }
 
         /// <summary>
-        /// Свечи торгового дня в московском окне [from, till]. Все страницы окна
-        /// догружаются здесь, потому что у свечей нет курсора следующей записи.
+        /// Получает одну указанную страницу свечей. Пагинацией владеет приёмник.
         /// </summary>
-        public async IAsyncEnumerable<RealtimeCandlesPageSummary> GetCandlesTodayPagesAsync(
+        public async Task<RentedBuffer> GetCandlesPageAsync(
             string market,
             string ticker,
             DateTime from,
             DateTime till,
             int interval,
-            ProtobufBatchWriter<CandleRow> writer,
-            DateTime now,
-            DateTime? lastBegin,
-            CandleSubscriptionRegistry candleSubscriptions,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+            int? start,
+            CancellationToken cancellationToken = default)
         {
             string endpoint = BuildEndpoint(market, ticker, "/candles.json");
             if (till < from)
@@ -240,12 +198,9 @@ namespace ProjectTraiding.Moex.Clients
                     nameof(till));
             }
 
-            int start = 0;
-
             // Окно и перечень колонок на весь вызов одни: собирать словарь и форматировать
             // границы окна на каждой странице незачем. Порядок ключей сохранён — от него
-            // зависит вид адреса, попадающего в события журнала обращений. Смещение
-            // добавляется со второй страницы, как и прежде.
+            // зависит вид адреса, попадающего в события журнала обращений.
             Dictionary<string, string> queryParams = new Dictionary<string, string>
             {
                 ["iss.meta"] = "off",
@@ -257,75 +212,13 @@ namespace ProjectTraiding.Moex.Clients
                 ["till"] = till.ToString(
                     "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
             };
+            if (start is int pageStart && pageStart > 0)
+                queryParams["start"] = pageStart.ToString(CultureInfo.InvariantCulture);
 
-            for (int pageNumber = 1; pageNumber <= _options.MaxPagesPerLoad; pageNumber++)
-            {
-                if (start > 0)
-                    queryParams["start"] = start.ToString(CultureInfo.InvariantCulture);
-
-                List<CandleRow>? acceptedCandles = candleSubscriptions.HasSubscribers
-                    ? new List<CandleRow>()
-                    : null;
-
-                RealtimeCandlesPageSummary page = await FetchCandlesPageAsync(
-                    endpoint,
-                    queryParams,
-                    ticker,
-                    writer,
-                    now,
-                    lastBegin,
-                    acceptedCandles,
-                    cancellationToken);
-
-                for (int i = 0; i < page.RowFailures.Count; i++)
-                {
-                    RealtimeRowFailure failure = page.RowFailures[i];
-                    page.RowFailures[i] = failure with { Position = start + failure.Position };
-                }
-
-                yield return page;
-
-                if (page.SourceRowsCount != CandlesPageLimit)
-                    yield break;
-
-                if (pageNumber == _options.MaxPagesPerLoad)
-                {
-                    throw new InvalidOperationException(
-                        $"Догрузка свечей достигла защитного предела " +
-                        $"Moex:MaxPagesPerLoad={_options.MaxPagesPerLoad} на полной странице.");
-                }
-
-                start += CandlesPageLimit;
-            }
-
-            throw new InvalidOperationException("Недостижимое состояние пагинации свечей.");
-        }
-
-        private async Task<RealtimeCandlesPageSummary> FetchCandlesPageAsync(
-            string endpoint,
-            Dictionary<string, string> queryParams,
-            string ticker,
-            ProtobufBatchWriter<CandleRow> writer,
-            DateTime now,
-            DateTime? lastBegin,
-            List<CandleRow>? acceptedCandles,
-            CancellationToken cancellationToken)
-        {
             using HttpResponseMessage response = await _transport.SendAsync(
                 endpoint, queryParams, cancellationToken, MoexFlows.Realtime);
-            using RentedBuffer rentedArr = await RentedBuffer.RentFromResponseAsync(
+            return await RentedBuffer.RentFromResponseAsync(
                 response, _options.BodyReadTimeout, endpoint, cancellationToken);
-            try
-            {
-                return MoexRealtimeParser.ParseCandles(
-                    rentedArr.Span, ticker, writer, now, lastBegin, acceptedCandles);
-            }
-            catch (MoexSchemaMismatchException ex)
-            {
-                MoexLogMessages.ParseFailed(
-                    _logger, ex, endpoint, MoexErrorTypes.SchemaMismatch, ex.Message);
-                throw;
-            }
         }
 
         // ═══════════════════════════════════════════════════════════
@@ -369,8 +262,6 @@ namespace ProjectTraiding.Moex.Clients
             throw new InvalidOperationException(
                 $"Неизвестный рынок инструмента приёмника: '{market}'.");
         }
-
-        private const int CandlesPageLimit = 500;
 
     }
 }

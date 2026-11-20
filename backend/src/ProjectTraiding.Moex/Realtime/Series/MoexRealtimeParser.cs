@@ -1,66 +1,72 @@
 using System.Globalization;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.DataFormats;
 using ProjectTraiding.Moex.Parsing;
+using ProjectTraiding.Moex.Realtime.Receiver;
 using ProjectTraiding.Moex.Series;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 
 namespace ProjectTraiding.Moex.Realtime.Series;
 
-/// <summary>Stateless, one-pass parsers for the MOEX realtime response shapes.</summary>
+/// <summary>Parsers for MOEX realtime response shapes.</summary>
 public static class MoexRealtimeParser
 {
     private const string DataVersionRootKey = "dataversion";
 
-    public static RealtimeStockTradesPage ParseStockTrades(
+    public static void ParseStockTrades(
         ReadOnlySpan<byte> body,
-        string secid)
+        string secid,
+        ProtobufBatchWriter<RealtimeStockTradeRow>? writer,
+        long? afterTradeNo,
+        bool appendRows,
+        ILogger logger,
+        out int sourceRowsCount,
+        out int acceptedRowsCount,
+        out int rowFailuresCount,
+        out DateTime lastTime,
+        out long? lastTradeNo,
+        out long? maxTradeNo,
+        out DateTime? maxTradeNoTime,
+        out Exception? maxTradeNoTimeFailure)
     {
-        List<RealtimeStockTradeRow> rows = new();
-        List<RealtimeRowFailure> failures = new();
-        DateOnly? sessionDate = null;
-        Exception? sessionDateFailure = null;
-        int sourceRowsCount = 0;
-        DateTime lastTime = default;
-        long? lastTradeNo = null;
-        long? maxTradeNo = null;
-        DateTime? maxTradeNoTime = null;
-        Exception? maxTradeNoTimeFailure = null;
+        if (appendRows && writer is null)
+            throw new ArgumentNullException(nameof(writer));
+
+        DateOnly? sessionDate = ReadDataVersionFirstPass(body, out Exception? sessionDateFailure);
+        sourceRowsCount = 0;
+        acceptedRowsCount = 0;
+        rowFailuresCount = 0;
+        lastTime = default;
+        lastTradeNo = null;
+        maxTradeNo = null;
+        maxTradeNoTime = null;
+        maxTradeNoTimeFailure = null;
 
         Utf8JsonReader reader = new(body);
         ParseHelpersUtf8.EnterResponseObject(ref reader);
         bool foundTrades = false;
-        bool foundDataVersion = false;
-
-        while (!(foundTrades && foundDataVersion) && reader.Read())
+        while (reader.Read())
         {
             if (reader.TokenType == JsonTokenType.EndObject)
                 break;
             if (reader.TokenType != JsonTokenType.PropertyName)
                 continue;
-
-            if (!foundDataVersion && reader.ValueTextEquals(DataVersionRootKey))
+            if (reader.ValueTextEquals("trades"u8))
             {
-                foundDataVersion = true;
-                ParseHelpersUtf8.ExpectObjectStart(ref reader, DataVersionRootKey);
-                sessionDate = ReadDataVersionBlock(
-                    ref reader, out sessionDateFailure);
-            }
-            else if (!foundTrades && reader.ValueTextEquals("trades"u8))
-            {
+                if (foundTrades)
+                {
+                    reader.Skip();
+                    continue;
+                }
                 foundTrades = true;
                 ParseHelpersUtf8.ExpectObjectStart(ref reader, "trades");
                 ReadStockTradesTable(
-                    ref reader,
-                    rows,
-                    failures,
-                    secid,
-                    ref sourceRowsCount,
-                    ref lastTime,
-                    ref lastTradeNo,
-                    ref maxTradeNo,
-                    ref maxTradeNoTime,
-                    ref maxTradeNoTimeFailure);
+                    ref reader, writer, logger, secid, sessionDate, sessionDateFailure,
+                    afterTradeNo, appendRows, ref sourceRowsCount, ref acceptedRowsCount,
+                    ref rowFailuresCount, ref lastTime, ref lastTradeNo, ref maxTradeNo,
+                    ref maxTradeNoTime, ref maxTradeNoTimeFailure);
             }
             else
             {
@@ -68,89 +74,66 @@ public static class MoexRealtimeParser
             }
         }
 
-        if (!foundDataVersion)
-            ParseHelpersUtf8.RootKeyMissing(DataVersionRootKey);
         if (!foundTrades)
             ParseHelpersUtf8.RootKeyMissing("trades");
-
-        if (sessionDateFailure is not null && rows.Count > 0)
+        if (sessionDateFailure is not null && acceptedRowsCount > 0)
         {
-            failures.Add(new RealtimeRowFailure(-1, sessionDateFailure.Message));
-            rows.Clear();
+            acceptedRowsCount = 0;
         }
-        else if (sessionDate is DateOnly date)
-        {
-            uint? clickHouseDate = ToClickHouseDate(date);
-            for (int i = 0; i < rows.Count; i++)
-            {
-                RealtimeStockTradeRow row = rows[i];
-                row.TradeSessionDate = clickHouseDate;
-                rows[i] = row;
-            }
-        }
-
-        return new RealtimeStockTradesPage
-        {
-            Rows = rows,
-            RowFailures = failures,
-            SourceRowsCount = sourceRowsCount,
-            LastTime = lastTime,
-            LastTradeNo = lastTradeNo,
-            MaxTradeNo = maxTradeNo,
-            MaxTradeNoTime = maxTradeNoTime,
-            MaxTradeNoTimeFailure = maxTradeNoTimeFailure,
-        };
     }
 
-    public static RealtimeFuturesTradesPage ParseFuturesTrades(
+    public static void ParseFuturesTrades(
         ReadOnlySpan<byte> body,
-        string secid)
+        string secid,
+        ProtobufBatchWriter<RealtimeFuturesTradeRow>? writer,
+        long? afterTradeNo,
+        bool appendRows,
+        ILogger logger,
+        out int sourceRowsCount,
+        out int acceptedRowsCount,
+        out int rowFailuresCount,
+        out DateTime lastTime,
+        out long? lastTradeNo,
+        out long? maxTradeNo,
+        out DateTime? maxTradeNoTime,
+        out Exception? maxTradeNoTimeFailure)
     {
-        List<RealtimeFuturesTradeRow> rows = new();
-        List<RealtimeRowFailure> failures = new();
-        DateOnly? sessionDate = null;
-        Exception? sessionDateFailure = null;
-        int sourceRowsCount = 0;
-        DateTime lastTime = default;
-        long? lastTradeNo = null;
-        long? maxTradeNo = null;
-        DateTime? maxTradeNoTime = null;
-        Exception? maxTradeNoTimeFailure = null;
+        if (appendRows && writer is null)
+            throw new ArgumentNullException(nameof(writer));
+
+        DateOnly? sessionDate = ReadDataVersionFirstPass(body, out Exception? sessionDateFailure);
+        sourceRowsCount = 0;
+        acceptedRowsCount = 0;
+        rowFailuresCount = 0;
+        lastTime = default;
+        lastTradeNo = null;
+        maxTradeNo = null;
+        maxTradeNoTime = null;
+        maxTradeNoTimeFailure = null;
 
         Utf8JsonReader reader = new(body);
         ParseHelpersUtf8.EnterResponseObject(ref reader);
         bool foundTrades = false;
-        bool foundDataVersion = false;
-
-        while (!(foundTrades && foundDataVersion) && reader.Read())
+        while (reader.Read())
         {
             if (reader.TokenType == JsonTokenType.EndObject)
                 break;
             if (reader.TokenType != JsonTokenType.PropertyName)
                 continue;
-
-            if (!foundDataVersion && reader.ValueTextEquals(DataVersionRootKey))
+            if (reader.ValueTextEquals("trades"u8))
             {
-                foundDataVersion = true;
-                ParseHelpersUtf8.ExpectObjectStart(ref reader, DataVersionRootKey);
-                sessionDate = ReadDataVersionBlock(
-                    ref reader, out sessionDateFailure);
-            }
-            else if (!foundTrades && reader.ValueTextEquals("trades"u8))
-            {
+                if (foundTrades)
+                {
+                    reader.Skip();
+                    continue;
+                }
                 foundTrades = true;
                 ParseHelpersUtf8.ExpectObjectStart(ref reader, "trades");
                 ReadFuturesTradesTable(
-                    ref reader,
-                    rows,
-                    failures,
-                    secid,
-                    ref sourceRowsCount,
-                    ref lastTime,
-                    ref lastTradeNo,
-                    ref maxTradeNo,
-                    ref maxTradeNoTime,
-                    ref maxTradeNoTimeFailure);
+                    ref reader, writer, logger, secid, sessionDate, sessionDateFailure,
+                    afterTradeNo, appendRows, ref sourceRowsCount, ref acceptedRowsCount,
+                    ref rowFailuresCount, ref lastTime, ref lastTradeNo, ref maxTradeNo,
+                    ref maxTradeNoTime, ref maxTradeNoTimeFailure);
             }
             else
             {
@@ -158,76 +141,51 @@ public static class MoexRealtimeParser
             }
         }
 
-        if (!foundDataVersion)
-            ParseHelpersUtf8.RootKeyMissing(DataVersionRootKey);
         if (!foundTrades)
             ParseHelpersUtf8.RootKeyMissing("trades");
-
-        if (sessionDateFailure is not null && rows.Count > 0)
+        if (sessionDateFailure is not null && acceptedRowsCount > 0)
         {
-            failures.Add(new RealtimeRowFailure(-1, sessionDateFailure.Message));
-            rows.Clear();
+            acceptedRowsCount = 0;
         }
-        else if (sessionDate is DateOnly date)
-        {
-            uint? clickHouseDate = ToClickHouseDate(date);
-            for (int i = 0; i < rows.Count; i++)
-            {
-                RealtimeFuturesTradeRow row = rows[i];
-                row.TradeSessionDate = clickHouseDate;
-                rows[i] = row;
-            }
-        }
-
-        return new RealtimeFuturesTradesPage
-        {
-            Rows = rows,
-            RowFailures = failures,
-            SourceRowsCount = sourceRowsCount,
-            LastTime = lastTime,
-            LastTradeNo = lastTradeNo,
-            MaxTradeNo = maxTradeNo,
-            MaxTradeNoTime = maxTradeNoTime,
-            MaxTradeNoTimeFailure = maxTradeNoTimeFailure,
-        };
     }
 
-    public static RealtimeOrderbookPage ParseOrderbook(
+    public static void ParseOrderbook(
         ReadOnlySpan<byte> body,
-        string secid)
+        string secid,
+        ProtobufBatchWriter<RealtimeOrderbookRow> writer,
+        ILogger logger,
+        out int sourceRowsCount,
+        out int acceptedRowsCount,
+        out int rowFailuresCount,
+        out DateTime firstTime)
     {
-        List<RealtimeOrderbookRow> rows = new();
-        List<RealtimeRowFailure> failures = new();
-        DateOnly? sessionDate = null;
-        Exception? sessionDateFailure = null;
-        int sourceRowsCount = 0;
-        DateTime firstTime = default;
+        DateOnly? sessionDate = ReadDataVersionFirstPass(body, out Exception? sessionDateFailure);
+        sourceRowsCount = 0;
+        acceptedRowsCount = 0;
+        rowFailuresCount = 0;
+        firstTime = default;
 
         Utf8JsonReader reader = new(body);
         ParseHelpersUtf8.EnterResponseObject(ref reader);
         bool foundOrderbook = false;
-        bool foundDataVersion = false;
-
-        while (!(foundOrderbook && foundDataVersion) && reader.Read())
+        while (reader.Read())
         {
             if (reader.TokenType == JsonTokenType.EndObject)
                 break;
             if (reader.TokenType != JsonTokenType.PropertyName)
                 continue;
-
-            if (!foundDataVersion && reader.ValueTextEquals(DataVersionRootKey))
+            if (reader.ValueTextEquals("orderbook"u8))
             {
-                foundDataVersion = true;
-                ParseHelpersUtf8.ExpectObjectStart(ref reader, DataVersionRootKey);
-                sessionDate = ReadDataVersionBlock(
-                    ref reader, out sessionDateFailure);
-            }
-            else if (!foundOrderbook && reader.ValueTextEquals("orderbook"u8))
-            {
+                if (foundOrderbook)
+                {
+                    reader.Skip();
+                    continue;
+                }
                 foundOrderbook = true;
                 ParseHelpersUtf8.ExpectObjectStart(ref reader, "orderbook");
                 ReadOrderbookTable(
-                    ref reader, rows, failures, secid, ref sourceRowsCount, ref firstTime);
+                    ref reader, writer, logger, secid, sessionDate, sessionDateFailure,
+                    ref sourceRowsCount, ref acceptedRowsCount, ref rowFailuresCount, ref firstTime);
             }
             else
             {
@@ -235,48 +193,33 @@ public static class MoexRealtimeParser
             }
         }
 
-        if (!foundDataVersion)
-            ParseHelpersUtf8.RootKeyMissing(DataVersionRootKey);
         if (!foundOrderbook)
             ParseHelpersUtf8.RootKeyMissing("orderbook");
-
-        if (sessionDateFailure is not null && rows.Count > 0)
+        if (sessionDateFailure is not null && acceptedRowsCount > 0)
         {
-            failures.Add(new RealtimeRowFailure(-1, sessionDateFailure.Message));
-            rows.Clear();
+            acceptedRowsCount = 0;
         }
-        else if (sessionDate is DateOnly date)
-        {
-            uint? clickHouseDate = ToClickHouseDate(date);
-            for (int i = 0; i < rows.Count; i++)
-            {
-                RealtimeOrderbookRow row = rows[i];
-                row.TradeSessionDate = clickHouseDate;
-                rows[i] = row;
-            }
-        }
-
-        return new RealtimeOrderbookPage
-        {
-            Rows = rows,
-            RowFailures = failures,
-            SourceRowsCount = sourceRowsCount,
-            FirstTime = firstTime,
-        };
     }
 
-    public static RealtimeCandlesPageSummary ParseCandles(
+    public static void ParseCandles(
         ReadOnlySpan<byte> body,
         string secid,
         ProtobufBatchWriter<CandleRow> writer,
         DateTime now,
         DateTime? lastBegin,
-        List<CandleRow>? acceptedCandles = null)
+        int interval,
+        int start,
+        ILogger logger,
+        List<CandleRow>? acceptedCandles,
+        out int sourceRowsCount,
+        out int acceptedRowsCount,
+        out int rowFailuresCount,
+        out DateTime? maxAcceptedBegin)
     {
-        List<RealtimeRowFailure> failures = new();
-        int sourceRowsCount = 0;
-        int acceptedRowsCount = 0;
-        DateTime? maxAcceptedBegin = null;
+        sourceRowsCount = 0;
+        acceptedRowsCount = 0;
+        rowFailuresCount = 0;
+        maxAcceptedBegin = null;
         Utf8JsonReader reader = new(body);
         ParseHelpersUtf8.SkipToRootObject(ref reader, "candles");
 
@@ -291,12 +234,16 @@ public static class MoexRealtimeParser
 
             if (reader.ValueTextEquals("columns"u8))
             {
+                if (foundColumns)
+                    ParseHelpersUtf8.SchemaMismatch("[candles] Повторная секция 'columns'.");
                 foundColumns = true;
                 ParseHelpersUtf8.ValidateInputColumnsUtf8(
                     ref reader, MoexColumnSets.Candles, "candles");
             }
             else if (reader.ValueTextEquals("data"u8))
             {
+                if (foundData)
+                    ParseHelpersUtf8.SchemaMismatch("[candles] Повторная секция 'data'.");
                 if (!foundColumns)
                 {
                     ParseHelpersUtf8.SchemaMismatch(
@@ -307,14 +254,17 @@ public static class MoexRealtimeParser
                 foundData = true;
                 ReadCandleRows(
                     ref reader,
-                    failures,
+                    logger,
                     writer,
                     secid,
+                    interval,
+                    start,
                     acceptedCandles,
                     now,
                     lastBegin,
                     ref sourceRowsCount,
                     ref acceptedRowsCount,
+                    ref rowFailuresCount,
                     ref maxAcceptedBegin);
             }
             else
@@ -324,22 +274,54 @@ public static class MoexRealtimeParser
         }
 
         ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, "candles");
-        return new RealtimeCandlesPageSummary
-        {
-            RowFailures = failures,
-            SourceRowsCount = sourceRowsCount,
-            AcceptedRowsCount = acceptedRowsCount,
-            MaxAcceptedBegin = maxAcceptedBegin,
-            AcceptedCandles = acceptedCandles,
-        };
     }
+
+    private static DateOnly? ReadDataVersionFirstPass(
+        ReadOnlySpan<byte> body,
+        out Exception? sessionDateFailure)
+    {
+        Utf8JsonReader reader = new(body);
+        ParseHelpersUtf8.EnterResponseObject(ref reader);
+        while (reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.EndObject)
+                break;
+            if (reader.TokenType != JsonTokenType.PropertyName)
+                continue;
+            if (reader.ValueTextEquals(DataVersionRootKey))
+            {
+                ParseHelpersUtf8.ExpectObjectStart(ref reader, DataVersionRootKey);
+                return ReadDataVersionBlock(ref reader, out sessionDateFailure);
+            }
+            reader.Skip();
+        }
+        ParseHelpersUtf8.RootKeyMissing(DataVersionRootKey);
+        sessionDateFailure = null;
+        return null;
+    }
+
+    private static void LogTradeRowFailure(ILogger logger, string secid, int position, string reason)
+        => logger.LogWarning(
+            "MOEX row skipped: secid={Secid}, dataKind={DataKind}, position={Position}, reason={Reason}",
+            secid, "trades", position, reason);
+
+    private static void LogOrderbookRowFailure(ILogger logger, string secid, int position, string reason)
+        => logger.LogWarning(
+            "MOEX row skipped: secid={Secid}, dataKind={DataKind}, position={Position}, reason={Reason}",
+            secid, "orderbook", position, reason);
 
     private static void ReadStockTradesTable(
         ref Utf8JsonReader reader,
-        List<RealtimeStockTradeRow> rows,
-        List<RealtimeRowFailure> failures,
+        ProtobufBatchWriter<RealtimeStockTradeRow>? writer,
+        ILogger logger,
         string secid,
+        DateOnly? sessionDate,
+        Exception? sessionDateFailure,
+        long? afterTradeNo,
+        bool appendRows,
         ref int sourceRowsCount,
+        ref int acceptedRowsCount,
+        ref int rowFailuresCount,
         ref DateTime lastTime,
         ref long? lastTradeNo,
         ref long? maxTradeNo,
@@ -356,12 +338,16 @@ public static class MoexRealtimeParser
                 continue;
             if (reader.ValueTextEquals("columns"u8))
             {
+                if (foundColumns)
+                    ParseHelpersUtf8.SchemaMismatch("[trades] Повторная секция 'columns'.");
                 foundColumns = true;
                 ParseHelpersUtf8.ValidateInputColumnsUtf8(
                     ref reader, MoexColumnSets.TradesStock, "trades");
             }
             else if (reader.ValueTextEquals("data"u8))
             {
+                if (foundData)
+                    ParseHelpersUtf8.SchemaMismatch("[trades] Повторная секция 'data'.");
                 if (!foundColumns)
                 {
                     ParseHelpersUtf8.SchemaMismatch(
@@ -370,7 +356,9 @@ public static class MoexRealtimeParser
                 }
                 foundData = true;
                 ReadStockTradeRows(
-                    ref reader, rows, failures, secid, ref sourceRowsCount,
+                    ref reader, writer, logger, secid, sessionDate, sessionDateFailure,
+                    afterTradeNo, appendRows, ref sourceRowsCount, ref acceptedRowsCount,
+                    ref rowFailuresCount,
                     ref lastTime, ref lastTradeNo, ref maxTradeNo,
                     ref maxTradeNoTime, ref maxTradeNoTimeFailure);
             }
@@ -384,10 +372,16 @@ public static class MoexRealtimeParser
 
     private static void ReadFuturesTradesTable(
         ref Utf8JsonReader reader,
-        List<RealtimeFuturesTradeRow> rows,
-        List<RealtimeRowFailure> failures,
+        ProtobufBatchWriter<RealtimeFuturesTradeRow>? writer,
+        ILogger logger,
         string secid,
+        DateOnly? sessionDate,
+        Exception? sessionDateFailure,
+        long? afterTradeNo,
+        bool appendRows,
         ref int sourceRowsCount,
+        ref int acceptedRowsCount,
+        ref int rowFailuresCount,
         ref DateTime lastTime,
         ref long? lastTradeNo,
         ref long? maxTradeNo,
@@ -404,12 +398,16 @@ public static class MoexRealtimeParser
                 continue;
             if (reader.ValueTextEquals("columns"u8))
             {
+                if (foundColumns)
+                    ParseHelpersUtf8.SchemaMismatch("[trades] Повторная секция 'columns'.");
                 foundColumns = true;
                 ParseHelpersUtf8.ValidateInputColumnsUtf8(
                     ref reader, MoexColumnSets.TradesFutures, "trades");
             }
             else if (reader.ValueTextEquals("data"u8))
             {
+                if (foundData)
+                    ParseHelpersUtf8.SchemaMismatch("[trades] Повторная секция 'data'.");
                 if (!foundColumns)
                 {
                     ParseHelpersUtf8.SchemaMismatch(
@@ -418,7 +416,9 @@ public static class MoexRealtimeParser
                 }
                 foundData = true;
                 ReadFuturesTradeRows(
-                    ref reader, rows, failures, secid, ref sourceRowsCount,
+                    ref reader, writer, logger, secid, sessionDate, sessionDateFailure,
+                    afterTradeNo, appendRows, ref sourceRowsCount, ref acceptedRowsCount,
+                    ref rowFailuresCount,
                     ref lastTime, ref lastTradeNo, ref maxTradeNo,
                     ref maxTradeNoTime, ref maxTradeNoTimeFailure);
             }
@@ -432,10 +432,14 @@ public static class MoexRealtimeParser
 
     private static void ReadOrderbookTable(
         ref Utf8JsonReader reader,
-        List<RealtimeOrderbookRow> rows,
-        List<RealtimeRowFailure> failures,
+        ProtobufBatchWriter<RealtimeOrderbookRow> writer,
+        ILogger logger,
         string secid,
+        DateOnly? sessionDate,
+        Exception? sessionDateFailure,
         ref int sourceRowsCount,
+        ref int acceptedRowsCount,
+        ref int rowFailuresCount,
         ref DateTime firstTime)
     {
         bool foundColumns = false;
@@ -448,12 +452,16 @@ public static class MoexRealtimeParser
                 continue;
             if (reader.ValueTextEquals("columns"u8))
             {
+                if (foundColumns)
+                    ParseHelpersUtf8.SchemaMismatch("[orderbook] Повторная секция 'columns'.");
                 foundColumns = true;
                 ParseHelpersUtf8.ValidateInputColumnsUtf8(
                     ref reader, MoexColumnSets.Orderbook, "orderbook");
             }
             else if (reader.ValueTextEquals("data"u8))
             {
+                if (foundData)
+                    ParseHelpersUtf8.SchemaMismatch("[orderbook] Повторная секция 'data'.");
                 if (!foundColumns)
                 {
                     ParseHelpersUtf8.SchemaMismatch(
@@ -462,7 +470,8 @@ public static class MoexRealtimeParser
                 }
                 foundData = true;
                 ReadOrderbookRows(
-                    ref reader, rows, failures, secid, ref sourceRowsCount, ref firstTime);
+                    ref reader, writer, logger, secid, sessionDate, sessionDateFailure,
+                    ref sourceRowsCount, ref acceptedRowsCount, ref rowFailuresCount, ref firstTime);
             }
             else
             {
@@ -474,10 +483,16 @@ public static class MoexRealtimeParser
 
     private static void ReadStockTradeRows(
         ref Utf8JsonReader reader,
-        List<RealtimeStockTradeRow> rows,
-        List<RealtimeRowFailure> failures,
+        ProtobufBatchWriter<RealtimeStockTradeRow>? writer,
+        ILogger logger,
         string secid,
+        DateOnly? sessionDate,
+        Exception? sessionDateFailure,
+        long? afterTradeNo,
+        bool appendRows,
         ref int sourceRowsCount,
+        ref int acceptedRowsCount,
+        ref int rowFailuresCount,
         ref DateTime lastTime,
         ref long? lastTradeNo,
         ref long? maxTradeNo,
@@ -486,6 +501,7 @@ public static class MoexRealtimeParser
     {
         ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", "trades");
         int rowIndex = 0;
+        long? previousTradeNo = afterTradeNo;
         while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
         {
             if (reader.TokenType != JsonTokenType.StartArray)
@@ -547,9 +563,25 @@ public static class MoexRealtimeParser
             row.TradeNo = tradeNo.GetValueOrDefault();
             if (rowFailure is null)
             {
+                if (sessionDateFailure is not null && acceptedRowsCount == 0)
+                {
+                    LogTradeRowFailure(logger, secid, -1, sessionDateFailure.Message);
+                    rowFailuresCount++;
+                }
+                if (appendRows && previousTradeNo is not null && tradeNo!.Value <= previousTradeNo.Value)
+                {
+                    throw new InvalidOperationException(
+                        "Нарушен порядок номеров сделок.");
+                }
+                previousTradeNo = tradeNo;
+                row.TradeSessionDate = sessionDate is DateOnly date
+                    ? ToClickHouseDate(date)
+                    : null;
                 ulong sourceTimeValue = CandleDateTime64.ToUnixWholeSeconds(sourceTime!.Value);
                 row.SourceTime = sourceTimeValue;
-                rows.Add(row);
+                if (appendRows && sessionDateFailure is null)
+                    writer!.Append(in row);
+                acceptedRowsCount++;
                 lastTime = sourceTime.Value;
                 lastTradeNo = tradeNo;
                 if (maxTradeNo is null || tradeNo!.Value > maxTradeNo.Value)
@@ -561,7 +593,8 @@ public static class MoexRealtimeParser
             }
             else
             {
-                failures.Add(new RealtimeRowFailure(rowIndex, rowFailure.Message));
+                LogTradeRowFailure(logger, secid, rowIndex, rowFailure.Message);
+                rowFailuresCount++;
             }
             sourceRowsCount++;
             rowIndex++;
@@ -570,10 +603,16 @@ public static class MoexRealtimeParser
 
     private static void ReadFuturesTradeRows(
         ref Utf8JsonReader reader,
-        List<RealtimeFuturesTradeRow> rows,
-        List<RealtimeRowFailure> failures,
+        ProtobufBatchWriter<RealtimeFuturesTradeRow>? writer,
+        ILogger logger,
         string secid,
+        DateOnly? sessionDate,
+        Exception? sessionDateFailure,
+        long? afterTradeNo,
+        bool appendRows,
         ref int sourceRowsCount,
+        ref int acceptedRowsCount,
+        ref int rowFailuresCount,
         ref DateTime lastTime,
         ref long? lastTradeNo,
         ref long? maxTradeNo,
@@ -582,6 +621,7 @@ public static class MoexRealtimeParser
     {
         ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", "trades");
         int rowIndex = 0;
+        long? previousTradeNo = afterTradeNo;
         while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
         {
             if (reader.TokenType != JsonTokenType.StartArray)
@@ -641,8 +681,24 @@ public static class MoexRealtimeParser
             row.TradeNo = tradeNo.GetValueOrDefault();
             if (rowFailure is null)
             {
+                if (sessionDateFailure is not null && acceptedRowsCount == 0)
+                {
+                    LogTradeRowFailure(logger, secid, -1, sessionDateFailure.Message);
+                    rowFailuresCount++;
+                }
+                if (appendRows && previousTradeNo is not null && tradeNo!.Value <= previousTradeNo.Value)
+                {
+                    throw new InvalidOperationException(
+                        "Нарушен порядок номеров сделок.");
+                }
+                previousTradeNo = tradeNo;
+                row.TradeSessionDate = sessionDate is DateOnly date
+                    ? ToClickHouseDate(date)
+                    : null;
                 row.SourceTime = CandleDateTime64.ToUnixWholeSeconds(sourceTime!.Value);
-                rows.Add(row);
+                if (appendRows && sessionDateFailure is null)
+                    writer!.Append(in row);
+                acceptedRowsCount++;
                 lastTime = sourceTime.Value;
                 lastTradeNo = tradeNo;
                 if (maxTradeNo is null || tradeNo!.Value > maxTradeNo.Value)
@@ -654,7 +710,8 @@ public static class MoexRealtimeParser
             }
             else
             {
-                failures.Add(new RealtimeRowFailure(rowIndex, rowFailure.Message));
+                LogTradeRowFailure(logger, secid, rowIndex, rowFailure.Message);
+                rowFailuresCount++;
             }
             sourceRowsCount++;
             rowIndex++;
@@ -663,10 +720,14 @@ public static class MoexRealtimeParser
 
     private static void ReadOrderbookRows(
         ref Utf8JsonReader reader,
-        List<RealtimeOrderbookRow> rows,
-        List<RealtimeRowFailure> failures,
+        ProtobufBatchWriter<RealtimeOrderbookRow> writer,
+        ILogger logger,
         string secid,
+        DateOnly? sessionDate,
+        Exception? sessionDateFailure,
         ref int sourceRowsCount,
+        ref int acceptedRowsCount,
+        ref int rowFailuresCount,
         ref DateTime firstTime)
     {
         ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", "orderbook");
@@ -715,16 +776,30 @@ public static class MoexRealtimeParser
 
             if (rowFailure is null)
             {
+                if (sessionDateFailure is not null && acceptedRowsCount == 0)
+                {
+                    LogOrderbookRowFailure(logger, secid, -1, sessionDateFailure.Message);
+                    rowFailuresCount++;
+                }
                 row.SourceTime = CandleDateTime64.ToUnixWholeSeconds(sourceTime!.Value);
                 row.BuySell = buySell!;
                 row.Price = price!.Value;
-                if (rows.Count == 0)
+                row.TradeSessionDate = sessionDate is DateOnly date
+                    ? ToClickHouseDate(date)
+                    : null;
+                if (acceptedRowsCount == 0)
                     firstTime = sourceTime.Value;
-                rows.Add(row);
+                else if (firstTime != sourceTime.Value)
+                    throw new InvalidOperationException(
+                        "Строки стакана относятся к разным снимкам.");
+                if (sessionDateFailure is null)
+                    writer.Append(in row);
+                acceptedRowsCount++;
             }
             else
             {
-                failures.Add(new RealtimeRowFailure(rowIndex, rowFailure.Message));
+                LogOrderbookRowFailure(logger, secid, rowIndex, rowFailure.Message);
+                rowFailuresCount++;
             }
             sourceRowsCount++;
             rowIndex++;
@@ -733,14 +808,17 @@ public static class MoexRealtimeParser
 
     private static void ReadCandleRows(
         ref Utf8JsonReader reader,
-        List<RealtimeRowFailure> failures,
+        ILogger logger,
         ProtobufBatchWriter<CandleRow> writer,
         string secid,
+        int interval,
+        int start,
         List<CandleRow>? acceptedCandles,
         DateTime now,
         DateTime? lastBegin,
         ref int sourceRowsCount,
         ref int acceptedRowsCount,
+        ref int rowFailuresCount,
         ref DateTime? maxAcceptedBegin)
     {
         ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", "candles");
@@ -782,7 +860,10 @@ public static class MoexRealtimeParser
 
             if (rowFailure is not null)
             {
-                failures.Add(new RealtimeRowFailure(sourceRowsCount, rowFailure.Message));
+                MoexRealtimeReceiverLogMessages.CandleRowSkipped(
+                    logger, secid, "candles", interval,
+                    checked(start + sourceRowsCount), rowFailure.Message);
+                rowFailuresCount++;
             }
             else
             {
@@ -823,12 +904,16 @@ public static class MoexRealtimeParser
                 continue;
             if (reader.ValueTextEquals("columns"u8))
             {
+                if (foundColumns)
+                    ParseHelpersUtf8.SchemaMismatch($"[{DataVersionRootKey}] Повторная секция 'columns'.");
                 foundColumns = true;
                 ParseHelpersUtf8.ValidateInputColumnsUtf8(
                     ref reader, MoexColumnSets.DataVersion, DataVersionRootKey);
             }
             else if (reader.ValueTextEquals("data"u8))
             {
+                if (foundData)
+                    ParseHelpersUtf8.SchemaMismatch($"[{DataVersionRootKey}] Повторная секция 'data'.");
                 if (!foundColumns)
                 {
                     ParseHelpersUtf8.SchemaMismatch(

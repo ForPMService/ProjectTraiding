@@ -72,7 +72,8 @@ namespace ProjectTraiding.Moex.Infrastructure.DependencyInjection
                     opt.RealtimeInstrumentFetchTimeout,
                     TimeSpan.FromSeconds(
                         opt.CandlesPollSeconds * (double)opt.RealtimeStalePollIntervals),
-                    candlesBatchSize);
+                    candlesBatchSize,
+                    opt.MaxPagesPerLoad);
             });
 
             return services;

@@ -1,7 +1,9 @@
 using Microsoft.Extensions.Hosting;
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Infrastructure;
+using ProjectTraiding.Moex.Infrastructure.Buffers;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
+using ProjectTraiding.Moex.Parsing.Errors;
 using ProjectTraiding.Moex.Realtime.Series;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
@@ -153,7 +155,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 operationTags.Market,
                 MoexFlows.Realtime);
 
-            RealtimeOrderbookPage page;
+            ProtobufBatchWriter<RealtimeOrderbookRow> writer = new(
+                executor,
+                MoexRealtimeRegistry.OrderbookTable,
+                MoexRealtimeRegistry.OrderbookInsertColumns,
+                insertContext);
+            int acceptedRowsCount;
+            int rowFailuresCount;
+            DateTime firstTime;
             using (Activity? pollActivity =
                    MoexTelemetry.ActivitySource.StartActivity("moex.realtime.instrument.poll"))
             {
@@ -174,8 +183,14 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     fetchActivity?.SetTag(MoexTelemetryAttributes.Secid, secid);
                     try
                     {
-                        page = await client.GetOrderbookAsync(
-                            state.Market, secid, fetchCts.Token);
+                        using (RentedBuffer body = await client.GetOrderbookAsync(
+                                   state.Market, secid, fetchCts.Token))
+                        {
+                            MoexRealtimeParser.ParseOrderbook(
+                                body.Span, secid, writer, _logger,
+                                out _, out acceptedRowsCount,
+                                out rowFailuresCount, out firstTime);
+                        }
                         TagList rowsTags = new TagList
                         {
                             { MoexTelemetryAttributes.Source, operationTags.Source },
@@ -183,7 +198,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                             { MoexTelemetryAttributes.Market, operationTags.Market },
                             { MoexTelemetryAttributes.Flow, operationTags.Flow },
                         };
-                        MoexMetrics.RowsReceived.Add(page.Rows.Count, rowsTags);
+                        MoexMetrics.RowsReceived.Add(acceptedRowsCount, rowsTags);
                         MoexMetrics.RecordOperationSuccess(
                             in operationTags, Stopwatch.GetElapsedTime(fetchStart).TotalSeconds);
                         fetchActivity?.SetStatus(ActivityStatusCode.Ok);
@@ -208,6 +223,13 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     }
                     catch (Exception ex)
                     {
+                        if (ex is MoexSchemaMismatchException)
+                        {
+                            MoexLogMessages.ParseFailed(
+                                _logger, ex,
+                                BuildOrderbookEndpoint(state.Market, secid),
+                                MoexErrorTypes.SchemaMismatch, ex.Message);
+                        }
                         fetchActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                         pollActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                         MoexMetrics.RecordOperationError(
@@ -219,35 +241,11 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
                 try
                 {
-                    foreach (RealtimeRowFailure failure in page.RowFailures)
-                    {
-                        _logger.LogWarning(
-                            "MOEX row skipped: secid={Secid}, dataKind={DataKind}, position={Position}, reason={Reason}",
-                            secid, DataKind, failure.Position, failure.Reason);
-                    }
-                    if (page.RowFailures.Count > 0)
+                    if (rowFailuresCount > 0)
                         throw new InvalidOperationException("Снимок стакана обработан частично.");
 
-                    if (page.Rows.Count > 0)
+                    if (writer.RowCount > 0)
                     {
-                        ulong snapshotTime = page.Rows[0].SourceTime;
-                        for (int i = 1; i < page.Rows.Count; i++)
-                        {
-                            if (page.Rows[i].SourceTime != snapshotTime)
-                                throw new InvalidOperationException(
-                                    "Строки стакана относятся к разным снимкам.");
-                        }
-
-                        ProtobufBatchWriter<RealtimeOrderbookRow> writer = new(
-                            executor,
-                            MoexRealtimeRegistry.OrderbookTable,
-                            MoexRealtimeRegistry.OrderbookInsertColumns,
-                            insertContext);
-                        for (int i = 0; i < page.Rows.Count; i++)
-                        {
-                            RealtimeOrderbookRow row = page.Rows[i];
-                            writer.Append(in row);
-                        }
                         int expectedRows = writer.RowCount;
                         long insertedRows = await writer.FlushAsync(commitCt);
                         if (insertedRows != expectedRows)
@@ -256,7 +254,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                                 $"ClickHouse подтвердил запись {insertedRows} из {expectedRows} строк стакана.");
                         }
                         state.RowsTotal += insertedRows;
-                        state.LastConfirmedMarketTime = MoexTime.ToDateTimeOffset(page.FirstTime);
+                        state.LastConfirmedMarketTime = MoexTime.ToDateTimeOffset(firstTime);
                     }
 
                     MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Success);
@@ -277,6 +275,13 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 }
             }
 
+        }
+
+        private static string BuildOrderbookEndpoint(string market, string secid)
+        {
+            if (market == MoexMarkets.Stock)
+                return $"/engines/stock/markets/shares/boards/TQBR/securities/{secid}/orderbook.json";
+            return $"/engines/futures/markets/forts/boards/RFUD/securities/{secid}/orderbook.json";
         }
 
         protected override void LogInstrumentPreparationFailed(Exception exception, string secid)

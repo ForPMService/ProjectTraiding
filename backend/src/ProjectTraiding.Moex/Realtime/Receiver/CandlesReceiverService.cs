@@ -4,6 +4,9 @@ using Microsoft.Extensions.Logging;
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Infrastructure;
+using ProjectTraiding.Moex.Infrastructure.Buffers;
+using ProjectTraiding.Moex.Options;
+using ProjectTraiding.Moex.Parsing.Errors;
 using ProjectTraiding.Moex.Realtime.Series;
 using ProjectTraiding.Moex.Realtime.Subscriptions;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
@@ -31,6 +34,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         protected override TimeSpan StalePollThreshold => _stalePollThreshold;
 
         private static readonly int[] CandleIntervals = [1, 10, 60, 24];
+        private const int CandlesPageLimit = 500;
 
         // Формат строки приёма задан CandleRow и проверенной схемой moex_candles_*.
         private readonly IServiceScopeFactory _scopeFactory;
@@ -39,6 +43,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
         private readonly TimeSpan _instrumentFetchTimeout;
         private readonly TimeSpan _stalePollThreshold;
         private readonly int _batchSize;
+        private readonly int _maxPagesPerLoad;
         private bool _initialized;
 
         public CandlesReceiverService(
@@ -48,7 +53,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             TimeSpan pollInterval,
             TimeSpan instrumentFetchTimeout,
             TimeSpan stalePollThreshold,
-            int batchSize)
+            int batchSize,
+            int maxPagesPerLoad)
             : base(pollInterval)
         {
             _scopeFactory = scopeFactory;
@@ -59,6 +65,9 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             _batchSize = batchSize > 0
                 ? batchSize
                 : throw new ArgumentOutOfRangeException(nameof(batchSize));
+            _maxPagesPerLoad = maxPagesPerLoad > 0
+                ? maxPagesPerLoad
+                : throw new ArgumentOutOfRangeException(nameof(maxPagesPerLoad));
         }
 
         protected override void LogStarted(TimeSpan pollInterval)
@@ -206,7 +215,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             IMessageBus? messageBus,
             CancellationToken commitCt)
         {
-            // Московское время фиксируем один раз: им задаётся окно запроса и проверяется begin.
             DateTime now = MoexTime.Now;
             bool hasLastBegin = state.LastBeginByInterval.TryGetValue(
                 interval, out DateTime lastBegin);
@@ -218,28 +226,29 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 MoexDataKinds.Candles,
                 state.Market,
                 MoexFlows.Realtime);
-
             StorageInsertContext insertContext = new StorageInsertContext(
                 operationTags.DataKind,
                 operationTags.Market,
                 MoexFlows.Realtime,
                 CandleInterval: interval);
-
             ProtobufBatchWriter<CandleRow> writer = new(
                 executor,
                 MoexRealtimeRegistry.CandleTableFor(interval),
                 CandleRow.InsertColumns,
                 insertContext);
-            List<RealtimeRowFailure> rowFailures = new();
+
             TimeSpan fetchBudgetRemaining = _instrumentFetchTimeout;
             TimeSpan fetchElapsed = TimeSpan.Zero;
             Exception? fetchFailure = null;
             bool fetchTimedOut = false;
             bool fetchOutcomeRecorded = false;
             int sourceRowsCount = 0;
+            int rowFailuresCount = 0;
             long rowsInserted = 0;
             DateTime? maxAcceptedBegin = null;
             DateTime? pendingMaxBegin = null;
+            int start = 0;
+            int pageNumber = 0;
 
             using (Activity? pollActivity =
                    MoexTelemetry.ActivitySource.StartActivity("moex.realtime.instrument.poll"))
@@ -254,26 +263,10 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                     using (CancellationTokenSource fetchCts =
                            CancellationTokenSource.CreateLinkedTokenSource(commitCt))
                     {
-                        IAsyncEnumerable<RealtimeCandlesPageSummary> pages =
-                            client.GetCandlesTodayPagesAsync(
-                                state.Market,
-                                secid,
-                                from,
-                                now,
-                                interval,
-                                writer,
-                                now,
-                                lastBeginForWindow,
-                                _candleSubscriptions,
-                                fetchCts.Token);
-                        await using IAsyncEnumerator<RealtimeCandlesPageSummary> enumerator =
-                            pages.GetAsyncEnumerator(fetchCts.Token);
-
                         while (true)
                         {
                             commitCt.ThrowIfCancellationRequested();
-                            if (fetchBudgetRemaining <= TimeSpan.Zero ||
-                                fetchCts.IsCancellationRequested)
+                            if (fetchBudgetRemaining <= TimeSpan.Zero || fetchCts.IsCancellationRequested)
                             {
                                 fetchTimedOut = true;
                                 break;
@@ -281,7 +274,13 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
                             fetchCts.CancelAfter(fetchBudgetRemaining);
                             Stopwatch fetchTimer = Stopwatch.StartNew();
-                            bool hasPage = false;
+                            bool pageParsed = false;
+                            int pageSourceRowsCount = 0;
+                            int pageRowFailuresCount = 0;
+                            DateTime? pageMaxAcceptedBegin = null;
+                            List<CandleRow>? acceptedCandles = _candleSubscriptions.HasSubscribers
+                                ? new List<CandleRow>()
+                                : null;
                             using (Activity? fetchActivity =
                                    MoexTelemetry.ActivitySource.StartActivity("moex.realtime.fetch"))
                             {
@@ -292,7 +291,31 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                                 fetchActivity?.SetTag(MoexTelemetryAttributes.CandleInterval, interval);
                                 try
                                 {
-                                    hasPage = await enumerator.MoveNextAsync();
+                                    using (RentedBuffer body = await client.GetCandlesPageAsync(
+                                               state.Market,
+                                               secid,
+                                               from,
+                                               now,
+                                               interval,
+                                               start == 0 ? null : start,
+                                               fetchCts.Token))
+                                    {
+                                        MoexRealtimeParser.ParseCandles(
+                                            body.Span,
+                                            secid,
+                                            writer,
+                                            now,
+                                            lastBeginForWindow,
+                                            interval,
+                                            start,
+                                            _logger,
+                                            acceptedCandles,
+                                            out pageSourceRowsCount,
+                                            out _,
+                                            out pageRowFailuresCount,
+                                            out pageMaxAcceptedBegin);
+                                    }
+                                    pageParsed = true;
                                     fetchActivity?.SetStatus(ActivityStatusCode.Ok);
                                 }
                                 catch (OperationCanceledException) when (commitCt.IsCancellationRequested)
@@ -308,6 +331,12 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                                 catch (Exception ex)
                                 {
                                     fetchFailure = ex;
+                                    if (ex is MoexSchemaMismatchException)
+                                    {
+                                        MoexLogMessages.ParseFailed(
+                                            _logger, ex, BuildCandlesEndpoint(state.Market, secid),
+                                            MoexErrorTypes.SchemaMismatch, ex.Message);
+                                    }
                                     fetchActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                                 }
                                 finally
@@ -320,18 +349,12 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                                 }
                             }
 
-                            if (fetchTimedOut || fetchFailure is not null || !hasPage)
+                            if (!pageParsed)
                                 break;
 
-                            RealtimeCandlesPageSummary page = enumerator.Current;
-                            sourceRowsCount += page.SourceRowsCount;
-                            for (int i = 0; i < page.RowFailures.Count; i++)
-                                rowFailures.Add(page.RowFailures[i]);
-
-                            List<CandleRow>? acceptedCandles = page.AcceptedCandles;
-                            if (acceptedCandles is not null &&
-                                acceptedCandles.Count > 0 &&
-                                _candleSubscriptions.HasSubscribers)
+                            sourceRowsCount += pageSourceRowsCount;
+                            rowFailuresCount += pageRowFailuresCount;
+                            if (acceptedCandles is not null && acceptedCandles.Count > 0)
                             {
                                 try
                                 {
@@ -372,7 +395,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                                 }
                             }
 
-                            if (page.MaxAcceptedBegin is DateTime pageMaximum)
+                            if (pageMaxAcceptedBegin is DateTime pageMaximum)
                             {
                                 if (maxAcceptedBegin is null || pageMaximum > maxAcceptedBegin.Value)
                                     maxAcceptedBegin = pageMaximum;
@@ -395,6 +418,30 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                                 UpdateConfirmedTime(state, interval, pendingMaxBegin);
                                 pendingMaxBegin = null;
                             }
+
+                            pageNumber++;
+                            commitCt.ThrowIfCancellationRequested();
+                            bool fetchBudgetExpired = fetchBudgetRemaining <= TimeSpan.Zero ||
+                                                       fetchCts.IsCancellationRequested;
+                            if (pageSourceRowsCount != CandlesPageLimit)
+                            {
+                                if (fetchBudgetExpired)
+                                    fetchTimedOut = true;
+                                break;
+                            }
+                            if (fetchBudgetExpired)
+                            {
+                                fetchTimedOut = true;
+                                break;
+                            }
+                            if (pageNumber >= _maxPagesPerLoad)
+                            {
+                                fetchFailure = new InvalidOperationException(
+                                    $"Догрузка свечей достигла защитного предела " +
+                                    $"Moex:MaxPagesPerLoad={_maxPagesPerLoad} на полной странице.");
+                                break;
+                            }
+                            start = checked(start + CandlesPageLimit);
                         }
                     }
 
@@ -443,10 +490,6 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                         UpdateConfirmedTime(state, interval, pendingMaxBegin);
                     }
 
-                    foreach (RealtimeRowFailure failure in rowFailures)
-                        MoexRealtimeReceiverLogMessages.CandleRowSkipped(
-                            _logger, secid, DataKind, interval, failure.Position, failure.Reason);
-
                     if (fetchTimedOut)
                     {
                         MoexMetrics.RecordRealtimePoll(in operationTags, MoexOutcomes.Error, interval);
@@ -460,7 +503,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                             .Capture(fetchFailure)
                             .Throw();
                     }
-                    if (rowFailures.Count > 0)
+                    if (rowFailuresCount > 0)
                         throw new InvalidOperationException("Окно свечей обработано частично.");
 
                     if (rowsInserted > 0 && maxAcceptedBegin is DateTime confirmedBegin)
@@ -495,6 +538,12 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
             return messageBus;
         }
 
+        private static string BuildCandlesEndpoint(string market, string secid)
+        {
+            if (market == MoexMarkets.Stock)
+                return $"/engines/stock/markets/shares/boards/TQBR/securities/{secid}/candles.json";
+            return $"/engines/futures/markets/forts/boards/RFUD/securities/{secid}/candles.json";
+        }
         private static void UpdateConfirmedTime(
             CandleInstrumentState state,
             int interval,
