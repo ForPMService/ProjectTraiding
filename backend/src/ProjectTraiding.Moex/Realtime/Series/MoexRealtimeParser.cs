@@ -834,6 +834,8 @@ public static class MoexRealtimeParser
             CandleRow row = new() { Secid = secid, IngestPriority = 0 };
             DateTime? begin = null;
             DateTime? end = null;
+            ulong beginTimestamp = 0;
+            ulong endTimestamp = 0;
             Exception? rowFailure = null;
             try { row.Open = ParseHelpersUtf8.ReadNextNullableDouble(ref reader, rowIndex, "candles", 0); }
             catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
@@ -847,16 +849,62 @@ public static class MoexRealtimeParser
             catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
             try { row.Volume = ParseHelpersUtf8.ReadNextNullableDouble(ref reader, rowIndex, "candles", 5); }
             catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
-            try { begin = ParseHelpersUtf8.ReadNextNullableDateTime(ref reader, rowIndex, "candles", 6, out _); }
-            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
-            try { end = ParseHelpersUtf8.ReadNextNullableDateTime(ref reader, rowIndex, "candles", 7, out _); }
-            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try
+            {
+                begin = ParseHelpersUtf8.ReadNextNullableDateTime(
+                    ref reader, rowIndex, "candles", 6, out bool beginWasNull);
+                if (beginWasNull)
+                    rowFailure ??= new InvalidOperationException("Свеча отвергнута: begin пустой.");
+                else if (begin is null)
+                    rowFailure ??= new InvalidOperationException(
+                        "Свеча отвергнута: begin имеет неверный формат времени.");
+            }
+            catch (Exception ex) when (IsRowValueFailure(ex))
+            {
+                rowFailure ??= new InvalidOperationException($"Свеча отвергнута: begin: {ex.Message}", ex);
+            }
+            try
+            {
+                end = ParseHelpersUtf8.ReadNextNullableDateTime(
+                    ref reader, rowIndex, "candles", 7, out bool endWasNull);
+                if (endWasNull)
+                    rowFailure ??= new InvalidOperationException("Свеча отвергнута: end пустой.");
+                else if (end is null)
+                    rowFailure ??= new InvalidOperationException(
+                        "Свеча отвергнута: end имеет неверный формат времени.");
+            }
+            catch (Exception ex) when (IsRowValueFailure(ex))
+            {
+                rowFailure ??= new InvalidOperationException($"Свеча отвергнута: end: {ex.Message}", ex);
+            }
             ParseHelpersUtf8.ExpectRowEnd(
                 ref reader, rowIndex, "candles", MoexColumnSets.Candles.Length);
 
-            if (rowFailure is null && begin is null)
-                rowFailure = new InvalidOperationException(
-                    "Свеча отвергнута: начало пусто или неверно.");
+            if (rowFailure is null)
+            {
+                try
+                {
+                    beginTimestamp = CandleDateTime64.ToUnixWholeSeconds(begin!.Value);
+                }
+                catch (ArgumentException ex)
+                {
+                    rowFailure = new InvalidOperationException(
+                        $"Свеча отвергнута: begin не является допустимым временем. {ex.Message}", ex);
+                }
+
+                if (rowFailure is null)
+                {
+                    try
+                    {
+                        endTimestamp = CandleDateTime64.ToUnixWholeSeconds(end!.Value);
+                    }
+                    catch (ArgumentException ex)
+                    {
+                        rowFailure = new InvalidOperationException(
+                            $"Свеча отвергнута: end не является допустимым временем. {ex.Message}", ex);
+                    }
+                }
+            }
 
             if (rowFailure is not null)
             {
@@ -870,10 +918,8 @@ public static class MoexRealtimeParser
                 DateTime beginValue = begin!.Value;
                 if (beginValue <= now && (lastBegin is null || beginValue >= lastBegin.Value))
                 {
-                    row.Begin = CandleDateTime64.ToUnixWholeSeconds(beginValue);
-                    row.End = end is DateTime endValue
-                        ? CandleDateTime64.ToUnixWholeSeconds(endValue)
-                        : null;
+                    row.Begin = beginTimestamp;
+                    row.End = endTimestamp;
                     writer.Append(in row);
                     if (acceptedCandles is not null)
                         acceptedCandles.Add(row);

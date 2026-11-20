@@ -41,11 +41,15 @@ public static class CandleHistoryParser
 
             if (reader.ValueTextEquals("columns"u8))
             {
+                if (foundColumns)
+                    ParseHelpersUtf8.SchemaMismatch("[candles] Повторная секция 'columns'.");
                 foundColumns = true;
                 ParseHelpersUtf8.ValidateInputColumnsUtf8(ref reader, MoexColumnSets.Candles, RootKey);
             }
             else if (reader.ValueTextEquals("data"u8))
             {
+                if (foundData)
+                    ParseHelpersUtf8.SchemaMismatch("[candles] Повторная секция 'data'.");
                 if (!foundColumns)
                     ParseHelpersUtf8.SchemaMismatch(
                         "[candles] Секция 'data' встретилась до 'columns'. Порядок columns → data обязателен.");
@@ -85,8 +89,8 @@ public static class CandleHistoryParser
             double? low = ReadNextDouble(ref reader, sourceRowIndex, 3, ref rowError);
             double? value = ReadNextDouble(ref reader, sourceRowIndex, 4, ref rowError);
             double? volume = ReadNextDouble(ref reader, sourceRowIndex, 5, ref rowError);
-            DateTime? beginTime = ReadNextDateTime(ref reader, sourceRowIndex, 6, required: true, ref rowError);
-            DateTime? endTime = ReadNextDateTime(ref reader, sourceRowIndex, 7, required: false, ref rowError);
+            DateTime? beginTime = ReadNextDateTime(ref reader, sourceRowIndex, 6, "begin", ref rowError);
+            DateTime? endTime = ReadNextDateTime(ref reader, sourceRowIndex, 7, "end", ref rowError);
             ParseHelpersUtf8.ExpectRowEnd(ref reader, sourceRowIndex, RootKey, MoexColumnSets.Candles.Length);
 
             sourceRowIndex++;
@@ -103,7 +107,7 @@ public static class CandleHistoryParser
                 }
                 catch (ArgumentException ex)
                 {
-                    rowError ??= ex.Message;
+                    rowError ??= $"Свеча отвергнута: begin не является допустимым временем. {ex.Message}";
                 }
             }
 
@@ -115,7 +119,7 @@ public static class CandleHistoryParser
                 }
                 catch (ArgumentException ex)
                 {
-                    rowError ??= ex.Message;
+                    rowError ??= $"Свеча отвергнута: end не является допустимым временем. {ex.Message}";
                 }
             }
 
@@ -169,7 +173,7 @@ public static class CandleHistoryParser
         ref Utf8JsonReader reader,
         int rowIndex,
         int columnIndex,
-        bool required,
+        string fieldName,
         ref string? rowError)
     {
         try
@@ -178,23 +182,20 @@ public static class CandleHistoryParser
                 ref reader, rowIndex, RootKey, columnIndex, out bool wasNull);
             if (wasNull)
             {
-                if (required)
-                    rowError ??= "Свеча отвергнута: begin пустой.";
+                rowError ??= $"Свеча отвергнута: {fieldName} пустой.";
                 return null;
             }
 
             if (value is null)
             {
-                rowError ??= required
-                    ? "Свеча отвергнута: begin имеет неверный формат времени."
-                    : "Свеча отвергнута: end имеет неверный формат времени.";
+                rowError ??= $"Свеча отвергнута: {fieldName} имеет неверный формат времени.";
                 return null;
             }
             return value;
         }
         catch (Exception ex) when (ex is InvalidOperationException or FormatException or ArgumentException)
         {
-            rowError ??= ex.Message;
+            rowError ??= $"Свеча отвергнута: {fieldName}: {ex.Message}";
             reader.Skip();
             return null;
         }
