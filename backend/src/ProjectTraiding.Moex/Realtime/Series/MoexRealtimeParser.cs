@@ -498,38 +498,43 @@ public static class MoexRealtimeParser
             long? tradeNo = null;
             SourceTimeParts timeParts = default;
             Exception? rowFailure = null;
-            for (int position = 0; position < 14; position++)
+            try { tradeNo = ParseHelpersUtf8.ReadNextNullableLong(ref reader, rowIndex, "trades", 0); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { timeParts.Time = ParseHelpersUtf8.ReadNextMomentTime(ref reader, rowIndex, 1, "trades", out timeParts.RawTime); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { ParseHelpersUtf8.ExpectNextNullableString(ref reader, rowIndex, "trades", 2); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { row.Price = ParseHelpersUtf8.ReadNextNullableDouble(ref reader, rowIndex, "trades", 3); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { row.Quantity = ParseHelpersUtf8.ReadNextNullableLong(ref reader, rowIndex, "trades", 4); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { row.Period = ParseHelpersUtf8.ReadNextNullableString(ref reader, rowIndex, "trades", 5); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { row.Value = ParseHelpersUtf8.ReadNextNullableDouble(ref reader, rowIndex, "trades", 6); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { row.BoardId = ParseHelpersUtf8.ReadNextNullableString(ref reader, rowIndex, "trades", 7); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try
             {
-                ReadCell(ref reader, rowIndex, position, 14, "trades");
-                if (reader.TokenType == JsonTokenType.Null)
-                    continue;
-
-                try
-                {
-                    switch (position)
-                    {
-                        case 0: tradeNo = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, "trades"); break;
-                        case 1: timeParts.Time = ParseHelpersUtf8.ReadMomentTimeUtf8(ref reader, rowIndex, position, "trades", out timeParts.RawTime); break;
-                        case 2: ParseHelpersUtf8.ExpectString(ref reader, rowIndex, position, "trades"); break;
-                        case 3: row.Price = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, "trades"); break;
-                        case 4: row.Quantity = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, "trades"); break;
-                        case 5: row.Period = ParseHelpersUtf8.ReadString(ref reader, rowIndex, position, "trades"); break;
-                        case 6: row.Value = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, "trades"); break;
-                        case 7: row.BoardId = ParseHelpersUtf8.ReadString(ref reader, rowIndex, position, "trades"); break;
-                        case 8: row.Systime = ReadUnixTime(ref reader, rowIndex, position, "trades"); break;
-                        case 9: row.BuySell = ParseHelpersUtf8.ReadString(ref reader, rowIndex, position, "trades"); break;
-                        case 10: row.Decimals = ParseHelpersUtf8.ReadInt(ref reader, rowIndex, position, "trades"); break;
-                        case 11: row.TradingSession = ParseHelpersUtf8.ReadString(ref reader, rowIndex, position, "trades"); break;
-                        case 12: timeParts.Date = ParseHelpersUtf8.ReadMomentDateUtf8(ref reader, rowIndex, position, "trades", out timeParts.RawDate); break;
-                        case 13: ParseHelpersUtf8.ExpectString(ref reader, rowIndex, position, "trades"); break;
-                    }
-                }
-                catch (Exception ex) when (IsRowValueFailure(ex))
-                {
-                    rowFailure ??= ex;
-                }
+                DateTime? systemTime = ParseHelpersUtf8.ReadNextNullableDateTime(
+                    ref reader, rowIndex, "trades", 8, out _);
+                row.Systime = systemTime is DateTime value
+                    ? CandleDateTime64.ToUnixWholeSeconds(value)
+                    : null;
             }
-            FinishRow(ref reader, rowIndex, 14, "trades");
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { row.BuySell = ParseHelpersUtf8.ReadNextNullableString(ref reader, rowIndex, "trades", 9); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { row.Decimals = ParseHelpersUtf8.ReadNextNullableInt(ref reader, rowIndex, "trades", 10); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { row.TradingSession = ParseHelpersUtf8.ReadNextNullableString(ref reader, rowIndex, "trades", 11); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { timeParts.Date = ParseHelpersUtf8.ReadNextMomentDate(ref reader, rowIndex, 12, "trades", out timeParts.RawDate); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { ParseHelpersUtf8.ExpectNextNullableString(ref reader, rowIndex, "trades", 13); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            ParseHelpersUtf8.ExpectRowEnd(
+                ref reader, rowIndex, "trades", MoexColumnSets.TradesStock.Length);
 
             DateTime? sourceTime = TryBuildSourceTime(in timeParts, out Exception? timeFailure);
             if (rowFailure is null && string.IsNullOrWhiteSpace(secid))
@@ -589,37 +594,41 @@ public static class MoexRealtimeParser
             long? tradeNo = null;
             SourceTimeParts timeParts = default;
             Exception? rowFailure = null;
-            for (int position = 0; position < 13; position++)
+            try { tradeNo = ParseHelpersUtf8.ReadNextNullableLong(ref reader, rowIndex, "trades", 0); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { row.BoardName = ParseHelpersUtf8.ReadNextNullableString(ref reader, rowIndex, "trades", 1); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { ParseHelpersUtf8.ExpectNextNullableString(ref reader, rowIndex, "trades", 2); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { timeParts.Date = ParseHelpersUtf8.ReadNextMomentDate(ref reader, rowIndex, 3, "trades", out timeParts.RawDate); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { timeParts.Time = ParseHelpersUtf8.ReadNextMomentTime(ref reader, rowIndex, 4, "trades", out timeParts.RawTime); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { row.Price = ParseHelpersUtf8.ReadNextNullableDouble(ref reader, rowIndex, "trades", 5); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { row.Quantity = ParseHelpersUtf8.ReadNextNullableLong(ref reader, rowIndex, "trades", 6); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try
             {
-                ReadCell(ref reader, rowIndex, position, 13, "trades");
-                if (reader.TokenType == JsonTokenType.Null)
-                    continue;
-
-                try
-                {
-                    switch (position)
-                    {
-                        case 0: tradeNo = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, "trades"); break;
-                        case 1: row.BoardName = ParseHelpersUtf8.ReadString(ref reader, rowIndex, position, "trades"); break;
-                        case 2: ParseHelpersUtf8.ExpectString(ref reader, rowIndex, position, "trades"); break;
-                        case 3: timeParts.Date = ParseHelpersUtf8.ReadMomentDateUtf8(ref reader, rowIndex, position, "trades", out timeParts.RawDate); break;
-                        case 4: timeParts.Time = ParseHelpersUtf8.ReadMomentTimeUtf8(ref reader, rowIndex, position, "trades", out timeParts.RawTime); break;
-                        case 5: row.Price = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, "trades"); break;
-                        case 6: row.Quantity = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, "trades"); break;
-                        case 7: row.Systime = ReadUnixTime(ref reader, rowIndex, position, "trades"); break;
-                        case 8: row.RecNo = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, "trades"); break;
-                        case 9: row.OpenPosition = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, "trades"); break;
-                        case 10: row.OffMarketDeal = ParseHelpersUtf8.ReadInt(ref reader, rowIndex, position, "trades"); break;
-                        case 11: row.BuySell = ParseHelpersUtf8.ReadString(ref reader, rowIndex, position, "trades"); break;
-                        case 12: ParseHelpersUtf8.ExpectString(ref reader, rowIndex, position, "trades"); break;
-                    }
-                }
-                catch (Exception ex) when (IsRowValueFailure(ex))
-                {
-                    rowFailure ??= ex;
-                }
+                DateTime? systemTime = ParseHelpersUtf8.ReadNextNullableDateTime(
+                    ref reader, rowIndex, "trades", 7, out _);
+                row.Systime = systemTime is DateTime value
+                    ? CandleDateTime64.ToUnixWholeSeconds(value)
+                    : null;
             }
-            FinishRow(ref reader, rowIndex, 13, "trades");
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { row.RecNo = ParseHelpersUtf8.ReadNextNullableLong(ref reader, rowIndex, "trades", 8); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { row.OpenPosition = ParseHelpersUtf8.ReadNextNullableLong(ref reader, rowIndex, "trades", 9); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { row.OffMarketDeal = ParseHelpersUtf8.ReadNextNullableInt(ref reader, rowIndex, "trades", 10); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { row.BuySell = ParseHelpersUtf8.ReadNextNullableString(ref reader, rowIndex, "trades", 11); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { ParseHelpersUtf8.ExpectNextNullableString(ref reader, rowIndex, "trades", 12); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            ParseHelpersUtf8.ExpectRowEnd(
+                ref reader, rowIndex, "trades", MoexColumnSets.TradesFutures.Length);
 
             DateTime? sourceTime = TryBuildSourceTime(in timeParts, out Exception? timeFailure);
             if (rowFailure is null && string.IsNullOrWhiteSpace(secid))
@@ -675,32 +684,24 @@ public static class MoexRealtimeParser
             double? price = null;
             long? seqNum = null;
             Exception? rowFailure = null;
-            for (int position = 0; position < 8; position++)
-            {
-                ReadCell(ref reader, rowIndex, position, 8, "orderbook");
-                if (reader.TokenType == JsonTokenType.Null)
-                    continue;
-
-                try
-                {
-                    switch (position)
-                    {
-                        case 0: row.BoardId = ParseHelpersUtf8.ReadString(ref reader, rowIndex, position, "orderbook"); break;
-                        case 1: ParseHelpersUtf8.ExpectString(ref reader, rowIndex, position, "orderbook"); break;
-                        case 2: buySell = ParseHelpersUtf8.ReadString(ref reader, rowIndex, position, "orderbook"); break;
-                        case 3: price = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, "orderbook"); break;
-                        case 4: row.Quantity = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, "orderbook"); break;
-                        case 5: seqNum = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, "orderbook"); break;
-                        case 6: ParseHelpersUtf8.ExpectString(ref reader, rowIndex, position, "orderbook"); break;
-                        case 7: row.Decimals = ParseHelpersUtf8.ReadLong(ref reader, rowIndex, position, "orderbook"); break;
-                    }
-                }
-                catch (Exception ex) when (IsRowValueFailure(ex))
-                {
-                    rowFailure ??= ex;
-                }
-            }
-            FinishRow(ref reader, rowIndex, 8, "orderbook");
+            try { row.BoardId = ParseHelpersUtf8.ReadNextNullableString(ref reader, rowIndex, "orderbook", 0); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { ParseHelpersUtf8.ExpectNextNullableString(ref reader, rowIndex, "orderbook", 1); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { buySell = ParseHelpersUtf8.ReadNextNullableString(ref reader, rowIndex, "orderbook", 2); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { price = ParseHelpersUtf8.ReadNextNullableDouble(ref reader, rowIndex, "orderbook", 3); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { row.Quantity = ParseHelpersUtf8.ReadNextNullableLong(ref reader, rowIndex, "orderbook", 4); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { seqNum = ParseHelpersUtf8.ReadNextNullableLong(ref reader, rowIndex, "orderbook", 5); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { ParseHelpersUtf8.ExpectNextNullableString(ref reader, rowIndex, "orderbook", 6); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { row.Decimals = ParseHelpersUtf8.ReadNextNullableLong(ref reader, rowIndex, "orderbook", 7); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            ParseHelpersUtf8.ExpectRowEnd(
+                ref reader, rowIndex, "orderbook", MoexColumnSets.Orderbook.Length);
 
             DateTime? sourceTime = ReadSnapshotTime(seqNum, out Exception? timeFailure);
             if (rowFailure is null && string.IsNullOrWhiteSpace(secid))
@@ -756,31 +757,24 @@ public static class MoexRealtimeParser
             DateTime? begin = null;
             DateTime? end = null;
             Exception? rowFailure = null;
-            for (int position = 0; position < 8; position++)
-            {
-                ReadCell(ref reader, rowIndex, position, 8, "candles");
-                if (reader.TokenType == JsonTokenType.Null)
-                    continue;
-                try
-                {
-                    switch (position)
-                    {
-                        case 0: row.Open = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, "candles"); break;
-                        case 1: row.Close = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, "candles"); break;
-                        case 2: row.High = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, "candles"); break;
-                        case 3: row.Low = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, "candles"); break;
-                        case 4: row.Value = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, "candles"); break;
-                        case 5: row.Volume = ParseHelpersUtf8.ReadDouble(ref reader, rowIndex, position, "candles"); break;
-                        case 6: begin = ParseHelpersUtf8.ReadDateTimeUtf8(ref reader, rowIndex, position, "candles"); break;
-                        case 7: end = ParseHelpersUtf8.ReadDateTimeUtf8(ref reader, rowIndex, position, "candles"); break;
-                    }
-                }
-                catch (Exception ex) when (IsRowValueFailure(ex))
-                {
-                    rowFailure ??= ex;
-                }
-            }
-            FinishRow(ref reader, rowIndex, 8, "candles");
+            try { row.Open = ParseHelpersUtf8.ReadNextNullableDouble(ref reader, rowIndex, "candles", 0); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { row.Close = ParseHelpersUtf8.ReadNextNullableDouble(ref reader, rowIndex, "candles", 1); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { row.High = ParseHelpersUtf8.ReadNextNullableDouble(ref reader, rowIndex, "candles", 2); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { row.Low = ParseHelpersUtf8.ReadNextNullableDouble(ref reader, rowIndex, "candles", 3); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { row.Value = ParseHelpersUtf8.ReadNextNullableDouble(ref reader, rowIndex, "candles", 4); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { row.Volume = ParseHelpersUtf8.ReadNextNullableDouble(ref reader, rowIndex, "candles", 5); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { begin = ParseHelpersUtf8.ReadNextNullableDateTime(ref reader, rowIndex, "candles", 6, out _); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            try { end = ParseHelpersUtf8.ReadNextNullableDateTime(ref reader, rowIndex, "candles", 7, out _); }
+            catch (Exception ex) when (IsRowValueFailure(ex)) { rowFailure ??= ex; }
+            ParseHelpersUtf8.ExpectRowEnd(
+                ref reader, rowIndex, "candles", MoexColumnSets.Candles.Length);
 
             if (rowFailure is null && begin is null)
                 rowFailure = new InvalidOperationException(
@@ -923,17 +917,6 @@ public static class MoexRealtimeParser
         return sessionDate;
     }
 
-    private static ulong? ReadUnixTime(
-        ref Utf8JsonReader reader,
-        int rowIndex,
-        int position,
-        string rootKey)
-    {
-        DateTime? value = ParseHelpersUtf8.ReadDateTimeUtf8(
-            ref reader, rowIndex, position, rootKey);
-        return value is DateTime time ? CandleDateTime64.ToUnixWholeSeconds(time) : null;
-    }
-
     private static DateTime? TryBuildSourceTime(
         in SourceTimeParts parts,
         out Exception? failure)
@@ -995,44 +978,6 @@ public static class MoexRealtimeParser
     {
         int epochDayNumber = DateOnly.FromDateTime(DateTime.UnixEpoch).DayNumber;
         return checked((uint)(date.DayNumber - epochDayNumber));
-    }
-
-    private static void ReadCell(
-        ref Utf8JsonReader reader,
-        int rowIndex,
-        int position,
-        int columnCount,
-        string rootKey)
-    {
-        if (!reader.Read())
-        {
-            ParseHelpersUtf8.SchemaMismatch(
-                $"[{rootKey}] Неожиданный конец JSON в строке {rowIndex}, позиция {position}.");
-        }
-        if (reader.TokenType == JsonTokenType.EndArray)
-        {
-            ParseHelpersUtf8.SchemaMismatch(
-                $"[{rootKey}] Короткая строка данных: ожидалось {columnCount} колонок, " +
-                $"получено {position} (строка {rowIndex}).");
-        }
-        if (reader.TokenType is JsonTokenType.StartArray or JsonTokenType.StartObject or JsonTokenType.EndObject)
-        {
-            ParseHelpersUtf8.SchemaMismatch(
-                $"[{rootKey}] Недопустимая структура значения в строке {rowIndex}, колонка {position}.");
-        }
-    }
-
-    private static void FinishRow(
-        ref Utf8JsonReader reader,
-        int rowIndex,
-        int columnCount,
-        string rootKey)
-    {
-        if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
-        {
-            ParseHelpersUtf8.SchemaMismatch(
-                $"[{rootKey}] Ожидался EndArray после {columnCount} колонок (строка {rowIndex}).");
-        }
     }
 
     private static bool IsRowValueFailure(Exception exception)
