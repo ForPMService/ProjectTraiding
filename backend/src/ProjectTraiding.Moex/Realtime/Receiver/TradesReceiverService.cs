@@ -5,6 +5,7 @@ using ProjectTraiding.Moex.Infrastructure.Buffers;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Parsing.Errors;
 using ProjectTraiding.Moex.Realtime.Series;
+using ProjectTraiding.Moex.Series;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using System;
@@ -221,8 +222,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 operationTags.DataKind, operationTags.Market, MoexFlows.Realtime);
             ProtobufBatchWriter<RealtimeStockTradeRow> writer = new(
                 executor,
-                MoexRealtimeRegistry.StockTradesTable,
-                MoexRealtimeRegistry.StockTradeInsertColumns,
+                MoexSeriesRegistry.RealtimeStockTradesTable,
+                RealtimeStockTradeRow.InsertColumns,
                 insertContext);
             using Activity? pollActivity =
                 MoexTelemetry.ActivitySource.StartActivity("moex.realtime.instrument.poll");
@@ -358,8 +359,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 operationTags.DataKind, operationTags.Market, MoexFlows.Realtime);
             ProtobufBatchWriter<RealtimeFuturesTradeRow> writer = new(
                 executor,
-                MoexRealtimeRegistry.FuturesTradesTable,
-                MoexRealtimeRegistry.FuturesTradeInsertColumns,
+                MoexSeriesRegistry.RealtimeFuturesTradesTable,
+                RealtimeFuturesTradeRow.InsertColumns,
                 insertContext);
             using Activity? pollActivity =
                 MoexTelemetry.ActivitySource.StartActivity("moex.realtime.instrument.poll");

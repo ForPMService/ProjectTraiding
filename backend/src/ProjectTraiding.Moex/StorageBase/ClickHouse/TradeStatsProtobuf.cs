@@ -7,6 +7,17 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse;
 [ProtoContract]
 public struct TradeStatsStockRow
 {
+    public static readonly string[] InsertColumns =
+    [
+        "secid", "source_time", "pr_open", "pr_high",
+        "pr_low", "pr_close", "pr_std", "vol",
+        "val", "trades", "pr_vwap", "pr_change",
+        "trades_b", "trades_s", "val_b", "val_s",
+        "vol_b", "vol_s", "disb", "pr_vwap_b",
+        "pr_vwap_s", "sec_pr_open", "sec_pr_high", "sec_pr_low",
+        "sec_pr_close", "systime",
+    ];
+
     [ProtoMember(1)] public string Secid { get; set; }
     [ProtoMember(2)] public ulong SourceTime { get; set; }
     [ProtoMember(3)] public double? PrOpen { get; set; }
@@ -39,6 +50,18 @@ public struct TradeStatsStockRow
 [ProtoContract]
 public struct TradeStatsFuturesRow
 {
+    public static readonly string[] InsertColumns =
+    [
+        "secid", "source_time", "asset_code", "pr_open",
+        "pr_high", "pr_low", "pr_close", "pr_std",
+        "vol", "val", "trades", "pr_vwap",
+        "pr_change", "trades_b", "trades_s", "val_b",
+        "val_s", "vol_b", "vol_s", "disb",
+        "pr_vwap_b", "pr_vwap_s", "im", "oi_open",
+        "oi_high", "oi_low", "oi_close", "sec_pr_open",
+        "sec_pr_high", "sec_pr_low", "sec_pr_close", "systime",
+    ];
+
     [ProtoMember(1)] public string Secid { get; set; }
     [ProtoMember(2)] public ulong SourceTime { get; set; }
     [ProtoMember(3)] public string? AssetCode { get; set; }

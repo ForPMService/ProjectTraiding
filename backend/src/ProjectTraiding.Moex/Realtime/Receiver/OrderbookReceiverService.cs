@@ -5,6 +5,7 @@ using ProjectTraiding.Moex.Infrastructure.Buffers;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Parsing.Errors;
 using ProjectTraiding.Moex.Realtime.Series;
+using ProjectTraiding.Moex.Series;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using System;
@@ -157,8 +158,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
 
             ProtobufBatchWriter<RealtimeOrderbookRow> writer = new(
                 executor,
-                MoexRealtimeRegistry.OrderbookTable,
-                MoexRealtimeRegistry.OrderbookInsertColumns,
+                MoexSeriesRegistry.RealtimeOrderbookTable,
+                RealtimeOrderbookRow.InsertColumns,
                 insertContext);
             int acceptedRowsCount;
             int rowFailuresCount;

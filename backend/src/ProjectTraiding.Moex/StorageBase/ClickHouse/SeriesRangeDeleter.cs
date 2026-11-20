@@ -30,7 +30,8 @@ public sealed class SeriesRangeDeleter
         if (spec.DataKind == "tradestats")
         {
             await DeleteTableRangeAsync(spec.Table, "source_time", secid, from, tillInclusive, ct);
-            await DeleteTableRangeAsync("moex_candles_5m", "begin", secid, from, tillInclusive, ct);
+            await DeleteTableRangeAsync(
+                MoexSeriesRegistry.TradeStatsCandleTable, "begin", secid, from, tillInclusive, ct);
             return;
         }
 

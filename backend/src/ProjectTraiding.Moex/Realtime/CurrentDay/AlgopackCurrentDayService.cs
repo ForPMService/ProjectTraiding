@@ -331,7 +331,7 @@ public sealed class AlgopackCurrentDayService : BackgroundService
                 ProtobufBatchWriter<TradeStatsStockRow> statsWriter = new(
                     _executor, spec.Table, spec.Columns, insertContext);
                 ProtobufBatchWriter<CandleRow> candleWriter = new(
-                    _executor, "moex_candles_5m", MoexSeriesRegistry.CandlesStock1m.Columns,
+                    _executor, MoexSeriesRegistry.TradeStatsCandleTable, CandleRow.InsertColumns,
                     candleInsertContext);
                 await ProcessTradeStatsInstrumentAsync(
                     spec,
@@ -352,7 +352,7 @@ public sealed class AlgopackCurrentDayService : BackgroundService
                 ProtobufBatchWriter<TradeStatsFuturesRow> statsWriter = new(
                     _executor, spec.Table, spec.Columns, insertContext);
                 ProtobufBatchWriter<CandleRow> candleWriter = new(
-                    _executor, "moex_candles_5m", MoexSeriesRegistry.CandlesStock1m.Columns,
+                    _executor, MoexSeriesRegistry.TradeStatsCandleTable, CandleRow.InsertColumns,
                     candleInsertContext);
                 await ProcessTradeStatsInstrumentAsync(
                     spec,

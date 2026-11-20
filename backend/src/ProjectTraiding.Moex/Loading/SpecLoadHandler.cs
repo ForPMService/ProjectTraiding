@@ -183,7 +183,7 @@ public sealed class SpecLoadHandler
     {
         ProtobufBatchWriter<TRow> statsWriter = new(_executor, spec.Table, spec.Columns, insertContext);
         ProtobufBatchWriter<CandleRow> candleWriter = new(
-            _executor, "moex_candles_5m", MoexSeriesRegistry.CandlesStock1m.Columns,
+            _executor, MoexSeriesRegistry.TradeStatsCandleTable, CandleRow.InsertColumns,
             new StorageInsertContext(MoexDataKinds.Candles, tags.Market, MoexFlows.History, 5));
         HistoricalReadState state = new(_logger, tags, task.Secid);
         long insertedRows = 0;

@@ -3,33 +3,6 @@ using System.Collections.Immutable;
 
 namespace ProjectTraiding.Moex.Series;
 
-/// <summary>
-/// Накопитель частей момента на время разбора одной строки данных. Живёт в кадре стека
-/// разборщика и передаётся по ссылке, поэтому объектов в куче не создаёт.
-///
-/// Три состояния каждой части различаются без отдельного перечисления: заполнено значение —
-/// часть годна; заполнен исходный текст — часть не уложилась в строгий образец;
-/// не заполнено ничего — часть отсутствует.
-///
-/// Исходный текст сохраняется только на пути отказа. На счастливом пути оба поля текста
-/// остаются пустыми, и строк не создаётся.
-/// </summary>
-public struct SourceTimeParts
-{
-    public DateOnly? Date;
-    public TimeOnly? Time;
-    public string? RawDate;
-    public string? RawTime;
-
-    public void Reset()
-    {
-        Date = null;
-        Time = null;
-        RawDate = null;
-        RawTime = null;
-    }
-}
-
 public enum PaginationKind
 {
     Cursor,

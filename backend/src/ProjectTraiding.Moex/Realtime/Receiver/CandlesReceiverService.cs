@@ -9,6 +9,7 @@ using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Parsing.Errors;
 using ProjectTraiding.Moex.Realtime.Series;
 using ProjectTraiding.Moex.Realtime.Subscriptions;
+using ProjectTraiding.Moex.Series;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using Wolverine;
@@ -236,7 +237,7 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 CandleInterval: interval);
             ProtobufBatchWriter<CandleRow> writer = new(
                 executor,
-                MoexRealtimeRegistry.CandleTableFor(interval),
+                MoexSeriesRegistry.CandleTableFor(interval),
                 CandleRow.InsertColumns,
                 insertContext);
 

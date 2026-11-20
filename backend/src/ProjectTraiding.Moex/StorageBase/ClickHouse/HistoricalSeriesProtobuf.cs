@@ -6,6 +6,15 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse;
 [ProtoContract]
 public struct ObStatsStockRow
 {
+    public static readonly string[] InsertColumns =
+    [
+        "secid", "source_time", "spread_bbo", "spread_lv10",
+        "spread_1mio", "levels_b", "levels_s", "vol_b",
+        "vol_s", "val_b", "val_s", "imbalance_vol_bbo",
+        "imbalance_val_bbo", "imbalance_vol", "imbalance_val", "vwap_b",
+        "vwap_s", "vwap_b_1mio", "vwap_s_1mio", "systime",
+    ];
+
     [ProtoMember(1)] public string Secid { get; set; }
     [ProtoMember(2)] public ulong SourceTime { get; set; }
     [ProtoMember(3)] public double? SpreadBbo { get; set; }
@@ -31,6 +40,19 @@ public struct ObStatsStockRow
 [ProtoContract]
 public struct ObStatsFuturesRow
 {
+    public static readonly string[] InsertColumns =
+    [
+        "secid", "source_time", "asset_code", "mid_price",
+        "micro_price", "spread_l1", "spread_l2", "spread_l3",
+        "spread_l5", "spread_l10", "spread_l20", "levels_b",
+        "levels_s", "vol_b_l1", "vol_b_l2", "vol_b_l3",
+        "vol_b_l5", "vol_b_l10", "vol_b_l20", "vol_s_l1",
+        "vol_s_l2", "vol_s_l3", "vol_s_l5", "vol_s_l10",
+        "vol_s_l20", "vwap_b_l3", "vwap_b_l5", "vwap_b_l10",
+        "vwap_b_l20", "vwap_s_l3", "vwap_s_l5", "vwap_s_l10",
+        "vwap_s_l20", "systime",
+    ];
+
     [ProtoMember(1)] public string Secid { get; set; }
     [ProtoMember(2)] public ulong SourceTime { get; set; }
     [ProtoMember(3)] public string? AssetCode { get; set; }
@@ -70,6 +92,17 @@ public struct ObStatsFuturesRow
 [ProtoContract]
 public struct OrderStatsStockRow
 {
+    public static readonly string[] InsertColumns =
+    [
+        "secid", "source_time", "put_orders_b", "put_orders_s",
+        "put_val_b", "put_val_s", "put_vol_b", "put_vol_s",
+        "put_vwap_b", "put_vwap_s", "put_vol", "put_val",
+        "put_orders", "cancel_orders_b", "cancel_orders_s", "cancel_val_b",
+        "cancel_val_s", "cancel_vol_b", "cancel_vol_s", "cancel_vwap_b",
+        "cancel_vwap_s", "cancel_vol", "cancel_val", "cancel_orders",
+        "systime",
+    ];
+
     [ProtoMember(1)] public string Secid { get; set; }
     [ProtoMember(2)] public ulong SourceTime { get; set; }
     [ProtoMember(3)] public int? PutOrdersB { get; set; }
@@ -100,6 +133,13 @@ public struct OrderStatsStockRow
 [ProtoContract]
 public struct FutoiRow
 {
+    public static readonly string[] InsertColumns =
+    [
+        "secid", "source_time", "clgroup", "sess_id",
+        "seqnum", "pos", "pos_long", "pos_short",
+        "pos_long_num", "pos_short_num", "trade_session_date", "systime",
+    ];
+
     [ProtoMember(1)] public string Secid { get; set; }
     [ProtoMember(2)] public ulong SourceTime { get; set; }
     [ProtoMember(3)] public string Clgroup { get; set; }
@@ -117,6 +157,12 @@ public struct FutoiRow
 [ProtoContract]
 public struct Hi2StockRow
 {
+    public static readonly string[] InsertColumns =
+    [
+        "secid", "source_time", "metric", "value",
+        "reference", "systime",
+    ];
+
     [ProtoMember(1)] public string Secid { get; set; }
     [ProtoMember(2)] public ulong SourceTime { get; set; }
     [ProtoMember(3)] public string Metric { get; set; }
@@ -128,6 +174,12 @@ public struct Hi2StockRow
 [ProtoContract]
 public struct Hi2FuturesRow
 {
+    public static readonly string[] InsertColumns =
+    [
+        "secid", "source_time", "asset_code", "metric",
+        "value", "reference", "systime",
+    ];
+
     [ProtoMember(1)] public string Secid { get; set; }
     [ProtoMember(2)] public ulong SourceTime { get; set; }
     [ProtoMember(3)] public string? AssetCode { get; set; }
@@ -140,6 +192,12 @@ public struct Hi2FuturesRow
 [ProtoContract]
 public struct MegaAlertsStockRow
 {
+    public static readonly string[] InsertColumns =
+    [
+        "secid", "source_time", "alert_type", "threshold",
+        "value", "reference", "systime",
+    ];
+
     [ProtoMember(1)] public string Secid { get; set; }
     [ProtoMember(2)] public ulong SourceTime { get; set; }
     [ProtoMember(3)] public string AlertType { get; set; }
@@ -152,6 +210,12 @@ public struct MegaAlertsStockRow
 [ProtoContract]
 public struct MegaAlertsFuturesRow
 {
+    public static readonly string[] InsertColumns =
+    [
+        "secid", "source_time", "asset_code", "alert_type",
+        "threshold", "value", "reference", "systime",
+    ];
+
     [ProtoMember(1)] public string Secid { get; set; }
     [ProtoMember(2)] public ulong SourceTime { get; set; }
     [ProtoMember(3)] public string? AssetCode { get; set; }

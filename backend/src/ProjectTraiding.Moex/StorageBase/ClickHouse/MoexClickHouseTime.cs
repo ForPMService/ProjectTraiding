@@ -1,6 +1,6 @@
 using System;
 using System.Globalization;
-using ProjectTraiding.Moex.Series;
+using ProjectTraiding.Moex.Parsing;
 
 namespace ProjectTraiding.Moex.StorageBase.ClickHouse
 {

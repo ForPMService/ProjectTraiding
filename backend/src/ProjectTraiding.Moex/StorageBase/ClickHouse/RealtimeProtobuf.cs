@@ -7,6 +7,13 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse;
 [ProtoContract]
 public struct RealtimeStockTradeRow
 {
+    public static readonly string[] InsertColumns =
+    [
+        "secid", "source_time", "trade_no", "board_id", "price", "quantity", "value",
+        "period", "buy_sell", "decimals", "trading_session", "trade_session_date",
+        "systime", "ingest_priority",
+    ];
+
     [ProtoMember(1)] public string Secid { get; set; }
     [ProtoMember(2)] public ulong SourceTime { get; set; }
     [ProtoMember(3)] public long TradeNo { get; set; }
@@ -28,6 +35,13 @@ public struct RealtimeStockTradeRow
 [ProtoContract]
 public struct RealtimeFuturesTradeRow
 {
+    public static readonly string[] InsertColumns =
+    [
+        "secid", "source_time", "trade_no", "board_name", "price", "quantity", "rec_no",
+        "open_position", "off_market_deal", "buy_sell", "trade_session_date", "systime",
+        "ingest_priority",
+    ];
+
     [ProtoMember(1)] public string Secid { get; set; }
     [ProtoMember(2)] public ulong SourceTime { get; set; }
     [ProtoMember(3)] public long TradeNo { get; set; }
@@ -48,6 +62,12 @@ public struct RealtimeFuturesTradeRow
 [ProtoContract]
 public struct RealtimeOrderbookRow
 {
+    public static readonly string[] InsertColumns =
+    [
+        "secid", "source_time", "buy_sell", "price", "board_id", "quantity", "decimals",
+        "trade_session_date", "ingest_priority",
+    ];
+
     [ProtoMember(1)] public string Secid { get; set; }
     [ProtoMember(2)] public ulong SourceTime { get; set; }
     [ProtoMember(3)] public string BuySell { get; set; }

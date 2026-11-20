@@ -1,5 +1,6 @@
 using ClickHouse.Driver;
 using ClickHouse.Driver.ADO.Parameters;
+using ProjectTraiding.Moex.Series;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 using System.Diagnostics;
 
@@ -27,23 +28,23 @@ namespace ProjectTraiding.Moex.StorageBase.ClickHouse
     {
         private static readonly string[] Tables =
         {
-            "moex_candles_1m",
-            "moex_candles_10m",
-            "moex_candles_1h",
-            "moex_candles_1d",
-            "moex_trades_stock",
-            "moex_trades_futures",
-            "moex_orderbook",
-            "moex_trade_stats_5m_stock",
-            "moex_trade_stats_5m_futures",
-            "moex_ob_stats_5m_stock",
-            "moex_ob_stats_5m_futures",
-            "moex_order_stats_5m_stock",
-            "moex_futoi_5m",
-            "moex_hi2_daily_stock",
-            "moex_hi2_daily_futures",
-            "moex_megaalerts_stock",
-            "moex_megaalerts_futures",
+            MoexSeriesRegistry.CandleTableFor(1),
+            MoexSeriesRegistry.CandleTableFor(10),
+            MoexSeriesRegistry.CandleTableFor(60),
+            MoexSeriesRegistry.CandleTableFor(24),
+            MoexSeriesRegistry.RealtimeStockTradesTable,
+            MoexSeriesRegistry.RealtimeFuturesTradesTable,
+            MoexSeriesRegistry.RealtimeOrderbookTable,
+            MoexSeriesRegistry.TradeStatsStock.Table,
+            MoexSeriesRegistry.TradeStatsFutures.Table,
+            MoexSeriesRegistry.ObStatsStock.Table,
+            MoexSeriesRegistry.ObStatsFutures.Table,
+            MoexSeriesRegistry.OrderStatsStock.Table,
+            MoexSeriesRegistry.Futoi.Table,
+            MoexSeriesRegistry.Hi2Stock.Table,
+            MoexSeriesRegistry.Hi2Futures.Table,
+            MoexSeriesRegistry.MegaAlertsStock.Table,
+            MoexSeriesRegistry.MegaAlertsFutures.Table,
         };
 
         private readonly ClickHouseClient _client;
