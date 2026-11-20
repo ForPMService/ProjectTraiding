@@ -183,13 +183,22 @@ namespace ProjectTraiding.Moex.Clients
         public async Task<RentedBuffer> GetCandlesPageAsync(
             string market,
             string ticker,
-            DateTime from,
-            DateTime till,
-            int interval,
-            int? start,
+            Dictionary<string, string> queryParams,
             CancellationToken cancellationToken = default)
         {
             string endpoint = BuildEndpoint(market, ticker, "/candles.json");
+
+            using HttpResponseMessage response = await _transport.SendAsync(
+                endpoint, queryParams, cancellationToken, MoexFlows.Realtime);
+            return await RentedBuffer.RentFromResponseAsync(
+                response, _options.BodyReadTimeout, endpoint, cancellationToken);
+        }
+
+        internal static Dictionary<string, string> CreateCandlesQueryParams(
+            DateTime from,
+            DateTime till,
+            int interval)
+        {
             if (till < from)
             {
                 throw new ArgumentException(
@@ -198,10 +207,7 @@ namespace ProjectTraiding.Moex.Clients
                     nameof(till));
             }
 
-            // Окно и перечень колонок на весь вызов одни: собирать словарь и форматировать
-            // границы окна на каждой странице незачем. Порядок ключей сохранён — от него
-            // зависит вид адреса, попадающего в события журнала обращений.
-            Dictionary<string, string> queryParams = new Dictionary<string, string>
+            return new Dictionary<string, string>
             {
                 ["iss.meta"] = "off",
                 ["iss.only"] = "candles",
@@ -212,13 +218,6 @@ namespace ProjectTraiding.Moex.Clients
                 ["till"] = till.ToString(
                     "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
             };
-            if (start is int pageStart && pageStart > 0)
-                queryParams["start"] = pageStart.ToString(CultureInfo.InvariantCulture);
-
-            using HttpResponseMessage response = await _transport.SendAsync(
-                endpoint, queryParams, cancellationToken, MoexFlows.Realtime);
-            return await RentedBuffer.RentFromResponseAsync(
-                response, _options.BodyReadTimeout, endpoint, cancellationToken);
         }
 
         // ═══════════════════════════════════════════════════════════

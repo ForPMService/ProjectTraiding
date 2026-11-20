@@ -15,6 +15,7 @@ using Wolverine;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 
 namespace ProjectTraiding.Moex.Realtime.Receiver
 {
@@ -220,6 +221,8 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                 interval, out DateTime lastBegin);
             DateTime? lastBeginForWindow = hasLastBegin ? lastBegin : null;
             DateTime from = RequestWindowStart(interval, now, lastBeginForWindow);
+            Dictionary<string, string> queryParams =
+                MoexRealtimeRestClient.CreateCandlesQueryParams(from, now, interval);
             MoexOperationTags operationTags = new MoexOperationTags(
                 MoexLogSources.RealtimeRest,
                 MoexOperations.RealtimeCandlesPoll,
@@ -291,13 +294,13 @@ namespace ProjectTraiding.Moex.Realtime.Receiver
                                 fetchActivity?.SetTag(MoexTelemetryAttributes.CandleInterval, interval);
                                 try
                                 {
+                                    if (start > 0)
+                                        queryParams["start"] = start.ToString(CultureInfo.InvariantCulture);
+
                                     using (RentedBuffer body = await client.GetCandlesPageAsync(
                                                state.Market,
                                                secid,
-                                               from,
-                                               now,
-                                               interval,
-                                               start == 0 ? null : start,
+                                               queryParams,
                                                fetchCts.Token))
                                     {
                                         MoexRealtimeParser.ParseCandles(
