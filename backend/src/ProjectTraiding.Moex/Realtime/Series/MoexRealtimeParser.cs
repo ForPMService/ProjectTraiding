@@ -300,16 +300,6 @@ public static class MoexRealtimeParser
         return null;
     }
 
-    private static void LogTradeRowFailure(ILogger logger, string secid, int position, string reason)
-        => logger.LogWarning(
-            "MOEX row skipped: secid={Secid}, dataKind={DataKind}, position={Position}, reason={Reason}",
-            secid, "trades", position, reason);
-
-    private static void LogOrderbookRowFailure(ILogger logger, string secid, int position, string reason)
-        => logger.LogWarning(
-            "MOEX row skipped: secid={Secid}, dataKind={DataKind}, position={Position}, reason={Reason}",
-            secid, "orderbook", position, reason);
-
     private static void ReadStockTradesTable(
         ref Utf8JsonReader reader,
         ProtobufBatchWriter<RealtimeStockTradeRow>? writer,
@@ -565,7 +555,8 @@ public static class MoexRealtimeParser
             {
                 if (sessionDateFailure is not null && acceptedRowsCount == 0)
                 {
-                    LogTradeRowFailure(logger, secid, -1, sessionDateFailure.Message);
+                    MoexRealtimeReceiverLogMessages.RealtimeRowSkipped(
+                        logger, secid, "trades", -1, sessionDateFailure.Message);
                     rowFailuresCount++;
                 }
                 if (appendRows && previousTradeNo is not null && tradeNo!.Value <= previousTradeNo.Value)
@@ -593,7 +584,8 @@ public static class MoexRealtimeParser
             }
             else
             {
-                LogTradeRowFailure(logger, secid, rowIndex, rowFailure.Message);
+                MoexRealtimeReceiverLogMessages.RealtimeRowSkipped(
+                    logger, secid, "trades", rowIndex, rowFailure.Message);
                 rowFailuresCount++;
             }
             sourceRowsCount++;
@@ -683,7 +675,8 @@ public static class MoexRealtimeParser
             {
                 if (sessionDateFailure is not null && acceptedRowsCount == 0)
                 {
-                    LogTradeRowFailure(logger, secid, -1, sessionDateFailure.Message);
+                    MoexRealtimeReceiverLogMessages.RealtimeRowSkipped(
+                        logger, secid, "trades", -1, sessionDateFailure.Message);
                     rowFailuresCount++;
                 }
                 if (appendRows && previousTradeNo is not null && tradeNo!.Value <= previousTradeNo.Value)
@@ -710,7 +703,8 @@ public static class MoexRealtimeParser
             }
             else
             {
-                LogTradeRowFailure(logger, secid, rowIndex, rowFailure.Message);
+                MoexRealtimeReceiverLogMessages.RealtimeRowSkipped(
+                    logger, secid, "trades", rowIndex, rowFailure.Message);
                 rowFailuresCount++;
             }
             sourceRowsCount++;
@@ -778,7 +772,8 @@ public static class MoexRealtimeParser
             {
                 if (sessionDateFailure is not null && acceptedRowsCount == 0)
                 {
-                    LogOrderbookRowFailure(logger, secid, -1, sessionDateFailure.Message);
+                    MoexRealtimeReceiverLogMessages.RealtimeRowSkipped(
+                        logger, secid, "orderbook", -1, sessionDateFailure.Message);
                     rowFailuresCount++;
                 }
                 row.SourceTime = CandleDateTime64.ToUnixWholeSeconds(sourceTime!.Value);
@@ -798,7 +793,8 @@ public static class MoexRealtimeParser
             }
             else
             {
-                LogOrderbookRowFailure(logger, secid, rowIndex, rowFailure.Message);
+                MoexRealtimeReceiverLogMessages.RealtimeRowSkipped(
+                    logger, secid, "orderbook", rowIndex, rowFailure.Message);
                 rowFailuresCount++;
             }
             sourceRowsCount++;

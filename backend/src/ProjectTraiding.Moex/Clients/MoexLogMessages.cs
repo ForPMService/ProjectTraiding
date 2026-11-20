@@ -130,6 +130,22 @@ namespace ProjectTraiding.Moex.Clients
         public static partial void RateLimitRejected(
             ILogger logger, string source, string endpoint, string reason, double waitMs);
 
+        [LoggerMessage(
+            EventId = 497,
+            EventName = "MoexInstrumentDeletionBackgroundPollFailedUnexpectedly",
+            Level = LogLevel.Error,
+            Message = "Instrument deletion background poll failed unexpectedly.")]
+        public static partial void InstrumentDeletionBackgroundPollFailedUnexpectedly(
+            ILogger logger, Exception exception);
+
+        [LoggerMessage(
+            EventId = 498,
+            EventName = "MoexInstrumentDeletionFailedAndWillBeRetried",
+            Level = LogLevel.Warning,
+            Message = "Instrument deletion failed and will be retried: deletionId={DeletionId}, secid={Secid}.")]
+        public static partial void InstrumentDeletionFailedAndWillBeRetried(
+            ILogger logger, Exception exception, Guid deletionId, string secid);
+
     }
 
     internal static class MoexLogSources

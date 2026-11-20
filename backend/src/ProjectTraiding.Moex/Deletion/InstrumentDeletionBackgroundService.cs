@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Hosting;
+using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.StorageBase.Postgres;
 
 namespace ProjectTraiding.Moex.Deletion
@@ -43,7 +44,7 @@ namespace ProjectTraiding.Moex.Deletion
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Instrument deletion background poll failed unexpectedly.");
+                    MoexLogMessages.InstrumentDeletionBackgroundPollFailedUnexpectedly(_logger, ex);
                     worked = false;
                 }
 
@@ -89,11 +90,8 @@ namespace ProjectTraiding.Moex.Deletion
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(
-                    ex,
-                    "Instrument deletion failed and will be retried: deletionId={DeletionId}, secid={Secid}.",
-                    claim.Value.Id,
-                    claim.Value.Secid);
+                MoexLogMessages.InstrumentDeletionFailedAndWillBeRetried(
+                    _logger, ex, claim.Value.Id, claim.Value.Secid);
                 await _queueReader.DeferAsync(claim.Value.Id, ex.Message, _pollInterval, ct);
             }
 
