@@ -32,7 +32,7 @@ internal static class MegaAlertsHistoryParser
             if (reader.ValueTextEquals("columns"u8))
             {
                 foundColumns = true;
-                ParseHelpersUtf8.ValidateSourceColumnsUtf8(ref reader, spec.SourceColumns, spec.RootKey);
+                ParseHelpersUtf8.ValidateInputColumnsUtf8(ref reader, spec.InputColumns, spec.RootKey);
             }
             else if (reader.ValueTextEquals("data"u8))
             {
@@ -76,7 +76,7 @@ internal static class MegaAlertsHistoryParser
             if (reader.ValueTextEquals("columns"u8))
             {
                 foundColumns = true;
-                ParseHelpersUtf8.ValidateSourceColumnsUtf8(ref reader, spec.SourceColumns, spec.RootKey);
+                ParseHelpersUtf8.ValidateInputColumnsUtf8(ref reader, spec.InputColumns, spec.RootKey);
             }
             else if (reader.ValueTextEquals("data"u8))
             {
@@ -106,7 +106,7 @@ internal static class MegaAlertsHistoryParser
             SourceTimeParts timeParts = default;
             string? rowError = string.IsNullOrWhiteSpace(taskSecId) ? "Загрузка мегаалёртов отвергнута: secid пустой." : null;
             MegaAlertsStockRow row = new() { Secid = taskSecId };
-            for (int position = 0; position < spec.SourceColumns.Length; position++)
+            for (int position = 0; position < spec.InputColumns.Length; position++)
             {
                 ReadCell(ref reader, spec, rowIndex, position);
                 if (reader.TokenType == JsonTokenType.Null)
@@ -164,7 +164,7 @@ internal static class MegaAlertsHistoryParser
             SourceTimeParts timeParts = default;
             string? rowError = string.IsNullOrWhiteSpace(taskSecId) ? "Загрузка мегаалёртов отвергнута: secid пустой." : null;
             MegaAlertsFuturesRow row = new() { Secid = taskSecId };
-            for (int position = 0; position < spec.SourceColumns.Length; position++)
+            for (int position = 0; position < spec.InputColumns.Length; position++)
             {
                 ReadCell(ref reader, spec, rowIndex, position);
                 if (reader.TokenType == JsonTokenType.Null)
@@ -217,13 +217,13 @@ internal static class MegaAlertsHistoryParser
         if (!reader.Read())
             ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Неожиданный конец JSON в строке {rowIndex}, позиция {position}.");
         if (reader.TokenType == JsonTokenType.EndArray)
-            ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Короткая строка: ожидалось {spec.SourceColumns.Length} колонок, получено {position} (строка {rowIndex}).");
+            ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Короткая строка: ожидалось {spec.InputColumns.Length} колонок, получено {position} (строка {rowIndex}).");
     }
 
     private static void FinishRow(ref Utf8JsonReader reader, MoexSeriesSpec spec, int rowIndex)
     {
         if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
-            ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Ожидался EndArray после {spec.SourceColumns.Length} колонок (строка {rowIndex}).");
+            ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Ожидался EndArray после {spec.InputColumns.Length} колонок (строка {rowIndex}).");
     }
 
     private static DateTime? TryReadSourceTime(in SourceTimeParts parts)
@@ -260,7 +260,7 @@ internal static class MegaAlertsHistoryParser
     private static void ValidateSpec(MoexSeriesSpec spec, string market, int sourceColumns)
     {
         if (spec.DataKind != "mega_alerts" || spec.Market != market || spec.Pagination != PaginationKind.Cursor
-            || !spec.PreserveCursorTimeGroup || spec.SourceColumns.Length != sourceColumns)
+            || !spec.PreserveCursorTimeGroup || spec.InputColumns.Length != sourceColumns)
             throw new ArgumentException($"Typed MegaAlerts parsing requires {market} mega_alerts with cursor time groups.", nameof(spec));
     }
 }

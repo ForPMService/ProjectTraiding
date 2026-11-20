@@ -39,7 +39,7 @@ internal static class ObStatsHistoryParser
             if (reader.ValueTextEquals("columns"u8))
             {
                 foundColumns = true;
-                ParseHelpersUtf8.ValidateSourceColumnsUtf8(ref reader, spec.SourceColumns, spec.RootKey);
+                ParseHelpersUtf8.ValidateInputColumnsUtf8(ref reader, spec.InputColumns, spec.RootKey);
             }
             else if (reader.ValueTextEquals("data"u8))
             {
@@ -97,7 +97,7 @@ internal static class ObStatsHistoryParser
             if (reader.ValueTextEquals("columns"u8))
             {
                 foundColumns = true;
-                ParseHelpersUtf8.ValidateSourceColumnsUtf8(ref reader, spec.SourceColumns, spec.RootKey);
+                ParseHelpersUtf8.ValidateInputColumnsUtf8(ref reader, spec.InputColumns, spec.RootKey);
             }
             else if (reader.ValueTextEquals("data"u8))
             {
@@ -145,7 +145,7 @@ internal static class ObStatsHistoryParser
             SourceTimeParts timeParts = default;
             string? rowError = string.IsNullOrWhiteSpace(taskSecId) ? "Загрузка статистики стакана отвергнута: secid пустой." : null;
             ObStatsStockRow row = new() { Secid = taskSecId };
-            for (int position = 0; position < spec.SourceColumns.Length; position++)
+            for (int position = 0; position < spec.InputColumns.Length; position++)
             {
                 ReadCell(ref reader, spec, rowIndex, position);
                 if (reader.TokenType == JsonTokenType.Null)
@@ -243,7 +243,7 @@ internal static class ObStatsHistoryParser
             SourceTimeParts timeParts = default;
             string? rowError = string.IsNullOrWhiteSpace(taskSecId) ? "Загрузка статистики стакана отвергнута: secid пустой." : null;
             ObStatsFuturesRow row = new() { Secid = taskSecId };
-            for (int position = 0; position < spec.SourceColumns.Length; position++)
+            for (int position = 0; position < spec.InputColumns.Length; position++)
             {
                 ReadCell(ref reader, spec, rowIndex, position);
                 if (reader.TokenType == JsonTokenType.Null)
@@ -338,13 +338,13 @@ internal static class ObStatsHistoryParser
         if (!reader.Read())
             ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Неожиданный конец JSON в строке {rowIndex}, позиция {position}.");
         if (reader.TokenType == JsonTokenType.EndArray)
-            ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Короткая строка: ожидалось {spec.SourceColumns.Length} колонок, получено {position} (строка {rowIndex}).");
+            ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Короткая строка: ожидалось {spec.InputColumns.Length} колонок, получено {position} (строка {rowIndex}).");
     }
 
     private static void FinishRow(ref Utf8JsonReader reader, MoexSeriesSpec spec, int rowIndex)
     {
         if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
-            ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Ожидался EndArray после {spec.SourceColumns.Length} колонок (строка {rowIndex}).");
+            ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Ожидался EndArray после {spec.InputColumns.Length} колонок (строка {rowIndex}).");
     }
 
     private static void ReadMomentDate(ref Utf8JsonReader reader, MoexSeriesSpec spec, int rowIndex, ref SourceTimeParts parts)
@@ -386,7 +386,7 @@ internal static class ObStatsHistoryParser
 
     private static void ValidateSpec(MoexSeriesSpec spec, string market, int sourceColumns)
     {
-        if (spec.DataKind != "obstats" || spec.Market != market || spec.Pagination != PaginationKind.Cursor || spec.SourceColumns.Length != sourceColumns)
+        if (spec.DataKind != "obstats" || spec.Market != market || spec.Pagination != PaginationKind.Cursor || spec.InputColumns.Length != sourceColumns)
             throw new ArgumentException($"Typed order-book statistics require {market} obstats with cursor pagination.", nameof(spec));
     }
 }

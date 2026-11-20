@@ -1,7 +1,7 @@
 
 using ProjectTraiding.Moex.Contracts.Dto;
 using ProjectTraiding.Moex.Parsing.Errors;
-using ProjectTraiding.Moex.Series;
+using System.Collections.Immutable;
 using System.Buffers.Text;
 using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
@@ -173,56 +173,68 @@ namespace ProjectTraiding.Moex.Parsing
         }
 
         /// <summary>
-        /// Проверяет массив колонок ответа по декларации источника: имена на объявленных
-        /// позициях и общее число колонок. Форма колонки одна и та же у исторической
-        /// загрузки и у приёма реального времени, поэтому проверка общая.
+        /// Проверяет плотный массив входных колонок на точное совпадение имён и порядка.
         /// </summary>
-        internal static void ValidateSourceColumnsUtf8(
+        internal static void ValidateInputColumnsUtf8(
             ref Utf8JsonReader reader,
-            SourceColumn[] columns,
+            ImmutableArray<string> columns,
             string rootKey)
         {
-            ReadAndExpect(ref reader, JsonTokenType.StartArray, "columns", rootKey);
-
-            int position = 0;
-            int expectedIndex = 0;
-            while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+            try
             {
-                if (expectedIndex < columns.Length
-                    && position == columns[expectedIndex].Position)
-                {
-                    SourceColumn column = columns[expectedIndex];
-                    if (reader.TokenType != JsonTokenType.String
-                        || !reader.ValueTextEquals(column.Name))
-                    {
-                        string actual = reader.TokenType == JsonTokenType.String
-                            ? reader.GetString() ?? "<null>"
-                            : $"<{reader.TokenType}>";
-                        string expected = System.Text.Encoding.UTF8.GetString(column.Name);
+                ReadAndExpect(ref reader, JsonTokenType.StartArray, "columns", rootKey);
 
-                        throw new MoexSchemaMismatchException(
-                            $"[{rootKey}] Колонка не совпала на позиции {position}: " +
-                            $"ожидалось '{expected}', получено '{actual}'.");
+                for (int position = 0; position < columns.Length; position++)
+                {
+                    if (!reader.Read())
+                    {
+                        SchemaMismatch(
+                            $"[{rootKey}] Заголовок columns завершился до колонки {position}; " +
+                            $"ожидалось {columns.Length} колонок.");
                     }
 
-                    expectedIndex++;
+                    if (reader.TokenType == JsonTokenType.EndArray)
+                    {
+                        SchemaMismatch(
+                            $"[{rootKey}] Недостаточно колонок: ожидалось {columns.Length}, " +
+                            $"получено {position}.");
+                    }
+
+                    if (reader.TokenType != JsonTokenType.String)
+                    {
+                        SchemaMismatch(
+                            $"[{rootKey}] Ожидалась строковая колонка '{columns[position]}' " +
+                            $"на позиции {position}, получено <{reader.TokenType}>.");
+                    }
+
+                    if (!reader.ValueTextEquals(columns[position]))
+                    {
+                        string actual = reader.GetString() ?? "<null>";
+                        SchemaMismatch(
+                            $"[{rootKey}] Колонка не совпала на позиции {position}: " +
+                            $"ожидалось '{columns[position]}', получено '{actual}'.");
+                    }
                 }
 
-                position++;
-            }
+                if (!reader.Read())
+                {
+                    SchemaMismatch(
+                        $"[{rootKey}] Заголовок columns не завершился EndArray " +
+                        $"после {columns.Length} колонок.");
+                }
 
-            if (position != columns.Length)
+                if (reader.TokenType != JsonTokenType.EndArray)
+                {
+                    SchemaMismatch(
+                        $"[{rootKey}] Лишний элемент в columns на позиции {columns.Length}: " +
+                        $"получено <{reader.TokenType}>, ожидалось окончание массива.");
+                }
+            }
+            catch (JsonException exception)
             {
                 SchemaMismatch(
-                    $"[{rootKey}] Количество колонок не совпадает: " +
-                    $"ожидалось {columns.Length}, получено {position}.");
-            }
-
-            if (expectedIndex != columns.Length)
-            {
-                SchemaMismatch(
-                    $"[{rootKey}] Не все ожидаемые колонки найдены: " +
-                    $"ожидалось {columns.Length}, проверено {expectedIndex}.");
+                    $"[{rootKey}] Некорректная структура JSON в заголовке columns: " +
+                    exception.Message);
             }
         }
 

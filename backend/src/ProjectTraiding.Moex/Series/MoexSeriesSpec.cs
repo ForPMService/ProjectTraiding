@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using System.Text;
+using System.Collections.Immutable;
 
 namespace ProjectTraiding.Moex.Series;
 
@@ -37,31 +37,13 @@ public enum PaginationKind
     FixedPage,
 }
 
-public readonly record struct SourceColumn(int Position, byte[] Name);
-
 public sealed class MoexSeriesSpec
 {
-    /// <summary>
-    /// Единая форма исходных свечных колонок для истории и realtime. Отдельный массив
-    /// на каждый контур инициализировал бы два набора одинаковых UTF-8 имён.
-    /// </summary>
-    public static readonly SourceColumn[] CandleSourceColumns =
-    [
-        new(0, "open"u8.ToArray()),
-        new(1, "close"u8.ToArray()),
-        new(2, "high"u8.ToArray()),
-        new(3, "low"u8.ToArray()),
-        new(4, "value"u8.ToArray()),
-        new(5, "volume"u8.ToArray()),
-        new(6, "begin"u8.ToArray()),
-        new(7, "end"u8.ToArray()),
-    ];
-
     public required string DataKind { get; init; }
     public required string Market { get; init; }
     public required string MethodTemplate { get; init; }
     public required string RootKey { get; init; }
-    public required SourceColumn[] SourceColumns { get; init; }
+    public required ImmutableArray<string> InputColumns { get; init; }
     public required string Table { get; init; }
     public required IReadOnlyList<string> Columns { get; init; }
     public required PaginationKind Pagination { get; init; }
@@ -79,16 +61,12 @@ public sealed class MoexSeriesSpec
     private string? _columnsParam;
 
     /// <summary>
-    /// Cached HTTP columns parameter, built from the source-column names.
+    /// Cached HTTP columns parameter, built from the ordered input column names.
     /// </summary>
     public string ColumnsParam => _columnsParam ??= BuildColumnsParam();
 
     private string BuildColumnsParam()
     {
-        string[] names = new string[SourceColumns.Length];
-        for (int i = 0; i < SourceColumns.Length; i++)
-            names[i] = Encoding.UTF8.GetString(SourceColumns[i].Name);
-
-        return string.Join(',', names);
+        return string.Join(',', InputColumns);
     }
 }

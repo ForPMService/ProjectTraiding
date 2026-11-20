@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using ProjectTraiding.Moex.DataFormats;
 using ProjectTraiding.Moex.Parsing;
 using ProjectTraiding.Moex.Series;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
@@ -295,8 +296,8 @@ public static class MoexRealtimeParser
             if (reader.ValueTextEquals("columns"u8))
             {
                 foundColumns = true;
-                ParseHelpersUtf8.ValidateSourceColumnsUtf8(
-                    ref reader, MoexRealtimeRegistry.CandleSourceColumns, "candles");
+                ParseHelpersUtf8.ValidateInputColumnsUtf8(
+                    ref reader, MoexColumnSets.Candles, "candles");
             }
             else if (reader.ValueTextEquals("data"u8))
             {
@@ -360,8 +361,8 @@ public static class MoexRealtimeParser
             if (reader.ValueTextEquals("columns"u8))
             {
                 foundColumns = true;
-                ParseHelpersUtf8.ValidateSourceColumnsUtf8(
-                    ref reader, MoexRealtimeRegistry.TradesStockSourceColumns, "trades");
+                ParseHelpersUtf8.ValidateInputColumnsUtf8(
+                    ref reader, MoexColumnSets.TradesStock, "trades");
             }
             else if (reader.ValueTextEquals("data"u8))
             {
@@ -408,8 +409,8 @@ public static class MoexRealtimeParser
             if (reader.ValueTextEquals("columns"u8))
             {
                 foundColumns = true;
-                ParseHelpersUtf8.ValidateSourceColumnsUtf8(
-                    ref reader, MoexRealtimeRegistry.TradesFuturesSourceColumns, "trades");
+                ParseHelpersUtf8.ValidateInputColumnsUtf8(
+                    ref reader, MoexColumnSets.TradesFutures, "trades");
             }
             else if (reader.ValueTextEquals("data"u8))
             {
@@ -452,8 +453,8 @@ public static class MoexRealtimeParser
             if (reader.ValueTextEquals("columns"u8))
             {
                 foundColumns = true;
-                ParseHelpersUtf8.ValidateSourceColumnsUtf8(
-                    ref reader, MoexRealtimeRegistry.OrderbookSourceColumns, "orderbook");
+                ParseHelpersUtf8.ValidateInputColumnsUtf8(
+                    ref reader, MoexColumnSets.Orderbook, "orderbook");
             }
             else if (reader.ValueTextEquals("data"u8))
             {

@@ -20,7 +20,7 @@ public static class CandleHistoryParser
     {
         if (spec.DataKind != "candles"
             || spec.RootKey != RootKey
-            || spec.SourceColumns.Length != 8)
+            || spec.InputColumns.Length != 8)
         {
             throw new InvalidOperationException(
                 "CandleHistoryParser requires a registered candles series specification.");
@@ -48,8 +48,8 @@ public static class CandleHistoryParser
             if (reader.ValueTextEquals("columns"u8))
             {
                 foundColumns = true;
-                ParseHelpersUtf8.ValidateSourceColumnsUtf8(
-                    ref reader, spec.SourceColumns, RootKey);
+                ParseHelpersUtf8.ValidateInputColumnsUtf8(
+                    ref reader, spec.InputColumns, RootKey);
             }
             else if (reader.ValueTextEquals("data"u8))
             {

@@ -97,8 +97,8 @@ public static class TradeStatsHistoryParser
             if (reader.ValueTextEquals("columns"u8))
             {
                 foundColumns = true;
-                ParseHelpersUtf8.ValidateSourceColumnsUtf8(
-                    ref reader, spec.SourceColumns, spec.RootKey);
+                ParseHelpersUtf8.ValidateInputColumnsUtf8(
+                    ref reader, spec.InputColumns, spec.RootKey);
             }
             else if (reader.ValueTextEquals("data"u8))
             {
@@ -196,7 +196,7 @@ public static class TradeStatsHistoryParser
             TradeStatsStockRow row = new() { Secid = taskSecId };
             string? rowError = null;
 
-            for (int position = 0; position < spec.SourceColumns.Length; position++)
+            for (int position = 0; position < spec.InputColumns.Length; position++)
             {
                 ReadColumn(ref reader, spec, sourceRowIndex, position);
                 if (reader.TokenType == JsonTokenType.Null)
@@ -297,7 +297,7 @@ public static class TradeStatsHistoryParser
             TradeStatsFuturesRow row = new() { Secid = taskSecId };
             string? rowError = null;
 
-            for (int position = 0; position < spec.SourceColumns.Length; position++)
+            for (int position = 0; position < spec.InputColumns.Length; position++)
             {
                 ReadColumn(ref reader, spec, sourceRowIndex, position);
                 if (reader.TokenType == JsonTokenType.Null)
@@ -588,7 +588,7 @@ public static class TradeStatsHistoryParser
         {
             ParseHelpersUtf8.SchemaMismatch(
                 $"[{spec.RootKey}] Короткая строка данных: ожидалось " +
-                $"{spec.SourceColumns.Length} колонок, получено {position} " +
+                $"{spec.InputColumns.Length} колонок, получено {position} " +
                 $"(строка {sourceRowIndex}).");
         }
     }
@@ -602,7 +602,7 @@ public static class TradeStatsHistoryParser
         {
             ParseHelpersUtf8.SchemaMismatch(
                 $"[{spec.RootKey}] Ожидался EndArray после " +
-                $"{spec.SourceColumns.Length} колонок (строка {sourceRowIndex}).");
+                $"{spec.InputColumns.Length} колонок (строка {sourceRowIndex}).");
         }
     }
 

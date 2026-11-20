@@ -17,7 +17,7 @@ internal static class FutoiHistoryParser
         out HistoricalSeriesTimeGroupTail<FutoiRow>? tail)
     {
         if (spec.DataKind != "futoi" || spec.Market != "futures" || spec.RootKey != "futoi"
-            || spec.Pagination != PaginationKind.DaySplit || spec.SourceColumns.Length != 13)
+            || spec.Pagination != PaginationKind.DaySplit || spec.InputColumns.Length != 13)
             throw new ArgumentException("Typed FUTOI parsing requires the registered day-split futoi series.", nameof(spec));
 
         cursor = new PaginationCursorDTO();
@@ -41,7 +41,7 @@ internal static class FutoiHistoryParser
             if (reader.ValueTextEquals("columns"u8))
             {
                 foundColumns = true;
-                ParseHelpersUtf8.ValidateSourceColumnsUtf8(ref reader, spec.SourceColumns, spec.RootKey);
+                ParseHelpersUtf8.ValidateInputColumnsUtf8(ref reader, spec.InputColumns, spec.RootKey);
             }
             else if (reader.ValueTextEquals("data"u8))
             {
@@ -88,7 +88,7 @@ internal static class FutoiHistoryParser
             string? ticker = null;
             string? rowError = null;
             FutoiRow row = new();
-            for (int position = 0; position < spec.SourceColumns.Length; position++)
+            for (int position = 0; position < spec.InputColumns.Length; position++)
             {
                 ReadCell(ref reader, spec, rowIndex, position);
                 if (reader.TokenType == JsonTokenType.Null)
@@ -168,7 +168,7 @@ internal static class FutoiHistoryParser
         if (!reader.Read())
             ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Неожиданный конец JSON в строке {rowIndex}, позиция {position}.");
         if (reader.TokenType == JsonTokenType.EndArray)
-            ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Короткая строка: ожидалось {spec.SourceColumns.Length} колонок, получено {position} (строка {rowIndex}).");
+            ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Короткая строка: ожидалось {spec.InputColumns.Length} колонок, получено {position} (строка {rowIndex}).");
     }
 
     private static DateTime? TryReadSourceTime(in SourceTimeParts parts)

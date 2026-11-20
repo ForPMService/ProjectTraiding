@@ -16,7 +16,7 @@ internal static class OrderStatsHistoryParser
         out PaginationCursorDTO cursor,
         out HistoricalSeriesTimeGroupTail<OrderStatsStockRow>? tail)
     {
-        if (spec.DataKind != "orderstats" || spec.Market != "stock" || spec.Pagination != PaginationKind.Cursor || spec.SourceColumns.Length != 26)
+        if (spec.DataKind != "orderstats" || spec.Market != "stock" || spec.Pagination != PaginationKind.Cursor || spec.InputColumns.Length != 26)
             throw new ArgumentException("Typed order statistics require stock orderstats with cursor pagination.", nameof(spec));
 
         tail = null;
@@ -40,7 +40,7 @@ internal static class OrderStatsHistoryParser
             if (reader.ValueTextEquals("columns"u8))
             {
                 foundColumns = true;
-                ParseHelpersUtf8.ValidateSourceColumnsUtf8(ref reader, spec.SourceColumns, spec.RootKey);
+                ParseHelpersUtf8.ValidateInputColumnsUtf8(ref reader, spec.InputColumns, spec.RootKey);
             }
             else if (reader.ValueTextEquals("data"u8))
             {
@@ -88,7 +88,7 @@ internal static class OrderStatsHistoryParser
             SourceTimeParts timeParts = default;
             string? rowError = string.IsNullOrWhiteSpace(taskSecId) ? "Загрузка статистики заявок отвергнута: secid пустой." : null;
             OrderStatsStockRow row = new() { Secid = taskSecId };
-            for (int position = 0; position < spec.SourceColumns.Length; position++)
+            for (int position = 0; position < spec.InputColumns.Length; position++)
             {
                 ReadCell(ref reader, spec, rowIndex, position);
                 if (reader.TokenType == JsonTokenType.Null)
@@ -175,7 +175,7 @@ internal static class OrderStatsHistoryParser
         if (!reader.Read())
             ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Неожиданный конец JSON в строке {rowIndex}, позиция {position}.");
         if (reader.TokenType == JsonTokenType.EndArray)
-            ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Короткая строка: ожидалось {spec.SourceColumns.Length} колонок, получено {position} (строка {rowIndex}).");
+            ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Короткая строка: ожидалось {spec.InputColumns.Length} колонок, получено {position} (строка {rowIndex}).");
     }
 
     private static void ReadMomentDate(ref Utf8JsonReader reader, MoexSeriesSpec spec, int rowIndex, ref SourceTimeParts parts)

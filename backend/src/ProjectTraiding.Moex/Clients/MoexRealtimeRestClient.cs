@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using ProjectTraiding.Moex.Infrastructure.Buffers;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
+using ProjectTraiding.Moex.DataFormats;
 using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Parsing;
 using ProjectTraiding.Moex.Parsing.Errors;
@@ -54,7 +55,7 @@ namespace ProjectTraiding.Moex.Clients
         {
             ["iss.meta"] = "off",
             ["iss.only"] = "orderbook,dataversion",
-            ["orderbook.columns"] = MoexRealtimeRegistry.OrderbookColumnsParam,
+            ["orderbook.columns"] = MoexColumnSets.OrderbookColumnsParam,
             ["dataversion.columns"] = DataVersionColumnsParam,
         };
 
@@ -63,10 +64,10 @@ namespace ProjectTraiding.Moex.Clients
         // собираются по одному на рынок и никем не изменяются — их только перечисляют
         // при сборке адреса. Порядок пар тот же, что был у сборки на месте.
         private static readonly Dictionary<string, string> TradesStockQueryParams =
-            BuildTradesQueryParams(MoexRealtimeRegistry.TradesStockColumnsParam);
+            BuildTradesQueryParams(MoexColumnSets.TradesStockColumnsParam);
 
         private static readonly Dictionary<string, string> TradesFuturesQueryParams =
-            BuildTradesQueryParams(MoexRealtimeRegistry.TradesFuturesColumnsParam);
+            BuildTradesQueryParams(MoexColumnSets.TradesFuturesColumnsParam);
 
         private static Dictionary<string, string> BuildTradesQueryParams(string columnsParam) =>
             new()
@@ -126,7 +127,7 @@ namespace ProjectTraiding.Moex.Clients
 
                 queryParams.TryAdd("iss.meta", "off");
                 queryParams.TryAdd("iss.only", "trades,dataversion");
-                queryParams.TryAdd("trades.columns", MoexRealtimeRegistry.TradesStockColumnsParam);
+                queryParams.TryAdd("trades.columns", MoexColumnSets.TradesStockColumnsParam);
                 queryParams.TryAdd("dataversion.columns", DataVersionColumnsParam);
             }
 
@@ -169,7 +170,7 @@ namespace ProjectTraiding.Moex.Clients
                 }
                 queryParams.TryAdd("iss.meta", "off");
                 queryParams.TryAdd("iss.only", "trades,dataversion");
-                queryParams.TryAdd("trades.columns", MoexRealtimeRegistry.TradesFuturesColumnsParam);
+                queryParams.TryAdd("trades.columns", MoexColumnSets.TradesFuturesColumnsParam);
                 queryParams.TryAdd("dataversion.columns", DataVersionColumnsParam);
             }
 
@@ -249,7 +250,7 @@ namespace ProjectTraiding.Moex.Clients
             {
                 ["iss.meta"] = "off",
                 ["iss.only"] = "candles",
-                ["candles.columns"] = MoexRealtimeRegistry.CandlesColumnsParam,
+                ["candles.columns"] = MoexColumnSets.CandlesColumnsParam,
                 ["interval"] = interval.ToString(CultureInfo.InvariantCulture),
                 ["from"] = from.ToString(
                     "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
