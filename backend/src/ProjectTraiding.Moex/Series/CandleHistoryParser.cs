@@ -1,5 +1,4 @@
 using System.Text.Json;
-using ProjectTraiding.Moex.Contracts.Dto;
 using ProjectTraiding.Moex.DataFormats;
 using ProjectTraiding.Moex.Parsing;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
@@ -17,8 +16,7 @@ public static class CandleHistoryParser
         MoexSeriesSpec spec,
         string taskSecId,
         ProtobufBatchWriter<CandleRow> writer,
-        HistoricalReadState state,
-        out PaginationCursorDTO cursor)
+        HistoricalReadState state)
     {
         if (spec.DataKind != RootKey
             || spec.RootKey != RootKey
@@ -28,7 +26,6 @@ public static class CandleHistoryParser
                 "CandleHistoryParser requires the registered candles input schema.");
         }
 
-        cursor = new PaginationCursorDTO();
         int sourceRowsCount = 0;
         Utf8JsonReader reader = new(body);
         ParseHelpersUtf8.SkipToRootObject(ref reader, RootKey);

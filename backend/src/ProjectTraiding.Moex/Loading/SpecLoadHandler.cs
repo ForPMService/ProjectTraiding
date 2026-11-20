@@ -81,25 +81,35 @@ public sealed class SpecLoadHandler
         if (spec.DataKind == "candles")
             return await LoadCandleRangeAsync(spec, task, tags, cancellationToken);
         if (spec.DataKind == "tradestats" && spec.Market == "stock")
-            return await LoadTradeStatsRangeAsync<TradeStatsStockRow>(spec, task, tags, insertContext, cancellationToken);
+            return await LoadTradeStatsRangeAsync<TradeStatsStockRow>(
+                spec, task, tags, insertContext, _reader.ReadTradeStatsStockPagesAsync, cancellationToken);
         if (spec.DataKind == "tradestats" && spec.Market == "futures")
-            return await LoadTradeStatsRangeAsync<TradeStatsFuturesRow>(spec, task, tags, insertContext, cancellationToken);
+            return await LoadTradeStatsRangeAsync<TradeStatsFuturesRow>(
+                spec, task, tags, insertContext, _reader.ReadTradeStatsFuturesPagesAsync, cancellationToken);
         if (spec.DataKind == "obstats" && spec.Market == "stock")
-            return await LoadHistoricalSeriesRangeAsync<ObStatsStockRow>(spec, task, tags, insertContext, cancellationToken);
+            return await LoadHistoricalSeriesRangeAsync<ObStatsStockRow>(
+                spec, task, tags, insertContext, _reader.ReadObStatsStockPagesAsync, cancellationToken);
         if (spec.DataKind == "obstats" && spec.Market == "futures")
-            return await LoadHistoricalSeriesRangeAsync<ObStatsFuturesRow>(spec, task, tags, insertContext, cancellationToken);
+            return await LoadHistoricalSeriesRangeAsync<ObStatsFuturesRow>(
+                spec, task, tags, insertContext, _reader.ReadObStatsFuturesPagesAsync, cancellationToken);
         if (spec.DataKind == "orderstats")
-            return await LoadHistoricalSeriesRangeAsync<OrderStatsStockRow>(spec, task, tags, insertContext, cancellationToken);
+            return await LoadHistoricalSeriesRangeAsync<OrderStatsStockRow>(
+                spec, task, tags, insertContext, _reader.ReadOrderStatsStockPagesAsync, cancellationToken);
         if (spec.DataKind == "futoi")
-            return await LoadHistoricalSeriesRangeAsync<FutoiRow>(spec, task, tags, insertContext, cancellationToken);
+            return await LoadHistoricalSeriesRangeAsync<FutoiRow>(
+                spec, task, tags, insertContext, _reader.ReadFutoiPagesAsync, cancellationToken);
         if (spec.DataKind == "hi2" && spec.Market == "stock")
-            return await LoadHistoricalSeriesRangeAsync<Hi2StockRow>(spec, task, tags, insertContext, cancellationToken);
+            return await LoadHistoricalSeriesRangeAsync<Hi2StockRow>(
+                spec, task, tags, insertContext, _reader.ReadHi2StockPagesAsync, cancellationToken);
         if (spec.DataKind == "hi2" && spec.Market == "futures")
-            return await LoadHistoricalSeriesRangeAsync<Hi2FuturesRow>(spec, task, tags, insertContext, cancellationToken);
+            return await LoadHistoricalSeriesRangeAsync<Hi2FuturesRow>(
+                spec, task, tags, insertContext, _reader.ReadHi2FuturesPagesAsync, cancellationToken);
         if (spec.DataKind == "mega_alerts" && spec.Market == "stock")
-            return await LoadHistoricalSeriesRangeAsync<MegaAlertsStockRow>(spec, task, tags, insertContext, cancellationToken);
+            return await LoadHistoricalSeriesRangeAsync<MegaAlertsStockRow>(
+                spec, task, tags, insertContext, _reader.ReadMegaAlertsStockPagesAsync, cancellationToken);
         if (spec.DataKind == "mega_alerts" && spec.Market == "futures")
-            return await LoadHistoricalSeriesRangeAsync<MegaAlertsFuturesRow>(spec, task, tags, insertContext, cancellationToken);
+            return await LoadHistoricalSeriesRangeAsync<MegaAlertsFuturesRow>(
+                spec, task, tags, insertContext, _reader.ReadMegaAlertsFuturesPagesAsync, cancellationToken);
         throw new InvalidOperationException($"Нет типизированного обработчика исторического ряда {spec.DataKind}/{spec.Market}.");
     }
 
@@ -178,7 +188,8 @@ public sealed class SpecLoadHandler
     private async Task<RowWriteSummary> LoadTradeStatsRangeAsync<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
         MoexSeriesSpec spec, MoexLoadTask task, MoexOperationTags tags,
-        StorageInsertContext insertContext, CancellationToken cancellationToken)
+        StorageInsertContext insertContext, MoexHistoryPageReader.ReadTradeStatsPages<TRow> readPages,
+        CancellationToken cancellationToken)
         where TRow : struct
     {
         ProtobufBatchWriter<TRow> statsWriter = new(_executor, spec.Table, spec.Columns, insertContext);
@@ -212,18 +223,11 @@ public sealed class SpecLoadHandler
 
                 try
                 {
-                    if (spec.Market == "stock")
-                        await _reader.ReadTradeStatsStockPagesAsync(
-                            spec, task.Secid, from, till, tags,
-                            (ProtobufBatchWriter<TradeStatsStockRow>)(object)statsWriter,
-                            candleWriter, lastSourceTime: null, ingestPriority: 1, state: state,
-                            acceptedCandles: null, beforeRequest: null, afterPage: AfterPage, cancellationToken: cancellationToken);
-                    else
-                        await _reader.ReadTradeStatsFuturesPagesAsync(
-                            spec, task.Secid, from, till, tags,
-                            (ProtobufBatchWriter<TradeStatsFuturesRow>)(object)statsWriter,
-                            candleWriter, lastSourceTime: null, ingestPriority: 1, state: state,
-                            acceptedCandles: null, beforeRequest: null, afterPage: AfterPage, cancellationToken: cancellationToken);
+                    await readPages(
+                        spec, task.Secid, from, till, tags, statsWriter, candleWriter,
+                        lastSourceTime: null, ingestPriority: 1, state: state,
+                        acceptedCandles: null, beforeRequest: null, afterPage: AfterPage,
+                        cancellationToken: cancellationToken);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -270,7 +274,8 @@ public sealed class SpecLoadHandler
     private async Task<RowWriteSummary> LoadHistoricalSeriesRangeAsync<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
         MoexSeriesSpec spec, MoexLoadTask task, MoexOperationTags tags,
-        StorageInsertContext insertContext, CancellationToken cancellationToken)
+        StorageInsertContext insertContext, MoexHistoryPageReader.ReadSeriesPages<TRow> readPages,
+        CancellationToken cancellationToken)
         where TRow : struct
     {
         if (spec.DataKind != "futoi" && string.IsNullOrWhiteSpace(task.Secid))
@@ -308,7 +313,8 @@ public sealed class SpecLoadHandler
 
                 try
                 {
-                    await ReadHistoricalWindowAsync(spec, task, from, till, tags, writer, state, AfterPage, cancellationToken);
+                    await readPages(spec, task.Secid, from, till, tags, writer, null,
+                        state, null, AfterPage, cancellationToken);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -347,40 +353,6 @@ public sealed class SpecLoadHandler
 
         ClickHouseWriterLogMessages.RangeWritten(_logger, task.Secid, state.RowsRead, insertedRows);
         return CreateSummary(state);
-    }
-
-    private Task ReadHistoricalWindowAsync<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
-        MoexSeriesSpec spec, MoexLoadTask task, DateOnly from, DateOnly till, MoexOperationTags tags,
-        ProtobufBatchWriter<TRow> writer, HistoricalReadState state,
-        MoexHistoryPageReader.BetweenHistoryPages afterPage, CancellationToken cancellationToken)
-        where TRow : struct
-    {
-        if (spec.DataKind == "obstats" && spec.Market == "stock")
-            return _reader.ReadObStatsStockPagesAsync(spec, task.Secid, from, till, tags,
-                (ProtobufBatchWriter<ObStatsStockRow>)(object)writer, null, state, null, afterPage, cancellationToken);
-        if (spec.DataKind == "obstats" && spec.Market == "futures")
-            return _reader.ReadObStatsFuturesPagesAsync(spec, task.Secid, from, till, tags,
-                (ProtobufBatchWriter<ObStatsFuturesRow>)(object)writer, null, state, null, afterPage, cancellationToken);
-        if (spec.DataKind == "orderstats" && spec.Market == "stock")
-            return _reader.ReadOrderStatsStockPagesAsync(spec, task.Secid, from, till, tags,
-                (ProtobufBatchWriter<OrderStatsStockRow>)(object)writer, null, state, null, afterPage, cancellationToken);
-        if (spec.DataKind == "futoi" && spec.Market == "futures")
-            return _reader.ReadFutoiPagesAsync(spec, task.Secid, from, till, tags,
-                (ProtobufBatchWriter<FutoiRow>)(object)writer, null, state, null, afterPage, cancellationToken);
-        if (spec.DataKind == "hi2" && spec.Market == "stock")
-            return _reader.ReadHi2StockPagesAsync(spec, task.Secid, from, till, tags,
-                (ProtobufBatchWriter<Hi2StockRow>)(object)writer, null, state, null, afterPage, cancellationToken);
-        if (spec.DataKind == "hi2" && spec.Market == "futures")
-            return _reader.ReadHi2FuturesPagesAsync(spec, task.Secid, from, till, tags,
-                (ProtobufBatchWriter<Hi2FuturesRow>)(object)writer, null, state, null, afterPage, cancellationToken);
-        if (spec.DataKind == "mega_alerts" && spec.Market == "stock")
-            return _reader.ReadMegaAlertsStockPagesAsync(spec, task.Secid, from, till, tags,
-                (ProtobufBatchWriter<MegaAlertsStockRow>)(object)writer, null, state, null, afterPage, cancellationToken);
-        if (spec.DataKind == "mega_alerts" && spec.Market == "futures")
-            return _reader.ReadMegaAlertsFuturesPagesAsync(spec, task.Secid, from, till, tags,
-                (ProtobufBatchWriter<MegaAlertsFuturesRow>)(object)writer, null, state, null, afterPage, cancellationToken);
-        throw new InvalidOperationException($"Нет типизированного обработчика исторического ряда {spec.DataKind}/{spec.Market}.");
     }
 
     private static async Task<long> FlushTradeStatsWritersAsync<

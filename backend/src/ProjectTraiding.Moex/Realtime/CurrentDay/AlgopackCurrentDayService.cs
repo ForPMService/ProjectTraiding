@@ -343,6 +343,7 @@ public sealed class AlgopackCurrentDayService : BackgroundService
                     statsWriter,
                     candleWriter,
                     operationTags,
+                    _pageReader.ReadTradeStatsStockPagesAsync,
                     ct);
             }
             else if (spec.DataKind == "tradestats" && market == FuturesMarket)
@@ -364,6 +365,7 @@ public sealed class AlgopackCurrentDayService : BackgroundService
                     statsWriter,
                     candleWriter,
                     operationTags,
+                    _pageReader.ReadTradeStatsFuturesPagesAsync,
                     ct);
             }
             else
@@ -371,35 +373,35 @@ public sealed class AlgopackCurrentDayService : BackgroundService
                 if (spec.DataKind == "obstats" && market == StockMarket)
                     await ProcessHistoricalInstrumentAsync<ObStatsStockRow>(spec, secid, market, boardId,
                         today, lastSourceTime, new(_executor, spec.Table, spec.Columns, insertContext),
-                        operationTags, ct);
+                        operationTags, _pageReader.ReadObStatsStockPagesAsync, ct);
                 else if (spec.DataKind == "obstats" && market == FuturesMarket)
                     await ProcessHistoricalInstrumentAsync<ObStatsFuturesRow>(spec, secid, market, boardId,
                         today, lastSourceTime, new(_executor, spec.Table, spec.Columns, insertContext),
-                        operationTags, ct);
+                        operationTags, _pageReader.ReadObStatsFuturesPagesAsync, ct);
                 else if (spec.DataKind == "orderstats" && market == StockMarket)
                     await ProcessHistoricalInstrumentAsync<OrderStatsStockRow>(spec, secid, market, boardId,
                         today, lastSourceTime, new(_executor, spec.Table, spec.Columns, insertContext),
-                        operationTags, ct);
+                        operationTags, _pageReader.ReadOrderStatsStockPagesAsync, ct);
                 else if (spec.DataKind == "futoi" && market == FuturesMarket)
                     await ProcessHistoricalInstrumentAsync<FutoiRow>(spec, secid, market, boardId,
                         today, lastSourceTime, new(_executor, spec.Table, spec.Columns, insertContext),
-                        operationTags, ct);
+                        operationTags, _pageReader.ReadFutoiPagesAsync, ct);
                 else if (spec.DataKind == "hi2" && market == StockMarket)
                     await ProcessHistoricalInstrumentAsync<Hi2StockRow>(spec, secid, market, boardId,
                         today, lastSourceTime, new(_executor, spec.Table, spec.Columns, insertContext),
-                        operationTags, ct);
+                        operationTags, _pageReader.ReadHi2StockPagesAsync, ct);
                 else if (spec.DataKind == "hi2" && market == FuturesMarket)
                     await ProcessHistoricalInstrumentAsync<Hi2FuturesRow>(spec, secid, market, boardId,
                         today, lastSourceTime, new(_executor, spec.Table, spec.Columns, insertContext),
-                        operationTags, ct);
+                        operationTags, _pageReader.ReadHi2FuturesPagesAsync, ct);
                 else if (spec.DataKind == "mega_alerts" && market == StockMarket)
                     await ProcessHistoricalInstrumentAsync<MegaAlertsStockRow>(spec, secid, market, boardId,
                         today, lastSourceTime, new(_executor, spec.Table, spec.Columns, insertContext),
-                        operationTags, ct);
+                        operationTags, _pageReader.ReadMegaAlertsStockPagesAsync, ct);
                 else if (spec.DataKind == "mega_alerts" && market == FuturesMarket)
                     await ProcessHistoricalInstrumentAsync<MegaAlertsFuturesRow>(spec, secid, market, boardId,
                         today, lastSourceTime, new(_executor, spec.Table, spec.Columns, insertContext),
-                        operationTags, ct);
+                        operationTags, _pageReader.ReadMegaAlertsFuturesPagesAsync, ct);
                 else
                     throw new InvalidOperationException(
                         $"Нет типизированного обработчика текущего дня {spec.DataKind}/{market}.");
@@ -433,6 +435,7 @@ public sealed class AlgopackCurrentDayService : BackgroundService
         ProtobufBatchWriter<TRow> statsWriter,
         ProtobufBatchWriter<CandleRow> candleWriter,
         MoexOperationTags operationTags,
+        MoexHistoryPageReader.ReadTradeStatsPages<TRow> readPages,
         CancellationToken ct)
         where TRow : struct
     {
@@ -539,18 +542,9 @@ public sealed class AlgopackCurrentDayService : BackgroundService
 
             try
             {
-                if (market == StockMarket)
-                    await _pageReader.ReadTradeStatsStockPagesAsync(
-                        spec, secid, today, today, operationTags,
-                        (ProtobufBatchWriter<TradeStatsStockRow>)(object)statsWriter,
-                        candleWriter, lastSourceTime, 0, state, acceptedCandles,
-                        BeforeFetch, AfterPage, fetchCts.Token);
-                else
-                    await _pageReader.ReadTradeStatsFuturesPagesAsync(
-                        spec, secid, today, today, operationTags,
-                        (ProtobufBatchWriter<TradeStatsFuturesRow>)(object)statsWriter,
-                        candleWriter, lastSourceTime, 0, state, acceptedCandles,
-                        BeforeFetch, AfterPage, fetchCts.Token);
+                await readPages(
+                    spec, secid, today, today, operationTags, statsWriter, candleWriter,
+                    lastSourceTime, 0, state, acceptedCandles, BeforeFetch, AfterPage, fetchCts.Token);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -568,7 +562,7 @@ public sealed class AlgopackCurrentDayService : BackgroundService
                 StopFetchTimer();
                 fetchFailure = ex;
             }
-            catch (Exception ex) when (!betweenPageFailure && MoexHistoryPageReader.IsRecoverableReadFailure(ex))
+            catch (Exception ex) when (!betweenPageFailure)
             {
                 StopFetchTimer();
                 fetchFailure = ex;
@@ -579,8 +573,18 @@ public sealed class AlgopackCurrentDayService : BackgroundService
                 acceptedCandles?.Clear();
             }
 
-            rowsInsertedReported += await FlushTradeStatsWritersAsync(
-                statsWriter, candleWriter, flushStats: true, flushCandles: true, ct);
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                rowsInsertedReported += await FlushTradeStatsWritersAsync(
+                    statsWriter, candleWriter, flushStats: true, flushCandles: true, ct);
+            }
+            catch (Exception flushFailure) when (fetchFailure is not null && !ct.IsCancellationRequested)
+            {
+                throw new AggregateException(
+                    "Ошибка чтения ALGOPACK и последующая ошибка отправки уже разобранных строк.",
+                    fetchFailure, flushFailure);
+            }
             ClickHouseWriterLogMessages.RangeWritten(_logger, secid, state.RowsRead, rowsInsertedReported);
 
             if (fetchFailure is null
@@ -615,6 +619,7 @@ public sealed class AlgopackCurrentDayService : BackgroundService
         DateTime? lastSourceTime,
         ProtobufBatchWriter<TRow> writer,
         MoexOperationTags operationTags,
+        MoexHistoryPageReader.ReadSeriesPages<TRow> readPages,
         CancellationToken ct)
         where TRow : struct
     {
@@ -664,9 +669,9 @@ public sealed class AlgopackCurrentDayService : BackgroundService
 
             try
             {
-                await ReadCurrentDayHistoricalPagesAsync(
-                    spec, secid, today, lastSourceTime, writer, state,
-                    BeforeFetch, AfterPage, fetchCts.Token);
+                await readPages(
+                    spec, secid, today, today, operationTags, writer, lastSourceTime,
+                    state, BeforeFetch, AfterPage, fetchCts.Token);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -720,43 +725,6 @@ public sealed class AlgopackCurrentDayService : BackgroundService
             throw new InvalidOperationException("Данные ALGOPACK обработаны частично.");
     }
 
-    private Task ReadCurrentDayHistoricalPagesAsync<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
-        MoexSeriesSpec spec, string secid, DateOnly today, DateTime? lastSourceTime,
-        ProtobufBatchWriter<TRow> writer, HistoricalReadState state,
-        Action beforeFetch, MoexHistoryPageReader.BetweenHistoryPages afterPage, CancellationToken ct)
-        where TRow : struct
-    {
-        if (spec.DataKind == "obstats" && spec.Market == StockMarket)
-            return _pageReader.ReadObStatsStockPagesAsync(spec, secid, today, today, GetTags(spec),
-                (ProtobufBatchWriter<ObStatsStockRow>)(object)writer, lastSourceTime, state, beforeFetch, afterPage, ct);
-        if (spec.DataKind == "obstats" && spec.Market == FuturesMarket)
-            return _pageReader.ReadObStatsFuturesPagesAsync(spec, secid, today, today, GetTags(spec),
-                (ProtobufBatchWriter<ObStatsFuturesRow>)(object)writer, lastSourceTime, state, beforeFetch, afterPage, ct);
-        if (spec.DataKind == "orderstats")
-            return _pageReader.ReadOrderStatsStockPagesAsync(spec, secid, today, today, GetTags(spec),
-                (ProtobufBatchWriter<OrderStatsStockRow>)(object)writer, lastSourceTime, state, beforeFetch, afterPage, ct);
-        if (spec.DataKind == "futoi")
-            return _pageReader.ReadFutoiPagesAsync(spec, secid, today, today, GetTags(spec),
-                (ProtobufBatchWriter<FutoiRow>)(object)writer, lastSourceTime, state, beforeFetch, afterPage, ct);
-        if (spec.DataKind == "hi2" && spec.Market == StockMarket)
-            return _pageReader.ReadHi2StockPagesAsync(spec, secid, today, today, GetTags(spec),
-                (ProtobufBatchWriter<Hi2StockRow>)(object)writer, lastSourceTime, state, beforeFetch, afterPage, ct);
-        if (spec.DataKind == "hi2" && spec.Market == FuturesMarket)
-            return _pageReader.ReadHi2FuturesPagesAsync(spec, secid, today, today, GetTags(spec),
-                (ProtobufBatchWriter<Hi2FuturesRow>)(object)writer, lastSourceTime, state, beforeFetch, afterPage, ct);
-        if (spec.DataKind == "mega_alerts" && spec.Market == StockMarket)
-            return _pageReader.ReadMegaAlertsStockPagesAsync(spec, secid, today, today, GetTags(spec),
-                (ProtobufBatchWriter<MegaAlertsStockRow>)(object)writer, lastSourceTime, state, beforeFetch, afterPage, ct);
-        if (spec.DataKind == "mega_alerts" && spec.Market == FuturesMarket)
-            return _pageReader.ReadMegaAlertsFuturesPagesAsync(spec, secid, today, today, GetTags(spec),
-                (ProtobufBatchWriter<MegaAlertsFuturesRow>)(object)writer, lastSourceTime, state, beforeFetch, afterPage, ct);
-        throw new InvalidOperationException($"Нет типизированного обработчика текущего дня {spec.DataKind}/{spec.Market}.");
-    }
-
-    private static MoexOperationTags GetTags(MoexSeriesSpec spec)
-        => new(MoexLogSources.Algopack, MoexOperations.RealtimeAlgopackCurrentDayPoll,
-            MoexDataKinds.FromTaskDataKind(spec.DataKind), spec.Market, MoexFlows.Realtime);
     private static async Task<long> FlushTradeStatsWritersAsync<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
         ProtobufBatchWriter<TRow> statsWriter,

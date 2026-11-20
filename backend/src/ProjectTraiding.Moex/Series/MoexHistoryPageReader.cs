@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Clients.Errors;
 using ProjectTraiding.Moex.Contracts.Dto;
+using ProjectTraiding.Moex.DataFormats;
 using ProjectTraiding.Moex.Infrastructure.Buffers;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Options;
@@ -22,7 +23,20 @@ public sealed class MoexHistoryPageReader
     private readonly MoexOptions _options;
     private readonly ILogger<MoexHistoryPageReader> _logger;
 
-    private delegate PaginationCursorDTO ParseBody(ReadOnlyMemory<byte> body);
+    internal delegate Task ReadSeriesPages<TRow>(
+        MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till, MoexOperationTags operationTags,
+        ProtobufBatchWriter<TRow> writer, DateTime? lastSourceTime, HistoricalReadState state,
+        Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
+        where TRow : struct;
+
+    internal delegate Task ReadTradeStatsPages<TRow>(
+        MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till, MoexOperationTags operationTags,
+        ProtobufBatchWriter<TRow> statsWriter, ProtobufBatchWriter<CandleRow> candleWriter,
+        DateTime? lastSourceTime, uint ingestPriority, HistoricalReadState state,
+        List<CandleRow>? acceptedCandles, Action? beforeRequest,
+        BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
+        where TRow : struct;
+
     private delegate PaginationCursorDTO ParseSeriesBody<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
         ReadOnlyMemory<byte> body,
@@ -46,7 +60,7 @@ public sealed class MoexHistoryPageReader
         List<CandleRow>? acceptedCandles, Action? beforeRequest,
         BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
     {
-        ParseBody parse = body =>
+        Func<ReadOnlyMemory<byte>, PaginationCursorDTO> parse = body =>
         {
             TradeStatsHistoryParser.ParseStock(body.Span, spec, secId, statsWriter, candleWriter,
                 lastSourceTime, ingestPriority, state, out PaginationCursorDTO cursor, acceptedCandles);
@@ -63,7 +77,7 @@ public sealed class MoexHistoryPageReader
         List<CandleRow>? acceptedCandles, Action? beforeRequest,
         BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
     {
-        ParseBody parse = body =>
+        Func<ReadOnlyMemory<byte>, PaginationCursorDTO> parse = body =>
         {
             TradeStatsHistoryParser.ParseFutures(body.Span, spec, secId, statsWriter, candleWriter,
                 lastSourceTime, ingestPriority, state, out PaginationCursorDTO cursor, acceptedCandles);
@@ -76,7 +90,7 @@ public sealed class MoexHistoryPageReader
     internal Task ReadObStatsStockPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
         MoexOperationTags operationTags, ProtobufBatchWriter<ObStatsStockRow> writer, DateTime? lastSourceTime,
         HistoricalReadState state, Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-        => ReadTypedCursorPagesAsync(spec, secId, from, till, operationTags, writer, lastSourceTime, state, beforeRequest,
+        => ReadTypedCursorPagesAsync(spec, secId, from, till, operationTags, state, beforeRequest,
             (ReadOnlyMemory<byte> body, ref HistoricalSeriesTimeGroupTail<ObStatsStockRow>? tail) =>
             {
                 ObStatsHistoryParser.ParseStock(body.Span, spec, secId, writer, lastSourceTime, state,
@@ -87,7 +101,7 @@ public sealed class MoexHistoryPageReader
     internal Task ReadObStatsFuturesPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
         MoexOperationTags operationTags, ProtobufBatchWriter<ObStatsFuturesRow> writer, DateTime? lastSourceTime,
         HistoricalReadState state, Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-        => ReadTypedCursorPagesAsync(spec, secId, from, till, operationTags, writer, lastSourceTime, state, beforeRequest,
+        => ReadTypedCursorPagesAsync(spec, secId, from, till, operationTags, state, beforeRequest,
             (ReadOnlyMemory<byte> body, ref HistoricalSeriesTimeGroupTail<ObStatsFuturesRow>? tail) =>
             {
                 ObStatsHistoryParser.ParseFutures(body.Span, spec, secId, writer, lastSourceTime, state,
@@ -98,7 +112,7 @@ public sealed class MoexHistoryPageReader
     internal Task ReadOrderStatsStockPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
         MoexOperationTags operationTags, ProtobufBatchWriter<OrderStatsStockRow> writer, DateTime? lastSourceTime,
         HistoricalReadState state, Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-        => ReadTypedCursorPagesAsync(spec, secId, from, till, operationTags, writer, lastSourceTime, state, beforeRequest,
+        => ReadTypedCursorPagesAsync(spec, secId, from, till, operationTags, state, beforeRequest,
             (ReadOnlyMemory<byte> body, ref HistoricalSeriesTimeGroupTail<OrderStatsStockRow>? tail) =>
             {
                 OrderStatsHistoryParser.Parse(body.Span, spec, secId, writer, lastSourceTime, state,
@@ -109,7 +123,7 @@ public sealed class MoexHistoryPageReader
     internal Task ReadFutoiPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
         MoexOperationTags operationTags, ProtobufBatchWriter<FutoiRow> writer, DateTime? lastSourceTime,
         HistoricalReadState state, Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-        => ReadTypedDaySplitPagesAsync(spec, secId, from, till, operationTags, writer, lastSourceTime, state, beforeRequest,
+        => ReadTypedDaySplitPagesAsync(spec, secId, from, till, operationTags, state, beforeRequest,
             (ReadOnlyMemory<byte> body, ref HistoricalSeriesTimeGroupTail<FutoiRow>? tail) =>
             {
                 FutoiHistoryParser.Parse(body.Span, spec, secId, writer, lastSourceTime, state,
@@ -120,7 +134,7 @@ public sealed class MoexHistoryPageReader
     internal Task ReadHi2StockPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
         MoexOperationTags operationTags, ProtobufBatchWriter<Hi2StockRow> writer, DateTime? lastSourceTime,
         HistoricalReadState state, Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-        => ReadTypedCursorPagesAsync(spec, secId, from, till, operationTags, writer, lastSourceTime, state, beforeRequest,
+        => ReadTypedCursorPagesAsync(spec, secId, from, till, operationTags, state, beforeRequest,
             (ReadOnlyMemory<byte> body, ref HistoricalSeriesTimeGroupTail<Hi2StockRow>? tail) =>
             {
                 Hi2HistoryParser.ParseStock(body.Span, spec, secId, writer, lastSourceTime, state,
@@ -131,7 +145,7 @@ public sealed class MoexHistoryPageReader
     internal Task ReadHi2FuturesPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
         MoexOperationTags operationTags, ProtobufBatchWriter<Hi2FuturesRow> writer, DateTime? lastSourceTime,
         HistoricalReadState state, Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-        => ReadTypedCursorPagesAsync(spec, secId, from, till, operationTags, writer, lastSourceTime, state, beforeRequest,
+        => ReadTypedCursorPagesAsync(spec, secId, from, till, operationTags, state, beforeRequest,
             (ReadOnlyMemory<byte> body, ref HistoricalSeriesTimeGroupTail<Hi2FuturesRow>? tail) =>
             {
                 Hi2HistoryParser.ParseFutures(body.Span, spec, secId, writer, lastSourceTime, state,
@@ -142,7 +156,7 @@ public sealed class MoexHistoryPageReader
     internal Task ReadMegaAlertsStockPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
         MoexOperationTags operationTags, ProtobufBatchWriter<MegaAlertsStockRow> writer, DateTime? lastSourceTime,
         HistoricalReadState state, Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-        => ReadTypedCursorPagesAsync(spec, secId, from, till, operationTags, writer, lastSourceTime, state, beforeRequest,
+        => ReadTypedCursorPagesAsync(spec, secId, from, till, operationTags, state, beforeRequest,
             (ReadOnlyMemory<byte> body, ref HistoricalSeriesTimeGroupTail<MegaAlertsStockRow>? tail) =>
             {
                 MegaAlertsHistoryParser.ParseStock(body.Span, spec, secId, writer, lastSourceTime, state,
@@ -153,7 +167,7 @@ public sealed class MoexHistoryPageReader
     internal Task ReadMegaAlertsFuturesPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
         MoexOperationTags operationTags, ProtobufBatchWriter<MegaAlertsFuturesRow> writer, DateTime? lastSourceTime,
         HistoricalReadState state, Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-        => ReadTypedCursorPagesAsync(spec, secId, from, till, operationTags, writer, lastSourceTime, state, beforeRequest,
+        => ReadTypedCursorPagesAsync(spec, secId, from, till, operationTags, state, beforeRequest,
             (ReadOnlyMemory<byte> body, ref HistoricalSeriesTimeGroupTail<MegaAlertsFuturesRow>? tail) =>
             {
                 MegaAlertsHistoryParser.ParseFutures(body.Span, spec, secId, writer, lastSourceTime, state,
@@ -180,6 +194,7 @@ public sealed class MoexHistoryPageReader
             ["interval"] = interval.ToString(CultureInfo.InvariantCulture),
             ["iss.meta"] = "off",
             ["iss.only"] = spec.RootKey,
+            ["candles.columns"] = MoexColumnSets.CandlesColumnsParam,
         };
 
         return ReadFixedCandlePagesAsync(spec, secId, from, till, operationTags,
@@ -198,15 +213,9 @@ public sealed class MoexHistoryPageReader
         {
             cancellationToken.ThrowIfCancellationRequested();
             state.BeginPage(method, from, till, "start=" + queryStart.ToString(CultureInfo.InvariantCulture));
-            int sourceRowsCount = 0;
-            PaginationCursorDTO cursor = await FetchPageAsync(
+            int sourceRowsCount = await FetchPageAsync(
                 method, query, secId, operationTags, state,
-                body =>
-                {
-                    sourceRowsCount = CandleHistoryParser.Parse(body.Span, spec, secId, writer, state, out PaginationCursorDTO pageCursor);
-                    return pageCursor;
-                }, cancellationToken);
-            _ = cursor;
+                body => CandleHistoryParser.Parse(body.Span, spec, secId, writer, state), cancellationToken);
             pagesElapsed++;
             totalRows = checked(totalRows + state.PageAcceptedRows);
             MoexLogMessages.PageReceived(_logger, method, pagesElapsed, state.PageAcceptedRows, state.LastPageElapsed);
@@ -235,7 +244,7 @@ public sealed class MoexHistoryPageReader
 
     private async Task ReadTradeStatsCursorPagesAsync(
         MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till, MoexOperationTags operationTags,
-        HistoricalReadState state, ParseBody parse, Action? beforeRequest,
+        HistoricalReadState state, Func<ReadOnlyMemory<byte>, PaginationCursorDTO> parse, Action? beforeRequest,
         BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
     {
         if (spec.DataKind != "tradestats" || spec.Pagination != PaginationKind.Cursor)
@@ -277,7 +286,7 @@ public sealed class MoexHistoryPageReader
     private async Task ReadTypedCursorPagesAsync<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
         MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till, MoexOperationTags operationTags,
-        ProtobufBatchWriter<TRow> writer, DateTime? lastSourceTime, HistoricalReadState state, Action? beforeRequest,
+        HistoricalReadState state, Action? beforeRequest,
         ParseSeriesBody<TRow> parse, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
         where TRow : struct
     {
@@ -354,7 +363,7 @@ public sealed class MoexHistoryPageReader
     private async Task ReadTypedDaySplitPagesAsync<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
         MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till, MoexOperationTags operationTags,
-        ProtobufBatchWriter<TRow> writer, DateTime? lastSourceTime, HistoricalReadState state, Action? beforeRequest,
+        HistoricalReadState state, Action? beforeRequest,
         ParseSeriesBody<TRow> parse, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
         where TRow : struct
     {
@@ -404,9 +413,9 @@ public sealed class MoexHistoryPageReader
         MoexLogMessages.DaySplitCompleted(_logger, method, FormatDate(from), FormatDate(till), dayCount, totalRows);
     }
 
-    private async Task<PaginationCursorDTO> FetchPageAsync(
+    private async Task<TResult> FetchPageAsync<TResult>(
         string method, Dictionary<string, string> query, string secId, MoexOperationTags operationTags,
-        HistoricalReadState state, ParseBody parse,
+        HistoricalReadState state, Func<ReadOnlyMemory<byte>, TResult> parse,
         CancellationToken cancellationToken)
     {
         long pageStart = Stopwatch.GetTimestamp();
@@ -421,11 +430,11 @@ public sealed class MoexHistoryPageReader
             using HttpResponseMessage response = await _client.SendRequestAsync(method, query, cancellationToken, operationTags.Flow);
             using RentedBuffer body = await RentedBuffer.RentFromResponseAsync(response, _options.BodyReadTimeout, method, cancellationToken);
             parserStarted = true;
-            PaginationCursorDTO cursor = parse(body.Memory);
+            TResult result = parse(body.Memory);
             parseSucceeded = true;
             state.LastPageElapsed = Stopwatch.GetElapsedTime(pageStart);
             pageActivity?.SetStatus(ActivityStatusCode.Ok);
-            return cursor;
+            return result;
         }
         catch (OperationCanceledException)
         {
@@ -438,7 +447,7 @@ public sealed class MoexHistoryPageReader
             MoexLogMessages.ParseFailed(_logger, ex, method, MoexErrorTypes.SchemaMismatch, ex.Message);
             MoexLogMessages.HistoryOperationFailed(
                 _logger, ex, secId, operationTags.DataKind, operationTags.Operation,
-                method, statePageFrom(state), statePageTill(state), statePagePosition(state),
+                method, state.PageFrom, state.PageTill, state.PagePosition,
                 MoexErrorTypes.SchemaMismatch, ex.Message);
             pageActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             MoexMetrics.RecordOperationError(in operationTags, ex, Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
@@ -448,7 +457,7 @@ public sealed class MoexHistoryPageReader
         {
             MoexLogMessages.HistoryOperationFailed(
                 _logger, ex, secId, operationTags.DataKind, operationTags.Operation,
-                method, statePageFrom(state), statePageTill(state), statePagePosition(state),
+                method, state.PageFrom, state.PageTill, state.PagePosition,
                 MoexMetrics.ClassifyError(ex), ex.Message);
             pageActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             MoexMetrics.RecordOperationError(in operationTags, ex, Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
@@ -474,10 +483,6 @@ public sealed class MoexHistoryPageReader
         state.RecordSkippedDiagnostics();
         MoexMetrics.RecordOperationSuccess(in operationTags, state.LastPageElapsed.TotalSeconds);
     }
-
-    private static string? statePageFrom(HistoricalReadState state) => state.PageFrom;
-    private static string? statePageTill(HistoricalReadState state) => state.PageTill;
-    private static string statePagePosition(HistoricalReadState state) => state.PagePosition;
 
     private static Dictionary<string, string> CreateCursorQuery(MoexSeriesSpec spec, DateOnly from, DateOnly till)
         => new()
