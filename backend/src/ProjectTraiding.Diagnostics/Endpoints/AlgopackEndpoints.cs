@@ -25,18 +25,20 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 int? interval,
                 [FromQuery(Name = "iss.reverse")] int? reverse,
                 int? start,
+                int? latest,
                 MoexHttpAlgClient client,
                 CancellationToken ct) =>
             {
                 string? validationMessage = ValidateRangeRequest(ticker, from, till);
                 validationMessage ??= ValidateStart(start);
+                validationMessage ??= ValidateLatest(latest);
                 if (validationMessage is not null)
                 {
                     return DiagnosticResponses.CreateDiagnosticError(400, DiagnosticSource, "candles", "stock", validationMessage, ticker);
                 }
 
                 string method = $"/engines/stock/markets/shares/boards/tqbr/securities/{ticker}/candles.json";
-                Dictionary<string, string> queryParams = CreateRawCandlesQuery(from!, till!, interval ?? 1, reverse, start);
+                Dictionary<string, string> queryParams = CreateRawCandlesQuery(from!, till!, interval ?? 1, reverse, start, latest);
                 return await ExecuteRawAsync("candles", "stock", ticker, client, method, queryParams, ct);
             });
 
@@ -47,18 +49,20 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 int? interval,
                 [FromQuery(Name = "iss.reverse")] int? reverse,
                 int? start,
+                int? latest,
                 MoexHttpAlgClient client,
                 CancellationToken ct) =>
             {
                 string? validationMessage = ValidateRangeRequest(ticker, from, till);
                 validationMessage ??= ValidateStart(start);
+                validationMessage ??= ValidateLatest(latest);
                 if (validationMessage is not null)
                 {
                     return DiagnosticResponses.CreateDiagnosticError(400, DiagnosticSource, "candles", "futures", validationMessage, ticker);
                 }
 
                 string method = $"/engines/futures/markets/forts/boards/RFUD/securities/{ticker}/candles.json";
-                Dictionary<string, string> queryParams = CreateRawCandlesQuery(from!, till!, interval ?? 1, reverse, start);
+                Dictionary<string, string> queryParams = CreateRawCandlesQuery(from!, till!, interval ?? 1, reverse, start, latest);
                 return await ExecuteRawAsync("candles", "futures", ticker, client, method, queryParams, ct);
             });
 
@@ -296,7 +300,7 @@ namespace ProjectTraiding.Diagnostics.Endpoints
             }
         }
 
-        private static Dictionary<string, string> CreateRawCandlesQuery(string from, string till, int interval, int? reverse, int? start)
+        private static Dictionary<string, string> CreateRawCandlesQuery(string from, string till, int interval, int? reverse, int? start, int? latest)
         {
             Dictionary<string, string> queryParams = new Dictionary<string, string>
             {
@@ -311,6 +315,8 @@ namespace ProjectTraiding.Diagnostics.Endpoints
                 queryParams["iss.reverse"] = reverse.Value.ToString();
             if (start is not null)
                 queryParams["start"] = start.Value.ToString();
+            if (latest is not null)
+                queryParams["latest"] = latest.Value.ToString();
 
             return queryParams;
         }
@@ -353,10 +359,19 @@ namespace ProjectTraiding.Diagnostics.Endpoints
 
         private static string? ValidateLatestAndStart(int? latest, int? start)
         {
+            string? validationMessage = ValidateLatest(latest);
+            if (validationMessage is not null)
+                return validationMessage;
+
+            return ValidateStart(start);
+        }
+
+        private static string? ValidateLatest(int? latest)
+        {
             if (latest is not null && latest is not 0 and not 1)
                 return "Query parameter latest must be 0 or 1.";
 
-            return ValidateStart(start);
+            return null;
         }
 
         private static string? ValidateStart(int? start)
