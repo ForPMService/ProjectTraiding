@@ -49,6 +49,45 @@ namespace ProjectTraiding.Moex.Clients
         [LoggerMessage(EventId = 124, EventName = "MoexDaySplitCompleted", Level = LogLevel.Information, Message = "MOEX daily load completed: endpoint={Endpoint}, from={From}, till={Till}, days={DaysProcessed}, rows={TotalRows}.")]
         public static partial void DaySplitCompleted(ILogger logger, string endpoint, string from, string till, int daysProcessed, int totalRows);
 
+        [LoggerMessage(
+            EventId = 125,
+            EventName = "MoexCursorPaginationInvalid",
+            Level = LogLevel.Error,
+            Message = "MOEX cursor pagination invalid: endpoint={Endpoint}, reason={Reason}, requestedStart={RequestedStart}, index={Index}, total={Total}, pageSize={PageSize}.")]
+        public static partial void CursorPaginationInvalid(
+            ILogger logger,
+            string endpoint,
+            string reason,
+            int requestedStart,
+            int? index,
+            int? total,
+            int? pageSize);
+
+        [LoggerMessage(
+            EventId = 126,
+            EventName = "MoexFixedPagePaginationInvalid",
+            Level = LogLevel.Error,
+            Message = "MOEX fixed-page pagination invalid: endpoint={Endpoint}, reason={Reason}, start={Start}, sourceRows={SourceRows}, pageSize={PageSize}.")]
+        public static partial void FixedPagePaginationInvalid(
+            ILogger logger,
+            string endpoint,
+            string reason,
+            int start,
+            int sourceRows,
+            int pageSize);
+
+        [LoggerMessage(
+            EventId = 127,
+            EventName = "MoexPaginationPageLimitExceeded",
+            Level = LogLevel.Error,
+            Message = "MOEX pagination page limit exceeded: endpoint={Endpoint}, mode={Mode}, pagesRead={PagesRead}, maxPages={MaxPages}.")]
+        public static partial void PaginationPageLimitExceeded(
+            ILogger logger,
+            string endpoint,
+            string mode,
+            int pagesRead,
+            int maxPages);
+
         /// <summary>
         /// Логирует типизированную ошибку HTTP/source уровня после классификации ответа MOEX.
         /// </summary>
