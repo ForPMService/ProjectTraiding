@@ -11,24 +11,20 @@ internal static class Hi2HistoryParser
 {
     internal static void ParseStock(ReadOnlySpan<byte> body, MoexSeriesSpec spec, string taskSecId,
         ProtobufBatchWriter<Hi2StockRow> writer, DateTime? lastSourceTime, HistoricalReadState state,
-        ref HistoricalSeriesTimeGroupTail<Hi2StockRow>? tail, out PaginationCursorDTO cursor)
+        out PaginationCursorDTO cursor)
     {
         ValidateSpec(spec, "stock", MoexColumnSets.Hi2Stock);
-        HistoricalSeriesTimeGroupTail<Hi2StockRow> pageTail =
-            tail ??= new HistoricalSeriesTimeGroupTail<Hi2StockRow>(writer, state, lastSourceTime);
         cursor = ParseEnvelope(body, spec, MoexColumnSets.Hi2Stock,
-            (ref Utf8JsonReader reader) => ReadStockRows(ref reader, spec, taskSecId, pageTail, state));
+            (ref Utf8JsonReader reader) => ReadStockRows(ref reader, spec, taskSecId, writer, lastSourceTime, state));
     }
 
     internal static void ParseFutures(ReadOnlySpan<byte> body, MoexSeriesSpec spec, string taskSecId,
         ProtobufBatchWriter<Hi2FuturesRow> writer, DateTime? lastSourceTime, HistoricalReadState state,
-        ref HistoricalSeriesTimeGroupTail<Hi2FuturesRow>? tail, out PaginationCursorDTO cursor)
+        out PaginationCursorDTO cursor)
     {
         ValidateSpec(spec, "futures", MoexColumnSets.Hi2Futures);
-        HistoricalSeriesTimeGroupTail<Hi2FuturesRow> pageTail =
-            tail ??= new HistoricalSeriesTimeGroupTail<Hi2FuturesRow>(writer, state, lastSourceTime);
         cursor = ParseEnvelope(body, spec, MoexColumnSets.Hi2Futures,
-            (ref Utf8JsonReader reader) => ReadFuturesRows(ref reader, spec, taskSecId, pageTail, state));
+            (ref Utf8JsonReader reader) => ReadFuturesRows(ref reader, spec, taskSecId, writer, lastSourceTime, state));
     }
 
     private delegate void ReadRows(ref Utf8JsonReader reader);
@@ -63,12 +59,12 @@ internal static class Hi2HistoryParser
     }
 
     private static void ReadStockRows(ref Utf8JsonReader reader, MoexSeriesSpec spec, string taskSecId,
-        HistoricalSeriesTimeGroupTail<Hi2StockRow> tail, HistoricalReadState state)
+        ProtobufBatchWriter<Hi2StockRow> writer, DateTime? lastSourceTime, HistoricalReadState state)
     {
         ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", spec.RootKey);
+        int rowIndex = 0;
         while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
         {
-            int rowIndex = tail.FullSourceRowsCount;
             ExpectRowStart(ref reader, spec, rowIndex);
             state.RecordPhysicalRow();
             SourceTimeParts timeParts = default;
@@ -91,18 +87,28 @@ internal static class Hi2HistoryParser
                 row.SourceTime = CandleDateTime64.ToUnixWholeSeconds(MoexClickHouseTime.BuildSourceTime(in timeParts));
             }
             catch (Exception ex) when (IsRowRejection(ex)) { error ??= ex.Message; }
-            if (error is null) tail.AddAccepted(rowIndex, time, in row);
-            else tail.AddSkipped(rowIndex, time, error);
+            state.SetPageLastSourceTime(time);
+            if (error is null)
+            {
+                state.RecordParsedValidRow(receivedMetric: true);
+                if (lastSourceTime is not DateTime cursorTime || time is not DateTime sourceTime || sourceTime >= cursorTime)
+                {
+                    writer.Append(in row);
+                    state.RecordAccepted(time);
+                }
+            }
+            else state.RecordSkipped(rowIndex, time, error);
+            rowIndex++;
         }
     }
 
     private static void ReadFuturesRows(ref Utf8JsonReader reader, MoexSeriesSpec spec, string taskSecId,
-        HistoricalSeriesTimeGroupTail<Hi2FuturesRow> tail, HistoricalReadState state)
+        ProtobufBatchWriter<Hi2FuturesRow> writer, DateTime? lastSourceTime, HistoricalReadState state)
     {
         ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", spec.RootKey);
+        int rowIndex = 0;
         while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
         {
-            int rowIndex = tail.FullSourceRowsCount;
             ExpectRowStart(ref reader, spec, rowIndex);
             state.RecordPhysicalRow();
             SourceTimeParts timeParts = default;
@@ -126,8 +132,18 @@ internal static class Hi2HistoryParser
                 row.SourceTime = CandleDateTime64.ToUnixWholeSeconds(MoexClickHouseTime.BuildSourceTime(in timeParts));
             }
             catch (Exception ex) when (IsRowRejection(ex)) { error ??= ex.Message; }
-            if (error is null) tail.AddAccepted(rowIndex, time, in row);
-            else tail.AddSkipped(rowIndex, time, error);
+            state.SetPageLastSourceTime(time);
+            if (error is null)
+            {
+                state.RecordParsedValidRow(receivedMetric: true);
+                if (lastSourceTime is not DateTime cursorTime || time is not DateTime sourceTime || sourceTime >= cursorTime)
+                {
+                    writer.Append(in row);
+                    state.RecordAccepted(time);
+                }
+            }
+            else state.RecordSkipped(rowIndex, time, error);
+            rowIndex++;
         }
     }
 
@@ -197,7 +213,7 @@ internal static class Hi2HistoryParser
     private static void ValidateSpec(MoexSeriesSpec spec, string market, IReadOnlyList<string> columns)
     {
         if (spec.DataKind != "hi2" || spec.Market != market || spec.Pagination != PaginationKind.Cursor
-            || !spec.PreserveCursorTimeGroup || !spec.InputColumns.SequenceEqual(columns))
-            throw new ArgumentException($"Typed HI2 parsing requires {market} hi2 with cursor time groups.", nameof(spec));
+            || !spec.InputColumns.SequenceEqual(columns))
+            throw new ArgumentException($"Typed HI2 parsing requires {market} hi2.", nameof(spec));
     }
 }
