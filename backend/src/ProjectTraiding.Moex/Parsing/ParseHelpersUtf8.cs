@@ -2,8 +2,9 @@
 using ProjectTraiding.Moex.Contracts.Dto;
 using ProjectTraiding.Moex.DataFormats;
 using ProjectTraiding.Moex.Parsing.Errors;
+using ProjectTraiding.Moex.Series;
+using ProjectTraiding.Moex.StorageBase.ClickHouse;
 using System.Collections.Immutable;
-using System.Buffers.Text;
 using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
@@ -29,85 +30,39 @@ namespace ProjectTraiding.Moex.Parsing
             throw new MoexSchemaMismatchException(message: message);
         }
 
-        // ═══════════════════════════════════════════════════════════
-        // Навигация к RootKey (A1)
-        // ═══════════════════════════════════════════════════════════
-
-        /// <summary>
-        /// На верхнем уровне JSON ищет свойство с именем rootKey,
-        /// пропуская всё остальное через Skip().
-        /// 
-        /// После вызова reader стоит на StartObject внутри rootKey.
-        /// 
-        /// Бросает MoexSchemaMismatchException (Lock §10) если:
-        /// — rootKey не найден до конца JSON;
-        /// — значение rootKey не является объектом.
-        /// </summary>
-        /// <summary>
-        /// Входит во внешний объект ответа. Отдельный метод нужен одиночному проходу,
-        /// который дальше сам разбирает свойства верхнего уровня по мере встречи.
-        /// </summary>
-        internal static void EnterResponseObject(ref Utf8JsonReader reader)
+        internal static void SkipToRootObject(
+            ref Utf8JsonReader reader,
+            string rootKey)
         {
-            // Пройти до StartObject верхнего уровня
+            // Найти первый объект ответа, пропуская предшествующие токены.
             while (reader.Read())
             {
                 if (reader.TokenType == JsonTokenType.StartObject)
                     break;
             }
-        }
 
-        /// <summary>
-        /// Сверяет, что за именем блока следует объект. Текст отказа объявлен здесь
-        /// и в других местах не дублируется.
-        /// </summary>
-        internal static void ExpectObjectStart(ref Utf8JsonReader reader, string rootKey)
-        {
-            if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
-            {
-                SchemaMismatch(
-                    $"[{rootKey}] Ожидался объект (StartObject), " +
-                    $"получено {reader.TokenType}.");
-            }
-        }
-
-        /// <summary>
-        /// Текст отказа об отсутствующем корневом ключе. Объявлен здесь и не дублируется.
-        /// </summary>
-        internal static void RootKeyMissing(string rootKey)
-        {
-            SchemaMismatch($"MOEX ответ не содержит корневой ключ '{rootKey}'.");
-        }
-
-        internal static void SkipToRootObject(
-            ref Utf8JsonReader reader,
-            string rootKey)
-        {
-            EnterResponseObject(ref reader);
+            if (reader.TokenType != JsonTokenType.StartObject)
+                SchemaMismatch("Ожидался объект ответа MOEX.");
 
             // Внутри корневого объекта JSON — ищем свойство rootKey
             while (reader.Read())
             {
                 if (reader.TokenType == JsonTokenType.EndObject)
-                    RootKeyMissing(rootKey);
+                    SchemaMismatch($"MOEX ответ не содержит корневой ключ '{rootKey}'.");
 
                 if (reader.TokenType != JsonTokenType.PropertyName)
                     continue;
 
-                // Сравнение с именем в виде строки перекодирует короткое имя во временный
-                // буфер на стеке и кучу не задействует. Прежний приём создавал массив байтов
-                // на каждый разбор страницы. Раскодирование экранированных имён свойств
-                // обе перегрузки выполняют одинаково.
                 if (reader.ValueTextEquals(rootKey))
                 {
-                    ExpectObjectStart(ref reader, rootKey);
+                    ReadAndExpect(ref reader, JsonTokenType.StartObject, rootKey, rootKey);
                     return;
                 }
 
                 reader.Skip();
             }
 
-            RootKeyMissing(rootKey);
+            SchemaMismatch($"MOEX ответ не содержит корневой ключ '{rootKey}'.");
         }
 
         // ═══════════════════════════════════════════════════════════
@@ -203,10 +158,6 @@ namespace ProjectTraiding.Moex.Parsing
         }
 
         // ═══════════════════════════════════════════════════════════
-        // Универсальное чтение строки данных (A3 + A4)
-        // ═══════════════════════════════════════════════════════════
-
-        // ═══════════════════════════════════════════════════════════
         // Чтение токенов
         // ═══════════════════════════════════════════════════════════
 
@@ -225,55 +176,52 @@ namespace ProjectTraiding.Moex.Parsing
                     $"получено {reader.TokenType}.");
         }
 
-        /// <summary>
-        /// Прочитать double из текущего токена.
-        /// </summary>
-        internal static double ReadDouble(
-            ref Utf8JsonReader reader,
-            int rowIndex,
-            int columnIndex,
-            string rootKey)
+        internal static int? ReadInt(
+            ref Utf8JsonReader reader, out string? error)
         {
-            if (reader.TokenType != JsonTokenType.Number)
-                throw new InvalidOperationException(
-                    $"[{rootKey}] Ожидался Number в строке {rowIndex}, колонка {columnIndex}, " +
-                    $"получено {reader.TokenType}.");
+            error = null;
 
-            return reader.GetDouble();
+            if (reader.TokenType == JsonTokenType.Null)
+                return null;
+
+            if (reader.TokenType == JsonTokenType.Number &&
+                reader.TryGetInt32(out int value))
+                return value;
+
+            error = "Ожидалось значение Int32.";
+            return null;
         }
 
-        /// <summary>
-        /// Прочитать int из текущего токена.
-        /// </summary>
-        internal static int ReadInt(
-            ref Utf8JsonReader reader,
-            int rowIndex,
-            int columnIndex,
-            string rootKey)
+        internal static long? ReadLong(
+            ref Utf8JsonReader reader, out string? error)
         {
-            if (reader.TokenType != JsonTokenType.Number)
-                throw new InvalidOperationException(
-                    $"[{rootKey}] Ожидался Number (int) в строке {rowIndex}, колонка {columnIndex}, " +
-                    $"получено {reader.TokenType}.");
+            error = null;
 
-            return reader.GetInt32();
+            if (reader.TokenType == JsonTokenType.Null)
+                return null;
+
+            if (reader.TokenType == JsonTokenType.Number &&
+                reader.TryGetInt64(out long value))
+                return value;
+
+            error = "Ожидалось значение Int64.";
+            return null;
         }
 
-        /// <summary>
-        /// Прочитать long из текущего токена.
-        /// </summary>
-        internal static long ReadLong(
-            ref Utf8JsonReader reader,
-            int rowIndex,
-            int columnIndex,
-            string rootKey)
+        internal static double? ReadDouble(
+            ref Utf8JsonReader reader, out string? error)
         {
-            if (reader.TokenType != JsonTokenType.Number)
-                throw new InvalidOperationException(
-                    $"[{rootKey}] Ожидался Number (long) в строке {rowIndex}, колонка {columnIndex}, " +
-                    $"получено {reader.TokenType}.");
+            error = null;
 
-            return reader.GetInt64();
+            if (reader.TokenType == JsonTokenType.Null)
+                return null;
+
+            if (reader.TokenType == JsonTokenType.Number &&
+                reader.TryGetDouble(out double value))
+                return value;
+
+            error = "Ожидалось значение Double.";
+            return null;
         }
 
         /// <summary>
@@ -282,42 +230,21 @@ namespace ProjectTraiding.Moex.Parsing
         /// </summary>
         private const int StackStringCheckLimit = 128;
 
-        /// <summary>
-        /// Общая сверка вида токена. Объявлена отдельно, чтобы текст отказа существовал
-        /// в одном месте и не мог разойтись между чтением строки и её проверкой.
-        /// </summary>
-        private static void ThrowIfNotString(
-            ref Utf8JsonReader reader,
-            int rowIndex,
-            int columnIndex,
-            string rootKey)
-        {
-            if (reader.TokenType != JsonTokenType.String)
-                throw new InvalidOperationException(
-                    $"[{rootKey}] Ожидался String в строке {rowIndex}, колонка {columnIndex}, " +
-                    $"получено {reader.TokenType}.");
-        }
-
-        /// <summary>
-        /// Проверяет значение строковой колонки, не создавая строку.
-        ///
-        /// Нужен колонкам, значение которых не попадает ни в одну целевую колонку. Сверяется
-        /// не только вид токена: значение раскодируется в собственный буфер, поэтому проверка
-        /// кодировки сохраняется целиком. Прежний путь через GetString отвергал недопустимые
-        /// последовательности UTF-8 и непарные суррогаты; CopyString отвергает их так же,
-        /// но строку в куче не создаёт. Выбрасывать саму проверку было бы сменой поведения:
-        /// повреждённое значение перестало бы отвергаться.
-        /// </summary>
         internal static void ExpectString(
             ref Utf8JsonReader reader,
-            int rowIndex,
-            int columnIndex,
-            string rootKey)
+            out string? error)
         {
-            ThrowIfNotString(ref reader, rowIndex, columnIndex, rootKey);
+            error = null;
 
-            // Раскодированное значение никогда не длиннее закодированного, поэтому длины
-            // исходного представления как размера буфера достаточно.
+            if (reader.TokenType == JsonTokenType.Null)
+                return;
+
+            if (reader.TokenType != JsonTokenType.String)
+            {
+                error = "Ожидалось строковое значение.";
+                return;
+            }
+
             int encodedLength = reader.HasValueSequence
                 ? checked((int)reader.ValueSequence.Length)
                 : reader.ValueSpan.Length;
@@ -345,347 +272,163 @@ namespace ProjectTraiding.Moex.Parsing
         /// </summary>
         internal static string? ReadString(
             ref Utf8JsonReader reader,
-            int rowIndex,
-            int columnIndex,
-            string rootKey)
+            out string? error)
         {
-            ThrowIfNotString(ref reader, rowIndex, columnIndex, rootKey);
+            error = null;
+
+            if (reader.TokenType == JsonTokenType.Null)
+                return null;
+
+            if (reader.TokenType != JsonTokenType.String)
+            {
+                error = "Ожидалось строковое значение.";
+                return null;
+            }
+
             return reader.GetString();
         }
 
-        internal static int? ReadNextNullableInt(
+        internal static DateOnly? ReadDate(
             ref Utf8JsonReader reader,
-            int rowIndex,
-            string rootKey,
-            int columnIndex)
-        {
-            if (!ReadNextScalar(ref reader, rowIndex, rootKey, columnIndex))
-                return null;
-
-            return ReadInt(ref reader, rowIndex, columnIndex, rootKey);
-        }
-
-        internal static long? ReadNextNullableLong(
-            ref Utf8JsonReader reader,
-            int rowIndex,
-            string rootKey,
-            int columnIndex)
-        {
-            if (!ReadNextScalar(ref reader, rowIndex, rootKey, columnIndex))
-                return null;
-
-            return ReadLong(ref reader, rowIndex, columnIndex, rootKey);
-        }
-
-        internal static double? ReadNextNullableDouble(
-            ref Utf8JsonReader reader,
-            int rowIndex,
-            string rootKey,
-            int columnIndex)
-        {
-            if (!ReadNextScalar(ref reader, rowIndex, rootKey, columnIndex))
-                return null;
-
-            return ReadDouble(ref reader, rowIndex, columnIndex, rootKey);
-        }
-
-        internal static string? ReadNextNullableString(
-            ref Utf8JsonReader reader,
-            int rowIndex,
-            string rootKey,
-            int columnIndex)
-        {
-            if (!ReadNextScalar(ref reader, rowIndex, rootKey, columnIndex))
-                return null;
-
-            return ReadString(ref reader, rowIndex, columnIndex, rootKey);
-        }
-
-        internal static DateOnly? ReadNextMomentDate(
-            ref Utf8JsonReader reader,
-            int rowIndex,
-            int columnIndex,
-            string rootKey,
-            out string? raw)
+            out string? raw,
+            out string? error)
         {
             raw = null;
-            if (!ReadNextScalar(ref reader, rowIndex, rootKey, columnIndex))
+            error = null;
+
+            if (reader.TokenType == JsonTokenType.Null)
                 return null;
 
-            return ReadMomentDateUtf8(ref reader, rowIndex, columnIndex, rootKey, out raw);
-        }
-
-        internal static TimeOnly? ReadNextMomentTime(
-            ref Utf8JsonReader reader,
-            int rowIndex,
-            int columnIndex,
-            string rootKey,
-            out string? raw)
-        {
-            raw = null;
-            if (!ReadNextScalar(ref reader, rowIndex, rootKey, columnIndex))
-                return null;
-
-            return ReadMomentTimeUtf8(ref reader, rowIndex, columnIndex, rootKey, out raw);
-        }
-
-        internal static DateTime? ReadNextNullableDateTime(
-            ref Utf8JsonReader reader,
-            int rowIndex,
-            string rootKey,
-            int columnIndex,
-            out bool wasNull)
-        {
-            wasNull = !ReadNextScalar(ref reader, rowIndex, rootKey, columnIndex);
-            return wasNull ? null : ReadDateTimeUtf8(ref reader, rowIndex, columnIndex, rootKey);
-        }
-
-        internal static void ExpectNextNullableString(
-            ref Utf8JsonReader reader,
-            int rowIndex,
-            string rootKey,
-            int columnIndex)
-        {
-            if (ReadNextScalar(ref reader, rowIndex, rootKey, columnIndex))
-                ExpectString(ref reader, rowIndex, columnIndex, rootKey);
-        }
-
-        private static bool ReadNextScalar(
-            ref Utf8JsonReader reader,
-            int rowIndex,
-            string rootKey,
-            int columnIndex)
-        {
-            if (!reader.Read() || reader.TokenType == JsonTokenType.EndArray)
-            {
-                SchemaMismatch(
-                    $"[{rootKey}] Недостаточно значений в строке {rowIndex}, " +
-                    $"колонка {columnIndex}.");
-            }
-
-            if (reader.TokenType is JsonTokenType.StartArray
-                or JsonTokenType.StartObject
-                or JsonTokenType.EndObject)
-            {
-                SchemaMismatch(
-                    $"[{rootKey}] Недопустимая структура значения в строке {rowIndex}, " +
-                    $"колонка {columnIndex}.");
-            }
-
-            return reader.TokenType != JsonTokenType.Null;
-        }
-
-        internal static void ExpectRowEnd(
-            ref Utf8JsonReader reader,
-            int rowIndex,
-            string rootKey,
-            int columnCount)
-        {
-            if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
-            {
-                SchemaMismatch(
-                    $"[{rootKey}] Ожидался EndArray после {columnCount} колонок " +
-                    $"(строка {rowIndex}), получено {reader.TokenType}.");
-            }
-        }
-
-        // ═══════════════════════════════════════════════════════════
-        // DateTime без аллокаций (A5)
-        // ═══════════════════════════════════════════════════════════
-
-        internal static DateOnly? ReadMomentDateUtf8(
-            ref Utf8JsonReader reader,
-            int rowIndex,
-            int columnIndex,
-            string rootKey,
-            out string? raw)
-        {
-            raw = null;
             if (reader.TokenType != JsonTokenType.String)
-                throw new InvalidOperationException(
-                    $"[{rootKey}] Ожидался String (moment date) в строке {rowIndex}, " +
-                    $"колонка {columnIndex}, получено {reader.TokenType}.");
-
-            Span<byte> sequenceBuffer = stackalloc byte[10];
-            scoped ReadOnlySpan<byte> span;
-            if (reader.HasValueSequence)
             {
-                if (reader.ValueSequence.Length != 10)
-                {
-                    raw = reader.GetString();
-                    return null;
-                }
-
-                reader.ValueSequence.CopyTo(sequenceBuffer);
-                span = sequenceBuffer;
-            }
-            else
-            {
-                span = reader.ValueSpan;
-                if (span.Length != 10)
-                {
-                    raw = reader.GetString();
-                    return null;
-                }
-            }
-
-            if (!Utf8Parser.TryParse(span.Slice(0, 4), out int year, out int yearBytes)
-                || yearBytes != 4
-                || span[4] != (byte)'-'
-                || !Utf8Parser.TryParse(span.Slice(5, 2), out int month, out int monthBytes)
-                || monthBytes != 2
-                || span[7] != (byte)'-'
-                || !Utf8Parser.TryParse(span.Slice(8, 2), out int day, out int dayBytes)
-                || dayBytes != 2)
-            {
-                raw = reader.GetString();
+                error = "Ожидалась дата в формате yyyy-MM-dd.";
                 return null;
             }
+
+            string? text = reader.GetString();
+            if (text is not null && text.Length == 10 &&
+                DateOnly.TryParseExact(
+                    text, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out DateOnly value))
+                return value;
+
+            raw = text;
+            error = "Некорректная дата; ожидался формат yyyy-MM-dd.";
+            return null;
+        }
+
+        internal static TimeOnly? ReadTime(
+            ref Utf8JsonReader reader,
+            out string? raw,
+            out string? error)
+        {
+            raw = null;
+            error = null;
+
+            if (reader.TokenType == JsonTokenType.Null)
+                return null;
+
+            if (reader.TokenType != JsonTokenType.String)
+            {
+                error = "Ожидалось время в формате HH:mm:ss.";
+                return null;
+            }
+
+            string? text = reader.GetString();
+            if (text is not null && text.Length == 8 &&
+                TimeOnly.TryParseExact(
+                    text, "HH:mm:ss", CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out TimeOnly value))
+                return value;
+
+            raw = text;
+            error = "Некорректное время; ожидался формат HH:mm:ss.";
+            return null;
+        }
+
+        internal static DateTime? ReadDateTime(
+            ref Utf8JsonReader reader,
+            out bool wasNull,
+            out string? error)
+        {
+            wasNull = reader.TokenType == JsonTokenType.Null;
+            error = null;
+
+            if (wasNull)
+                return null;
+
+            if (reader.TokenType != JsonTokenType.String)
+            {
+                error = "Ожидался момент yyyy-MM-dd HH:mm:ss.";
+                return null;
+            }
+
+            string? text = reader.GetString();
+            if (text == "")
+                return null;  // Не JSON null: wasNull остаётся false.
+
+            if (text is not null && text.Length == 19 &&
+                DateTime.TryParseExact(
+                    text, "yyyy-MM-dd HH:mm:ss",
+                    CultureInfo.InvariantCulture, DateTimeStyles.None,
+                    out DateTime parsed))
+            {
+                return DateTime.SpecifyKind(parsed, DateTimeKind.Unspecified);
+            }
+
+            error = "Некорректный момент; ожидался yyyy-MM-dd HH:mm:ss.";
+            return null;
+        }
+
+        internal static ulong? ReadSystime(
+            ref Utf8JsonReader reader, out string? error)
+        {
+            DateTime? value = ReadDateTime(
+                ref reader, out _, out error);
+
+            if (error is not null || !value.HasValue)
+                return null;
 
             try
             {
-                return new DateOnly(year, month, day);
+                return CandleDateTime64.ToUnixWholeSeconds(value.Value);
             }
-            catch (ArgumentOutOfRangeException)
+            catch (ArgumentException exception)
             {
-                raw = reader.GetString();
+                error = $"Недопустимое время SYSTIME: {exception.Message}";
+                return null;
+            }
+            catch (OverflowException exception)
+            {
+                error = $"Недопустимое время SYSTIME: {exception.Message}";
                 return null;
             }
         }
 
-        internal static TimeOnly? ReadMomentTimeUtf8(
+        internal static void RejectRow(
             ref Utf8JsonReader reader,
+            int rowDepth,
+            HistoricalReadState state,
             int rowIndex,
-            int columnIndex,
-            string rootKey,
-            out string? raw)
+            DateTime? sourceTime,
+            string reason)
         {
-            raw = null;
-            if (reader.TokenType != JsonTokenType.String)
-                throw new InvalidOperationException(
-                    $"[{rootKey}] Ожидался String (moment time) в строке {rowIndex}, " +
-                    $"колонка {columnIndex}, получено {reader.TokenType}.");
+            // Сначала регистрируем отказ и один Source Generation лог.
+            // Порядок операций фиксирован: лог до поиска конца строки.
+            state.RecordSkipped(rowIndex, sourceTime, reason);
 
-            Span<byte> sequenceBuffer = stackalloc byte[8];
-            scoped ReadOnlySpan<byte> span;
-            if (reader.HasValueSequence)
-            {
-                if (reader.ValueSequence.Length != 8)
-                {
-                    raw = reader.GetString();
-                    return null;
-                }
+            if (reader.TokenType == JsonTokenType.EndArray &&
+                reader.CurrentDepth == rowDepth)
+                return;
 
-                reader.ValueSequence.CopyTo(sequenceBuffer);
-                span = sequenceBuffer;
-            }
-            else
+            while (reader.Read())
             {
-                span = reader.ValueSpan;
-                if (span.Length != 8)
-                {
-                    raw = reader.GetString();
-                    return null;
-                }
+                if (reader.TokenType == JsonTokenType.EndArray &&
+                    reader.CurrentDepth == rowDepth)
+                    return;
             }
 
-            if (!Utf8Parser.TryParse(span.Slice(0, 2), out int hour, out int hourBytes)
-                || hourBytes != 2
-                || span[2] != (byte)':'
-                || !Utf8Parser.TryParse(span.Slice(3, 2), out int minute, out int minuteBytes)
-                || minuteBytes != 2
-                || span[5] != (byte)':'
-                || !Utf8Parser.TryParse(span.Slice(6, 2), out int second, out int secondBytes)
-                || secondBytes != 2)
-            {
-                raw = reader.GetString();
-                return null;
-            }
-
-            try
-            {
-                return new TimeOnly(hour, minute, second);
-            }
-            catch (ArgumentOutOfRangeException)
-            {
-                raw = reader.GetString();
-                return null;
-            }
-        }
-
-        /// <summary>
-        /// Формат MOEX: "yyyy-MM-dd HH:mm:ss" — ровно 19 байт UTF-8.
-        /// Парсим через Utf8Parser.TryParse по ValueSpan без GetString().
-        /// 
-        /// Убирает string-аллокации на каждую дату.
-        /// При 2 годах минутных свечей — это 30+ млн аллокаций меньше.
-        /// 
-        /// Если токен не String — бросает ошибку.
-        /// Если формат не распознан — возвращает null (MOEX может отдать пустую строку).
-        /// </summary>
-        internal static DateTime? ReadDateTimeUtf8(
-            ref Utf8JsonReader reader,
-            int rowIndex,
-            int columnIndex,
-            string rootKey)
-        {
-            if (reader.TokenType != JsonTokenType.String)
-                throw new InvalidOperationException(
-                    $"[{rootKey}] Ожидался String (datetime) в строке {rowIndex}, колонка {columnIndex}, " +
-                    $"получено {reader.TokenType}.");
-
-            // "yyyy-MM-dd HH:mm:ss" = 19 байт
-            //
-            // Сплошной буфер отдаёт значение без копии. Разорванный буфер сегодня не
-            // встречается — все обращения идут по сплошному входу, — но встретится при
-            // переходе на потоковое чтение, и тогда копия на стеке избавит от массива
-            // в куче на каждую дату. Длина известна заранее, поэтому размер копии
-            // постоянен, а всё, что в него не укладывается, отбрасывается сразу.
-            Span<byte> sequenceBuffer = stackalloc byte[19];
-            scoped ReadOnlySpan<byte> span;
-            if (reader.HasValueSequence)
-            {
-                if (reader.ValueSequence.Length != 19)
-                    return null;
-
-                reader.ValueSequence.CopyTo(sequenceBuffer);
-                span = sequenceBuffer;
-            }
-            else
-            {
-                span = reader.ValueSpan;
-                if (span.Length != 19)
-                    return null;
-            }
-
-            // Парсим компоненты напрямую из UTF-8 байт.
-            // Формат фиксированный — позиции гарантированы:
-            // 0123456789012345678
-            // yyyy-MM-dd HH:mm:ss
-
-            if (!Utf8Parser.TryParse(span.Slice(0, 4), out int year, out _)
-                || span[4] != (byte)'-'
-                || !Utf8Parser.TryParse(span.Slice(5, 2), out int month, out _)
-                || span[7] != (byte)'-'
-                || !Utf8Parser.TryParse(span.Slice(8, 2), out int day, out _)
-                || span[10] != (byte)' '
-                || !Utf8Parser.TryParse(span.Slice(11, 2), out int hour, out _)
-                || span[13] != (byte)':'
-                || !Utf8Parser.TryParse(span.Slice(14, 2), out int minute, out _)
-                || span[16] != (byte)':'
-                || !Utf8Parser.TryParse(span.Slice(17, 2), out int second, out _))
-            {
-                return null;
-            }
-
-            try
-            {
-                return new DateTime(year, month, day, hour, minute, second, DateTimeKind.Unspecified);
-            }
-            catch (ArgumentOutOfRangeException)
-            {
-                return null;
-            }
+            throw new JsonException("Не найден конец отклонённой строки.");
         }
 
         // ═══════════════════════════════════════════════════════════
@@ -740,7 +483,6 @@ namespace ProjectTraiding.Moex.Parsing
                     foundData = true;
                     ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", rootKey);
 
-                    int rowIndex = 0;
                     bool foundDataEnd = false;
                     while (reader.Read())
                     {
@@ -757,10 +499,25 @@ namespace ProjectTraiding.Moex.Parsing
                                 $"получено {reader.TokenType}.");
                         }
 
-                        int? rowIndexValue = ReadNextNullableInt(ref reader, rowIndex, rootKey, 0);
-                        int? rowTotal = ReadNextNullableInt(ref reader, rowIndex, rootKey, 1);
-                        int? rowPageSize = ReadNextNullableInt(ref reader, rowIndex, rootKey, 2);
-                        ExpectRowEnd(ref reader, rowIndex, rootKey, MoexColumnSets.Cursor.Length);
+                        if (!reader.Read() || reader.TokenType == JsonTokenType.EndArray)
+                            SchemaMismatch("[data.cursor] Недостаточно значений строки курсора: INDEX.");
+                        int? rowIndexValue = ReadInt(ref reader, out string? error);
+                        if (error is not null)
+                            SchemaMismatch($"[data.cursor] INDEX: {error}");
+
+                        if (!reader.Read() || reader.TokenType == JsonTokenType.EndArray)
+                            SchemaMismatch("[data.cursor] Недостаточно значений строки курсора: TOTAL.");
+                        int? rowTotal = ReadInt(ref reader, out error);
+                        if (error is not null)
+                            SchemaMismatch($"[data.cursor] TOTAL: {error}");
+
+                        if (!reader.Read() || reader.TokenType == JsonTokenType.EndArray)
+                            SchemaMismatch("[data.cursor] Недостаточно значений строки курсора: PAGESIZE.");
+                        int? rowPageSize = ReadInt(ref reader, out error);
+                        if (error is not null)
+                            SchemaMismatch($"[data.cursor] PAGESIZE: {error}");
+
+                        ReadAndExpect(ref reader, JsonTokenType.EndArray, "строка курсора", rootKey);
 
                         if (rowIndexValue is int indexValue)
                             index = indexValue;
@@ -769,7 +526,6 @@ namespace ProjectTraiding.Moex.Parsing
                         if (rowPageSize is int pageSizeValue)
                             pageSize = pageSizeValue;
 
-                        rowIndex++;
                     }
 
                     if (!foundDataEnd)
