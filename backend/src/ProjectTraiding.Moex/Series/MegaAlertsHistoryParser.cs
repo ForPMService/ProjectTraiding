@@ -11,24 +11,20 @@ internal static class MegaAlertsHistoryParser
 {
     internal static void ParseStock(ReadOnlySpan<byte> body, MoexSeriesSpec spec, string taskSecId,
         ProtobufBatchWriter<MegaAlertsStockRow> writer, DateTime? lastSourceTime, HistoricalReadState state,
-        ref HistoricalSeriesTimeGroupTail<MegaAlertsStockRow>? tail, out PaginationCursorDTO cursor)
+        out PaginationCursorDTO cursor)
     {
         ValidateSpec(spec, "stock", MoexColumnSets.MegaAlertsStock);
-        HistoricalSeriesTimeGroupTail<MegaAlertsStockRow> pageTail =
-            tail ??= new HistoricalSeriesTimeGroupTail<MegaAlertsStockRow>(writer, state, lastSourceTime);
         cursor = ParseEnvelope(body, spec, MoexColumnSets.MegaAlertsStock,
-            (ref Utf8JsonReader reader) => ReadStockRows(ref reader, spec, taskSecId, pageTail, state));
+            (ref Utf8JsonReader reader) => ReadStockRows(ref reader, spec, taskSecId, writer, lastSourceTime, state));
     }
 
     internal static void ParseFutures(ReadOnlySpan<byte> body, MoexSeriesSpec spec, string taskSecId,
         ProtobufBatchWriter<MegaAlertsFuturesRow> writer, DateTime? lastSourceTime, HistoricalReadState state,
-        ref HistoricalSeriesTimeGroupTail<MegaAlertsFuturesRow>? tail, out PaginationCursorDTO cursor)
+        out PaginationCursorDTO cursor)
     {
         ValidateSpec(spec, "futures", MoexColumnSets.MegaAlertsFutures);
-        HistoricalSeriesTimeGroupTail<MegaAlertsFuturesRow> pageTail =
-            tail ??= new HistoricalSeriesTimeGroupTail<MegaAlertsFuturesRow>(writer, state, lastSourceTime);
         cursor = ParseEnvelope(body, spec, MoexColumnSets.MegaAlertsFutures,
-            (ref Utf8JsonReader reader) => ReadFuturesRows(ref reader, spec, taskSecId, pageTail, state));
+            (ref Utf8JsonReader reader) => ReadFuturesRows(ref reader, spec, taskSecId, writer, lastSourceTime, state));
     }
 
     private delegate void ReadRows(ref Utf8JsonReader reader);
@@ -63,12 +59,12 @@ internal static class MegaAlertsHistoryParser
     }
 
     private static void ReadStockRows(ref Utf8JsonReader reader, MoexSeriesSpec spec, string taskSecId,
-        HistoricalSeriesTimeGroupTail<MegaAlertsStockRow> tail, HistoricalReadState state)
+        ProtobufBatchWriter<MegaAlertsStockRow> writer, DateTime? lastSourceTime, HistoricalReadState state)
     {
         ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", spec.RootKey);
+        int rowIndex = 0;
         while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
         {
-            int rowIndex = tail.FullSourceRowsCount;
             ExpectRowStart(ref reader, spec, rowIndex);
             state.RecordPhysicalRow();
             SourceTimeParts timeParts = default;
@@ -84,23 +80,33 @@ internal static class MegaAlertsHistoryParser
             row.Systime = ReadSystime(ref reader, spec, rowIndex, 7, ref error);
             ParseHelpersUtf8.ExpectRowEnd(ref reader, rowIndex, spec.RootKey, MoexColumnSets.MegaAlertsStock.Length);
             DateTime? time = FinishRow(ref timeParts, ref error, row.AlertType);
+            state.SetPageLastSourceTime(time);
             if (error is null)
             {
                 try { row.SourceTime = CandleDateTime64.ToUnixWholeSeconds(MoexClickHouseTime.BuildSourceTime(in timeParts)); }
                 catch (Exception ex) when (IsRowRejection(ex)) { error ??= ex.Message; }
             }
-            if (error is null) tail.AddAccepted(rowIndex, time, in row);
-            else tail.AddSkipped(rowIndex, time, error);
+            if (error is null)
+            {
+                state.RecordParsedValidRow(receivedMetric: true);
+                if (!(lastSourceTime is DateTime cursorTime && time is DateTime sourceTime && sourceTime < cursorTime))
+                {
+                    writer.Append(in row);
+                    state.RecordAccepted(time);
+                }
+            }
+            else state.RecordSkipped(rowIndex, time, error);
+            rowIndex++;
         }
     }
 
     private static void ReadFuturesRows(ref Utf8JsonReader reader, MoexSeriesSpec spec, string taskSecId,
-        HistoricalSeriesTimeGroupTail<MegaAlertsFuturesRow> tail, HistoricalReadState state)
+        ProtobufBatchWriter<MegaAlertsFuturesRow> writer, DateTime? lastSourceTime, HistoricalReadState state)
     {
         ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", spec.RootKey);
+        int rowIndex = 0;
         while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
         {
-            int rowIndex = tail.FullSourceRowsCount;
             ExpectRowStart(ref reader, spec, rowIndex);
             state.RecordPhysicalRow();
             SourceTimeParts timeParts = default;
@@ -117,13 +123,23 @@ internal static class MegaAlertsHistoryParser
             row.Systime = ReadSystime(ref reader, spec, rowIndex, 8, ref error);
             ParseHelpersUtf8.ExpectRowEnd(ref reader, rowIndex, spec.RootKey, MoexColumnSets.MegaAlertsFutures.Length);
             DateTime? time = FinishRow(ref timeParts, ref error, row.AlertType);
+            state.SetPageLastSourceTime(time);
             if (error is null)
             {
                 try { row.SourceTime = CandleDateTime64.ToUnixWholeSeconds(MoexClickHouseTime.BuildSourceTime(in timeParts)); }
                 catch (Exception ex) when (IsRowRejection(ex)) { error ??= ex.Message; }
             }
-            if (error is null) tail.AddAccepted(rowIndex, time, in row);
-            else tail.AddSkipped(rowIndex, time, error);
+            if (error is null)
+            {
+                state.RecordParsedValidRow(receivedMetric: true);
+                if (!(lastSourceTime is DateTime cursorTime && time is DateTime sourceTime && sourceTime < cursorTime))
+                {
+                    writer.Append(in row);
+                    state.RecordAccepted(time);
+                }
+            }
+            else state.RecordSkipped(rowIndex, time, error);
+            rowIndex++;
         }
     }
 
@@ -200,7 +216,7 @@ internal static class MegaAlertsHistoryParser
     private static void ValidateSpec(MoexSeriesSpec spec, string market, IReadOnlyList<string> columns)
     {
         if (spec.DataKind != "mega_alerts" || spec.Market != market || spec.Pagination != PaginationKind.Cursor
-            || !spec.PreserveCursorTimeGroup || !spec.InputColumns.SequenceEqual(columns))
-            throw new ArgumentException($"Typed MegaAlerts parsing requires {market} mega_alerts with cursor time groups.", nameof(spec));
+            || !spec.InputColumns.SequenceEqual(columns))
+            throw new ArgumentException($"Typed MegaAlerts parsing requires {market} mega_alerts.", nameof(spec));
     }
 }

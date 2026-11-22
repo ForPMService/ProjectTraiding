@@ -24,13 +24,6 @@ public sealed class MoexSeriesSpec
     // Код свечного интервала MOEX (1, 10, 60, 24); у остальных рядов пуст.
     public int? CandleInterval { get; init; }
 
-    /// <summary>
-    /// A series may have several rows for one source timestamp, distinguished by an
-    /// additional key such as a metric or alert type. The source does not guarantee
-    /// the order within that group, so page boundaries must not split the group.
-    /// </summary>
-    public bool PreserveCursorTimeGroup { get; init; }
-
     private string? _columnsParam;
 
     /// <summary>
