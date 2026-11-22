@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ProjectTraiding.Moex.Contracts.Dto;
 using ProjectTraiding.Moex.DataFormats;
 using ProjectTraiding.Moex.Parsing;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
@@ -7,14 +8,15 @@ namespace ProjectTraiding.Moex.Series;
 
 internal static class FutoiHistoryParser
 {
-    internal static int Parse(ReadOnlySpan<byte> body, MoexSeriesSpec spec, string taskSecId,
+    internal static void Parse(ReadOnlySpan<byte> body, MoexSeriesSpec spec, string taskSecId,
         ProtobufBatchWriter<FutoiRow> writer, DateTime? lastSourceTime,
-        HistoricalReadState state)
+        HistoricalReadState state, out PaginationCursorDTO cursor)
     {
         if (spec.DataKind != "futoi" || spec.Market != "futures" || spec.RootKey != "futoi"
             || spec.Pagination != PaginationKind.DaySplit || !spec.InputColumns.SequenceEqual(MoexColumnSets.Futoi))
             throw new ArgumentException("Typed FUTOI parsing requires the registered day-split futoi series.", nameof(spec));
 
+        cursor = new PaginationCursorDTO();
         Utf8JsonReader reader = new(body);
         ParseHelpersUtf8.SkipToRootObject(ref reader, spec.RootKey);
         bool foundColumns = false;
@@ -38,7 +40,6 @@ internal static class FutoiHistoryParser
             else reader.Skip();
         }
         ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, spec.RootKey);
-        return state.PageParsedValidRows;
     }
 
     private static void ReadRows(ref Utf8JsonReader reader, MoexSeriesSpec spec,

@@ -85,6 +85,7 @@ public static class MoexSeriesRegistry
         Table = "moex_hi2_daily_stock",
         Columns = Hi2StockRow.InsertColumns,
         Pagination = PaginationKind.Cursor,
+        PreserveCursorTimeGroup = true,
     };
 
     public static readonly MoexSeriesSpec Hi2Futures = new()
@@ -97,6 +98,7 @@ public static class MoexSeriesRegistry
         Table = "moex_hi2_daily_futures",
         Columns = Hi2FuturesRow.InsertColumns,
         Pagination = PaginationKind.Cursor,
+        PreserveCursorTimeGroup = true,
     };
 
     public static readonly MoexSeriesSpec MegaAlertsStock = new()
@@ -109,6 +111,7 @@ public static class MoexSeriesRegistry
         Table = "moex_megaalerts_stock",
         Columns = MegaAlertsStockRow.InsertColumns,
         Pagination = PaginationKind.Cursor,
+        PreserveCursorTimeGroup = true,
     };
 
     public static readonly MoexSeriesSpec MegaAlertsFutures = new()
@@ -121,6 +124,7 @@ public static class MoexSeriesRegistry
         Table = "moex_megaalerts_futures",
         Columns = MegaAlertsFuturesRow.InsertColumns,
         Pagination = PaginationKind.Cursor,
+        PreserveCursorTimeGroup = true,
     };
 
     public static readonly MoexSeriesSpec Futoi = new()

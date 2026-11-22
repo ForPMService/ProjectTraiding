@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Net;
 using Microsoft.Extensions.Options;
@@ -9,7 +10,6 @@ using ProjectTraiding.Moex.DataFormats;
 using ProjectTraiding.Moex.Infrastructure.Buffers;
 using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Options;
-using ProjectTraiding.Moex.Pagination;
 using ProjectTraiding.Moex.Parsing.Errors;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 
@@ -37,6 +37,10 @@ public sealed class MoexHistoryPageReader
         BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
         where TRow : struct;
 
+    private delegate PaginationCursorDTO ParseSeriesBody<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
+        ReadOnlyMemory<byte> body,
+        ref HistoricalSeriesTimeGroupTail<TRow>? timeGroupTail) where TRow : struct;
     internal delegate ValueTask BetweenHistoryPages(CancellationToken cancellationToken);
 
     public MoexHistoryPageReader(
@@ -62,7 +66,7 @@ public sealed class MoexHistoryPageReader
                 lastSourceTime, ingestPriority, state, out PaginationCursorDTO cursor, acceptedCandles);
             return cursor;
         };
-        return ReadCursorPagesAsync(spec, secId, from, till, operationTags, state,
+        return ReadTradeStatsCursorPagesAsync(spec, secId, from, till, operationTags, state,
             parse, beforeRequest, afterPage, cancellationToken);
     }
 
@@ -79,92 +83,97 @@ public sealed class MoexHistoryPageReader
                 lastSourceTime, ingestPriority, state, out PaginationCursorDTO cursor, acceptedCandles);
             return cursor;
         };
-        return ReadCursorPagesAsync(spec, secId, from, till, operationTags, state,
+        return ReadTradeStatsCursorPagesAsync(spec, secId, from, till, operationTags, state,
             parse, beforeRequest, afterPage, cancellationToken);
     }
 
     internal Task ReadObStatsStockPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
         MoexOperationTags operationTags, ProtobufBatchWriter<ObStatsStockRow> writer, DateTime? lastSourceTime,
         HistoricalReadState state, Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-        => ReadCursorPagesAsync(spec, secId, from, till, operationTags, state,
-            body =>
+        => ReadTypedCursorPagesAsync(spec, secId, from, till, operationTags, state, beforeRequest,
+            (ReadOnlyMemory<byte> body, ref HistoricalSeriesTimeGroupTail<ObStatsStockRow>? tail) =>
             {
                 ObStatsHistoryParser.ParseStock(body.Span, spec, secId, writer, lastSourceTime, state,
                     out PaginationCursorDTO cursor);
                 return cursor;
-            }, beforeRequest, afterPage, cancellationToken);
+            }, afterPage, cancellationToken);
 
     internal Task ReadObStatsFuturesPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
         MoexOperationTags operationTags, ProtobufBatchWriter<ObStatsFuturesRow> writer, DateTime? lastSourceTime,
         HistoricalReadState state, Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-        => ReadCursorPagesAsync(spec, secId, from, till, operationTags, state,
-            body =>
+        => ReadTypedCursorPagesAsync(spec, secId, from, till, operationTags, state, beforeRequest,
+            (ReadOnlyMemory<byte> body, ref HistoricalSeriesTimeGroupTail<ObStatsFuturesRow>? tail) =>
             {
                 ObStatsHistoryParser.ParseFutures(body.Span, spec, secId, writer, lastSourceTime, state,
                     out PaginationCursorDTO cursor);
                 return cursor;
-            }, beforeRequest, afterPage, cancellationToken);
+            }, afterPage, cancellationToken);
 
     internal Task ReadOrderStatsStockPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
         MoexOperationTags operationTags, ProtobufBatchWriter<OrderStatsStockRow> writer, DateTime? lastSourceTime,
         HistoricalReadState state, Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-        => ReadCursorPagesAsync(spec, secId, from, till, operationTags, state,
-            body =>
+        => ReadTypedCursorPagesAsync(spec, secId, from, till, operationTags, state, beforeRequest,
+            (ReadOnlyMemory<byte> body, ref HistoricalSeriesTimeGroupTail<OrderStatsStockRow>? tail) =>
             {
                 OrderStatsHistoryParser.Parse(body.Span, spec, secId, writer, lastSourceTime, state,
                     out PaginationCursorDTO cursor);
                 return cursor;
-            }, beforeRequest, afterPage, cancellationToken);
+            }, afterPage, cancellationToken);
 
     internal Task ReadFutoiPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
         MoexOperationTags operationTags, ProtobufBatchWriter<FutoiRow> writer, DateTime? lastSourceTime,
         HistoricalReadState state, Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-        => ReadDaySplitPagesAsync(spec, secId, from, till, operationTags, writer, lastSourceTime,
-            state, beforeRequest, afterPage, cancellationToken);
+        => ReadTypedDaySplitPagesAsync(spec, secId, from, till, operationTags, state, beforeRequest,
+            (ReadOnlyMemory<byte> body, ref HistoricalSeriesTimeGroupTail<FutoiRow>? tail) =>
+            {
+                FutoiHistoryParser.Parse(body.Span, spec, secId, writer, lastSourceTime, state,
+                    out PaginationCursorDTO cursor);
+                return cursor;
+            }, afterPage, cancellationToken);
 
     internal Task ReadHi2StockPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
         MoexOperationTags operationTags, ProtobufBatchWriter<Hi2StockRow> writer, DateTime? lastSourceTime,
         HistoricalReadState state, Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-        => ReadCursorPagesAsync(spec, secId, from, till, operationTags, state,
-            body =>
+        => ReadTypedCursorPagesAsync(spec, secId, from, till, operationTags, state, beforeRequest,
+            (ReadOnlyMemory<byte> body, ref HistoricalSeriesTimeGroupTail<Hi2StockRow>? tail) =>
             {
                 Hi2HistoryParser.ParseStock(body.Span, spec, secId, writer, lastSourceTime, state,
-                    out PaginationCursorDTO cursor);
+                    ref tail, out PaginationCursorDTO cursor);
                 return cursor;
-            }, beforeRequest, afterPage, cancellationToken);
+            }, afterPage, cancellationToken);
 
     internal Task ReadHi2FuturesPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
         MoexOperationTags operationTags, ProtobufBatchWriter<Hi2FuturesRow> writer, DateTime? lastSourceTime,
         HistoricalReadState state, Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-        => ReadCursorPagesAsync(spec, secId, from, till, operationTags, state,
-            body =>
+        => ReadTypedCursorPagesAsync(spec, secId, from, till, operationTags, state, beforeRequest,
+            (ReadOnlyMemory<byte> body, ref HistoricalSeriesTimeGroupTail<Hi2FuturesRow>? tail) =>
             {
                 Hi2HistoryParser.ParseFutures(body.Span, spec, secId, writer, lastSourceTime, state,
-                    out PaginationCursorDTO cursor);
+                    ref tail, out PaginationCursorDTO cursor);
                 return cursor;
-            }, beforeRequest, afterPage, cancellationToken);
+            }, afterPage, cancellationToken);
 
     internal Task ReadMegaAlertsStockPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
         MoexOperationTags operationTags, ProtobufBatchWriter<MegaAlertsStockRow> writer, DateTime? lastSourceTime,
         HistoricalReadState state, Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-        => ReadCursorPagesAsync(spec, secId, from, till, operationTags, state,
-            body =>
+        => ReadTypedCursorPagesAsync(spec, secId, from, till, operationTags, state, beforeRequest,
+            (ReadOnlyMemory<byte> body, ref HistoricalSeriesTimeGroupTail<MegaAlertsStockRow>? tail) =>
             {
                 MegaAlertsHistoryParser.ParseStock(body.Span, spec, secId, writer, lastSourceTime, state,
-                    out PaginationCursorDTO cursor);
+                    ref tail, out PaginationCursorDTO cursor);
                 return cursor;
-            }, beforeRequest, afterPage, cancellationToken);
+            }, afterPage, cancellationToken);
 
     internal Task ReadMegaAlertsFuturesPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
         MoexOperationTags operationTags, ProtobufBatchWriter<MegaAlertsFuturesRow> writer, DateTime? lastSourceTime,
         HistoricalReadState state, Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-        => ReadCursorPagesAsync(spec, secId, from, till, operationTags, state,
-            body =>
+        => ReadTypedCursorPagesAsync(spec, secId, from, till, operationTags, state, beforeRequest,
+            (ReadOnlyMemory<byte> body, ref HistoricalSeriesTimeGroupTail<MegaAlertsFuturesRow>? tail) =>
             {
                 MegaAlertsHistoryParser.ParseFutures(body.Span, spec, secId, writer, lastSourceTime, state,
-                    out PaginationCursorDTO cursor);
+                    ref tail, out PaginationCursorDTO cursor);
                 return cursor;
-            }, beforeRequest, afterPage, cancellationToken);
+            }, afterPage, cancellationToken);
 
     internal Task ReadCandlePagesAsync(
         MoexSeriesSpec spec, string secId, string boardId, DateOnly from, DateOnly till,
@@ -215,75 +224,151 @@ public sealed class MoexHistoryPageReader
             if (afterPage is not null)
                 await afterPage(cancellationToken);
 
-            bool hasNext = MoexPagination.TryNextFixedPage(
-                queryStart, sourceRowsCount, FixedPageSize, pagesElapsed,
-                _options.MaxPagesPerLoad, _logger, method, out int nextStart);
-            if (!hasNext)
+            if (sourceRowsCount >= FixedPageSize)
+            {
+                if (pagesElapsed >= _options.MaxPagesPerLoad)
+                    throw new InvalidOperationException(
+                        $"Достигнут защитный предел Moex:MaxPagesPerLoad={_options.MaxPagesPerLoad} при неисчерпанном диапазоне.");
+                queryStart = checked(queryStart + FixedPageSize);
+                query["start"] = queryStart.ToString(CultureInfo.InvariantCulture);
+            }
+            else
             {
                 MoexLogMessages.FixedPagePaginationStopped(
                     _logger, method, "last_page_incomplete", pagesElapsed, totalRows,
                     state.PageAcceptedRows, FixedPageSize);
                 break;
             }
-
-            queryStart = nextStart;
-            query["start"] = queryStart.ToString(CultureInfo.InvariantCulture);
         }
     }
 
-    private async Task ReadCursorPagesAsync(
+    private async Task ReadTradeStatsCursorPagesAsync(
         MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till, MoexOperationTags operationTags,
         HistoricalReadState state, Func<ReadOnlyMemory<byte>, PaginationCursorDTO> parse, Action? beforeRequest,
         BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
     {
-        if (spec.Pagination != PaginationKind.Cursor)
-            throw new ArgumentException("Typed historical series require cursor pagination.", nameof(spec));
+        if (spec.DataKind != "tradestats" || spec.Pagination != PaginationKind.Cursor)
+            throw new ArgumentException("Typed TradeStats reads require cursor pagination.", nameof(spec));
         string method = string.Format(CultureInfo.InvariantCulture, spec.MethodTemplate, secId);
         Dictionary<string, string> query = CreateCursorQuery(spec, from, till);
-        int currentStart = 0;
         int pagesElapsed = 0;
         int totalRows = 0;
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            state.BeginPage(method, from, till, "start=" + currentStart.ToString(CultureInfo.InvariantCulture));
+            state.BeginPage(method, from, till, GetPagePosition(query));
             beforeRequest?.Invoke();
             PaginationCursorDTO cursor = await FetchPageAsync(method, query, secId, operationTags,
                 state, parse, cancellationToken);
             pagesElapsed++;
             totalRows = checked(totalRows + state.PageAcceptedRows);
             MoexLogMessages.PageReceived(_logger, method, pagesElapsed, state.PageAcceptedRows, state.LastPageElapsed);
-            state.RecordSkippedDiagnostics();
-            if (afterPage is not null)
-                await afterPage(cancellationToken);
-            bool hasNext = MoexPagination.TryNextCursor(
-                cursor, currentStart, pagesElapsed, _options.MaxPagesPerLoad,
-                _logger, method, out int nextStart);
-            if (!hasNext)
+            ValidateCursor(cursor, method);
+            long nextCursor = GetNextCursor(cursor);
+            bool exhausted = nextCursor >= cursor.Total!.Value;
+            if (exhausted)
             {
+                state.RecordSkippedDiagnostics();
+                if (afterPage is not null)
+                    await afterPage(cancellationToken);
                 MoexLogMessages.PaginationStopped(_logger, method, "range_exhausted", pagesElapsed, totalRows);
                 break;
             }
-
-            currentStart = nextStart;
-            query["start"] = currentStart.ToString(CultureInfo.InvariantCulture);
+            if (pagesElapsed >= _options.MaxPagesPerLoad)
+                throw PageLimitExceeded();
+            state.RecordSkippedDiagnostics();
+            if (afterPage is not null)
+                await afterPage(cancellationToken);
+            query["start"] = checked((int)nextCursor).ToString(CultureInfo.InvariantCulture);
         }
     }
 
-    private async Task ReadDaySplitPagesAsync(
+    private async Task ReadTypedCursorPagesAsync<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
         MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till, MoexOperationTags operationTags,
-        ProtobufBatchWriter<FutoiRow> writer, DateTime? lastSourceTime, HistoricalReadState state,
-        Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
+        HistoricalReadState state, Action? beforeRequest,
+        ParseSeriesBody<TRow> parse, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
+        where TRow : struct
+    {
+        if (spec.Pagination != PaginationKind.Cursor)
+            throw new ArgumentException("Typed historical series require cursor pagination.", nameof(spec));
+        string method = string.Format(CultureInfo.InvariantCulture, spec.MethodTemplate, secId);
+        Dictionary<string, string> query = CreateCursorQuery(spec, from, till);
+        HistoricalSeriesTimeGroupTail<TRow>? tail = null;
+        HistoricalSeriesTimeGroupTail<TRow>? previousTail = null;
+        int pagesElapsed = 0;
+        int totalRows = 0;
+        try
+        {
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                state.BeginPage(method, from, till, GetPagePosition(query));
+                previousTail = tail;
+                tail = null;
+                beforeRequest?.Invoke();
+                PaginationCursorDTO cursor = await FetchPageAsync(method, query, secId, operationTags, state,
+                    body =>
+                    {
+                        PaginationCursorDTO pageCursor = parse(body, ref tail);
+                        state.RecordRowsReceivedMetric(tail?.PendingParsedValidRowsCount ?? 0);
+                        return pageCursor;
+                    }, cancellationToken);
+                int pageRows = checked(state.PageParsedValidRows + (tail?.PendingParsedValidRowsCount ?? 0));
+                pagesElapsed++;
+                totalRows = checked(totalRows + pageRows);
+                MoexLogMessages.PageReceived(_logger, method, pagesElapsed, pageRows, state.LastPageElapsed);
+                ValidateCursor(cursor, method);
+                long nextCursor = GetNextCursor(cursor);
+                bool exhausted = nextCursor >= cursor.Total!.Value;
+                if (exhausted)
+                {
+                    tail?.CommitComplete();
+                    state.RecordSkippedDiagnostics();
+                    if (afterPage is not null)
+                        await afterPage(cancellationToken);
+                    MoexLogMessages.PaginationStopped(_logger, method, "range_exhausted", pagesElapsed, totalRows);
+                    break;
+                }
+                if (pagesElapsed >= _options.MaxPagesPerLoad)
+                    throw PageLimitExceeded();
+
+                int nextStart = checked((int)nextCursor);
+                if (tail is { PendingSourceRowsCount: > 0, FullSourceRowsCount: > 0 })
+                {
+                    int stableSourceRows = tail.StableSourceRowsCount;
+                    if (stableSourceRows == 0)
+                        throw new InvalidOperationException(
+                            $"Страница {method} целиком занята одной временной группой " +
+                            $"({tail.FullSourceRowsCount} строк источника), продолжение чтения не гарантирует полноты.");
+                    nextStart = checked(cursor.Index!.Value + stableSourceRows);
+                }
+
+                state.RecordSkippedDiagnostics();
+                if (afterPage is not null)
+                    await afterPage(cancellationToken);
+                query["start"] = nextStart.ToString(CultureInfo.InvariantCulture);
+            }
+        }
+        catch
+        {
+            int reparsedRows = tail?.FullSourceRowsCount ?? 0;
+            tail?.RecordPendingSkipsFrom();
+            previousTail?.RecordPendingSkipsFrom(reparsedRows);
+            state.RecordSkippedDiagnostics();
+            throw;
+        }
+    }
+
+    private async Task ReadTypedDaySplitPagesAsync<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
+        MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till, MoexOperationTags operationTags,
+        HistoricalReadState state, Action? beforeRequest,
+        ParseSeriesBody<TRow> parse, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
+        where TRow : struct
     {
         if (spec.Pagination != PaginationKind.DaySplit)
             throw new ArgumentException("Typed historical series require day-split pagination.", nameof(spec));
-        if (from > till)
-        {
-            MoexLogMessages.DaySplitCompleted(
-                _logger, string.Format(CultureInfo.InvariantCulture, spec.MethodTemplate, secId),
-                FormatDate(from), FormatDate(till), 0, 0);
-            return;
-        }
         string method = string.Format(CultureInfo.InvariantCulture, spec.MethodTemplate, secId);
         Dictionary<string, string> query = new()
         {
@@ -294,7 +379,7 @@ public sealed class MoexHistoryPageReader
         int dayCount = 0;
         int totalRows = 0;
         DateOnly current = from;
-        while (true)
+        while (current <= till)
         {
             cancellationToken.ThrowIfCancellationRequested();
             string date = FormatDate(current);
@@ -302,15 +387,15 @@ public sealed class MoexHistoryPageReader
             query["till"] = date;
             state.BeginPage(method, current, current, "date=" + date);
             beforeRequest?.Invoke();
-            int parsedRows = 0;
+            HistoricalSeriesTimeGroupTail<TRow>? tail = null;
             try
             {
-                parsedRows = await FetchPageAsync(method, query, secId, operationTags, state,
-                    body => FutoiHistoryParser.Parse(body.Span, spec, secId, writer, lastSourceTime, state), cancellationToken);
+                _ = await FetchPageAsync(method, query, secId, operationTags, state,
+                    body => parse(body, ref tail), cancellationToken);
                 state.RecordSkippedDiagnostics();
                 dayCount++;
-                totalRows = checked(totalRows + parsedRows);
-                MoexLogMessages.DaySplitPageReceived(_logger, method, date, parsedRows, state.LastPageElapsed);
+                totalRows = checked(totalRows + state.PageParsedValidRows);
+                MoexLogMessages.DaySplitPageReceived(_logger, method, date, state.PageParsedValidRows, state.LastPageElapsed);
             }
             catch (OperationCanceledException)
             {
@@ -323,10 +408,7 @@ public sealed class MoexHistoryPageReader
             }
             if (afterPage is not null)
                 await afterPage(cancellationToken);
-
-            if (!MoexPagination.TryNextDay(current, till, out DateOnly nextDay))
-                break;
-            current = nextDay;
+            current = current.AddDays(1);
         }
         MoexLogMessages.DaySplitCompleted(_logger, method, FormatDate(from), FormatDate(till), dayCount, totalRows);
     }
@@ -412,7 +494,32 @@ public sealed class MoexHistoryPageReader
             ["data.columns"] = spec.ColumnsParam,
         };
 
+    private static void ValidateCursor(PaginationCursorDTO cursor, string method)
+    {
+        if (cursor.Index is null || cursor.PageSize is null || cursor.Total is null)
+            throw new InvalidOperationException("Источник не вернул курсор целиком (INDEX, TOTAL, PAGESIZE): полнота диапазона не доказана.");
+        int index = cursor.Index.Value;
+        int total = cursor.Total.Value;
+        int pageSize = cursor.PageSize.Value;
+        if (index < 0 || total < 0)
+            throw new InvalidOperationException($"Курсор источника отрицателен: INDEX={index}, TOTAL={total}.");
+        if (pageSize <= 0)
+            throw new InvalidOperationException($"Размер страницы источника не положителен: PAGESIZE={pageSize}.");
+        if (index > total)
+            throw new InvalidOperationException($"Курсор указывает за пределы набора {method}: INDEX={index}, TOTAL={total}.");
+        _ = checked((long)index + pageSize);
+    }
+
+    private static long GetNextCursor(PaginationCursorDTO cursor)
+        => checked((long)cursor.Index!.Value + cursor.PageSize!.Value);
+
+    private static InvalidOperationException PageLimitExceeded()
+        => new($"Достигнут защитный предел Moex:MaxPagesPerLoad при неисчерпанном диапазоне.");
+
     private static string FormatDate(DateOnly date) => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    private static string GetPagePosition(Dictionary<string, string> query)
+        => query.TryGetValue("start", out string? start) ? "start=" + start : "start=0";
 
     internal static bool IsRecoverableReadFailure(Exception exception)
     {
