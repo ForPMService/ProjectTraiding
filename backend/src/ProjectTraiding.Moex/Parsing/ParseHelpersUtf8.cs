@@ -405,6 +405,177 @@ namespace ProjectTraiding.Moex.Parsing
             }
         }
 
+        // Файл для ручного переноса изменений в:
+// backend/src/ProjectTraiding.Moex/Parsing/ParseHelpersUtf8.cs
+// Основание: репозиторий ForPMService/ProjectTraiding, коммит 509704d.
+//
+// ЧАСТЬ 1. Вставить код ниже внутри класса ParseHelpersUtf8
+// непосредственно ПОСЛЕ ReadSystime и ПЕРЕД существующим RejectRow.
+// Существующие Read* не менять.
+
+/// <summary>
+/// Перейти к очередному значению текущей строки.
+/// columnIndex — число предпринятых чтений; индекс ошибочной колонки = columnIndex - 1.
+/// При ошибке оставить reader на проблемном токене (или последней позиции),
+/// чтобы вызывающий код один раз вызвал RejectRow.
+/// </summary>
+private static bool TryReadNextScalar(
+    ref Utf8JsonReader reader,
+    ref int columnIndex,
+    out string? error)
+{
+    columnIndex++;
+    error = null;
+
+    if (!reader.Read())
+    {
+        error = "Не удалось прочитать значение колонки.";
+        return false;
+    }
+
+    if (reader.TokenType == JsonTokenType.Null)
+    {
+        error = "JSON null недопустим.";
+        return false;
+    }
+
+    if (reader.TokenType == JsonTokenType.EndArray)
+    {
+        error = "В строке меньше значений, чем ожидается.";
+        return false;
+    }
+
+    if (reader.TokenType is JsonTokenType.StartArray or JsonTokenType.StartObject
+        or JsonTokenType.EndObject or JsonTokenType.PropertyName)
+    {
+        error = "Ожидалось скалярное значение колонки.";
+        return false;
+    }
+
+    return true;
+}
+
+internal static bool TryNextInt(
+    ref Utf8JsonReader reader, ref int columnIndex,
+    out int? value, out string? error)
+{
+    value = null;
+    if (!TryReadNextScalar(ref reader, ref columnIndex, out error))
+        return false;
+    value = ReadInt(ref reader, out error);
+    return error is null;
+}
+
+internal static bool TryNextLong(
+    ref Utf8JsonReader reader, ref int columnIndex,
+    out long? value, out string? error)
+{
+    value = null;
+    if (!TryReadNextScalar(ref reader, ref columnIndex, out error))
+        return false;
+    value = ReadLong(ref reader, out error);
+    return error is null;
+}
+
+internal static bool TryNextDouble(
+    ref Utf8JsonReader reader, ref int columnIndex,
+    out double? value, out string? error)
+{
+    value = null;
+    if (!TryReadNextScalar(ref reader, ref columnIndex, out error))
+        return false;
+    value = ReadDouble(ref reader, out error);
+    return error is null;
+}
+
+internal static bool TryNextString(
+    ref Utf8JsonReader reader, ref int columnIndex,
+    out string? value, out string? error)
+{
+    value = null;
+    if (!TryReadNextScalar(ref reader, ref columnIndex, out error))
+        return false;
+    value = ReadString(ref reader, out error);
+    return error is null;
+}
+
+/// <summary>
+/// Проверить строковый токен без выделения строки результата.
+/// Для secid из ответа, когда в результирующее поле записывается taskSecId.
+/// </summary>
+internal static bool TryNextStringToken(
+    ref Utf8JsonReader reader, ref int columnIndex,
+    out string? error)
+{
+    if (!TryReadNextScalar(ref reader, ref columnIndex, out error))
+        return false;
+    ExpectString(ref reader, out error);
+    return error is null;
+}
+
+internal static bool TryNextDate(
+    ref Utf8JsonReader reader, ref int columnIndex,
+    out DateOnly? value, out string? error)
+{
+    value = null;
+    if (!TryReadNextScalar(ref reader, ref columnIndex, out error))
+        return false;
+    value = ReadDate(ref reader, out _, out error);
+    return error is null;
+}
+
+internal static bool TryNextTime(
+    ref Utf8JsonReader reader, ref int columnIndex,
+    out TimeOnly? value, out string? error)
+{
+    value = null;
+    if (!TryReadNextScalar(ref reader, ref columnIndex, out error))
+        return false;
+    value = ReadTime(ref reader, out _, out error);
+    return error is null;
+}
+
+internal static bool TryNextSystime(
+    ref Utf8JsonReader reader, ref int columnIndex,
+    out ulong? value, out string? error)
+{
+    value = null;
+    if (!TryReadNextScalar(ref reader, ref columnIndex, out error))
+        return false;
+    value = ReadSystime(ref reader, out error);
+    return error is null;
+}
+
+// ЧАСТЬ 2. Полностью ЗАМЕНИТЬ существующий метод RejectRow (строки 408–432
+// исходного файла) приведённым ниже. Остальную часть файла не менять.
+
+internal static void RejectRow(
+    ref Utf8JsonReader reader,
+    int rowDepth,
+    HistoricalReadState state,
+    int rowIndex,
+    DateTime? sourceTime,
+    string reason,
+    int? columnIndex = null,
+    string? columnName = null)
+{
+    // Регистрируем отказ ровно один раз до перемещения ридера.
+    state.RecordSkipped(rowIndex, sourceTime, reason, columnIndex, columnName);
+
+    if (reader.TokenType == JsonTokenType.EndArray &&
+        reader.CurrentDepth == rowDepth)
+        return;
+
+    while (reader.Read())
+    {
+        if (reader.TokenType == JsonTokenType.EndArray &&
+            reader.CurrentDepth == rowDepth)
+            return;
+    }
+
+    throw new JsonException("Не найден конец отклонённой строки.");
+}
+
         internal static void RejectRow(
             ref Utf8JsonReader reader,
             int rowDepth,

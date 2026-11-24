@@ -177,6 +177,14 @@ namespace ProjectTraiding.Moex.Clients
         public static partial void InstrumentDeletionBackgroundPollFailedUnexpectedly(
             ILogger logger, Exception exception);
 
+        [LoggerMessage(EventId = 134, EventName = "MoexHistoryRowSkipped", Level = LogLevel.Warning,
+    Message = "MOEX history row skipped: secid={Secid}, dataKind={DataKind}, operation={Operation}, endpoint={Endpoint}, from={DateFrom}, till={DateTill}, pagePosition={PagePosition}, sourcePosition={SourcePosition}, time={SourceTime}, columnIndex={ColumnIndex}, columnName={ColumnName}, reason={Reason}.")]
+        public static partial void HistoryRowSkipped(
+            ILogger logger, string secid, string dataKind, string operation, string endpoint,
+            string? dateFrom, string? dateTill, string pagePosition,
+            int sourcePosition, DateTime? sourceTime,
+            int? columnIndex, string? columnName, string reason);
+
         [LoggerMessage(
             EventId = 498,
             EventName = "MoexInstrumentDeletionFailedAndWillBeRetried",

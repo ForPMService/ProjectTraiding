@@ -115,8 +115,11 @@ internal sealed class HistoricalReadState
             RecordRowsReceivedMetric();
     }
 
-    public void RecordSkipped(int sourceIndex, DateTime? sourceTime, string reason)
-        => RecordSkipped(sourceIndex, sourceTime, reason, _method, _from, _till, _pagePosition);
+    public void RecordSkipped(
+    int sourceIndex, DateTime? sourceTime, string reason,
+    int? columnIndex = null, string? columnName = null)
+    => RecordSkipped(sourceIndex, sourceTime, reason,
+        _method, _from, _till, _pagePosition, columnIndex, columnName);
 
     public void RecordSkipped(
         int sourceIndex,
@@ -125,7 +128,9 @@ internal sealed class HistoricalReadState
         string method,
         string? from,
         string? till,
-        string pagePosition)
+        string pagePosition,string pagePosition,
+        int? columnIndex = null,
+        string? columnName = null)
     {
         PageSkippedRows++;
         RowsSkipped++;
