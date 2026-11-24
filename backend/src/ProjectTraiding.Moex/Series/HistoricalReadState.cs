@@ -128,7 +128,7 @@ internal sealed class HistoricalReadState
         string method,
         string? from,
         string? till,
-        string pagePosition,string pagePosition,
+        string pagePosition,
         int? columnIndex = null,
         string? columnName = null)
     {
@@ -157,6 +157,8 @@ internal sealed class HistoricalReadState
             pagePosition,
             sourceIndex,
             sourceTime,
+            columnIndex,
+            columnName,
             reason);
     }
 

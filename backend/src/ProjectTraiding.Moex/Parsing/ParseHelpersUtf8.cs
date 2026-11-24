@@ -405,14 +405,6 @@ namespace ProjectTraiding.Moex.Parsing
             }
         }
 
-        // Файл для ручного переноса изменений в:
-// backend/src/ProjectTraiding.Moex/Parsing/ParseHelpersUtf8.cs
-// Основание: репозиторий ForPMService/ProjectTraiding, коммит 509704d.
-//
-// ЧАСТЬ 1. Вставить код ниже внутри класса ParseHelpersUtf8
-// непосредственно ПОСЛЕ ReadSystime и ПЕРЕД существующим RejectRow.
-// Существующие Read* не менять.
-
 /// <summary>
 /// Перейти к очередному значению текущей строки.
 /// columnIndex — число предпринятых чтений; индекс ошибочной колонки = columnIndex - 1.
@@ -546,9 +538,6 @@ internal static bool TryNextSystime(
     return error is null;
 }
 
-// ЧАСТЬ 2. Полностью ЗАМЕНИТЬ существующий метод RejectRow (строки 408–432
-// исходного файла) приведённым ниже. Остальную часть файла не менять.
-
 internal static void RejectRow(
     ref Utf8JsonReader reader,
     int rowDepth,
@@ -575,32 +564,6 @@ internal static void RejectRow(
 
     throw new JsonException("Не найден конец отклонённой строки.");
 }
-
-        internal static void RejectRow(
-            ref Utf8JsonReader reader,
-            int rowDepth,
-            HistoricalReadState state,
-            int rowIndex,
-            DateTime? sourceTime,
-            string reason)
-        {
-            // Сначала регистрируем отказ и один Source Generation лог.
-            // Порядок операций фиксирован: лог до поиска конца строки.
-            state.RecordSkipped(rowIndex, sourceTime, reason);
-
-            if (reader.TokenType == JsonTokenType.EndArray &&
-                reader.CurrentDepth == rowDepth)
-                return;
-
-            while (reader.Read())
-            {
-                if (reader.TokenType == JsonTokenType.EndArray &&
-                    reader.CurrentDepth == rowDepth)
-                    return;
-            }
-
-            throw new JsonException("Не найден конец отклонённой строки.");
-        }
 
         // ═══════════════════════════════════════════════════════════
         // Cursor-парсер — чтение из текущего reader (Phase 3)
