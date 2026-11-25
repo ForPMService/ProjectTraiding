@@ -405,6 +405,7 @@ private static int ReadRows(
                 success = TradeStatsHistoryParser.TryReadStockRow(
                     ref reader,
                     out TradeStatsStockRow stockRow,
+                    out CandleRow stockCandle,
                     out sourceTime,
                     out columnIndex,
                     out error);
@@ -414,6 +415,7 @@ private static int ReadRows(
                 success = TradeStatsHistoryParser.TryReadFuturesRow(
                     ref reader,
                     out TradeStatsFuturesRow futuresRow,
+                    out CandleRow futuresCandle,
                     out sourceTime,
                     out columnIndex,
                     out error);

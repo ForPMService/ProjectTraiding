@@ -18,11 +18,13 @@ public static class TradeStatsHistoryParser
     internal static bool TryReadStockRow(
         ref Utf8JsonReader reader,
         out TradeStatsStockRow row,
+        out CandleRow candle,
         out DateTime? sourceTime,
         out int columnIndex,
         out string? error)
     {
         row = default;
+        candle = default;
         sourceTime = null;
         columnIndex = 0;
         error = null;
@@ -67,13 +69,7 @@ public static class TradeStatsHistoryParser
         row = new TradeStatsStockRow
         {
             Secid = secid!,
-            PrOpen = prOpen,
-            PrHigh = prHigh,
-            PrLow = prLow,
-            PrClose = prClose,
             PrStd = prStd,
-            Vol = vol,
-            Val = val,
             Trades = trades,
             PrVwap = prVwap,
             PrChange = prChange,
@@ -92,17 +88,29 @@ public static class TradeStatsHistoryParser
             SecPrLow = secPrLow,
             SecPrClose = secPrClose,
         };
+        candle = new CandleRow
+        {
+            Secid = secid!,
+            Open = prOpen,
+            Close = prClose,
+            High = prHigh,
+            Low = prLow,
+            Value = val,
+            Volume = vol,
+        };
         return true;
     }
 
     internal static bool TryReadFuturesRow(
         ref Utf8JsonReader reader,
         out TradeStatsFuturesRow row,
+        out CandleRow candle,
         out DateTime? sourceTime,
         out int columnIndex,
         out string? error)
     {
         row = default;
+        candle = default;
         sourceTime = null;
         columnIndex = 0;
         error = null;
@@ -154,13 +162,7 @@ public static class TradeStatsHistoryParser
         {
             Secid = secid!,
             AssetCode = assetCode,
-            PrOpen = prOpen,
-            PrHigh = prHigh,
-            PrLow = prLow,
-            PrClose = prClose,
             PrStd = prStd,
-            Vol = vol,
-            Val = val,
             Trades = trades,
             PrVwap = prVwap,
             PrChange = prChange,
@@ -183,6 +185,16 @@ public static class TradeStatsHistoryParser
             SecPrLow = secPrLow,
             SecPrClose = secPrClose,
             Systime = systime,
+        };
+        candle = new CandleRow
+        {
+            Secid = secid!,
+            Open = prOpen,
+            Close = prClose,
+            High = prHigh,
+            Low = prLow,
+            Value = val,
+            Volume = vol,
         };
         return true;
     }
