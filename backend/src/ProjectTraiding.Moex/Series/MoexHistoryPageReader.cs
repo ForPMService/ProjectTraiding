@@ -369,6 +369,83 @@ public sealed class MoexHistoryPageReader
         }
     }
 
+    private static int ReadRows(
+    ref Utf8JsonReader reader,
+    MoexSeriesSpec spec,
+    HistoricalRowContext context)
+{
+    int rowCount = 0;
+
+    while (reader.Read())
+    {
+        if (reader.TokenType == JsonTokenType.EndArray)
+            return rowCount;
+
+        if (reader.TokenType != JsonTokenType.StartArray)
+            ParseHelpersUtf8.SchemaMismatch(
+                $"[{spec.RootKey}] Ожидался StartArray строки {rowCount}.");
+
+        switch ((spec.DataKind, spec.Market))
+        {
+            case ("tradestats", "stock"):
+                TradeStatsHistoryParser.ProcessStockRow(ref reader, context);
+                break;
+
+            case ("tradestats", "futures"):
+                TradeStatsHistoryParser.ProcessFuturesRow(ref reader, context);
+                break;
+
+            case ("obstats", "stock"):
+                ObStatsHistoryParser.ProcessStockRow(ref reader, context);
+                break;
+
+            case ("obstats", "futures"):
+                ObStatsHistoryParser.ProcessFuturesRow(ref reader, context);
+                break;
+
+            case ("orderstats", "stock"):
+                OrderStatsHistoryParser.ProcessRow(ref reader, context);
+                break;
+
+            case ("hi2", "stock"):
+                Hi2HistoryParser.ProcessStockRow(ref reader, context);
+                break;
+
+            case ("hi2", "futures"):
+                Hi2HistoryParser.ProcessFuturesRow(ref reader, context);
+                break;
+
+            case ("mega_alerts", "stock"):
+                MegaAlertsHistoryParser.ProcessStockRow(ref reader, context);
+                break;
+
+            case ("mega_alerts", "futures"):
+                MegaAlertsHistoryParser.ProcessFuturesRow(ref reader, context);
+                break;
+
+            case ("futoi", "futures"):
+                FutoiHistoryParser.ProcessRow(ref reader, context);
+                break;
+
+            case ("candles", "stock"):
+            case ("candles", "futures"):
+                CandleHistoryParser.ProcessRow(ref reader, context);
+                break;
+
+            default:
+                throw new NotSupportedException(
+                    $"Неподдерживаемая серия: {spec.DataKind}/{spec.Market}.");
+        }
+
+        rowCount++;
+    }
+
+    ParseHelpersUtf8.SchemaMismatch(
+        $"[{spec.RootKey}] Не найден конец массива data.");
+
+    return rowCount;
+}
+
     private void RecordPageMetrics(MoexOperationTags operationTags, HistoricalReadState state)
     {
         MoexMetrics.PagesReceived.Add(

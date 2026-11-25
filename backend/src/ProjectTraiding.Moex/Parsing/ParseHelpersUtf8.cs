@@ -565,6 +565,17 @@ internal static void RejectRow(
     throw new JsonException("Не найден конец отклонённой строки.");
 }
 
+
+    internal static void AppendRow<
+    [DynamicallyAccessedMembers(
+        DynamicallyAccessedMemberTypes.All)] TRow>(
+    ProtobufBatchWriter<TRow> writer,
+    in TRow row)
+    where TRow : struct
+{
+    writer.Append(in row);
+}    
+
         // ═══════════════════════════════════════════════════════════
         // Cursor-парсер — чтение из текущего reader (Phase 3)
         // ═══════════════════════════════════════════════════════════
