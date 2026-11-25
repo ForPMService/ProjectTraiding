@@ -62,6 +62,32 @@ public static class CandleDateTime64
     private static readonly TimeZoneInfo MoscowTimeZone =
         TimeZoneInfo.FindSystemTimeZoneById("Europe/Moscow");
 
+    public static bool TryToUnixWholeSeconds(
+        DateTime moscowWallClock,
+        out ulong value)
+    {
+        value = 0;
+        if (moscowWallClock.Kind != DateTimeKind.Unspecified)
+            return false;
+
+        if (MoscowTimeZone.IsInvalidTime(moscowWallClock)
+            || MoscowTimeZone.IsAmbiguousTime(moscowWallClock))
+        {
+            return false;
+        }
+
+        if (moscowWallClock < new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Unspecified))
+            return false;
+
+        DateTime utc = TimeZoneInfo.ConvertTimeToUtc(moscowWallClock, MoscowTimeZone);
+        long unixSeconds = new DateTimeOffset(utc).ToUnixTimeSeconds();
+        if (unixSeconds < 0)
+            return false;
+
+        value = checked((ulong)unixSeconds);
+        return true;
+    }
+
     public static ulong ToUnixWholeSeconds(DateTime moscowWallClock)
     {
         if (moscowWallClock.Kind != DateTimeKind.Unspecified)

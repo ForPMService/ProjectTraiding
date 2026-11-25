@@ -66,9 +66,29 @@ public static class TradeStatsHistoryParser
 
         sourceTime = date!.Value.ToDateTime(time!.Value, DateTimeKind.Unspecified);
         ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.EndArray, "строка Stock", RootKey);
+        if (!CandleDateTime64.TryToUnixWholeSeconds(sourceTime.Value, out ulong sourceUnixTime))
+        {
+            error = $"[{RootKey}] Не удалось преобразовать время начала строки Stock в Unix-время.";
+            return false;
+        }
+
+        if (sourceTime.Value > DateTime.MaxValue.AddMinutes(-4).AddSeconds(-59))
+        {
+            error = $"[{RootKey}] Время окончания свечи Stock выходит за диапазон DateTime.";
+            return false;
+        }
+
+        DateTime endTime = sourceTime.Value.AddMinutes(4).AddSeconds(59);
+        if (!CandleDateTime64.TryToUnixWholeSeconds(endTime, out ulong endUnixTime))
+        {
+            error = $"[{RootKey}] Не удалось преобразовать время окончания свечи Stock в Unix-время.";
+            return false;
+        }
+
         row = new TradeStatsStockRow
         {
             Secid = secid!,
+            SourceTime = sourceUnixTime,
             PrStd = prStd,
             Trades = trades,
             PrVwap = prVwap,
@@ -91,12 +111,14 @@ public static class TradeStatsHistoryParser
         candle = new CandleRow
         {
             Secid = secid!,
+            Begin = sourceUnixTime,
             Open = prOpen,
             Close = prClose,
             High = prHigh,
             Low = prLow,
             Value = val,
             Volume = vol,
+            End = endUnixTime,
         };
         return true;
     }
@@ -158,9 +180,29 @@ public static class TradeStatsHistoryParser
 
         sourceTime = date!.Value.ToDateTime(time!.Value, DateTimeKind.Unspecified);
         ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.EndArray, "строка Futures", RootKey);
+        if (!CandleDateTime64.TryToUnixWholeSeconds(sourceTime.Value, out ulong sourceUnixTime))
+        {
+            error = $"[{RootKey}] Не удалось преобразовать время начала строки Futures в Unix-время.";
+            return false;
+        }
+
+        if (sourceTime.Value > DateTime.MaxValue.AddMinutes(-4).AddSeconds(-59))
+        {
+            error = $"[{RootKey}] Время окончания свечи Futures выходит за диапазон DateTime.";
+            return false;
+        }
+
+        DateTime endTime = sourceTime.Value.AddMinutes(4).AddSeconds(59);
+        if (!CandleDateTime64.TryToUnixWholeSeconds(endTime, out ulong endUnixTime))
+        {
+            error = $"[{RootKey}] Не удалось преобразовать время окончания свечи Futures в Unix-время.";
+            return false;
+        }
+
         row = new TradeStatsFuturesRow
         {
             Secid = secid!,
+            SourceTime = sourceUnixTime,
             AssetCode = assetCode,
             PrStd = prStd,
             Trades = trades,
@@ -189,12 +231,14 @@ public static class TradeStatsHistoryParser
         candle = new CandleRow
         {
             Secid = secid!,
+            Begin = sourceUnixTime,
             Open = prOpen,
             Close = prClose,
             High = prHigh,
             Low = prLow,
             Value = val,
             Volume = vol,
+            End = endUnixTime,
         };
         return true;
     }
