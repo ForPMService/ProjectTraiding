@@ -11,6 +11,8 @@ using ProjectTraiding.Moex.Infrastructure.Telemetry;
 using ProjectTraiding.Moex.Options;
 using ProjectTraiding.Moex.Pagination;
 using ProjectTraiding.Moex.Parsing.Errors;
+using System.Text.Json;
+using ProjectTraiding.Moex.Parsing;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 
 namespace ProjectTraiding.Moex.Series;
@@ -369,11 +371,17 @@ public sealed class MoexHistoryPageReader
         }
     }
 
-    private static int ReadRows(
+private static int ReadRows(
     ref Utf8JsonReader reader,
     MoexSeriesSpec spec,
-    HistoricalRowContext context)
+    HistoricalReadState state)
 {
+    ParseHelpersUtf8.ReadAndExpect(
+        ref reader,
+        JsonTokenType.StartArray,
+        "data",
+        spec.RootKey);
+
     int rowCount = 0;
 
     while (reader.Read())
@@ -383,58 +391,145 @@ public sealed class MoexHistoryPageReader
 
         if (reader.TokenType != JsonTokenType.StartArray)
             ParseHelpersUtf8.SchemaMismatch(
-                $"[{spec.RootKey}] Ожидался StartArray строки {rowCount}.");
+                $"[{spec.RootKey}] Ожидалось начало строки {rowCount}.");
+
+        int rowDepth = reader.CurrentDepth;
+        bool success;
+        DateTime? sourceTime;
+        int columnIndex;
+        string? error;
 
         switch ((spec.DataKind, spec.Market))
         {
             case ("tradestats", "stock"):
-                TradeStatsHistoryParser.ProcessStockRow(ref reader, context);
+                success = TradeStatsHistoryParser.TryReadStockRow(
+                    ref reader,
+                    out TradeStatsStockRow stockRow,
+                    out sourceTime,
+                    out columnIndex,
+                    out error);
                 break;
 
             case ("tradestats", "futures"):
-                TradeStatsHistoryParser.ProcessFuturesRow(ref reader, context);
+                success = TradeStatsHistoryParser.TryReadFuturesRow(
+                    ref reader,
+                    out TradeStatsFuturesRow futuresRow,
+                    out sourceTime,
+                    out columnIndex,
+                    out error);
                 break;
 
             case ("obstats", "stock"):
-                ObStatsHistoryParser.ProcessStockRow(ref reader, context);
+                success = ObStatsHistoryParser.TryReadStockRow(
+                    ref reader,
+                    out ObStatsStockRow obStockRow,
+                    out sourceTime,
+                    out columnIndex,
+                    out error);
                 break;
 
             case ("obstats", "futures"):
-                ObStatsHistoryParser.ProcessFuturesRow(ref reader, context);
+                success = ObStatsHistoryParser.TryReadFuturesRow(
+                    ref reader,
+                    out ObStatsFuturesRow obFuturesRow,
+                    out sourceTime,
+                    out columnIndex,
+                    out error);
                 break;
 
             case ("orderstats", "stock"):
-                OrderStatsHistoryParser.ProcessRow(ref reader, context);
+                success = OrderStatsHistoryParser.TryReadOrderStatsRow(
+                    ref reader,
+                    out OrderStatsStockRow orderRow,
+                    out sourceTime,
+                    out columnIndex,
+                    out error);
                 break;
 
             case ("hi2", "stock"):
-                Hi2HistoryParser.ProcessStockRow(ref reader, context);
+                success = Hi2HistoryParser.TryReadStockRow(
+                    ref reader,
+                    out Hi2StockRow hi2StockRow,
+                    out sourceTime,
+                    out columnIndex,
+                    out error);
                 break;
 
             case ("hi2", "futures"):
-                Hi2HistoryParser.ProcessFuturesRow(ref reader, context);
+                success = Hi2HistoryParser.TryReadFuturesRow(
+                    ref reader,
+                    out Hi2FuturesRow hi2FuturesRow,
+                    out sourceTime,
+                    out columnIndex,
+                    out error);
                 break;
 
             case ("mega_alerts", "stock"):
-                MegaAlertsHistoryParser.ProcessStockRow(ref reader, context);
+                success = MegaAlertsHistoryParser.TryReadStockRow(
+                    ref reader,
+                    out MegaAlertsStockRow alertsStockRow,
+                    out sourceTime,
+                    out columnIndex,
+                    out error);
                 break;
 
             case ("mega_alerts", "futures"):
-                MegaAlertsHistoryParser.ProcessFuturesRow(ref reader, context);
+                success = MegaAlertsHistoryParser.TryReadFuturesRow(
+                    ref reader,
+                    out MegaAlertsFuturesRow alertsFuturesRow,
+                    out sourceTime,
+                    out columnIndex,
+                    out error);
                 break;
 
             case ("futoi", "futures"):
-                FutoiHistoryParser.ProcessRow(ref reader, context);
+                success = FutoiHistoryParser.TryReadFutoiRow(
+                    ref reader,
+                    out FutoiRow futoiRow,
+                    out sourceTime,
+                    out columnIndex,
+                    out error);
                 break;
 
             case ("candles", "stock"):
             case ("candles", "futures"):
-                CandleHistoryParser.ProcessRow(ref reader, context);
+                success = CandleHistoryParser.TryReadCandleRow(
+                    ref reader,
+                    out CandleRow candleRow,
+                    out sourceTime,
+                    out columnIndex,
+                    out error);
                 break;
 
             default:
                 throw new NotSupportedException(
                     $"Неподдерживаемая серия: {spec.DataKind}/{spec.Market}.");
+        }
+
+        state.RecordPhysicalRow();
+        state.SetPageLastSourceTime(sourceTime);
+
+        if (success)
+        {
+            if (reader.TokenType != JsonTokenType.EndArray ||
+                reader.CurrentDepth != rowDepth)
+            {
+                ParseHelpersUtf8.SchemaMismatch(
+                    $"[{spec.RootKey}] Парсер не завершил строку {rowCount}.");
+            }
+
+            state.RecordParsedValidRow();
+        }
+        else
+        {
+            ParseHelpersUtf8.RejectRow(
+                ref reader,
+                rowDepth,
+                state,
+                rowCount,
+                sourceTime,
+                error ?? "Ошибка разбора строки.",
+                columnIndex > 0 ? columnIndex - 1 : null);
         }
 
         rowCount++;
