@@ -27,12 +27,6 @@ public sealed class MoexHistoryPageReader
     private readonly MoexOptions _options;
     private readonly ILogger<MoexHistoryPageReader> _logger;
 
-    internal delegate Task ReadSeriesPages<TRow>(
-        MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till, MoexOperationTags operationTags,
-        ProtobufBatchWriter<TRow> writer, DateTime? lastSourceTime, HistoricalReadState state,
-        Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-        where TRow : struct;
-
     internal delegate ValueTask BetweenHistoryPages(CancellationToken cancellationToken);
 
     public MoexHistoryPageReader(
@@ -60,6 +54,8 @@ public sealed class MoexHistoryPageReader
             ProtobufBatchWriter<Hi2FuturesRow> => MoexColumnSets.Hi2Futures,
             ProtobufBatchWriter<MegaAlertsStockRow> => MoexColumnSets.MegaAlertsStock,
             ProtobufBatchWriter<MegaAlertsFuturesRow> => MoexColumnSets.MegaAlertsFutures,
+            ProtobufBatchWriter<FutoiRow> => MoexColumnSets.Futoi,
+            ProtobufBatchWriter<CandleRow> => MoexColumnSets.Candles,
             _ => throw new NotSupportedException($"Тип строки {typeof(TRow).Name} ещё не переведён."),
         };
 
@@ -383,6 +379,18 @@ public sealed class MoexHistoryPageReader
                         out MegaAlertsFuturesRow megaAlertsFuturesRow, out sourceTime, out columnIndex, out error);
                     appended = ok && AppendIfNew(megaAlertsFuturesWriter, in megaAlertsFuturesRow, sourceTime, lastSourceTime);
                     break;
+                case ProtobufBatchWriter<FutoiRow> futoiWriter:
+                    ok = FutoiHistoryParser.TryReadRow(ref reader, columns.Length,
+                        out FutoiRow futoiRow, out sourceTime, out columnIndex, out error);
+                    appended = ok && AppendIfNew(futoiWriter, in futoiRow, sourceTime, lastSourceTime);
+                    break;
+                case ProtobufBatchWriter<CandleRow> candlesWriter:
+                    ok = CandleHistoryParser.TryReadRow(ref reader, columns.Length, secId,
+                        out CandleRow candleRow, out sourceTime, out columnIndex, out error);
+                    appended = ok && IsNew(sourceTime, lastSourceTime);
+                    if (appended)
+                        AppendCandle(candlesWriter, ref candleRow, ingestPriority, acceptedCandles);
+                    break;
                 default:
                     throw new NotSupportedException($"Тип строки {typeof(TRow).Name} ещё не переведён.");
             }
@@ -460,175 +468,6 @@ public sealed class MoexHistoryPageReader
         candle.IngestPriority = ingestPriority;
         ParseHelpersUtf8.AppendRow(candleWriter, in candle);
         acceptedCandles?.Add(candle);
-    }
-
-    internal async Task ReadFutoiPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
-        MoexOperationTags operationTags, ProtobufBatchWriter<FutoiRow> writer, DateTime? lastSourceTime,
-        HistoricalReadState state, Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-    {
-        if (spec.Pagination != PaginationKind.DaySplit)
-            throw new ArgumentException("Typed historical series require day-split pagination.", nameof(spec));
-        string method = string.Format(CultureInfo.InvariantCulture, spec.MethodTemplate, secId);
-        Dictionary<string, string> query = new()
-        {
-            ["from"] = FormatDate(from),
-            ["till"] = FormatDate(from),
-            ["iss.meta"] = "off",
-        };
-        int dayCount = 0;
-        int totalRows = 0;
-        DateOnly current = from;
-        while (current <= till)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            string date = FormatDate(current);
-            query["from"] = date;
-            query["till"] = date;
-            state.BeginPage(method, current, current, "date=" + date);
-            beforeRequest?.Invoke();
-            try
-            {
-                _ = await FetchPageAsync(method, query, secId, operationTags, state,
-                    body =>
-                    {
-                        FutoiHistoryParser.Parse(body.Span, spec, secId, writer, lastSourceTime, state);
-                        return state.PageParsedValidRows;
-                    }, cancellationToken);
-                state.RecordSkippedDiagnostics();
-                dayCount++;
-                totalRows = checked(totalRows + state.PageParsedValidRows);
-                MoexLogMessages.DaySplitPageReceived(_logger, method, date, state.PageParsedValidRows, state.LastPageElapsed);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex) when (IsRecoverableReadFailure(ex))
-            {
-                state.RecordReadFailure(current, current, ex.Message);
-                dayCount++;
-            }
-            if (afterPage is not null)
-                await afterPage(cancellationToken);
-            if (!MoexPagination.TryNextDay(current, till, out DateOnly nextDay))
-                break;
-            current = nextDay;
-        }
-        MoexLogMessages.DaySplitCompleted(_logger, method, FormatDate(from), FormatDate(till), dayCount, totalRows);
-    }
-
-    internal async Task ReadCandlePagesAsync(
-        MoexSeriesSpec spec, string secId, string boardId, DateOnly from, DateOnly till,
-        MoexOperationTags operationTags, ProtobufBatchWriter<CandleRow> writer,
-        HistoricalReadState state, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-    {
-        if (spec.DataKind != "candles" || spec.Pagination != PaginationKind.FixedPage)
-            throw new ArgumentException("Typed candle reads require a fixed-page candle specification.", nameof(spec));
-        if (spec.CandleInterval is not int interval)
-            throw new InvalidOperationException($"Декларация {spec.DataKind}/{spec.Market} не содержит интервал свечей.");
-
-        string board = spec.Market == "stock" ? boardId.ToLowerInvariant() : boardId.ToUpperInvariant();
-        string method = string.Format(CultureInfo.InvariantCulture, spec.MethodTemplate, secId, board);
-        Dictionary<string, string> query = new()
-        {
-            ["from"] = FormatDate(from),
-            ["till"] = FormatDate(till),
-            ["interval"] = interval.ToString(CultureInfo.InvariantCulture),
-            ["iss.meta"] = "off",
-            ["iss.only"] = spec.RootKey,
-            ["candles.columns"] = MoexColumnSets.CandlesColumnsParam,
-        };
-
-        int queryStart = 0;
-        int pagesElapsed = 0;
-        int totalRows = 0;
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            state.BeginPage(method, from, till, "start=" + queryStart.ToString(CultureInfo.InvariantCulture));
-            int sourceRowsCount = await FetchPageAsync(
-                method, query, secId, operationTags, state,
-                body => CandleHistoryParser.Parse(body.Span, spec, secId, writer, state), cancellationToken);
-            pagesElapsed++;
-            totalRows = checked(totalRows + state.PageAcceptedRows);
-            MoexLogMessages.PageReceived(_logger, method, pagesElapsed, state.PageAcceptedRows, state.LastPageElapsed);
-            state.RecordSkippedDiagnostics();
-
-            if (afterPage is not null)
-                await afterPage(cancellationToken);
-
-            bool hasNext = MoexPagination.TryNextFixedPage(
-                queryStart, sourceRowsCount, FixedPageSize, pagesElapsed,
-                _options.MaxPagesPerLoad, _logger, method, out int nextStart);
-            if (!hasNext)
-            {
-                MoexLogMessages.FixedPagePaginationStopped(
-                    _logger, method, "last_page_incomplete", pagesElapsed, totalRows,
-                    state.PageAcceptedRows, FixedPageSize);
-                break;
-            }
-            queryStart = nextStart;
-            query["start"] = queryStart.ToString(CultureInfo.InvariantCulture);
-        }
-    }
-
-    private async Task<TResult> FetchPageAsync<TResult>(
-        string method, Dictionary<string, string> query, string secId, MoexOperationTags operationTags,
-        HistoricalReadState state, Func<ReadOnlyMemory<byte>, TResult> parse,
-        CancellationToken cancellationToken)
-    {
-        long pageStart = Stopwatch.GetTimestamp();
-        bool parserStarted = false;
-        bool parseSucceeded = false;
-        using Activity? pageActivity = MoexTelemetry.ActivitySource.StartActivity("moex.history.fetch");
-        pageActivity?.SetTag(MoexTelemetryAttributes.Source, operationTags.Source);
-        pageActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
-        pageActivity?.SetTag(MoexTelemetryAttributes.Market, operationTags.Market);
-        try
-        {
-            using HttpResponseMessage response = await _client.SendRequestAsync(method, query, cancellationToken, operationTags.Flow);
-            using RentedBuffer body = await RentedBuffer.RentFromResponseAsync(response, _options.BodyReadTimeout, method, cancellationToken);
-            parserStarted = true;
-            TResult result = parse(body.Memory);
-            parseSucceeded = true;
-            state.LastPageElapsed = Stopwatch.GetElapsedTime(pageStart);
-            pageActivity?.SetStatus(ActivityStatusCode.Ok);
-            return result;
-        }
-        catch (OperationCanceledException)
-        {
-            pageActivity?.SetStatus(ActivityStatusCode.Ok);
-            MoexMetrics.RecordOperationCancelled(in operationTags, Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
-            throw;
-        }
-        catch (MoexSchemaMismatchException ex)
-        {
-            MoexLogMessages.ParseFailed(_logger, ex, method, MoexErrorTypes.SchemaMismatch, ex.Message);
-            MoexLogMessages.HistoryOperationFailed(
-                _logger, ex, secId, operationTags.DataKind, operationTags.Operation,
-                method, state.PageFrom, state.PageTill, state.PagePosition,
-                MoexErrorTypes.SchemaMismatch, ex.Message);
-            pageActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            MoexMetrics.RecordOperationError(in operationTags, ex, Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
-            throw;
-        }
-        catch (Exception ex)
-        {
-            MoexLogMessages.HistoryOperationFailed(
-                _logger, ex, secId, operationTags.DataKind, operationTags.Operation,
-                method, state.PageFrom, state.PageTill, state.PagePosition,
-                MoexMetrics.ClassifyError(ex), ex.Message);
-            pageActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            MoexMetrics.RecordOperationError(in operationTags, ex, Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
-            throw;
-        }
-        finally
-        {
-            if (parserStarted && parseSucceeded)
-                RecordPageMetrics(operationTags, state);
-            else if (parserStarted)
-                state.RecordSkippedDiagnostics();
-        }
     }
 
     private void RecordPageMetrics(MoexOperationTags operationTags, HistoricalReadState state)

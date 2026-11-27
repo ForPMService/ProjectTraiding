@@ -538,6 +538,25 @@ internal static bool TryNextSystime(
     return error is null;
 }
 
+internal static bool TryNextDateTime(
+    ref Utf8JsonReader reader, ref int columnIndex,
+    out DateTime value, out string? error)
+{
+    value = default;
+    if (!TryReadNextScalar(ref reader, ref columnIndex, out error))
+        return false;
+    DateTime? parsed = ReadDateTime(ref reader, out _, out error);
+    if (error is not null)
+        return false;
+    if (parsed is not DateTime moment)
+    {
+        error = "Ожидался момент yyyy-MM-dd HH:mm:ss, получена пустая строка.";
+        return false;
+    }
+    value = moment;
+    return true;
+}
+
 /// <summary>
 /// Завершает строку по схеме. Лишние ячейки — отказ строки; расхождение парсера со схемой — ошибка программы.
 /// </summary>

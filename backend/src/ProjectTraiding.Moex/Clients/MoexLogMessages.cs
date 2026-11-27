@@ -30,25 +30,6 @@ namespace ProjectTraiding.Moex.Clients
         [LoggerMessage(EventId = 121, EventName = "MoexPaginationStopped", Level = LogLevel.Information, Message = "MOEX paging stopped: endpoint={Endpoint}, reason={StopReason}, pages={TotalPages}, rows={TotalRows}.")]
         public static partial void PaginationStopped(ILogger logger, string endpoint, string stopReason, int totalPages, int totalRows);
 
-        /// <summary>
-        /// Логирует остановку пагинации по фиксированному размеру страницы, например для candles.
-        /// </summary>
-        [LoggerMessage(EventId = 122, EventName = "MoexFixedPagePaginationStopped", Level = LogLevel.Information, Message = "MOEX fixed-size paging stopped: endpoint={Endpoint}, reason={Reason}, pages={TotalPages}, rows={TotalRows}, lastPageRows={LastPageRows}, pageLimit={PageLimit}.")]
-        public static partial void FixedPagePaginationStopped(ILogger logger, string endpoint, string reason, int totalPages, int totalRows, int lastPageRows, int pageLimit);
-
-        /// <summary>
-        /// Логирует успешно полученную страницу в сценарии подневной разбивки, например для FUTOI.
-        /// Постраничная запись относится к отладке; счёт страниц и строк ведут метрики.
-        /// </summary>
-        [LoggerMessage(EventId = 123, EventName = "MoexDaySplitPageReceived", Level = LogLevel.Debug, Message = "MOEX daily data received: endpoint={Endpoint}, date={Date}, rows={Rows}, time={ElapsedMs}.")]
-        public static partial void DaySplitPageReceived(ILogger logger, string endpoint, string date, int rows, TimeSpan elapsedMs);
-
-        /// <summary>
-        /// Логирует завершение сценария подневной разбивки по диапазону дат.
-        /// </summary>
-        [LoggerMessage(EventId = 124, EventName = "MoexDaySplitCompleted", Level = LogLevel.Information, Message = "MOEX daily load completed: endpoint={Endpoint}, from={From}, till={Till}, days={DaysProcessed}, rows={TotalRows}.")]
-        public static partial void DaySplitCompleted(ILogger logger, string endpoint, string from, string till, int daysProcessed, int totalRows);
-
         [LoggerMessage(
             EventId = 125,
             EventName = "MoexCursorPaginationInvalid",

@@ -1,6 +1,4 @@
 using System.Text.Json;
-using ProjectTraiding.Moex.Contracts.Dto;
-using ProjectTraiding.Moex.DataFormats;
 using ProjectTraiding.Moex.Parsing;
 using ProjectTraiding.Moex.StorageBase.ClickHouse;
 
@@ -8,142 +6,80 @@ namespace ProjectTraiding.Moex.Series;
 
 internal static class FutoiHistoryParser
 {
-    internal static void Parse(ReadOnlySpan<byte> body, MoexSeriesSpec spec, string taskSecId,
-        ProtobufBatchWriter<FutoiRow> writer, DateTime? lastSourceTime,
-        HistoricalReadState state)
+    /// <summary>
+    /// Читает одну строку открытого интереса. Код инструмента берётся из колонки ticker ответа,
+    /// как в прежнем разборе. Запись выполняет вызывающий код.
+    /// </summary>
+    internal static bool TryReadRow(
+        ref Utf8JsonReader reader, int columnCount,
+        out FutoiRow row, out DateTime? sourceTime, out int columnIndex, out string? error)
     {
-        if (spec.DataKind != "futoi" || spec.Market != "futures" || spec.RootKey != "futoi"
-            || spec.Pagination != PaginationKind.DaySplit || !spec.InputColumns.SequenceEqual(MoexColumnSets.Futoi))
-            throw new ArgumentException("Typed FUTOI parsing requires the registered day-split futoi series.", nameof(spec));
+        row = default;
+        sourceTime = null;
+        columnIndex = 0;
+        error = null;
+        DateOnly? date = null;
+        TimeOnly? time = null;
 
-        Utf8JsonReader reader = new(body);
-        ParseHelpersUtf8.SkipToRootObject(ref reader, spec.RootKey);
-        bool foundColumns = false;
-        bool foundData = false;
-        while (reader.Read())
+        if (!(ParseHelpersUtf8.TryNextInt(ref reader, ref columnIndex, out int? sessId, out error)
+            && ParseHelpersUtf8.TryNextInt(ref reader, ref columnIndex, out int? seqnum, out error)
+            && ParseHelpersUtf8.TryNextDate(ref reader, ref columnIndex, out date, out error)
+            && ParseHelpersUtf8.TryNextTime(ref reader, ref columnIndex, out time, out error)
+            && ParseHelpersUtf8.TryNextString(ref reader, ref columnIndex, out string? ticker, out error)
+            && ParseHelpersUtf8.TryNextString(ref reader, ref columnIndex, out string? clgroup, out error)
+            && ParseHelpersUtf8.TryNextLong(ref reader, ref columnIndex, out long? pos, out error)
+            && ParseHelpersUtf8.TryNextLong(ref reader, ref columnIndex, out long? posLong, out error)
+            && ParseHelpersUtf8.TryNextLong(ref reader, ref columnIndex, out long? posShort, out error)
+            && ParseHelpersUtf8.TryNextLong(ref reader, ref columnIndex, out long? posLongNum, out error)
+            && ParseHelpersUtf8.TryNextLong(ref reader, ref columnIndex, out long? posShortNum, out error)
+            && ParseHelpersUtf8.TryNextSystime(ref reader, ref columnIndex, out ulong? systime, out error)
+            && ParseHelpersUtf8.TryNextString(ref reader, ref columnIndex, out string? tradeSessionDate, out error)))
         {
-            if (reader.TokenType == JsonTokenType.EndObject) break;
-            if (reader.TokenType != JsonTokenType.PropertyName) continue;
-            if (reader.ValueTextEquals("columns"u8))
-            {
-                foundColumns = true;
-                ParseHelpersUtf8.ValidateInputColumnsUtf8(ref reader, MoexColumnSets.Futoi, spec.RootKey);
-            }
-            else if (reader.ValueTextEquals("data"u8))
-            {
-                if (!foundColumns)
-                    ParseHelpersUtf8.SchemaMismatch("[futoi] Секция 'data' встретилась до 'columns'. Порядок columns → data обязателен.");
-                foundData = true;
-                ReadRows(ref reader, spec, writer, lastSourceTime, state);
-            }
-            else reader.Skip();
+            if (date.HasValue && time.HasValue)
+                sourceTime = date.Value.ToDateTime(time.Value, DateTimeKind.Unspecified);
+            return false;
         }
-        ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, spec.RootKey);
-    }
 
-    private static void ReadRows(ref Utf8JsonReader reader, MoexSeriesSpec spec,
-        ProtobufBatchWriter<FutoiRow> writer, DateTime? lastSourceTime, HistoricalReadState state)
-    {
-        ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", spec.RootKey);
-        int rowIndex = 0;
-        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+        if (date is not DateOnly tradeDate || time is not TimeOnly tradeTime)
         {
-            ExpectRowStart(ref reader, spec, rowIndex);
-            state.RecordPhysicalRow();
-            SourceTimeParts timeParts = default;
-            string? ticker = null;
-            string? error = null;
-            FutoiRow row = new();
-            row.SessId = ReadInt(ref reader, spec, rowIndex, 0, ref error);
-            row.Seqnum = ReadInt(ref reader, spec, rowIndex, 1, ref error);
-            ReadMomentDate(ref reader, spec, rowIndex, 2, ref timeParts, ref error);
-            ReadMomentTime(ref reader, spec, rowIndex, 3, ref timeParts, ref error);
-            ticker = ReadString(ref reader, spec, rowIndex, 4, ref error);
-            row.Clgroup = ReadString(ref reader, spec, rowIndex, 5, ref error)!;
-            row.Pos = ReadLong(ref reader, spec, rowIndex, 6, ref error);
-            row.PosLong = ReadLong(ref reader, spec, rowIndex, 7, ref error);
-            row.PosShort = ReadLong(ref reader, spec, rowIndex, 8, ref error);
-            row.PosLongNum = ReadLong(ref reader, spec, rowIndex, 9, ref error);
-            row.PosShortNum = ReadLong(ref reader, spec, rowIndex, 10, ref error);
-            row.Systime = ReadSystime(ref reader, spec, rowIndex, 11, ref error);
-            row.TradeSessionDate = ReadString(ref reader, spec, rowIndex, 12, ref error);
-            ParseHelpersUtf8.ExpectRowEnd(ref reader, rowIndex, spec.RootKey, MoexColumnSets.Futoi.Length);
-
-            DateTime? sourceTime = TryReadSourceTime(in timeParts);
-            state.SetPageLastSourceTime(sourceTime);
-            try
-            {
-                if (error is not null) throw new InvalidOperationException(error);
-                if (string.IsNullOrWhiteSpace(ticker))
-                    throw new InvalidOperationException("Строка открытого интереса отвергнута: ticker пустой.");
-                if (string.IsNullOrWhiteSpace(row.Clgroup))
-                    throw new InvalidOperationException("Строка открытого интереса отвергнута: clgroup пустой.");
-                row.Secid = ticker;
-                row.SourceTime = CandleDateTime64.ToUnixWholeSeconds(MoexClickHouseTime.BuildSourceTime(in timeParts));
-            }
-            catch (Exception ex) when (IsRowRejection(ex)) { error ??= ex.Message; }
-
-            if (error is null)
-            {
-                state.RecordParsedValidRow(receivedMetric: true);
-                if (!IsBeforeCursor(sourceTime, lastSourceTime))
-                {
-                    writer.Append(in row);
-                    state.RecordAccepted(sourceTime);
-                }
-            }
-            else state.RecordSkipped(rowIndex, sourceTime, error);
-            rowIndex++;
+            error = "Строка открытого интереса отвергнута: дата или время пустые.";
+            return false;
         }
-    }
 
-    private static void ReadMomentDate(ref Utf8JsonReader reader, MoexSeriesSpec spec, int row, int col,
-        ref SourceTimeParts parts, ref string? error)
-    {
-        try { parts.Date = ParseHelpersUtf8.ReadNextMomentDate(ref reader, row, col, spec.RootKey, out parts.RawDate); }
-        catch (Exception ex) when (IsRowRejection(ex)) { error ??= ex.Message; reader.Skip(); }
-    }
-    private static void ReadMomentTime(ref Utf8JsonReader reader, MoexSeriesSpec spec, int row, int col,
-        ref SourceTimeParts parts, ref string? error)
-    {
-        try { parts.Time = ParseHelpersUtf8.ReadNextMomentTime(ref reader, row, col, spec.RootKey, out parts.RawTime); }
-        catch (Exception ex) when (IsRowRejection(ex)) { error ??= ex.Message; reader.Skip(); }
-    }
-    private static int? ReadInt(ref Utf8JsonReader reader, MoexSeriesSpec spec, int row, int col, ref string? error)
-    {
-        try { return ParseHelpersUtf8.ReadNextNullableInt(ref reader, row, spec.RootKey, col); }
-        catch (Exception ex) when (IsRowRejection(ex)) { error ??= ex.Message; reader.Skip(); return null; }
-    }
-    private static long? ReadLong(ref Utf8JsonReader reader, MoexSeriesSpec spec, int row, int col, ref string? error)
-    {
-        try { return ParseHelpersUtf8.ReadNextNullableLong(ref reader, row, spec.RootKey, col); }
-        catch (Exception ex) when (IsRowRejection(ex)) { error ??= ex.Message; reader.Skip(); return null; }
-    }
-    private static string? ReadString(ref Utf8JsonReader reader, MoexSeriesSpec spec, int row, int col, ref string? error)
-    {
-        try { return ParseHelpersUtf8.ReadNextNullableString(ref reader, row, spec.RootKey, col); }
-        catch (Exception ex) when (IsRowRejection(ex)) { error ??= ex.Message; reader.Skip(); return null; }
-    }
-    private static ulong? ReadSystime(ref Utf8JsonReader reader, MoexSeriesSpec spec, int row, int col, ref string? error)
-    {
-        try
+        sourceTime = tradeDate.ToDateTime(tradeTime, DateTimeKind.Unspecified);
+        if (!ParseHelpersUtf8.TryRowEnd(ref reader, ref columnIndex, columnCount, out error))
+            return false;
+        if (string.IsNullOrWhiteSpace(ticker))
         {
-            DateTime? value = ParseHelpersUtf8.ReadNextNullableDateTime(ref reader, row, spec.RootKey, col, out bool wasNull);
-            if (value is null && !wasNull && !reader.ValueTextEquals(""u8)) error ??= $"[{spec.RootKey}] Некорректное непустое systime в строке {row}.";
-            return value.HasValue ? CandleDateTime64.ToUnixWholeSeconds(value.Value) : null;
+            error = "Строка открытого интереса отвергнута: ticker пустой.";
+            return false;
         }
-        catch (Exception ex) when (IsRowRejection(ex)) { error ??= ex.Message; reader.Skip(); return null; }
+        if (string.IsNullOrWhiteSpace(clgroup))
+        {
+            error = "Строка открытого интереса отвергнута: clgroup пустой.";
+            return false;
+        }
+        if (!CandleDateTime64.TryToUnixWholeSeconds(sourceTime.Value, out ulong sourceUnixTime))
+        {
+            error = "[futoi] Не удалось преобразовать время строки в Unix-время.";
+            return false;
+        }
+
+        row = new FutoiRow
+        {
+            Secid = ticker!,
+            SourceTime = sourceUnixTime,
+            Clgroup = clgroup!,
+            SessId = sessId,
+            Seqnum = seqnum,
+            Pos = pos,
+            PosLong = posLong,
+            PosShort = posShort,
+            PosLongNum = posLongNum,
+            PosShortNum = posShortNum,
+            TradeSessionDate = tradeSessionDate,
+            Systime = systime,
+        };
+        return true;
     }
-    private static void ExpectRowStart(ref Utf8JsonReader reader, MoexSeriesSpec spec, int row)
-    {
-        if (reader.TokenType != JsonTokenType.StartArray) ParseHelpersUtf8.SchemaMismatch($"[{spec.RootKey}] Ожидался StartArray строки {row}, получено {reader.TokenType}.");
-    }
-    private static DateTime? TryReadSourceTime(in SourceTimeParts parts)
-    {
-        try { return MoexClickHouseTime.BuildSourceTime(in parts); }
-        catch (Exception ex) when (IsRowRejection(ex)) { return null; }
-    }
-    private static bool IsBeforeCursor(DateTime? sourceTime, DateTime? cursor)
-        => cursor is DateTime cursorTime && sourceTime is DateTime time && time < cursorTime;
-    private static bool IsRowRejection(Exception ex) => ex is InvalidOperationException or FormatException or ArgumentException or OverflowException;
 }
