@@ -1,6 +1,8 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Net;
+using System.Collections.Immutable;
 using Microsoft.Extensions.Options;
 using ProjectTraiding.Moex.Clients;
 using ProjectTraiding.Moex.Clients.Errors;
@@ -31,14 +33,6 @@ public sealed class MoexHistoryPageReader
         Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
         where TRow : struct;
 
-    internal delegate Task ReadTradeStatsPages<TRow>(
-        MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till, MoexOperationTags operationTags,
-        ProtobufBatchWriter<TRow> statsWriter, ProtobufBatchWriter<CandleRow> candleWriter,
-        DateTime? lastSourceTime, uint ingestPriority, HistoricalReadState state,
-        List<CandleRow>? acceptedCandles, Action? beforeRequest,
-        BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-        where TRow : struct;
-
     internal delegate ValueTask BetweenHistoryPages(CancellationToken cancellationToken);
 
     public MoexHistoryPageReader(
@@ -51,38 +45,373 @@ public sealed class MoexHistoryPageReader
         _logger = logger;
     }
 
-    internal Task ReadTradeStatsStockPagesAsync(
-        MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till, MoexOperationTags operationTags,
-        ProtobufBatchWriter<TradeStatsStockRow> statsWriter, ProtobufBatchWriter<CandleRow> candleWriter,
-        DateTime? lastSourceTime, uint ingestPriority, HistoricalReadState state,
-        List<CandleRow>? acceptedCandles, Action? beforeRequest,
-        BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-    {
-        Func<ReadOnlyMemory<byte>, PaginationCursorDTO> parse = body =>
+    private static ImmutableArray<string> ColumnsFor<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
+        ProtobufBatchWriter<TRow> writer)
+        where TRow : struct
+        => writer switch
         {
-            TradeStatsHistoryParser.ParseStock(body.Span, spec, secId, statsWriter, candleWriter,
-                lastSourceTime, ingestPriority, state, out PaginationCursorDTO cursor, acceptedCandles);
-            return cursor;
+            ProtobufBatchWriter<TradeStatsStockRow> => MoexColumnSets.TradeStatsStock,
+            ProtobufBatchWriter<TradeStatsFuturesRow> => MoexColumnSets.TradeStatsFutures,
+            _ => throw new NotSupportedException($"Тип строки {typeof(TRow).Name} ещё не переведён."),
         };
-        return ReadCursorPagesAsync(spec, secId, from, till, operationTags, state,
-            parse, countAcceptedRows: true, beforeRequest, afterPage, cancellationToken);
+
+    internal async Task ReadPagesAsync<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
+        MoexSeriesSpec spec, string secId, string? boardId, DateOnly from, DateOnly till,
+        MoexOperationTags operationTags,
+        ProtobufBatchWriter<TRow> writer, ProtobufBatchWriter<CandleRow>? candleWriter,
+        DateTime? lastSourceTime, uint ingestPriority, List<CandleRow>? acceptedCandles,
+        HistoricalReadState state, Action? beforeRequest, BetweenHistoryPages? afterPage,
+        CancellationToken cancellationToken)
+        where TRow : struct
+    {
+        if (spec.InputColumns != ColumnsFor(writer))
+            throw new ArgumentException("Декларация серии не соответствует типу строки.", nameof(spec));
+
+        string method = BuildMethod(spec, secId, boardId);
+        Dictionary<string, string> query = CreateQuery(spec, from, till);
+        int start = 0;
+        int pages = 0;
+        int totalRows = 0;
+        DateOnly day = from;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            bool daySplit = spec.Pagination == PaginationKind.DaySplit;
+            DateOnly pageFrom = daySplit ? day : from;
+            DateOnly pageTill = daySplit ? day : till;
+            string pagePosition = daySplit
+                ? "date=" + FormatDate(day)
+                : "start=" + start.ToString(CultureInfo.InvariantCulture);
+            state.BeginPage(method, pageFrom, pageTill, pagePosition);
+            beforeRequest?.Invoke();
+
+            int sourceRows = 0;
+            PaginationCursorDTO cursor = default;
+            try
+            {
+                (int SourceRows, PaginationCursorDTO Cursor) page = await ReadPageAsync(
+                    method, query, secId, operationTags, state, spec, writer, candleWriter,
+                    lastSourceTime, ingestPriority, acceptedCandles, cancellationToken);
+                sourceRows = page.SourceRows;
+                cursor = page.Cursor;
+            }
+            catch (Exception exception) when (
+                spec.Pagination == PaginationKind.DaySplit && IsRecoverableReadFailure(exception))
+            {
+                state.RecordReadFailure(day, day, exception.Message);
+            }
+
+            pages++;
+            totalRows = checked(totalRows + state.PageAcceptedRows);
+            MoexLogMessages.PageReceived(
+                _logger, method, pages, state.PageAcceptedRows, state.LastPageElapsed);
+
+            bool hasNext = TryNextPage(
+                spec, cursor, sourceRows, ref start, ref day, till, pages, query, method);
+            state.RecordSkippedDiagnostics();
+            if (afterPage is not null)
+                await afterPage(cancellationToken);
+            if (!hasNext)
+            {
+                MoexLogMessages.PaginationStopped(_logger, method, "range_exhausted", pages, totalRows);
+                break;
+            }
+        }
     }
 
-    internal Task ReadTradeStatsFuturesPagesAsync(
-        MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till, MoexOperationTags operationTags,
-        ProtobufBatchWriter<TradeStatsFuturesRow> statsWriter, ProtobufBatchWriter<CandleRow> candleWriter,
-        DateTime? lastSourceTime, uint ingestPriority, HistoricalReadState state,
-        List<CandleRow>? acceptedCandles, Action? beforeRequest,
-        BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
+    private static string BuildMethod(MoexSeriesSpec spec, string secId, string? boardId)
     {
-        Func<ReadOnlyMemory<byte>, PaginationCursorDTO> parse = body =>
+        if (boardId is null)
+            return string.Format(CultureInfo.InvariantCulture, spec.MethodTemplate, secId);
+        string board = spec.Market == "stock" ? boardId.ToLowerInvariant() : boardId.ToUpperInvariant();
+        return string.Format(CultureInfo.InvariantCulture, spec.MethodTemplate, secId, board);
+    }
+
+    private static Dictionary<string, string> CreateQuery(MoexSeriesSpec spec, DateOnly from, DateOnly till)
+    {
+        switch (spec.Pagination)
         {
-            TradeStatsHistoryParser.ParseFutures(body.Span, spec, secId, statsWriter, candleWriter,
-                lastSourceTime, ingestPriority, state, out PaginationCursorDTO cursor, acceptedCandles);
-            return cursor;
-        };
-        return ReadCursorPagesAsync(spec, secId, from, till, operationTags, state,
-            parse, countAcceptedRows: true, beforeRequest, afterPage, cancellationToken);
+            case PaginationKind.Cursor:
+                return CreateCursorQuery(spec, from, till);
+            case PaginationKind.FixedPage:
+                if (spec.CandleInterval is not int interval)
+                    throw new InvalidOperationException(
+                        $"Декларация {spec.DataKind}/{spec.Market} не содержит интервал свечей.");
+                return new Dictionary<string, string>
+                {
+                    ["from"] = FormatDate(from),
+                    ["till"] = FormatDate(till),
+                    ["interval"] = interval.ToString(CultureInfo.InvariantCulture),
+                    ["iss.meta"] = "off",
+                    ["iss.only"] = spec.RootKey,
+                    [spec.RootKey + ".columns"] = spec.ColumnsParam,
+                };
+            case PaginationKind.DaySplit:
+                return new Dictionary<string, string>
+                {
+                    ["from"] = FormatDate(from),
+                    ["till"] = FormatDate(from),
+                    ["iss.meta"] = "off",
+                };
+            default:
+                throw new NotSupportedException($"Неизвестный тип пагинации {spec.Pagination}.");
+        }
+    }
+
+    private async Task<(int SourceRows, PaginationCursorDTO Cursor)> ReadPageAsync<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
+        string method, Dictionary<string, string> query, string secId, MoexOperationTags operationTags,
+        HistoricalReadState state, MoexSeriesSpec spec, ProtobufBatchWriter<TRow> writer,
+        ProtobufBatchWriter<CandleRow>? candleWriter, DateTime? lastSourceTime, uint ingestPriority,
+        List<CandleRow>? acceptedCandles, CancellationToken cancellationToken)
+        where TRow : struct
+    {
+        long pageStart = Stopwatch.GetTimestamp();
+        bool parserStarted = false;
+        bool parseSucceeded = false;
+        using Activity? pageActivity = MoexTelemetry.ActivitySource.StartActivity("moex.history.fetch");
+        pageActivity?.SetTag(MoexTelemetryAttributes.Source, operationTags.Source);
+        pageActivity?.SetTag(MoexTelemetryAttributes.DataKind, operationTags.DataKind);
+        pageActivity?.SetTag(MoexTelemetryAttributes.Market, operationTags.Market);
+        try
+        {
+            using HttpResponseMessage response = await _client.SendRequestAsync(
+                method, query, cancellationToken, operationTags.Flow);
+            using RentedBuffer body = await RentedBuffer.RentFromResponseAsync(
+                response, _options.BodyReadTimeout, method, cancellationToken);
+            parserStarted = true;
+            (int SourceRows, PaginationCursorDTO Cursor) result = ParsePage(
+                body.Span, spec, writer, candleWriter, lastSourceTime, ingestPriority, acceptedCandles, state);
+            parseSucceeded = true;
+            state.LastPageElapsed = Stopwatch.GetElapsedTime(pageStart);
+            pageActivity?.SetStatus(ActivityStatusCode.Ok);
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            pageActivity?.SetStatus(ActivityStatusCode.Ok);
+            MoexMetrics.RecordOperationCancelled(in operationTags, Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
+            throw;
+        }
+        catch (MoexSchemaMismatchException exception)
+        {
+            MoexLogMessages.ParseFailed(
+                _logger, exception, method, MoexErrorTypes.SchemaMismatch, exception.Message);
+            MoexLogMessages.HistoryOperationFailed(
+                _logger, exception, secId, operationTags.DataKind, operationTags.Operation,
+                method, state.PageFrom, state.PageTill, state.PagePosition,
+                MoexErrorTypes.SchemaMismatch, exception.Message);
+            pageActivity?.SetStatus(ActivityStatusCode.Error, exception.Message);
+            MoexMetrics.RecordOperationError(
+                in operationTags, exception, Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            MoexLogMessages.HistoryOperationFailed(
+                _logger, exception, secId, operationTags.DataKind, operationTags.Operation,
+                method, state.PageFrom, state.PageTill, state.PagePosition,
+                MoexMetrics.ClassifyError(exception), exception.Message);
+            pageActivity?.SetStatus(ActivityStatusCode.Error, exception.Message);
+            MoexMetrics.RecordOperationError(
+                in operationTags, exception, Stopwatch.GetElapsedTime(pageStart).TotalSeconds);
+            throw;
+        }
+        finally
+        {
+            if (parserStarted && parseSucceeded)
+                RecordPageMetrics(operationTags, state);
+            else if (parserStarted)
+                state.RecordSkippedDiagnostics();
+        }
+    }
+
+    private static (int SourceRows, PaginationCursorDTO Cursor) ParsePage<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
+        ReadOnlySpan<byte> body, MoexSeriesSpec spec, ProtobufBatchWriter<TRow> writer,
+        ProtobufBatchWriter<CandleRow>? candleWriter, DateTime? lastSourceTime, uint ingestPriority,
+        List<CandleRow>? acceptedCandles, HistoricalReadState state)
+        where TRow : struct
+    {
+        Utf8JsonReader reader = new(body);
+        ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartObject, "объект ответа", spec.RootKey);
+        bool foundColumns = false;
+        bool foundData = false;
+        int sourceRows = 0;
+        PaginationCursorDTO cursor = default;
+
+        while (reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.EndObject)
+                break;
+            if (reader.TokenType != JsonTokenType.PropertyName)
+                continue;
+
+            if (reader.ValueTextEquals(spec.RootKey))
+            {
+                ParseHelpersUtf8.ReadAndExpect(
+                    ref reader, JsonTokenType.StartObject, spec.RootKey, spec.RootKey);
+                while (reader.Read())
+                {
+                    if (reader.TokenType == JsonTokenType.EndObject)
+                        break;
+                    if (reader.TokenType != JsonTokenType.PropertyName)
+                        continue;
+
+                    if (reader.ValueTextEquals("columns"u8))
+                    {
+                        foundColumns = true;
+                        ParseHelpersUtf8.ValidateInputColumnsUtf8(
+                            ref reader, spec.InputColumns, spec.RootKey);
+                    }
+                    else if (reader.ValueTextEquals("data"u8) && foundColumns)
+                    {
+                        foundData = true;
+                        sourceRows = ReadDataRows(
+                            ref reader, spec, writer, candleWriter, lastSourceTime,
+                            ingestPriority, acceptedCandles, state);
+                    }
+                    else
+                    {
+                        reader.Skip();
+                    }
+                }
+            }
+            else if (reader.ValueTextEquals("data.cursor"u8))
+            {
+                cursor = ParseHelpersUtf8.ReadCursorRootObject(ref reader);
+            }
+            else
+            {
+                reader.Skip();
+            }
+        }
+
+        ParseHelpersUtf8.ValidateStructure(foundColumns, foundData, spec.RootKey);
+        return (sourceRows, cursor);
+    }
+
+    private static int ReadDataRows<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
+        ref Utf8JsonReader reader, MoexSeriesSpec spec, ProtobufBatchWriter<TRow> writer,
+        ProtobufBatchWriter<CandleRow>? candleWriter, DateTime? lastSourceTime, uint ingestPriority,
+        List<CandleRow>? acceptedCandles, HistoricalReadState state)
+        where TRow : struct
+    {
+        ImmutableArray<string> columns = spec.InputColumns;
+        ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.StartArray, "data", spec.RootKey);
+
+        int rowIndex = 0;
+        for (; reader.Read() && reader.TokenType != JsonTokenType.EndArray; rowIndex++)
+        {
+            state.RecordPhysicalRow(receivedMetric: true);
+            if (reader.TokenType != JsonTokenType.StartArray)
+            {
+                state.RecordSkipped(rowIndex, null, "Строка data не является массивом.");
+                reader.Skip();
+                continue;
+            }
+
+            int rowDepth = reader.CurrentDepth;
+            bool ok;
+            bool appended = false;
+            DateTime? sourceTime;
+            int columnIndex;
+            string? error;
+
+            switch (writer)
+            {
+                case ProtobufBatchWriter<TradeStatsStockRow> stockWriter:
+                    ok = TradeStatsHistoryParser.TryReadStockRow(
+                        ref reader, columns.Length, out TradeStatsStockRow stockRow,
+                        out CandleRow stockCandle, out sourceTime, out columnIndex, out error);
+                    if (ok && IsNew(sourceTime, lastSourceTime))
+                    {
+                        ParseHelpersUtf8.AppendRow(stockWriter, in stockRow);
+                        AppendCandle(candleWriter!, ref stockCandle, ingestPriority, acceptedCandles);
+                        appended = true;
+                    }
+                    break;
+                case ProtobufBatchWriter<TradeStatsFuturesRow> futuresWriter:
+                    ok = TradeStatsHistoryParser.TryReadFuturesRow(
+                        ref reader, columns.Length, out TradeStatsFuturesRow futuresRow,
+                        out CandleRow futuresCandle, out sourceTime, out columnIndex, out error);
+                    if (ok && IsNew(sourceTime, lastSourceTime))
+                    {
+                        ParseHelpersUtf8.AppendRow(futuresWriter, in futuresRow);
+                        AppendCandle(candleWriter!, ref futuresCandle, ingestPriority, acceptedCandles);
+                        appended = true;
+                    }
+                    break;
+                default:
+                    throw new NotSupportedException($"Тип строки {typeof(TRow).Name} ещё не переведён.");
+            }
+
+            state.SetPageLastSourceTime(sourceTime);
+            if (!ok)
+            {
+                int? failed = columnIndex > 0 ? columnIndex - 1 : null;
+                string? name = failed is int index && index < columns.Length ? columns[index] : null;
+                ParseHelpersUtf8.RejectRow(
+                    ref reader, rowDepth, state, rowIndex, sourceTime,
+                    error ?? "Ошибка разбора строки.", failed, name);
+                continue;
+            }
+
+            state.RecordParsedValidRow();
+            if (appended)
+                state.RecordAccepted(sourceTime);
+        }
+        return rowIndex;
+    }
+
+    private bool TryNextPage(
+        MoexSeriesSpec spec, PaginationCursorDTO cursor, int sourceRows,
+        ref int start, ref DateOnly day, DateOnly till, int pages,
+        Dictionary<string, string> query, string method)
+    {
+        switch (spec.Pagination)
+        {
+            case PaginationKind.Cursor:
+                if (!MoexPagination.TryNextCursor(
+                    cursor, start, pages, _options.MaxPagesPerLoad, _logger, method, out int nextStart))
+                    return false;
+                start = nextStart;
+                query["start"] = start.ToString(CultureInfo.InvariantCulture);
+                return true;
+            case PaginationKind.FixedPage:
+                if (!MoexPagination.TryNextFixedPage(
+                    start, sourceRows, FixedPageSize, pages, _options.MaxPagesPerLoad,
+                    _logger, method, out int nextPageStart))
+                    return false;
+                start = nextPageStart;
+                query["start"] = start.ToString(CultureInfo.InvariantCulture);
+                return true;
+            case PaginationKind.DaySplit:
+                if (!MoexPagination.TryNextDay(day, till, out DateOnly nextDay))
+                    return false;
+                day = nextDay;
+                query["from"] = FormatDate(day);
+                query["till"] = FormatDate(day);
+                return true;
+            default:
+                throw new NotSupportedException($"Неизвестный тип пагинации {spec.Pagination}.");
+        }
+    }
+
+    private static bool IsNew(DateTime? sourceTime, DateTime? lastSourceTime)
+        => lastSourceTime is not DateTime last || sourceTime is not DateTime time || time > last;
+
+    private static void AppendCandle(
+        ProtobufBatchWriter<CandleRow> candleWriter, ref CandleRow candle,
+        uint ingestPriority, List<CandleRow>? acceptedCandles)
+    {
+        candle.IngestPriority = ingestPriority;
+        ParseHelpersUtf8.AppendRow(candleWriter, in candle);
+        acceptedCandles?.Add(candle);
     }
 
     internal Task ReadObStatsStockPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
@@ -370,178 +699,6 @@ public sealed class MoexHistoryPageReader
                 state.RecordSkippedDiagnostics();
         }
     }
-
-private static int ReadRows(
-    ref Utf8JsonReader reader,
-    MoexSeriesSpec spec,
-    HistoricalReadState state)
-{
-    ParseHelpersUtf8.ReadAndExpect(
-        ref reader,
-        JsonTokenType.StartArray,
-        "data",
-        spec.RootKey);
-
-    int rowCount = 0;
-
-    while (reader.Read())
-    {
-        if (reader.TokenType == JsonTokenType.EndArray)
-            return rowCount;
-
-        if (reader.TokenType != JsonTokenType.StartArray)
-            ParseHelpersUtf8.SchemaMismatch(
-                $"[{spec.RootKey}] Ожидалось начало строки {rowCount}.");
-
-        int rowDepth = reader.CurrentDepth;
-        bool success;
-        DateTime? sourceTime;
-        int columnIndex;
-        string? error;
-
-        switch ((spec.DataKind, spec.Market))
-        {
-            case ("tradestats", "stock"):
-                success = TradeStatsHistoryParser.TryReadStockRow(
-                    ref reader,
-                    out TradeStatsStockRow stockRow,
-                    out CandleRow stockCandle,
-                    out sourceTime,
-                    out columnIndex,
-                    out error);
-                break;
-
-            case ("tradestats", "futures"):
-                success = TradeStatsHistoryParser.TryReadFuturesRow(
-                    ref reader,
-                    out TradeStatsFuturesRow futuresRow,
-                    out CandleRow futuresCandle,
-                    out sourceTime,
-                    out columnIndex,
-                    out error);
-                break;
-
-            case ("obstats", "stock"):
-                success = ObStatsHistoryParser.TryReadStockRow(
-                    ref reader,
-                    out ObStatsStockRow obStockRow,
-                    out sourceTime,
-                    out columnIndex,
-                    out error);
-                break;
-
-            case ("obstats", "futures"):
-                success = ObStatsHistoryParser.TryReadFuturesRow(
-                    ref reader,
-                    out ObStatsFuturesRow obFuturesRow,
-                    out sourceTime,
-                    out columnIndex,
-                    out error);
-                break;
-
-            case ("orderstats", "stock"):
-                success = OrderStatsHistoryParser.TryReadOrderStatsRow(
-                    ref reader,
-                    out OrderStatsStockRow orderRow,
-                    out sourceTime,
-                    out columnIndex,
-                    out error);
-                break;
-
-            case ("hi2", "stock"):
-                success = Hi2HistoryParser.TryReadStockRow(
-                    ref reader,
-                    out Hi2StockRow hi2StockRow,
-                    out sourceTime,
-                    out columnIndex,
-                    out error);
-                break;
-
-            case ("hi2", "futures"):
-                success = Hi2HistoryParser.TryReadFuturesRow(
-                    ref reader,
-                    out Hi2FuturesRow hi2FuturesRow,
-                    out sourceTime,
-                    out columnIndex,
-                    out error);
-                break;
-
-            case ("mega_alerts", "stock"):
-                success = MegaAlertsHistoryParser.TryReadStockRow(
-                    ref reader,
-                    out MegaAlertsStockRow alertsStockRow,
-                    out sourceTime,
-                    out columnIndex,
-                    out error);
-                break;
-
-            case ("mega_alerts", "futures"):
-                success = MegaAlertsHistoryParser.TryReadFuturesRow(
-                    ref reader,
-                    out MegaAlertsFuturesRow alertsFuturesRow,
-                    out sourceTime,
-                    out columnIndex,
-                    out error);
-                break;
-
-            case ("futoi", "futures"):
-                success = FutoiHistoryParser.TryReadFutoiRow(
-                    ref reader,
-                    out FutoiRow futoiRow,
-                    out sourceTime,
-                    out columnIndex,
-                    out error);
-                break;
-
-            case ("candles", "stock"):
-            case ("candles", "futures"):
-                success = CandleHistoryParser.TryReadCandleRow(
-                    ref reader,
-                    out CandleRow candleRow,
-                    out sourceTime,
-                    out columnIndex,
-                    out error);
-                break;
-
-            default:
-                throw new NotSupportedException(
-                    $"Неподдерживаемая серия: {spec.DataKind}/{spec.Market}.");
-        }
-
-        state.RecordPhysicalRow();
-        state.SetPageLastSourceTime(sourceTime);
-
-        if (success)
-        {
-            if (reader.TokenType != JsonTokenType.EndArray ||
-                reader.CurrentDepth != rowDepth)
-            {
-                ParseHelpersUtf8.SchemaMismatch(
-                    $"[{spec.RootKey}] Парсер не завершил строку {rowCount}.");
-            }
-
-            state.RecordParsedValidRow();
-        }
-        else
-        {
-            ParseHelpersUtf8.RejectRow(
-                ref reader,
-                rowDepth,
-                state,
-                rowCount,
-                sourceTime,
-                error ?? "Ошибка разбора строки.",
-                columnIndex > 0 ? columnIndex - 1 : null);
-        }
-
-        rowCount++;
-    }
-
-    ParseHelpersUtf8.SchemaMismatch(
-        $"[{spec.RootKey}] Не найден конец массива data.");
-
-    return rowCount;
-}
 
     private void RecordPageMetrics(MoexOperationTags operationTags, HistoricalReadState state)
     {

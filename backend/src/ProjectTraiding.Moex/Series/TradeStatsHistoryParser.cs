@@ -7,7 +7,8 @@ namespace ProjectTraiding.Moex.Series;
 /// <summary>
 /// Разбирает одну строку TradeStats. На входе reader стоит на StartArray строки;
 /// проверка входных колонок и начала строки выполняется вызывающим кодом.
-/// При успехе reader стоит на EndArray, при отказе — на проблемном токене.
+/// При успехе reader стоит на EndArray строки, при отказе из-за лишней ячейки — на лишнем токене.
+/// Запись выполняет вызывающий код.
 /// columnIndex — число предпринятых чтений (индекс ошибочной колонки: columnIndex - 1).
 /// SourceTime структуры не заполняется: разобранное московское время возвращается отдельно.
 /// </summary>
@@ -17,6 +18,7 @@ public static class TradeStatsHistoryParser
 
     internal static bool TryReadStockRow(
         ref Utf8JsonReader reader,
+        int columnCount,
         out TradeStatsStockRow row,
         out CandleRow candle,
         out DateTime? sourceTime,
@@ -65,7 +67,8 @@ public static class TradeStatsHistoryParser
         }
 
         sourceTime = date!.Value.ToDateTime(time!.Value, DateTimeKind.Unspecified);
-        ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.EndArray, "строка Stock", RootKey);
+        if (!ParseHelpersUtf8.TryRowEnd(ref reader, ref columnIndex, columnCount, out error))
+            return false;
         if (!CandleDateTime64.TryToUnixWholeSeconds(sourceTime.Value, out ulong sourceUnixTime))
         {
             error = $"[{RootKey}] Не удалось преобразовать время начала строки Stock в Unix-время.";
@@ -125,6 +128,7 @@ public static class TradeStatsHistoryParser
 
     internal static bool TryReadFuturesRow(
         ref Utf8JsonReader reader,
+        int columnCount,
         out TradeStatsFuturesRow row,
         out CandleRow candle,
         out DateTime? sourceTime,
@@ -179,7 +183,8 @@ public static class TradeStatsHistoryParser
         }
 
         sourceTime = date!.Value.ToDateTime(time!.Value, DateTimeKind.Unspecified);
-        ParseHelpersUtf8.ReadAndExpect(ref reader, JsonTokenType.EndArray, "строка Futures", RootKey);
+        if (!ParseHelpersUtf8.TryRowEnd(ref reader, ref columnIndex, columnCount, out error))
+            return false;
         if (!CandleDateTime64.TryToUnixWholeSeconds(sourceTime.Value, out ulong sourceUnixTime))
         {
             error = $"[{RootKey}] Не удалось преобразовать время начала строки Futures в Unix-время.";

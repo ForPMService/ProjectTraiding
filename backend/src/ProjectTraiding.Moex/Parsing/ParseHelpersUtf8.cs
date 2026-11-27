@@ -538,6 +538,25 @@ internal static bool TryNextSystime(
     return error is null;
 }
 
+/// <summary>
+/// Завершает строку по схеме. Лишние ячейки — отказ строки; расхождение парсера со схемой — ошибка программы.
+/// </summary>
+internal static bool TryRowEnd(
+    ref Utf8JsonReader reader, ref int columnIndex, int columnCount, out string? error)
+{
+    if (columnIndex != columnCount)
+        throw new InvalidOperationException(
+            $"Парсер прочитал {columnIndex} значений, схема содержит {columnCount}.");
+
+    error = null;
+    if (reader.Read() && reader.TokenType == JsonTokenType.EndArray)
+        return true;
+
+    columnIndex++;
+    error = $"В строке больше значений, чем {columnCount}.";
+    return false;
+}
+
 internal static void RejectRow(
     ref Utf8JsonReader reader,
     int rowDepth,

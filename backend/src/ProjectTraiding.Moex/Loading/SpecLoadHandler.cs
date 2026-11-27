@@ -82,10 +82,10 @@ public sealed class SpecLoadHandler
             return await LoadCandleRangeAsync(spec, task, tags, cancellationToken);
         if (spec.DataKind == "tradestats" && spec.Market == "stock")
             return await LoadTradeStatsRangeAsync<TradeStatsStockRow>(
-                spec, task, tags, insertContext, _reader.ReadTradeStatsStockPagesAsync, cancellationToken);
+                spec, task, tags, insertContext, cancellationToken);
         if (spec.DataKind == "tradestats" && spec.Market == "futures")
             return await LoadTradeStatsRangeAsync<TradeStatsFuturesRow>(
-                spec, task, tags, insertContext, _reader.ReadTradeStatsFuturesPagesAsync, cancellationToken);
+                spec, task, tags, insertContext, cancellationToken);
         if (spec.DataKind == "obstats" && spec.Market == "stock")
             return await LoadHistoricalSeriesRangeAsync<ObStatsStockRow>(
                 spec, task, tags, insertContext, _reader.ReadObStatsStockPagesAsync, cancellationToken);
@@ -188,8 +188,7 @@ public sealed class SpecLoadHandler
     private async Task<RowWriteSummary> LoadTradeStatsRangeAsync<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
         MoexSeriesSpec spec, MoexLoadTask task, MoexOperationTags tags,
-        StorageInsertContext insertContext, MoexHistoryPageReader.ReadTradeStatsPages<TRow> readPages,
-        CancellationToken cancellationToken)
+        StorageInsertContext insertContext, CancellationToken cancellationToken)
         where TRow : struct
     {
         ProtobufBatchWriter<TRow> statsWriter = new(_executor, spec.Table, spec.Columns, insertContext);
@@ -223,11 +222,11 @@ public sealed class SpecLoadHandler
 
                 try
                 {
-                    await readPages(
-                        spec, task.Secid, from, till, tags, statsWriter, candleWriter,
-                        lastSourceTime: null, ingestPriority: 1, state: state,
-                        acceptedCandles: null, beforeRequest: null, afterPage: AfterPage,
-                        cancellationToken: cancellationToken);
+                    await _reader.ReadPagesAsync(
+                        spec, task.Secid, boardId: null, from, till, tags,
+                        statsWriter, candleWriter,
+                        lastSourceTime: null, ingestPriority: 1, acceptedCandles: null,
+                        state, beforeRequest: null, afterPage: AfterPage, cancellationToken);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
