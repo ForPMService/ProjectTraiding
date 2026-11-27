@@ -343,7 +343,6 @@ public sealed class AlgopackCurrentDayService : BackgroundService
                     statsWriter,
                     candleWriter,
                     operationTags,
-                    _pageReader.ReadTradeStatsStockPagesAsync,
                     ct);
             }
             else if (spec.DataKind == "tradestats" && market == FuturesMarket)
@@ -365,7 +364,6 @@ public sealed class AlgopackCurrentDayService : BackgroundService
                     statsWriter,
                     candleWriter,
                     operationTags,
-                    _pageReader.ReadTradeStatsFuturesPagesAsync,
                     ct);
             }
             else
@@ -435,7 +433,6 @@ public sealed class AlgopackCurrentDayService : BackgroundService
         ProtobufBatchWriter<TRow> statsWriter,
         ProtobufBatchWriter<CandleRow> candleWriter,
         MoexOperationTags operationTags,
-        MoexHistoryPageReader.ReadTradeStatsPages<TRow> readPages,
         CancellationToken ct)
         where TRow : struct
     {
@@ -542,9 +539,11 @@ public sealed class AlgopackCurrentDayService : BackgroundService
 
             try
             {
-                await readPages(
-                    spec, secid, today, today, operationTags, statsWriter, candleWriter,
-                    lastSourceTime, 0, state, acceptedCandles, BeforeFetch, AfterPage, fetchCts.Token);
+                await _pageReader.ReadPagesAsync(
+                    spec, secid, boardId: null, today, today, operationTags,
+                    statsWriter, candleWriter,
+                    lastSourceTime, ingestPriority: 0, acceptedCandles,
+                    state, BeforeFetch, AfterPage, fetchCts.Token);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
