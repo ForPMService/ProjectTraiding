@@ -53,6 +53,13 @@ public sealed class MoexHistoryPageReader
         {
             ProtobufBatchWriter<TradeStatsStockRow> => MoexColumnSets.TradeStatsStock,
             ProtobufBatchWriter<TradeStatsFuturesRow> => MoexColumnSets.TradeStatsFutures,
+            ProtobufBatchWriter<ObStatsStockRow> => MoexColumnSets.ObStatsStock,
+            ProtobufBatchWriter<ObStatsFuturesRow> => MoexColumnSets.ObStatsFutures,
+            ProtobufBatchWriter<OrderStatsStockRow> => MoexColumnSets.OrderStatsStock,
+            ProtobufBatchWriter<Hi2StockRow> => MoexColumnSets.Hi2Stock,
+            ProtobufBatchWriter<Hi2FuturesRow> => MoexColumnSets.Hi2Futures,
+            ProtobufBatchWriter<MegaAlertsStockRow> => MoexColumnSets.MegaAlertsStock,
+            ProtobufBatchWriter<MegaAlertsFuturesRow> => MoexColumnSets.MegaAlertsFutures,
             _ => throw new NotSupportedException($"Тип строки {typeof(TRow).Name} ещё не переведён."),
         };
 
@@ -184,7 +191,8 @@ public sealed class MoexHistoryPageReader
                 response, _options.BodyReadTimeout, method, cancellationToken);
             parserStarted = true;
             (int SourceRows, PaginationCursorDTO Cursor) result = ParsePage(
-                body.Span, spec, writer, candleWriter, lastSourceTime, ingestPriority, acceptedCandles, state);
+                body.Span, spec, secId, writer, candleWriter,
+                lastSourceTime, ingestPriority, acceptedCandles, state);
             parseSucceeded = true;
             state.LastPageElapsed = Stopwatch.GetElapsedTime(pageStart);
             pageActivity?.SetStatus(ActivityStatusCode.Ok);
@@ -231,7 +239,7 @@ public sealed class MoexHistoryPageReader
 
     private static (int SourceRows, PaginationCursorDTO Cursor) ParsePage<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
-        ReadOnlySpan<byte> body, MoexSeriesSpec spec, ProtobufBatchWriter<TRow> writer,
+        ReadOnlySpan<byte> body, MoexSeriesSpec spec, string secId, ProtobufBatchWriter<TRow> writer,
         ProtobufBatchWriter<CandleRow>? candleWriter, DateTime? lastSourceTime, uint ingestPriority,
         List<CandleRow>? acceptedCandles, HistoricalReadState state)
         where TRow : struct
@@ -271,7 +279,7 @@ public sealed class MoexHistoryPageReader
                     {
                         foundData = true;
                         sourceRows = ReadDataRows(
-                            ref reader, spec, writer, candleWriter, lastSourceTime,
+                            ref reader, spec, secId, writer, candleWriter, lastSourceTime,
                             ingestPriority, acceptedCandles, state);
                     }
                     else
@@ -296,7 +304,7 @@ public sealed class MoexHistoryPageReader
 
     private static int ReadDataRows<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
-        ref Utf8JsonReader reader, MoexSeriesSpec spec, ProtobufBatchWriter<TRow> writer,
+        ref Utf8JsonReader reader, MoexSeriesSpec spec, string secId, ProtobufBatchWriter<TRow> writer,
         ProtobufBatchWriter<CandleRow>? candleWriter, DateTime? lastSourceTime, uint ingestPriority,
         List<CandleRow>? acceptedCandles, HistoricalReadState state)
         where TRow : struct
@@ -328,23 +336,52 @@ public sealed class MoexHistoryPageReader
                     ok = TradeStatsHistoryParser.TryReadStockRow(
                         ref reader, columns.Length, out TradeStatsStockRow stockRow,
                         out CandleRow stockCandle, out sourceTime, out columnIndex, out error);
-                    if (ok && IsNew(sourceTime, lastSourceTime))
-                    {
-                        ParseHelpersUtf8.AppendRow(stockWriter, in stockRow);
+                    appended = ok && AppendIfNew(stockWriter, in stockRow, sourceTime, lastSourceTime);
+                    if (appended)
                         AppendCandle(candleWriter!, ref stockCandle, ingestPriority, acceptedCandles);
-                        appended = true;
-                    }
                     break;
                 case ProtobufBatchWriter<TradeStatsFuturesRow> futuresWriter:
                     ok = TradeStatsHistoryParser.TryReadFuturesRow(
                         ref reader, columns.Length, out TradeStatsFuturesRow futuresRow,
                         out CandleRow futuresCandle, out sourceTime, out columnIndex, out error);
-                    if (ok && IsNew(sourceTime, lastSourceTime))
-                    {
-                        ParseHelpersUtf8.AppendRow(futuresWriter, in futuresRow);
+                    appended = ok && AppendIfNew(futuresWriter, in futuresRow, sourceTime, lastSourceTime);
+                    if (appended)
                         AppendCandle(candleWriter!, ref futuresCandle, ingestPriority, acceptedCandles);
-                        appended = true;
-                    }
+                    break;
+                case ProtobufBatchWriter<ObStatsStockRow> obStatsStockWriter:
+                    ok = ObStatsHistoryParser.TryReadStockRow(ref reader, columns.Length, secId,
+                        out ObStatsStockRow obStatsStockRow, out sourceTime, out columnIndex, out error);
+                    appended = ok && AppendIfNew(obStatsStockWriter, in obStatsStockRow, sourceTime, lastSourceTime);
+                    break;
+                case ProtobufBatchWriter<ObStatsFuturesRow> obStatsFuturesWriter:
+                    ok = ObStatsHistoryParser.TryReadFuturesRow(ref reader, columns.Length, secId,
+                        out ObStatsFuturesRow obStatsFuturesRow, out sourceTime, out columnIndex, out error);
+                    appended = ok && AppendIfNew(obStatsFuturesWriter, in obStatsFuturesRow, sourceTime, lastSourceTime);
+                    break;
+                case ProtobufBatchWriter<OrderStatsStockRow> orderStatsWriter:
+                    ok = OrderStatsHistoryParser.TryReadRow(ref reader, columns.Length, secId,
+                        out OrderStatsStockRow orderStatsRow, out sourceTime, out columnIndex, out error);
+                    appended = ok && AppendIfNew(orderStatsWriter, in orderStatsRow, sourceTime, lastSourceTime);
+                    break;
+                case ProtobufBatchWriter<Hi2StockRow> hi2StockWriter:
+                    ok = Hi2HistoryParser.TryReadStockRow(ref reader, columns.Length, secId,
+                        out Hi2StockRow hi2StockRow, out sourceTime, out columnIndex, out error);
+                    appended = ok && AppendIfNew(hi2StockWriter, in hi2StockRow, sourceTime, lastSourceTime);
+                    break;
+                case ProtobufBatchWriter<Hi2FuturesRow> hi2FuturesWriter:
+                    ok = Hi2HistoryParser.TryReadFuturesRow(ref reader, columns.Length, secId,
+                        out Hi2FuturesRow hi2FuturesRow, out sourceTime, out columnIndex, out error);
+                    appended = ok && AppendIfNew(hi2FuturesWriter, in hi2FuturesRow, sourceTime, lastSourceTime);
+                    break;
+                case ProtobufBatchWriter<MegaAlertsStockRow> megaAlertsStockWriter:
+                    ok = MegaAlertsHistoryParser.TryReadStockRow(ref reader, columns.Length, secId,
+                        out MegaAlertsStockRow megaAlertsStockRow, out sourceTime, out columnIndex, out error);
+                    appended = ok && AppendIfNew(megaAlertsStockWriter, in megaAlertsStockRow, sourceTime, lastSourceTime);
+                    break;
+                case ProtobufBatchWriter<MegaAlertsFuturesRow> megaAlertsFuturesWriter:
+                    ok = MegaAlertsHistoryParser.TryReadFuturesRow(ref reader, columns.Length, secId,
+                        out MegaAlertsFuturesRow megaAlertsFuturesRow, out sourceTime, out columnIndex, out error);
+                    appended = ok && AppendIfNew(megaAlertsFuturesWriter, in megaAlertsFuturesRow, sourceTime, lastSourceTime);
                     break;
                 default:
                     throw new NotSupportedException($"Тип строки {typeof(TRow).Name} ещё не переведён.");
@@ -405,6 +442,17 @@ public sealed class MoexHistoryPageReader
     private static bool IsNew(DateTime? sourceTime, DateTime? lastSourceTime)
         => lastSourceTime is not DateTime last || sourceTime is not DateTime time || time > last;
 
+    private static bool AppendIfNew<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
+        ProtobufBatchWriter<TRow> writer, in TRow row, DateTime? sourceTime, DateTime? lastSourceTime)
+        where TRow : struct
+    {
+        if (!IsNew(sourceTime, lastSourceTime))
+            return false;
+        ParseHelpersUtf8.AppendRow(writer, in row);
+        return true;
+    }
+
     private static void AppendCandle(
         ProtobufBatchWriter<CandleRow> candleWriter, ref CandleRow candle,
         uint ingestPriority, List<CandleRow>? acceptedCandles)
@@ -413,39 +461,6 @@ public sealed class MoexHistoryPageReader
         ParseHelpersUtf8.AppendRow(candleWriter, in candle);
         acceptedCandles?.Add(candle);
     }
-
-    internal Task ReadObStatsStockPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
-        MoexOperationTags operationTags, ProtobufBatchWriter<ObStatsStockRow> writer, DateTime? lastSourceTime,
-        HistoricalReadState state, Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-        => ReadCursorPagesAsync(spec, secId, from, till, operationTags, state,
-            body =>
-            {
-                ObStatsHistoryParser.ParseStock(body.Span, spec, secId, writer, lastSourceTime, state,
-                    out PaginationCursorDTO cursor);
-                return cursor;
-            }, countAcceptedRows: false, beforeRequest, afterPage, cancellationToken);
-
-    internal Task ReadObStatsFuturesPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
-        MoexOperationTags operationTags, ProtobufBatchWriter<ObStatsFuturesRow> writer, DateTime? lastSourceTime,
-        HistoricalReadState state, Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-        => ReadCursorPagesAsync(spec, secId, from, till, operationTags, state,
-            body =>
-            {
-                ObStatsHistoryParser.ParseFutures(body.Span, spec, secId, writer, lastSourceTime, state,
-                    out PaginationCursorDTO cursor);
-                return cursor;
-            }, countAcceptedRows: false, beforeRequest, afterPage, cancellationToken);
-
-    internal Task ReadOrderStatsStockPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
-        MoexOperationTags operationTags, ProtobufBatchWriter<OrderStatsStockRow> writer, DateTime? lastSourceTime,
-        HistoricalReadState state, Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-        => ReadCursorPagesAsync(spec, secId, from, till, operationTags, state,
-            body =>
-            {
-                OrderStatsHistoryParser.Parse(body.Span, spec, secId, writer, lastSourceTime, state,
-                    out PaginationCursorDTO cursor);
-                return cursor;
-            }, countAcceptedRows: false, beforeRequest, afterPage, cancellationToken);
 
     internal async Task ReadFutoiPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
         MoexOperationTags operationTags, ProtobufBatchWriter<FutoiRow> writer, DateTime? lastSourceTime,
@@ -502,50 +517,6 @@ public sealed class MoexHistoryPageReader
         MoexLogMessages.DaySplitCompleted(_logger, method, FormatDate(from), FormatDate(till), dayCount, totalRows);
     }
 
-    internal Task ReadHi2StockPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
-        MoexOperationTags operationTags, ProtobufBatchWriter<Hi2StockRow> writer, DateTime? lastSourceTime,
-        HistoricalReadState state, Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-        => ReadCursorPagesAsync(spec, secId, from, till, operationTags, state,
-            body =>
-            {
-                Hi2HistoryParser.ParseStock(body.Span, spec, secId, writer, lastSourceTime, state,
-                    out PaginationCursorDTO cursor);
-                return cursor;
-            }, countAcceptedRows: false, beforeRequest, afterPage, cancellationToken);
-
-    internal Task ReadHi2FuturesPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
-        MoexOperationTags operationTags, ProtobufBatchWriter<Hi2FuturesRow> writer, DateTime? lastSourceTime,
-        HistoricalReadState state, Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-        => ReadCursorPagesAsync(spec, secId, from, till, operationTags, state,
-            body =>
-            {
-                Hi2HistoryParser.ParseFutures(body.Span, spec, secId, writer, lastSourceTime, state,
-                    out PaginationCursorDTO cursor);
-                return cursor;
-            }, countAcceptedRows: false, beforeRequest, afterPage, cancellationToken);
-
-    internal Task ReadMegaAlertsStockPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
-        MoexOperationTags operationTags, ProtobufBatchWriter<MegaAlertsStockRow> writer, DateTime? lastSourceTime,
-        HistoricalReadState state, Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-        => ReadCursorPagesAsync(spec, secId, from, till, operationTags, state,
-            body =>
-            {
-                MegaAlertsHistoryParser.ParseStock(body.Span, spec, secId, writer, lastSourceTime, state,
-                    out PaginationCursorDTO cursor);
-                return cursor;
-            }, countAcceptedRows: false, beforeRequest, afterPage, cancellationToken);
-
-    internal Task ReadMegaAlertsFuturesPagesAsync(MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till,
-        MoexOperationTags operationTags, ProtobufBatchWriter<MegaAlertsFuturesRow> writer, DateTime? lastSourceTime,
-        HistoricalReadState state, Action? beforeRequest, BetweenHistoryPages? afterPage, CancellationToken cancellationToken)
-        => ReadCursorPagesAsync(spec, secId, from, till, operationTags, state,
-            body =>
-            {
-                MegaAlertsHistoryParser.ParseFutures(body.Span, spec, secId, writer, lastSourceTime, state,
-                    out PaginationCursorDTO cursor);
-                return cursor;
-            }, countAcceptedRows: false, beforeRequest, afterPage, cancellationToken);
-
     internal async Task ReadCandlePagesAsync(
         MoexSeriesSpec spec, string secId, string boardId, DateOnly from, DateOnly till,
         MoexOperationTags operationTags, ProtobufBatchWriter<CandleRow> writer,
@@ -598,46 +569,6 @@ public sealed class MoexHistoryPageReader
             }
             queryStart = nextStart;
             query["start"] = queryStart.ToString(CultureInfo.InvariantCulture);
-        }
-    }
-
-    private async Task ReadCursorPagesAsync(
-        MoexSeriesSpec spec, string secId, DateOnly from, DateOnly till, MoexOperationTags operationTags,
-        HistoricalReadState state, Func<ReadOnlyMemory<byte>, PaginationCursorDTO> parse,
-        bool countAcceptedRows, Action? beforeRequest, BetweenHistoryPages? afterPage,
-        CancellationToken cancellationToken)
-    {
-        if (spec.Pagination != PaginationKind.Cursor)
-            throw new ArgumentException("Typed historical series require cursor pagination.", nameof(spec));
-        string method = string.Format(CultureInfo.InvariantCulture, spec.MethodTemplate, secId);
-        Dictionary<string, string> query = CreateCursorQuery(spec, from, till);
-        int currentStart = 0;
-        int pagesElapsed = 0;
-        int totalRows = 0;
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            state.BeginPage(method, from, till, "start=" + currentStart.ToString(CultureInfo.InvariantCulture));
-            beforeRequest?.Invoke();
-            PaginationCursorDTO cursor = await FetchPageAsync(method, query, secId, operationTags,
-                state, parse, cancellationToken);
-            pagesElapsed++;
-            int pageRows = countAcceptedRows ? state.PageAcceptedRows : state.PageParsedValidRows;
-            totalRows = checked(totalRows + pageRows);
-            MoexLogMessages.PageReceived(_logger, method, pagesElapsed, pageRows, state.LastPageElapsed);
-            bool hasNext = MoexPagination.TryNextCursor(
-                cursor, currentStart, pagesElapsed, _options.MaxPagesPerLoad,
-                _logger, method, out int nextStart);
-            state.RecordSkippedDiagnostics();
-            if (afterPage is not null)
-                await afterPage(cancellationToken);
-            if (!hasNext)
-            {
-                MoexLogMessages.PaginationStopped(_logger, method, "range_exhausted", pagesElapsed, totalRows);
-                break;
-            }
-            currentStart = nextStart;
-            query["start"] = currentStart.ToString(CultureInfo.InvariantCulture);
         }
     }
 

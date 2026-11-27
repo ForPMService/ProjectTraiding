@@ -371,15 +371,15 @@ public sealed class AlgopackCurrentDayService : BackgroundService
                 if (spec.DataKind == "obstats" && market == StockMarket)
                     await ProcessHistoricalInstrumentAsync<ObStatsStockRow>(spec, secid, market, boardId,
                         today, lastSourceTime, new(_executor, spec.Table, spec.Columns, insertContext),
-                        operationTags, _pageReader.ReadObStatsStockPagesAsync, ct);
+                        operationTags, null, ct);
                 else if (spec.DataKind == "obstats" && market == FuturesMarket)
                     await ProcessHistoricalInstrumentAsync<ObStatsFuturesRow>(spec, secid, market, boardId,
                         today, lastSourceTime, new(_executor, spec.Table, spec.Columns, insertContext),
-                        operationTags, _pageReader.ReadObStatsFuturesPagesAsync, ct);
+                        operationTags, null, ct);
                 else if (spec.DataKind == "orderstats" && market == StockMarket)
                     await ProcessHistoricalInstrumentAsync<OrderStatsStockRow>(spec, secid, market, boardId,
                         today, lastSourceTime, new(_executor, spec.Table, spec.Columns, insertContext),
-                        operationTags, _pageReader.ReadOrderStatsStockPagesAsync, ct);
+                        operationTags, null, ct);
                 else if (spec.DataKind == "futoi" && market == FuturesMarket)
                     await ProcessHistoricalInstrumentAsync<FutoiRow>(spec, secid, market, boardId,
                         today, lastSourceTime, new(_executor, spec.Table, spec.Columns, insertContext),
@@ -387,19 +387,19 @@ public sealed class AlgopackCurrentDayService : BackgroundService
                 else if (spec.DataKind == "hi2" && market == StockMarket)
                     await ProcessHistoricalInstrumentAsync<Hi2StockRow>(spec, secid, market, boardId,
                         today, lastSourceTime, new(_executor, spec.Table, spec.Columns, insertContext),
-                        operationTags, _pageReader.ReadHi2StockPagesAsync, ct);
+                        operationTags, null, ct);
                 else if (spec.DataKind == "hi2" && market == FuturesMarket)
                     await ProcessHistoricalInstrumentAsync<Hi2FuturesRow>(spec, secid, market, boardId,
                         today, lastSourceTime, new(_executor, spec.Table, spec.Columns, insertContext),
-                        operationTags, _pageReader.ReadHi2FuturesPagesAsync, ct);
+                        operationTags, null, ct);
                 else if (spec.DataKind == "mega_alerts" && market == StockMarket)
                     await ProcessHistoricalInstrumentAsync<MegaAlertsStockRow>(spec, secid, market, boardId,
                         today, lastSourceTime, new(_executor, spec.Table, spec.Columns, insertContext),
-                        operationTags, _pageReader.ReadMegaAlertsStockPagesAsync, ct);
+                        operationTags, null, ct);
                 else if (spec.DataKind == "mega_alerts" && market == FuturesMarket)
                     await ProcessHistoricalInstrumentAsync<MegaAlertsFuturesRow>(spec, secid, market, boardId,
                         today, lastSourceTime, new(_executor, spec.Table, spec.Columns, insertContext),
-                        operationTags, _pageReader.ReadMegaAlertsFuturesPagesAsync, ct);
+                        operationTags, null, ct);
                 else
                     throw new InvalidOperationException(
                         $"Нет типизированного обработчика текущего дня {spec.DataKind}/{market}.");
@@ -618,7 +618,7 @@ public sealed class AlgopackCurrentDayService : BackgroundService
         DateTime? lastSourceTime,
         ProtobufBatchWriter<TRow> writer,
         MoexOperationTags operationTags,
-        MoexHistoryPageReader.ReadSeriesPages<TRow> readPages,
+        MoexHistoryPageReader.ReadSeriesPages<TRow>? readPages,
         CancellationToken ct)
         where TRow : struct
     {
@@ -668,9 +668,21 @@ public sealed class AlgopackCurrentDayService : BackgroundService
 
             try
             {
-                await readPages(
-                    spec, secid, today, today, operationTags, writer, lastSourceTime,
-                    state, BeforeFetch, AfterPage, fetchCts.Token);
+                if (readPages is null)
+                {
+                    // FUTOI ещё не переведён на общий путь и приходит со своим делегатом.
+                    await _pageReader.ReadPagesAsync(
+                        spec, secid, boardId: null, today, today, operationTags,
+                        writer, candleWriter: null,
+                        lastSourceTime, ingestPriority: 0, acceptedCandles: null,
+                        state, BeforeFetch, AfterPage, fetchCts.Token);
+                }
+                else
+                {
+                    await readPages(
+                        spec, secid, today, today, operationTags, writer, lastSourceTime,
+                        state, BeforeFetch, AfterPage, fetchCts.Token);
+                }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {

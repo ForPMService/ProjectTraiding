@@ -88,28 +88,28 @@ public sealed class SpecLoadHandler
                 spec, task, tags, insertContext, cancellationToken);
         if (spec.DataKind == "obstats" && spec.Market == "stock")
             return await LoadHistoricalSeriesRangeAsync<ObStatsStockRow>(
-                spec, task, tags, insertContext, _reader.ReadObStatsStockPagesAsync, cancellationToken);
+                spec, task, tags, insertContext, readPages: null, cancellationToken);
         if (spec.DataKind == "obstats" && spec.Market == "futures")
             return await LoadHistoricalSeriesRangeAsync<ObStatsFuturesRow>(
-                spec, task, tags, insertContext, _reader.ReadObStatsFuturesPagesAsync, cancellationToken);
+                spec, task, tags, insertContext, readPages: null, cancellationToken);
         if (spec.DataKind == "orderstats")
             return await LoadHistoricalSeriesRangeAsync<OrderStatsStockRow>(
-                spec, task, tags, insertContext, _reader.ReadOrderStatsStockPagesAsync, cancellationToken);
+                spec, task, tags, insertContext, readPages: null, cancellationToken);
         if (spec.DataKind == "futoi")
             return await LoadHistoricalSeriesRangeAsync<FutoiRow>(
                 spec, task, tags, insertContext, _reader.ReadFutoiPagesAsync, cancellationToken);
         if (spec.DataKind == "hi2" && spec.Market == "stock")
             return await LoadHistoricalSeriesRangeAsync<Hi2StockRow>(
-                spec, task, tags, insertContext, _reader.ReadHi2StockPagesAsync, cancellationToken);
+                spec, task, tags, insertContext, readPages: null, cancellationToken);
         if (spec.DataKind == "hi2" && spec.Market == "futures")
             return await LoadHistoricalSeriesRangeAsync<Hi2FuturesRow>(
-                spec, task, tags, insertContext, _reader.ReadHi2FuturesPagesAsync, cancellationToken);
+                spec, task, tags, insertContext, readPages: null, cancellationToken);
         if (spec.DataKind == "mega_alerts" && spec.Market == "stock")
             return await LoadHistoricalSeriesRangeAsync<MegaAlertsStockRow>(
-                spec, task, tags, insertContext, _reader.ReadMegaAlertsStockPagesAsync, cancellationToken);
+                spec, task, tags, insertContext, readPages: null, cancellationToken);
         if (spec.DataKind == "mega_alerts" && spec.Market == "futures")
             return await LoadHistoricalSeriesRangeAsync<MegaAlertsFuturesRow>(
-                spec, task, tags, insertContext, _reader.ReadMegaAlertsFuturesPagesAsync, cancellationToken);
+                spec, task, tags, insertContext, readPages: null, cancellationToken);
         throw new InvalidOperationException($"Нет типизированного обработчика исторического ряда {spec.DataKind}/{spec.Market}.");
     }
 
@@ -273,7 +273,7 @@ public sealed class SpecLoadHandler
     private async Task<RowWriteSummary> LoadHistoricalSeriesRangeAsync<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TRow>(
         MoexSeriesSpec spec, MoexLoadTask task, MoexOperationTags tags,
-        StorageInsertContext insertContext, MoexHistoryPageReader.ReadSeriesPages<TRow> readPages,
+        StorageInsertContext insertContext, MoexHistoryPageReader.ReadSeriesPages<TRow>? readPages,
         CancellationToken cancellationToken)
         where TRow : struct
     {
@@ -312,8 +312,19 @@ public sealed class SpecLoadHandler
 
                 try
                 {
-                    await readPages(spec, task.Secid, from, till, tags, writer, null,
-                        state, null, AfterPage, cancellationToken);
+                    if (readPages is null)
+                    {
+                        await _reader.ReadPagesAsync(
+                            spec, task.Secid, boardId: null, from, till, tags,
+                            writer, candleWriter: null,
+                            lastSourceTime: null, ingestPriority: 0, acceptedCandles: null,
+                            state, beforeRequest: null, afterPage: AfterPage, cancellationToken);
+                    }
+                    else
+                    {
+                        await readPages(spec, task.Secid, from, till, tags, writer, null,
+                            state, null, AfterPage, cancellationToken);
+                    }
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
